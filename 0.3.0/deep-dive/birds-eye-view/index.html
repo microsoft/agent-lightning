@@ -1,0 +1,2687 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/deep-dive/birds-eye-view/">
+      
+      
+        <link rel="prev" href="../../algorithm-zoo/verl/">
+      
+      
+        <link rel="next" href="../store/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Bird's Eye View - Agent-lightning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#the-birds-eye-view-of-agent-lightning" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agent-lightning" class="md-header__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agent-lightning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Bird's Eye View
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agent-lightning" class="md-nav__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    Agent-lightning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Quickstart
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train the First Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/write-first-algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write the First Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How-To Recipes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How-To Recipes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/examples-catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/unsloth-sft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFT with Unsloth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-sql-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train SQL Agent with RL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Learning More
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Learning More
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/write-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/debug/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/traces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Traces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/emitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Emitters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/parallelize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallelize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm Zoo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Algorithm Zoo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/apo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    APO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/verl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VERL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep Dive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bird's Eye View
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bird's Eye View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm-runner-store-data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Algorithm ↔ Runner ↔ Store data flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Algorithm ↔ Runner ↔ Store data flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Terminology
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Store
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supporting-components-in-the-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supporting Components in the Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Supporting Components in the Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adapter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trainer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#putting-it-all-together-a-reinforcement-learning-example-verl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting It All Together: A Reinforcement Learning Example (VERL)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-strategies-and-parallelism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Strategies and Parallelism
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Execution Strategies and Parallelism">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-memory-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared-memory Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-server-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client-server Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#onlinecontinuous-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Online/Continuous Learning
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../serving-llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving LLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API References
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API References
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/instrumentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Instrumentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/semconv/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semantic Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/restful/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RESTful
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Miscellaneous
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Miscellaneous
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/maintainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintainer Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#algorithm-runner-store-data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Algorithm ↔ Runner ↔ Store data flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Algorithm ↔ Runner ↔ Store data flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Terminology
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Store
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supporting-components-in-the-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supporting Components in the Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Supporting Components in the Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adapter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trainer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#putting-it-all-together-a-reinforcement-learning-example-verl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting It All Together: A Reinforcement Learning Example (VERL)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-strategies-and-parallelism" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Strategies and Parallelism
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Execution Strategies and Parallelism">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-memory-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared-memory Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-server-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client-server Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#onlinecontinuous-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Online/Continuous Learning
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  <div id="version-warning" class="version-warning" style="display: none;">
+    ⚠️ You are viewing development documentation. For stable documentation, please visit
+    <a href="https://microsoft.github.io/agent-lightning/stable/">https://microsoft.github.io/agent-lightning/stable/</a>
+  </div>
+  
+                  <!-- Copied and modified from https://github.com/squidfunk/mkdocs-material/blob/master/src/templates/partials/content.html -->
+
+<!-- Tags -->
+
+
+
+<!-- Actions -->
+
+  
+  
+
+
+<!--
+  Hack: check whether the content contains a h1 headline. If it doesn't, the
+  page title (or respectively site name) is used as the main headline.
+-->
+
+
+<!-- Source file information -->
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 29, 2025 01:42:58 UTC"><span class="timeago" datetime="2025-10-29T01:42:58+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 29, 2025 01:42:58 UTC">2025-10-29</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 10, 2025 09:09:02 UTC"><span class="timeago" datetime="2025-10-10T09:09:02+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 10, 2025 09:09:02 UTC">2025-10-10</span>
+  </span>
+
+    
+    
+      
+  
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Contributors">
+      
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 5.5A3.5 3.5 0 0 1 15.5 9a3.5 3.5 0 0 1-3.5 3.5A3.5 3.5 0 0 1 8.5 9 3.5 3.5 0 0 1 12 5.5M5 8c.56 0 1.08.15 1.53.42-.15 1.43.27 2.85 1.13 3.96C7.16 13.34 6.16 14 5 14a3 3 0 0 1-3-3 3 3 0 0 1 3-3m14 0a3 3 0 0 1 3 3 3 3 0 0 1-3 3c-1.16 0-2.16-.66-2.66-1.62a5.54 5.54 0 0 0 1.13-3.96c.45-.27.97-.42 1.53-.42M5.5 18.25c0-2.07 2.91-3.75 6.5-3.75s6.5 1.68 6.5 3.75V20h-13zM0 20v-1.5c0-1.39 1.89-2.56 4.45-2.9-.59.68-.95 1.62-.95 2.65V20zm24 0h-3.5v-1.75c0-1.03-.36-1.97-.95-2.65 2.56.34 4.45 1.51 4.45 2.9z"/></svg>
+      
+    </span>
+    <nav>
+      
+        <a href="mailto:42679190+jeis4wpi@users.noreply.github.com">John Eismeier</a>, 
+        <a href="mailto:yuge.zhang@microsoft.com">Yuge Zhang</a>
+    </nav>
+  </span>
+
+    
+    
+  </aside>
+
+
+<!-- Page content -->
+<h1 id="the-birds-eye-view-of-agent-lightning">The Bird's Eye View of Agent-lightning<a class="headerlink" href="#the-birds-eye-view-of-agent-lightning" title="Permanent link">&para;</a></h1>
+<div class="admonition warning">
+<p class="admonition-title">High Volume of Information Ahead</p>
+<p>This article provides an in-depth exploration of the Agent-lightning architecture.
+It is not intended as a beginner’s guide or usage tutorial.</p>
+</div>
+<p>This article summarizes how Agent-lightning (as of v0.2) wires the <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm">Algorithm</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner">Runner</a>, and <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a> loop together and shows where auxiliary components (the <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer">Tracer</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter">Adapter</a>, and <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy">LLM Proxy</a>) plug into the loop. Each section provides a diagram for a different perspective of the system.</p>
+<h2 id="algorithm-runner-store-data-flow">Algorithm ↔ Runner ↔ Store data flow<a class="headerlink" href="#algorithm-runner-store-data-flow" title="Permanent link">&para;</a></h2>
+<p>At its heart, Agent-lightning is built on three main components that work in a coordinated loop:</p>
+<ul>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm">Algorithm</a>:</strong> The "brain" of the system. It decides what tasks to run, learns from the results, and updates resources (like AI models or prompts).</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner">Runner</a>:</strong> The "worker" of the system. It executes tasks assigned by the algorithm, runs the agent, and records the results.</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a>:</strong> The central "database" and message queue. It acts as the single source of truth, storing tasks, results, and resources, and enabling communication between the Algorithm and Runner.</li>
+</ul>
+<p>The typical data flow in a training loop is as follows: The <strong><a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm">Algorithm</a></strong> enqueues tasks (called <strong><a class="autorefs autorefs-internal" title="            agentlightning.Rollout" href="../../reference/types/#agentlightning.Rollout">Rollouts</a></strong>) into the <strong><a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a></strong>. A <strong><a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner">Runner</a></strong> then dequeues a task, executes it, and streams the results (called <strong><a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span">Spans</a></strong>) back to the store. Once the task is complete, the algorithm can query the new data from the store to learn and update its resources.</p>
+<p>The diagram below shows this fundamental interaction in a simple, non-parallel setup.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    participant Algo as Algorithm
+    participant Store as LightningStore
+    participant Runner
+    participant Agent
+
+    loop Over the dataset
+        Algo--&gt;&gt;Store: add_resources + enqueue_rollout
+        Store--&gt;&gt;Runner: dequeue_rollout → AttemptedRollout
+        Store--&gt;&gt;Runner: get_latest_resources
+        Runner--&gt;&gt;Store: update_attempt("running", worker_id)
+        Runner-&gt;&gt;Agent: rollout + resources
+        Agent-&gt;&gt;Runner: reward / spans
+        Runner--&gt;&gt;Store: add_span or add_otel_span
+        Runner--&gt;&gt;Store: update_attempt("finished", status)
+        Store--&gt;&gt;Algo: query_rollouts + spans
+        Algo--&gt;&gt;Algo: Update resources (optional)
+    end</code></pre>
+<p>Solid lines represent direct calls, while dashed lines are asynchronous or long-running operations.</p>
+<h3 id="key-terminology">Key Terminology<a class="headerlink" href="#key-terminology" title="Permanent link">&para;</a></h3>
+<p>We define the following terms, which may be helpful for understanding the diagram above.</p>
+<ul>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Resource" href="../../reference/types/#agentlightning.Resource">Resources</a>:</strong> A collection of assets to be tuned or trained. Agents perform rollouts against resources and collect span data. Algorithms use those data to update the resources. In RL training, the resources are a tunable model. In prompt tuning, the resources are prompt templates.</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Rollout" href="../../reference/types/#agentlightning.Rollout">Rollout</a>:</strong> A unit of work that an agent performs against a resource. A rollout (noun) can be incomplete, in which case it is also known as a <strong>task</strong>, <strong>sample</strong>, or <strong>job</strong> (these terms are used interchangeably). The agent executes its own defined workflow against the rollout — the process is also called "to rollout" (verb). After execution, the rollout (noun) is considered <em>complete</em>.</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Attempt" href="../../reference/types/#agentlightning.Attempt">Attempt</a>:</strong> A single execution of a rollout. One rollout can have multiple attempts in case of failures or timeouts.</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span">Span</a>:</strong> During the rollout, the agent can generate multiple spans (also known as "traces" or "events"). The recorded spans are collected in the store, which is crucial for understanding agent behavior and optimizing agents.</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward">Reward</a>:</strong> A special span that is defined as a number judging the quality of the rollout during some period of the rollout.</li>
+<li><strong><a class="autorefs autorefs-internal" title="            agentlightning.Dataset" href="../../reference/types/#agentlightning.Dataset">Dataset</a>:</strong> A collection of incomplete rollouts (i.e., tasks) for the agent to process. The dual datasets (train, val) serve as the initial input for the algorithm to enqueue the first batch of rollouts.</li>
+</ul>
+<h3 id="store">Store<a class="headerlink" href="#store" title="Permanent link">&para;</a></h3>
+<p>As discussed previously, the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a> is the central hub for all data in Agent-lightning. The store exposes a set of APIs for algorithms and runners to interact with the data; the most important ones are:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">AttemptedRollout</span><span class="p">,</span> <span class="n">ResourcesUpdate</span><span class="p">,</span> <span class="n">Span</span><span class="p">,</span> <span class="n">TaskInput</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">LightningStore</span><span class="p">:</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">enqueue_rollout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">:</span> <span class="n">TaskInput</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Rollout</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">dequeue_rollout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AttemptedRollout</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add_span</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">span</span><span class="p">:</span> <span class="n">Span</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Span</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_latest_resources</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ResourcesUpdate</span><span class="p">]:</span> <span class="o">...</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_rollouts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rollout_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="o">...</span><span class="p">):</span> <span class="o">...</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query_spans</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">):</span> <span class="o">...</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">update_attempt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">status</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">):</span> <span class="o">...</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="o">...</span>
+</code></pre></div>
+<p>These interfaces operate on <a class="autorefs autorefs-internal" title="            agentlightning.AttemptedRollout" href="../../reference/types/#agentlightning.AttemptedRollout"><code>AttemptedRollout</code></a>, <a class="autorefs autorefs-internal" title="            agentlightning.ResourcesUpdate" href="../../reference/types/#agentlightning.ResourcesUpdate"><code>ResourcesUpdate</code></a>, <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span"><code>Span</code></a>, and <a class="autorefs autorefs-internal" title="            agentlightning.TaskInput = Any
+
+  
+      module-attribute
+  " href="../../reference/internal/#agentlightning.TaskInput"><code>TaskInput</code></a> instances from <code>agentlightning.types</code>.</p>
+<p>As the APIs show, the store essentially provides a queue for rollouts and storage for resources, spans, and attempts. Developers should implement the store carefully to ensure data integrity and consistency, especially when multiple runners work in parallel across multiple attempts.</p>
+<p>The store is designed to be extensible. Users can implement their own store by inheriting from <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a> and overriding methods. Agent-lightning provides a few reference implementations, such as <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a> (default) and <code>SqliteLightningStore</code> (under construction). When parallelized, the store may need special wrappers to ensure thread/process safety or delegate computation to a store in another process or machine.</p>
+<h2 id="supporting-components-in-the-loop">Supporting Components in the Loop<a class="headerlink" href="#supporting-components-in-the-loop" title="Permanent link">&para;</a></h2>
+<p>While the core loop is simple, Agent-lightning provides several components to make development easier and more powerful.</p>
+<h3 id="tracer">Tracer<a class="headerlink" href="#tracer" title="Permanent link">&para;</a></h3>
+<p>The <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer"><code>Tracer</code></a> is a component within the <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a> that records detailed spans (events) during an agent's execution and sends them to the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>. Instead of requiring the agent to manually log every span, the tracer automatically instruments key methods (e.g., LLM calls) and captures their inputs, outputs, and metadata. This provides a detailed log of the agent's behavior with minimal effort.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    participant Store
+    participant Runner
+    participant Tracer
+    participant Agent
+
+    Note over Runner,Tracer: Runner manages tracer as member
+
+    Tracer-&gt;&gt;Agent: Apply instrumentation
+    loop Until no more rollouts
+        Store--&gt;&gt;Runner: dequeue_rollout → AttemptedRollout
+        Store--&gt;&gt;Runner: get_latest_resources
+        Runner-&gt;&gt;Agent: training_rollout / validation_rollout
+        loop For each finished span
+            Agent--&gt;&gt;Tracer: openai.chat.completion invoked&lt;br&gt;agent.execute invoked&lt;br&gt;...
+            Agent-&gt;&gt;Tracer: emit intermediate reward
+            Tracer--&gt;&gt;Store: add_otel_span(rollout_id, attempt_id, span)
+        end
+        Agent-&gt;&gt;Runner: final reward + extra spans (if any)
+        Runner--&gt;&gt;Store: add_span(rollout_id, attempt_id, span)
+        Runner--&gt;&gt;Store: update_attempt(status)
+    end
+    Tracer-&gt;&gt;Agent: Unapply instrumentation</code></pre>
+<p>The above diagram shows the overall data flow between store, tracer and agent. In realistic, it's a bit more complicated than that. Spans are not emitted actively by the agent; they are intercepted by the tracer by hooking and instrumenting key methods used in the agents.  The tracer uses a callback (called exporter) to monitor events and log to the store. Before a rollout starts, the runner enters a <a class="autorefs autorefs-internal" title="            trace_context(name=None, *, store=None, rollout_id=None, attempt_id=None)" href="../../reference/runner/#agentlightning.Tracer.trace_context"><code>trace_context</code></a> before invoking the agent, wiring store identifiers into the tracer. Each span completion streams back to the store through <code>LightningSpanProcessor</code>, so the agent’s instrumentation lands in <a class="autorefs autorefs-internal" title="            add_otel_span(rollout_id, attempt_id, readable_span, sequence_id=None)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.add_otel_span"><code>add_otel_span</code></a>. If the agent’s rollout method returns a numeric reward, the runner emits one more OpenTelemetry span before finalizing the attempt.</p>
+<h3 id="hooks">Hooks<a class="headerlink" href="#hooks" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.Hook" href="../../reference/types/#agentlightning.Hook"><code>Hook</code></a> implementations are user-defined callback functions that allow you to augment a <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a>'s behavior at specific points in its lifecycle. You can use hooks to add custom logging, set up resources before a rollout begins, or tear them down after it ends. Hooks can be triggered at four key moments: <code>on_rollout_start</code>, <code>on_trace_start</code>, <code>on_trace_end</code>, and <code>on_rollout_end</code>.</p>
+<p>Users should pay special attention to the difference between <code>on_trace_end</code> and <code>on_rollout_end</code>. The former is called right before the tracer exits the trace context, while the latter is called after the runner processes the final leftover rewards and spans, and finalizes the attempt in the store.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    participant Store
+    participant Hooks
+    participant Runner
+    participant Tracer
+    participant Agent
+
+    Note over Runner,Hooks: Runner manages hooks as member
+
+    loop Until no more rollouts
+        Store--&gt;&gt;Runner: dequeue_rollout → AttemptedRollout
+        Store--&gt;&gt;Runner: get_latest_resources
+
+        Runner-&gt;&gt;Hooks: on_rollout_start(agent, runner, rollout)
+        Runner-&gt;&gt;Agent: training_rollout / validation_rollout
+        Tracer-&gt;&gt;Agent: enter_trace_context
+        activate Tracer
+        Runner-&gt;&gt;Hooks: on_trace_start(agent, runner, tracer, rollout)
+        Note over Runner,Agent: Agent rollout omitted
+        Runner-&gt;&gt;Hooks: on_trace_end(agent, runner, tracer, rollout)
+        Tracer-&gt;&gt;Agent: exit_trace_context
+        deactivate Tracer
+        Agent-&gt;&gt;Runner: final reward + extra spans (if any)
+        Runner--&gt;&gt;Store: add_span(rollout_id, attempt_id, span)
+        Runner-&gt;&gt;Hooks: on_rollout_end(agent, runner, rollout, status)
+    end</code></pre>
+<h3 id="adapter">Adapter<a class="headerlink" href="#adapter" title="Permanent link">&para;</a></h3>
+<p>The <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter"><code>Adapter</code></a> is a component used by the <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm"><code>Algorithm</code></a> to transform raw data from the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a> into a format suitable for learning. Runners stream raw spans into the store during execution. Later, the algorithm queries these spans and uses an adapter to convert them into structured data, like training examples for a reinforcement learning model.</p>
+<p>For instance, the <a class="autorefs autorefs-internal" title="            agentlightning.TracerTraceToTriplet" href="../../reference/algorithm/#agentlightning.TracerTraceToTriplet"><code>TracerTraceToTriplet</code></a> processes OpenTelemetry spans to create <code>(prompt, response, reward)</code> triplets, which are the fundamental data structure for many RL fine-tuning algorithms.</p>
+<pre class="mermaid"><code>flowchart LR
+    Runner -- (1) add_otel_span --&gt; Store
+    Store -- (2) query_spans --&gt; Algorithm
+    Algorithm -- (3) spans --&gt; Adapter
+    Adapter -- (4) transformed data --&gt; Algorithm</code></pre>
+<h3 id="llm-proxy">LLM Proxy<a class="headerlink" href="#llm-proxy" title="Permanent link">&para;</a></h3>
+<p>The <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> is an optional bridge component that sits between an agent and the algorithms' resources. It acts as a centralized endpoint for all LLM calls. Usually the proxy URL is added to the store as a special resource, so that the <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a> can fetch it along with other resources when dequeuing a rollout. During rollouts, the runner invokes the proxy's HTTP endpoint instead of calling a model backend directly.</p>
+<p>This design offers several benefits:</p>
+<ol>
+<li><strong>Instrumentation:</strong> It automatically captures detailed traces of LLM interactions (prompts, responses, metadata) and sends them to the store, complementing the tracer, especially when the agent's code is hard to instrument directly.</li>
+<li><strong>Backend Abstraction:</strong> It provides a unified interface for various LLM backends (OpenAI, Anthropic, local models) and can add features like retry logic, rate limiting, and caching.</li>
+<li><strong>Resource Management:</strong> The algorithm can dynamically update which LLM the agent uses (e.g., swapping to a newly fine-tuned model) by simply swapping the backend model the proxy is using, without interrupting the agent's code.</li>
+</ol>
+<p>The benefits above seem to be all discussed within the context of model fine-tuning. As a matter of fact, the proxy can be useful for prompt tuning as well. The algorithm can register one of the following two types of endpoints into the proxy:</p>
+<ol>
+<li><strong>Endpoint served by the algorithm:</strong> If the algorithm is internally updating the LLM weights (e.g., RL), it can launch an LLM inference engine (i.e., a model server) and register the endpoint URL with the proxy. The proxy then forwards all LLM calls to that endpoint.</li>
+<li><strong>Third-party LLM endpoint:</strong> If the algorithm is not updating the LLM weights (e.g., prompt tuning), it can register a third-party LLM endpoint into the proxy.</li>
+</ol>
+<p>We show a diagram below that illustrates how the proxy fits into the overall data flow.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    participant Algo as Algorithm
+    participant LLMProxy as LLM Proxy
+    participant Store
+    participant Runner
+    participant Agent
+
+    Note over Algo,LLMProxy: Algorithm manages LLMProxy as member
+
+    loop Over the Dataset
+        Algo-&gt;&gt;Algo: Launch LLM Inference Engine&lt;br&gt;(optional)
+        Algo-&gt;&gt;LLMProxy: Register Inference Engine&lt;br&gt;(optional)
+        Algo--&gt;&gt;Store: enqueue_rollout
+        LLMProxy-&gt;&gt;Store: Proxy URL added as Resource
+        Store--&gt;&gt;Runner: dequeue_rollout → AttemptedRollout
+        Store--&gt;&gt;Runner: get_latest_resources
+        Runner-&gt;&gt;Agent: rollout + resources&lt;br&gt;(LLM Proxy URL as resource)
+        loop Defined by Agent
+            Agent--&gt;&gt;LLMProxy: LLM calls
+            activate LLMProxy
+            LLMProxy--&gt;&gt;Store: add_span or add_otel_span
+            LLMProxy--&gt;&gt;Agent: LLM responses
+            deactivate LLMProxy
+            Agent--&gt;&gt;Runner: rewards
+            Runner--&gt;&gt;Store: add_span or add_otel_span
+        end
+        Runner--&gt;&gt;Store: update_attempt("finished", status)
+        Store--&gt;&gt;Algo: query_rollouts + spans
+        Algo--&gt;&gt;Algo: Update LLM Weights&lt;br&gt;(optional)
+    end</code></pre>
+<p>In this diagram, the store receives spans from both the proxy and the runner. We will see a problem later with parallelism where the proxy and runner are in different machines, and spans need to obtain a special counter from the store to ensure the ordering of spans.</p>
+<h3 id="trainer">Trainer<a class="headerlink" href="#trainer" title="Permanent link">&para;</a></h3>
+<p>The <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer">Trainer</a> is the high-level orchestrator that initializes and connects all major components -- <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm">Algorithm</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner">Runner</a>, <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer">Tracer</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter">Adapter</a>, <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy">LLM Proxy</a>, and <a class="autorefs autorefs-internal" title="            agentlightning.Hook" href="../../reference/types/#agentlightning.Hook">Hook</a>. The components can have a lifecycle as long as the trainer. The trainer manages their lifecycles and handles dependency injection, ensuring that every part of the system operates within a consistent and shared environment.</p>
+<p>Below, we demonstrate how the components relate to each other and their roles. We first clarify the roles and relationships shown in the diagram:</p>
+<ol>
+<li><strong>Owns:</strong> components that the trainer constructs and manages directly (e.g., runner, tracer).</li>
+<li><strong>Injects:</strong> components passed into others as dependencies.</li>
+<li><strong>References:</strong> weak links for coordination without ownership.</li>
+<li><strong>Uses:</strong> components that are temporarily interacted with.</li>
+</ol>
+<p>For example, the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a> is injected into the <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm">Algorithm</a> and <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner">Runner</a>. The <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer">Tracer</a> and <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../../reference/agent/#agentlightning.LitAgent">LitAgent</a> are injected into the runner. The <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter">Adapter</a> and <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy">LLM Proxy</a> are injected into the algorithm. The store is further injected into the tracer, adapter and LLM proxy by the runner and algorithm respectively.</p>
+<pre class="mermaid"><code>flowchart TD
+    %% === Left side: Algorithm domain ===
+    subgraph L["Algorithm Side"]
+        Algorithm["Algorithm&lt;br&gt;(no default)"]
+        Adapter["Adapter&lt;br&gt;(TracerTraceToTriplet*)"]
+        LLMProxy["LLM Proxy&lt;br&gt;(no default)"]
+        Algorithm -.injects.-&gt; Adapter
+        Algorithm -.injects.-&gt; LLMProxy
+    end
+    linkStyle 0,1 stroke:#896978,stroke-width:2px;
+
+    %% === Middle: Core trainer and store ===
+    subgraph M["Core"]
+        Trainer["Trainer"]
+        Store["LightningStore&lt;br&gt;(InMemory* default)"]
+        Trainer --has--&gt; Algorithm
+        Trainer --has--&gt; Store
+        Trainer --has--&gt; Adapter
+        Trainer --has--&gt; LLMProxy
+    end
+    linkStyle 2,3,4,5 stroke:#839791,stroke-width:2px;
+
+    %% === Right side: Runner side ===
+    subgraph R["Runner Side"]
+        Runner["Runner&lt;br&gt;(LitAgentRunner* default)"]
+        Tracer["Tracer&lt;br&gt;(AgentOpsTracer*)"]
+        Hooks["Hooks (empty default)"]
+        Agent["Agent&lt;br&gt;(LitAgent*)"]
+        Runner -.injects.-&gt; Tracer
+        Runner -.injects.-&gt; Store
+        Runner -.injects.-&gt; Agent
+        Runner -.injects.-&gt; Hooks
+        Tracer -.injects.-&gt; Store
+        Hooks -.uses.-&gt; Runner
+        Hooks -.uses.-&gt; Agent
+        Hooks -.uses.-&gt; Tracer
+    end
+    linkStyle 6,7,8,9,10 stroke:#896978,stroke-width:2px;
+    linkStyle 11,12,13 stroke:#7a89c2,stroke-width:2px;
+
+    %% === Cross-section connections ===
+    Trainer --has--&gt; Runner
+    Trainer --has--&gt; Tracer
+    Trainer --has--&gt; Hooks
+    Trainer --uses--&gt; Agent
+    Algorithm -.injects.-&gt; Store
+    LLMProxy -.injects.-&gt; Store
+    Agent -.references.-&gt; Trainer
+    Runner -.references.-&gt; Trainer
+    Algorithm -.references.-&gt; Trainer
+    linkStyle 14,15,16 stroke:#839791,stroke-width:2px;
+    linkStyle 17,20,21,22 stroke:#7a89c2,stroke-width:2px;
+    linkStyle 18,19 stroke:#896978,stroke-width:2px;
+
+    style L fill:none;
+    style M fill:none;
+    style R fill:none;</code></pre>
+<h2 id="putting-it-all-together-a-reinforcement-learning-example-verl">Putting It All Together: A Reinforcement Learning Example (VERL)<a class="headerlink" href="#putting-it-all-together-a-reinforcement-learning-example-verl" title="Permanent link">&para;</a></h2>
+<p><a href="" id="birds-eye-view-verl-example"></a></p>
+<p>VERL shows how an algorithm consumes the shared infrastructure. For historical reasons, code lives in <code>agentlightning.algorithm.verl</code> and <code>agentlightning.verl</code>. The latter is legacy and reuses terms like <code>Trainer</code> in confusing ways. The former is a thin wrapper that conforms to the new algorithm interface. Future versions will merge the two.</p>
+<p>Reinforcement learning aims to learn a policy that takes actions in states to maximize expected reward. For agents, the policy is usually a language model. Inputs are prompts (state). Outputs are generated text (action). A numeric score judges quality (reward). The <code>(state, action, reward)</code> <strong>triplet</strong> is the basic learning unit.</p>
+<p>In Agent-lightning, the environment is implicit in the agent’s workflow, which orchestrates one or more LLM calls and often self-judges using rules or additional model calls. During a rollout, the agent emits spans that contain everything needed for RL training, including LLM call traces and numeric judge/reward signals. The "algorithm", on the other hand, have more responsibilities.</p>
+<ol>
+<li>Providing a language model deployment that is currently learning and improving for the agent to interact with;</li>
+<li>Preparing the tasks that the agents will perform;</li>
+<li>Querying the spans generated, extracting triplets, and converting them into a format that the underlying RL library can consume;</li>
+<li>Updating the language model based on the learning signals.</li>
+</ol>
+<p>In the VERL integration, the algorithm launches a chat completion endpoint using <code>vLLM</code> and wraps training with <code>FSDP</code> for distributed optimization. It enqueues tasks from the dataset. After rollouts finish, it queries spans and converts them to triplets with <code>TracerTraceToTriplet</code>. VERL’s native training loop then consumes these triplets to update model weights. The workflow can be summarized in the following diagram.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    participant vLLM as vLLM Chat&lt;br&gt;Completion Endpoint
+    participant FSDP as FSDP / Megatron&lt;br&gt;Weights Optimizer
+    participant Algo as Algorithm&lt;br&gt;Main Controller&lt;br&gt;(Main Process)
+    participant Adapter as TracerTraceToTriplet
+    participant LLMProxy as LLM Proxy
+    participant Store as LightningStore
+    participant Runner as Runner + Agent
+
+    Note over Algo,LLMProxy: LLMProxy and Adapter are injected by Trainer as member
+    Note over vLLM,Algo: Algorithm creates and owns vLLM and FSDP
+
+    loop Over the Dataset in Batches
+        Algo-&gt;&gt;vLLM: Create Chat Completion Endpoint
+        activate vLLM
+        vLLM-&gt;&gt;LLMProxy: Registered as Backend Endpoint
+        LLMProxy-&gt;&gt;Store: Proxy URL added as Resource
+        par Over data samples in the batch
+            Algo--&gt;&gt;Store: enqueue_rollout
+            Store--&gt;&gt;Runner: Dequeue Rollout +&lt;br&gt;Resources (i.e., URL)
+            loop One Rollout Attempt
+                Runner--&gt;&gt;LLMProxy: LLM calls
+                LLMProxy--&gt;&gt;vLLM: Forwarded LLM calls
+                vLLM--&gt;&gt;LLMProxy: LLM responses
+                LLMProxy--&gt;&gt;Store: add_span / add_otel_span
+                LLMProxy--&gt;&gt;Runner: Forwarded LLM responses
+                Runner--&gt;&gt;Store: add_span / add_otel_span &lt;br&gt; (by tracer, including rewards)
+            end
+            Runner--&gt;&gt;Store: update_attempt("finished", status)
+        end
+        Algo--&gt;&gt;Store: Poll for completed rollouts + spans
+        Algo-&gt;&gt;vLLM: Chat Completion Endpoint Sleeps
+        deactivate vLLM
+        Algo-&gt;&gt;Adapter: adapt(spans)
+        Adapter-&gt;&gt;FSDP: Triplets (state, action, reward)
+        activate FSDP
+        FSDP--&gt;&gt;Algo: Updated LLM weights
+        deactivate FSDP
+    end</code></pre>
+<p><strong>Notes:</strong></p>
+<ol>
+<li>
+<p>There are interactions between different components injected into or owned by algorithms in the diagram, such as the output of the adapter feeding into the FSDP optimizer. This is for simplicity of illustration and slightly different from the actual implementation, where it's the algorithm main controller that orchestrates the data flow between components.</p>
+</li>
+<li>
+<p><strong>On mapping to VERL.</strong> VERL uses a classic RLHF setup where each action is a single token, the state is the full conversation history up to that token, and reward is given at the end. This is very different from our setup where each action is actually  a chunk of text, although they are both called RL! Therefore, after the adapter produces triplets, the algorithm converts each <code>(state, action, reward)</code> into a VERL trajectory (<code>DataProto</code>) with keys like <code>input_ids</code>, <code>position_ids</code>, <code>attention_mask</code>, and <code>token_level_scores</code>. That conversion happens after triplet generation and is not shown in the diagram.</p>
+</li>
+</ol>
+<h2 id="execution-strategies-and-parallelism">Execution Strategies and Parallelism<a class="headerlink" href="#execution-strategies-and-parallelism" title="Permanent link">&para;</a></h2>
+<p>Readers might have observed from the diagram above that there is absolutely no communication between (1) runner and agents and (2) algorithm. The only overlap of them is the <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer">Trainer</a> and <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a>. This observation is very clear with the diagram within the trainer section. This design allows us to flexibly scale the runner and algorithm independently, which is crucial for large-scale training.</p>
+<p>Agent-lightning packages two executable bundles: a runner bundle (<a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner">Runner</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer">Tracer</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Hook" href="../../reference/types/#agentlightning.Hook">Hook</a>, <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../../reference/agent/#agentlightning.LitAgent">LitAgent</a>) and an algorithm bundle (<a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm">Algorithm</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter">Adapter</a>, <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy">LLM Proxy</a>). Both share the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore">LightningStore</a>. The trainer initializes and connects the bundles.</p>
+<pre class="mermaid"><code>graph TD
+    subgraph Runner_Side["Runner Bundle"]
+        direction LR
+        R[Runner] --- T[Tracer] --- H[Hooks] --- A1[Agent]
+    end
+
+    subgraph Algorithm_Side["Algorithm Bundle"]
+        direction LR
+        ALG[Algorithm] --- AD[Adapter] --- LLM[LLM Proxy]
+    end
+
+    S[(Store)]
+    TR[Trainer]
+
+    Runner_Side &lt;--&gt; S
+    Algorithm_Side &lt;--&gt; S
+    TR --&gt; Runner_Side
+    TR --&gt; Algorithm_Side
+
+    linkStyle 0,1,2,3,4 opacity:0;</code></pre>
+<p>An <a class="autorefs autorefs-internal" title="            agentlightning.ExecutionStrategy" href="../../reference/trainer/#agentlightning.ExecutionStrategy">execution strategy</a>, defined and owned by the trainer, governs how algorithm and runner bundles are placed, connected, scaled, and aborted. It serves four primary purposes.</p>
+<p>Execution strategies first determine <strong>bundle placement</strong> — whether the two bundles run in the same thread, process, machine, or across separate machines. They also define <strong>store management</strong>, wrapping the store and specifying how data is shared between bundles.</p>
+<p>In terms of <strong>scalability</strong>, the strategy can replicate the runner bundle across multiple threads, processes, or machines to expand throughput on the runner side. The algorithm side remains single-process due to the complexity of parallelization. Mature frameworks such as <em>DeepSpeed</em> and <em>Megatron</em> already support distributed model training, so scaling of the algorithm bundle is delegated to those implementations.</p>
+<p><strong>Abort handling</strong> is another core responsibility. Aborts may be triggered by normal exits, failures in either bundle, or user interrupts. The trainer must include cancellation interfaces for the bundles so that bundles can be cleanly aborted. When the algorithm bundle exits normally, the strategy signals the runner bundle to terminate. If the runner exits first, no signal is sent to the algorithm, as it may still be processing completed rollouts. In cases of failure or user interruption, the strategy signals both bundles to abort; if a bundle fails to respond, the strategy should attempt a forceful termination.</p>
+<p>Agent-lightning currently provides two execution strategies: <strong>shared-memory</strong> and <strong>client-server</strong>, described in the following sections.</p>
+<h3 id="shared-memory-strategy">Shared-memory Strategy<a class="headerlink" href="#shared-memory-strategy" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.SharedMemoryExecutionStrategy" href="../../reference/trainer/#agentlightning.SharedMemoryExecutionStrategy"><code>SharedMemoryExecutionStrategy</code></a> runs algorithm and runner bundles as threads in one process. The strategy wraps the store with <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreThreaded" href="../../reference/store/#agentlightning.LightningStoreThreaded"><code>LightningStoreThreaded</code></a>, which guards calls with a lock for safe concurrency.</p>
+<p>This is good for lightweight debugging because components share one Python heap and avoid serialization. It is not suitable for heavy RL training or compute-intensive agents.</p>
+<pre class="mermaid"><code>flowchart TB
+    subgraph MainProcess
+        direction TB
+        subgraph AlgorithmThread [Thread 0]
+            Algorithm[Algorithm bundle]
+        end
+        subgraph RunnerThread1 [Thread 1]
+            Runner1[Runner bundle #1]
+        end
+        subgraph RunnerThread2 [Thread 2]
+            Runner2[Runner bundle #2]
+        end
+        subgraph RunnerThread3 [Thread 3]
+            RunnerN[Runner bundle #N]
+        end
+        LightningStoreFacade[LightningStoreThreaded]
+        BaseStore[Underlying LightningStore]
+    end
+    Algorithm -- async calls --&gt; LightningStoreFacade
+    Runner1 -- async calls --&gt; LightningStoreFacade
+    Runner2 -- async calls --&gt; LightningStoreFacade
+    RunnerN -- async calls --&gt; LightningStoreFacade
+    LightningStoreFacade --&gt;|thread-safe delegates| BaseStore</code></pre>
+<p>You can configure which role runs on the main thread. If the main thread runs the algorithm, it is able to spawn multiple runner threads. If it runs a runner, <code>n_runners</code> must be 1 and the runner lives on the main thread.</p>
+<h3 id="client-server-strategy">Client-server Strategy<a class="headerlink" href="#client-server-strategy" title="Permanent link">&para;</a></h3>
+<p><a href="" id="birds-eye-view-client-server-strategy"></a></p>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.ClientServerExecutionStrategy" href="../../reference/trainer/#agentlightning.ClientServerExecutionStrategy"><code>ClientServerExecutionStrategy</code></a> splits concerns across processes. The algorithm bundle starts a <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> (HTTP API) that wraps the underlying store. Runners connect via <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a> to call the same interface over REST. The server embeds a client to support algorithm-launched subprocesses (e.g., an LLM proxy worker) that need to talk back to the algorithm’s process through the same API.</p>
+<p>Currently this design introduces an extra wrapper in the Server side (as shown in the diagram), which helps debugging and improves fault tolerance. We might revisit this design in the future and enforce the client to be the only way to communicate with the store.</p>
+<pre class="mermaid"><code>flowchart TD
+    subgraph Algorithm Process Group
+        subgraph StoreServer[LightningStoreServer]
+            StoreHttpClient[HTTP Client]
+            StoreHttpServer[HTTP Server]
+            StoreWrapper[LightningStore Wrapper]
+            StoreHttpClient -- HTTP --&gt; StoreHttpServer
+        end
+        subgraph Algorithm Bundle
+            Algorithm[Algorithm Main Process]
+            subgraph Another subprocess
+                LLMProxy[LLM Proxy]
+            end
+        end
+        LLMProxy -- async calls --&gt; StoreHttpClient
+        Algorithm -- async calls --&gt; StoreWrapper
+    end
+    subgraph RunnerSide ["Runner Side"]
+        subgraph Runner Process 1
+            Runner1[Runner bundle #1]
+            Runner1 -- async calls --&gt; LightningStoreClient1
+            LightningStoreClient1[LightningStoreClient]
+        end
+        subgraph Runner Process 2
+            Runner2[Runner bundle #2]
+            Runner2 -- async calls --&gt; LightningStoreClient2
+            LightningStoreClient2[LightningStoreClient]
+        end
+        subgraph Runner Process N
+            RunnerN[Runner bundle #N]
+            RunnerN -- async calls --&gt; LightningStoreClientN
+            LightningStoreClientN[LightningStoreClient]
+        end
+    end
+    LocalStore[Underlying LightningStore]
+    StoreHttpServer --&gt;|delegates| StoreWrapper
+    StoreWrapper --&gt;|delegates| LocalStore
+    LightningStoreClient1 -- HTTP --&gt; StoreHttpServer
+    LightningStoreClient2 -- HTTP --&gt; StoreHttpServer
+    LightningStoreClientN -- HTTP --&gt; StoreHttpServer
+
+    style RunnerSide fill:none;</code></pre>
+<h2 id="onlinecontinuous-learning">Online/Continuous Learning<a class="headerlink" href="#onlinecontinuous-learning" title="Permanent link">&para;</a></h2>
+<p>Continuous learning keeps the algorithm loop running while runners report tasks and spans opportunistically. Key differences from batch mode:</p>
+<ol>
+<li>The algorithm does not enqueue rollouts from a fixed dataset. Runners report tasks/rollouts and spans spontaneously.</li>
+<li>The algorithm can wait for rollouts with a expected set of rollout IDs, but more often polls for new rollouts and spans or waits for a count to arrive.</li>
+<li>The <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a> processes one rollout at a time via <a class="autorefs autorefs-internal" title="            step(input, *, resources=None, mode=None, event=None)
+
+  
+      async
+  " href="../../reference/runner/#agentlightning.Runner.step"><code>step(task)</code></a> instead of exhausting a task queue. It notifies the store when starting a rollout so the store records it.</li>
+<li>A user or higher-level loop controls which resources the next step uses and when to retry.</li>
+</ol>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span">Spans</a>, <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter">Adapter</a> implementations, and the <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy">LLM Proxy</a> work the same way.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    actor User
+    participant Runner
+    participant Agent
+    participant Store as LightningStore
+    participant Algorithm
+
+    Note over Algorithm: Algorithm is long-running and loops continuously
+
+    loop Continuous Learning Loop
+        activate User
+        opt Decide what to do next
+            User--&gt;&gt;Store: get_resources_by_id
+            Store--&gt;&gt;User: Resources
+            User--&gt;&gt;User: Prepare input for next step
+        end
+        User-&gt;&gt;Runner: step(input, resources)
+        activate Runner
+        Runner--&gt;&gt;Store: Notify: start_rollout(input)
+        Runner-&gt;&gt;Agent: rollout(input, resources)
+        Agent--&gt;&gt;Runner: add_span / reward spans
+        Runner--&gt;&gt;Store: add_span or add_otel_span
+        Runner--&gt;&gt;Store: update_attempt(status="finished")
+        deactivate Runner
+        deactivate User
+        Algorithm-&gt;&gt;Store: poll for new rollouts and spans
+        opt If there is enough new data
+            Store--&gt;&gt;Algorithm: new spans
+            Algorithm-&gt;&gt;Algorithm: adapt spans → learning signal
+            Algorithm-&gt;&gt;Store: update_resources
+        end
+    end</code></pre>
+
+<!-- Was this page helpful? -->
+
+
+
+
+<!-- Comment system -->
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
+      
+        <script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
+      
+        <script src="../../javascripts/move-source-file.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+    
+  <script>
+    // Show warning banner if not viewing stable documentation
+    document.addEventListener("DOMContentLoaded", function() {
+      const currentURL = window.location.href;
+      const warningDiv = document.getElementById("version-warning");
+
+      // Check if we're on the stable docs or the redirect page
+      if (currentURL.includes('agent-lightning/latest/')) {
+        // Show warning for explicitly latest docs
+        warningDiv.style.display = "block";
+      }
+    });
+  </script>
+
+  </body>
+</html>

@@ -1,0 +1,2311 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/tutorials/parallelize/">
+      
+      
+        <link rel="prev" href="../emitter/">
+      
+      
+        <link rel="next" href="../../algorithm-zoo/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Parallelize - Agent-lightning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#scaling-out-agent-lightning" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agent-lightning" class="md-header__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agent-lightning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Parallelize
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agent-lightning" class="md-nav__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    Agent-lightning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Quickstart
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train the First Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/write-first-algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write the First Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How-To Recipes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How-To Recipes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/examples-catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/unsloth-sft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFT with Unsloth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-sql-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train SQL Agent with RL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Learning More
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Learning More
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../debug/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../traces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Traces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../emitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Emitters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallelize
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallelize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-rollouts-with-trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing Rollouts with Trainer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundles-and-execution-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundles and Execution Strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#client-server-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client-server Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Client-server Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#launching-algorithm-and-runner-roles-on-separate-machines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launching Algorithm and Runner Roles on Separate Machines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shared-memory-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared-memory Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-algorithms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing Algorithms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-lightningstore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing LightningStore
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#increasing-throughput-of-llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Increasing Throughput of LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm Zoo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Algorithm Zoo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/apo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    APO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/verl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VERL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep Dive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/birds-eye-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bird's Eye View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/serving-llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving LLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API References
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API References
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/instrumentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Instrumentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/semconv/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semantic Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/restful/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RESTful
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Miscellaneous
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Miscellaneous
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/maintainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintainer Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-rollouts-with-trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing Rollouts with Trainer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bundles-and-execution-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundles and Execution Strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#client-server-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client-server Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Client-server Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#launching-algorithm-and-runner-roles-on-separate-machines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launching Algorithm and Runner Roles on Separate Machines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shared-memory-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared-memory Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-algorithms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing Algorithms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-lightningstore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing LightningStore
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#increasing-throughput-of-llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Increasing Throughput of LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  <div id="version-warning" class="version-warning" style="display: none;">
+    ⚠️ You are viewing development documentation. For stable documentation, please visit
+    <a href="https://microsoft.github.io/agent-lightning/stable/">https://microsoft.github.io/agent-lightning/stable/</a>
+  </div>
+  
+                  <!-- Copied and modified from https://github.com/squidfunk/mkdocs-material/blob/master/src/templates/partials/content.html -->
+
+<!-- Tags -->
+
+
+
+<!-- Actions -->
+
+  
+  
+
+
+<!--
+  Hack: check whether the content contains a h1 headline. If it doesn't, the
+  page title (or respectively site name) is used as the main headline.
+-->
+
+
+<!-- Source file information -->
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 23, 2025 06:57:24 UTC"><span class="timeago" datetime="2025-12-23T06:57:24+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 23, 2025 06:57:24 UTC">2025-12-23</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 15, 2025 10:01:09 UTC"><span class="timeago" datetime="2025-10-15T10:01:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 15, 2025 10:01:09 UTC">2025-10-15</span>
+  </span>
+
+    
+    
+      
+  
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Contributors">
+      
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4a4 4 0 0 1 4 4 4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4"/></svg>
+      
+    </span>
+    <nav>
+      
+        <a href="mailto:yuge.zhang@microsoft.com">Yuge Zhang</a>
+    </nav>
+  </span>
+
+    
+    
+  </aside>
+
+
+<!-- Page content -->
+<h1 id="scaling-out-agent-lightning">Scaling out Agent-lightning<a class="headerlink" href="#scaling-out-agent-lightning" title="Permanent link">&para;</a></h1>
+<p>Agent-lightning splits training into an <strong>algorithm bundle</strong> and a <strong>runner bundle</strong> that exchange work through the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>. This tutorial shows how to increase rollout throughput, place bundles across processes or machines, and keep the algorithm side scalable with external frameworks.</p>
+<h2 id="parallelizing-rollouts-with-trainer">Parallelizing Rollouts with <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a><a class="headerlink" href="#parallelizing-rollouts-with-trainer" title="Permanent link">&para;</a></h2>
+<p>Before we dive into the details of the bundles and execution strategies, let's first revisit how to parallelize rollouts with <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>.</p>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> is the quickest way to dial up parallelism. Even when <code>n_runners = 1</code>, calling <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> runs the algorithm and runners in parallel. The algorithm enqueues rollouts; runners dequeue them and execute your <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../../reference/agent/#agentlightning.LitAgent"><code>LitAgent</code></a>, and the algorithm collects spans via its <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter"><code>Adapter</code></a> before scheduling the next batch.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>One of the most important features of <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> is the ability to abort things gracefully. For example, if you press <code>Ctrl+C</code> in the terminal, the algorithm will abort and the runners will stop executing. If the algorithm crashes, the runners will also stop executing.</p>
+</div>
+<p>Increase throughput by setting <code>n_runners</code> when constructing the trainer. The following example comes from <a href="https://github.com/microsoft/agent-lightning/tree/3b5d733861cf313fc09821a23240bbdf3cb2ee5b/examples/calc_x/train_calc_agent.py">train_calc_agent.py</a>. Since backend LLMs usually use techniques like <a href="https://docs.vllm.ai/en/latest/">continuous batching</a> to increase throughput, you do not have to worry about overwhelming the backend with too many requests.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dataset</span> <span class="k">as</span> <span class="n">HFDataset</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">calc_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">calc_agent</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">HFDataset</span><span class="o">.</span><span class="n">from_parquet</span><span class="p">(</span><span class="s2">&quot;data/train.parquet&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">val_dataset</span> <span class="o">=</span> <span class="n">HFDataset</span><span class="o">.</span><span class="n">from_parquet</span><span class="p">(</span><span class="s2">&quot;data/test.parquet&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">algorithm</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">VERL</span><span class="p">(</span><span class="n">verl_config</span><span class="p">)</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">n_runners</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>  <span class="c1"># launch eight rollout workers</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">tracer</span><span class="o">=</span><span class="n">agl</span><span class="o">.</span><span class="n">OtelTracer</span><span class="p">(),</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">adapter</span><span class="o">=</span><span class="n">agl</span><span class="o">.</span><span class="n">LlmProxyTraceToTriplet</span><span class="p">(),</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="p">)</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="n">trainer</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">calc_agent</span><span class="p">,</span> <span class="n">train_dataset</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">,</span> <span class="n">val_dataset</span><span class="o">=</span><span class="n">val_dataset</span><span class="p">)</span>
+</code></pre></div>
+<p>In <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>, there are multiple other initialization parameters that you can use to customize the training process. For example, you can use <code>max_rollouts</code> to keep smoke tests short. Pass a concrete <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a> instance when you need persistence or want to share the queue across multiple scripts.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Before scaling out, run <a class="autorefs autorefs-internal" title="            dev(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.dev"><code>Trainer.dev()</code></a> with <code>n_runners=1</code> to verify the rollout logic and spans without burning GPU hours.</p>
+</div>
+<h2 id="bundles-and-execution-strategies">Bundles and Execution Strategies<a class="headerlink" href="#bundles-and-execution-strategies" title="Permanent link">&para;</a></h2>
+<p>When <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> starts, it packages its configuration into two callable <strong>bundles</strong>:</p>
+<p><img alt="Illustration of bundles and execution strategies" src="../../assets/execution-bundles.svg" /></p>
+<p>The <strong>algorithm bundle</strong> wraps your <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm"><code>Algorithm</code></a>, adapter, and any LLM proxy into a single callable that can be aborted via a signal event.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">algorithm_bundle</span><span class="p">(</span><span class="n">store</span><span class="p">:</span> <span class="n">LightningStore</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">ExecutionEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="o">...</span>
+</code></pre></div>
+<p>The <strong>runner bundle</strong> wraps the <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a>, tracer, hooks, and agent into a single callable that can be aborted via a signal event. Unlike the algorithm bundle, the runner bundle is expected to be replicated.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">runner_bundle</span><span class="p">(</span><span class="n">store</span><span class="p">:</span> <span class="n">LightningStore</span><span class="p">,</span> <span class="n">worker_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">ExecutionEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="o">...</span>
+</code></pre></div>
+<p>An <strong>execution strategy</strong> then decides where those bundles are placed (threads vs processes vs multiple machines), how many runner replicas to launch, and how lifecycle events such as shutdown are coordinated.</p>
+<p>By default, the trainer builds an <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a> if you do not provide one. Because that store has no locking or cross-process transport, the execution strategy is the component that wraps it in thread-safe or HTTP-safe facades (<a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreThreaded" href="../../reference/store/#agentlightning.LightningStoreThreaded"><code>LightningStoreThreaded</code></a>, <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a>) before handing it to bundles. For a deeper look at these facades, see <a href="../../deep-dive/store/">Understanding the Store</a> and <a href="../../deep-dive/birds-eye-view/">Birds' Eye View</a>.</p>
+<p>Agent-lightning provides two built-in execution strategies: <a class="autorefs autorefs-internal" title="            agentlightning.SharedMemoryExecutionStrategy" href="../../reference/trainer/#agentlightning.SharedMemoryExecutionStrategy"><code>SharedMemoryExecutionStrategy</code></a> and <a class="autorefs autorefs-internal" title="            agentlightning.ClientServerExecutionStrategy" href="../../reference/trainer/#agentlightning.ClientServerExecutionStrategy"><code>ClientServerExecutionStrategy</code></a>. You can pass a string alias, a configuration dictionary, or a pre-built strategy instance:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">algorithm</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Baseline</span><span class="p">()</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># Short alias for the shared-memory strategy.</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Because the runner lives on the main thread in this mode,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># n_runners must be 1 unless you move the algorithm to the main thread.</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span><span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;shm&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># Dict with overrides; keep the algorithm on the main thread so multiple runner threads can spawn.</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1"># Specifying `n_runners` inside strategy is equivalent to passing `n_runners` to the trainer.</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="n">strategy</span><span class="o">=</span><span class="p">{</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;shm&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>        <span class="s2">&quot;n_runners&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>        <span class="s2">&quot;main_thread&quot;</span><span class="p">:</span> <span class="s2">&quot;algorithm&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>    <span class="p">},</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="p">)</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="c1"># Pass an existing strategy instance – Trainer respects the strategy&#39;s own `n_runners`.</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">SharedMemoryExecutionStrategy</span><span class="p">(</span><span class="n">main_thread</span><span class="o">=</span><span class="s2">&quot;algorithm&quot;</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span><span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="n">strategy</span><span class="p">)</span>
+</code></pre></div>
+<p>If you omit the strategy, the trainer defaults to <code>ClientServerExecutionStrategy(n_runners=trainer.n_runners)</code>. You can still re-specify the client-server strategy through aliases or configuration to tweak ports and other settings:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">n_runners</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">strategy</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;cs&quot;</span><span class="p">,</span> <span class="s2">&quot;server_port&quot;</span><span class="p">:</span> <span class="mi">9999</span><span class="p">},</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">)</span>
+</code></pre></div>
+<p>Environment variables give you another layer of control. For example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;AGL_SERVER_PORT&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;10000&quot;</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;AGL_CURRENT_ROLE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;algorithm&quot;</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;AGL_MANAGED_STORE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;0&quot;</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span><span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;cs&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>The resulting <a class="autorefs autorefs-internal" title="            agentlightning.ClientServerExecutionStrategy" href="../../reference/trainer/#agentlightning.ClientServerExecutionStrategy"><code>ClientServerExecutionStrategy</code></a> picks up the port, role, and managed-store flag from the environment.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The same configuration patterns apply to other trainer components. For example,
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span><span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span> <span class="n">tracer</span><span class="o">=</span><span class="n">agl</span><span class="o">.</span><span class="n">OtelTracer</span><span class="p">())</span>
+</code></pre></div>
+wires in a custom tracer, while
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span><span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span> <span class="n">adapter</span><span class="o">=</span><span class="s2">&quot;agentlightning.adapter.TraceToMessages&quot;</span><span class="p">)</span>
+</code></pre></div>
+swaps in a different adapter. Passing a dict lets you tweak the init parameters of defaults without naming the class explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">adapter</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;agent_match&quot;</span><span class="p">:</span> <span class="s2">&quot;plan_agent&quot;</span><span class="p">,</span> <span class="s2">&quot;repair_hierarchy&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="p">)</span>
+</code></pre></div>
+</div>
+<p>The next sections walk through the two built-in strategies and how they affect placement and store access.</p>
+<h2 id="client-server-architecture">Client-server Architecture<a class="headerlink" href="#client-server-architecture" title="Permanent link">&para;</a></h2>
+<p>The default <a class="autorefs autorefs-internal" title="            agentlightning.ClientServerExecutionStrategy" href="../../reference/trainer/#agentlightning.ClientServerExecutionStrategy"><code>ClientServerExecutionStrategy</code></a> starts a <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> alongside the algorithm and spawns runner processes that talk to it through <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a>. All runners share the HTTP endpoint, so the queue and spans stay consistent across processes or machines.</p>
+<p>If you simply instantiate <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> (as above), it will send the algorithm bundle and runner bundle to <a class="autorefs autorefs-internal" title="            agentlightning.ClientServerExecutionStrategy" href="../../reference/trainer/#agentlightning.ClientServerExecutionStrategy"><code>ClientServerExecutionStrategy</code></a>, which will then:</p>
+<ol>
+<li>Launch <span class="arithmatex">\(N+1\)</span> processes: <span class="arithmatex">\(N\)</span> runner processes and 1 algorithm process (one of them could live in the main process).</li>
+<li>The algorithm process will take the store received from <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>, wrap it in a <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a>, and start serving it over HTTP.</li>
+<li>The runner processes discard the store and create a new store, which is a client that connects to the algorithm process through <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a>, and start executing the runner bundle.</li>
+<li>The strategy automatically escalates shutdown (cooperative stop → <code>SIGINT</code> → <code>terminate()</code> → <code>kill()</code>) so long-running runners do not linger.</li>
+</ol>
+<p>You can override server placement or ports, and whether to automatically wrap the store, through constructor arguments or environment variables:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">strategy</span><span class="o">=</span><span class="p">{</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;cs&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="s2">&quot;server_host&quot;</span><span class="p">:</span> <span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="s2">&quot;server_port&quot;</span><span class="p">:</span> <span class="mi">9999</span><span class="p">,</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>        <span class="s2">&quot;main_process&quot;</span><span class="p">:</span> <span class="s2">&quot;runner&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="p">},</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="p">)</span>
+</code></pre></div>
+<p>Set <code>AGL_SERVER_HOST</code> and <code>AGL_SERVER_PORT</code> if you prefer environment-based configuration. You can also use <code>AGL_MANAGED_STORE</code> if you do not want the execution strategy to wrap the store for you. An example is shown in <a class="autorefs autorefs-internal" title="Debug the Algorithm-Runner Boundary" href="../debug/#debug-with-external-store">Debugging with External Store</a>.</p>
+<p>Algorithms sometimes require heterogeneous computation resources, such as GPU accelerators, while runners sometimes require a specific environment to run because many agent frameworks are fragile in their dependencies. A role-based launch pattern helps you place the algorithm on a dedicated machine with more GPU memory, while runners can live on another machine with more flexible dependencies. This is possible via <code>AGL_CURRENT_ROLE="algorithm"</code> or <code>AGL_CURRENT_ROLE="runner"</code> environment variables. When running on different machines, you also need to set <code>AGL_SERVER_HOST</code> and <code>AGL_SERVER_PORT</code> to the IP address and port of the algorithm machine. You might recognize that this convention is very similar to <code>MASTER_ADDR</code> and <code>MASTER_PORT</code> in <a href="https://docs.pytorch.org/docs/stable/notes/ddp.html">PyTorch distributed training</a>.</p>
+<h3 id="launching-algorithm-and-runner-roles-on-separate-machines">Launching Algorithm and Runner Roles on Separate Machines<a class="headerlink" href="#launching-algorithm-and-runner-roles-on-separate-machines" title="Permanent link">&para;</a></h3>
+<p>When you want to stretch the algorithm onto a GPU-rich machine and keep rollout workers close to the data source (or on machines with a more permissive dependency stack), launch the same training script in different terminals with role-specific environment variables. The client–server strategy will route each process to the right side of the queue as long as they share the same <code>AGL_SERVER_HOST</code>/<code>AGL_SERVER_PORT</code> pair.</p>
+<p><strong>1. Pick an address and port for the store.</strong> Decide which machine will host the algorithm. Choose a TCP port that can be reached by the runner machines (for example, open it in your firewall configuration). In this example we will use <code>10.0.0.4:4747</code>.</p>
+<p><strong>2. Start the algorithm process.</strong> On the machine that should run the algorithm, expose the store by binding to all network interfaces and mark the role as <code>algorithm</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_HOST</span><span class="o">=</span><span class="m">0</span>.0.0.0
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PORT</span><span class="o">=</span><span class="m">4747</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_CURRENT_ROLE</span><span class="o">=</span>algorithm
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>python<span class="w"> </span>train_calc_agent.py
+</code></pre></div>
+<p>Leaving <code>AGL_MANAGED_STORE</code> unset (or setting it to <code>1</code>) lets the strategy create the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> for you. Otherwise, you can use the method in the previous section to create a store on your own.</p>
+<p><strong>3. Start rollout workers on remote machines.</strong> Every runner machine should point to the algorithm host and declare itself as the <code>runner</code> role. You can start multiple processes per machine or repeat the command on additional hosts.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_HOST</span><span class="o">=</span><span class="m">10</span>.0.0.4
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PORT</span><span class="o">=</span><span class="m">4747</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_CURRENT_ROLE</span><span class="o">=</span>runner
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>python<span class="w"> </span>train_calc_agent.py<span class="w"> </span>--n-runners<span class="w"> </span><span class="m">4</span>
+</code></pre></div>
+<p>The runner process automatically connects via <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a>. Adjust <code>--n-runners</code> to spawn the desired number of worker processes on that machine.</p>
+<p><strong>4. Scale out as needed.</strong> Repeat step 3 on as many machines as you need. When you are done, stop the algorithm process. However, since the runners are on different machines, the strategy WILL NOT send a cooperative stop signal to the connected runners. So you need to kill the runners on your own.</p>
+<p>This role-based launch mirrors what <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> does inside a single machine while letting you spread work across a fleet. Because every process shares the same training script, you keep a single source of truth for dataset loading, adapters, and tracers, but you can tune compute resources independently for the algorithm and rollout workers.</p>
+<h3 id="shared-memory-strategy">Shared-memory Strategy<a class="headerlink" href="#shared-memory-strategy" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.SharedMemoryExecutionStrategy" href="../../reference/trainer/#agentlightning.SharedMemoryExecutionStrategy"><code>SharedMemoryExecutionStrategy</code></a> keeps everything inside one process. The runner runs on the main thread (by default) while the algorithm lives on a Python thread guarded by <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreThreaded" href="../../reference/store/#agentlightning.LightningStoreThreaded"><code>LightningStoreThreaded</code></a>.</p>
+<p>Use it when you want easier debugging with shared breakpoints and no serialization overhead, or minimal startup time for unit tests. It's not a good choice for many algorithms that require heavy model training because <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreThreaded" href="../../reference/store/#agentlightning.LightningStoreThreaded"><code>LightningStoreThreaded</code></a> does not work for multiprocessing. Using it with multiprocessing algorithms will lead to undefined behavior.</p>
+<p>Sample configuration:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;shm&quot;</span><span class="p">,</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="p">)</span>
+</code></pre></div>
+<p>You can further customize the init parameters of <a class="autorefs autorefs-internal" title="            agentlightning.SharedMemoryExecutionStrategy" href="../../reference/trainer/#agentlightning.SharedMemoryExecutionStrategy"><code>SharedMemoryExecutionStrategy</code></a>. With <code>main_thread="runner"</code>, the runner occupies the main thread and <code>n_runners</code> must be <code>1</code>. The strategy respects <code>AGL_MANAGED_STORE</code>; set it to <code>0</code> to opt out of the <code>LightningStoreThreaded</code> wrapper.</p>
+<h2 id="parallelizing-algorithms">Parallelizing Algorithms<a class="headerlink" href="#parallelizing-algorithms" title="Permanent link">&para;</a></h2>
+<p>Runner parallelism scales rollout throughput, but the algorithm loop remains a single-process loop inside the execution strategy. We understand that many algorithms have parallelization built in, but that's outside the parallelization scope of Agent-lightning.</p>
+<p>Agent-lightning strives to make algorithms’ own parallelization work well under our execution strategies. The biggest challenge turns out to come from the store. For example, <a class="autorefs autorefs-internal" title="            VERL" href="../../algorithm-zoo/verl/#agentlightning.algorithm.verl.VERL"><code>VERL</code></a> uses <a href="https://www.ray.io/">Ray</a> and launches <a href="https://docs.pytorch.org/tutorials/intermediate/FSDP_tutorial.html">FSDP</a> and <a href="https://vllm.ai/">vLLM</a> components internally. <a class="autorefs autorefs-internal" title="            agentlightning.ClientServerExecutionStrategy" href="../../reference/trainer/#agentlightning.ClientServerExecutionStrategy"><code>ClientServerExecutionStrategy</code></a> has to make sure that the server is not simultaneously serving in multiple processes or Ray workers, and that there is only one single authoritative source of truth for all subprocesses to connect to. Subprocesses connect to the store via a small <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a> bundled within <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <a class="autorefs autorefs-internal" title="Client-server Strategy" href="../../deep-dive/birds-eye-view/#birds-eye-view-client-server-strategy">birds' eye view</a> illustrates how adapters, proxies, and stores interact when the algorithm spawns additional workers. Use that diagram as a checklist when introducing new distributed components.</p>
+</div>
+<h2 id="parallelizing-lightningstore">Parallelizing <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a><a class="headerlink" href="#parallelizing-lightningstore" title="Permanent link">&para;</a></h2>
+<p>By default, Agent-lightning persists rollouts and spans in an in-memory store. <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> spins it up automatically, or you can launch it yourself via the <a href="../../reference/cli/"><code>agl store</code> command</a>. <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a> keeps all state inside the current process, which makes local iteration fast but introduces two production constraints:</p>
+<ol>
+<li>Spans are evicted once the process crosses its memory cap, so long runs risk data loss unless the host has abundant RAM.</li>
+<li>Although the store is well optimized via asynchronous programming, the store lives in a single process and remains bound by the GIL, preventing it from saturating multi-core machines.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">General note for all server-client stores</p>
+<p>If your algorithm and runners communicate through HTTP protocol (which should be the default for 99% of the cases), you need to ensure the file limit is sufficiently large to avoid the "Too many open files" error. You can set the file limit by running the following command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nb">ulimit</span><span class="w"> </span>-n<span class="w"> </span><span class="m">100000</span>
+</code></pre></div>
+</div>
+<p>For resilient runs, switch to a persistent backend such as <a class="autorefs autorefs-internal" title="            agentlightning.store.mongo.MongoLightningStore" href="../../reference/store/#agentlightning.store.mongo.MongoLightningStore"><code>MongoLightningStore</code></a>, which writes data to MongoDB instead of local RAM. Agent-lightning relies on <a href="https://pymongo.readthedocs.io/en/stable/">pymongo</a> to interact with MongoDB, which can be installed via:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pip<span class="w"> </span>install<span class="w"> </span>agentlightning<span class="o">[</span>mongo<span class="o">]</span>
+</code></pre></div>
+<p>To use the MongoDB store, you need to pass the MongoDB URI to the store constructor. The URI should be in the format of <code>mongodb://&lt;host&gt;:&lt;port&gt;/&lt;database&gt;?replicaSet=&lt;replicaSet&gt;</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.store.mongo</span><span class="w"> </span><span class="kn">import</span> <span class="n">MongoLightningStore</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="n">store</span><span class="o">=</span><span class="n">MongoLightningStore</span><span class="p">(</span><span class="n">mongo_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017/?replicaSet=rs0&quot;</span><span class="p">),</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="p">)</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Setting up MongoDB</p>
+<p>MongoDB is a popular document-oriented database. Before running Agent-lightning with <a class="autorefs autorefs-internal" title="            agentlightning.store.mongo.MongoLightningStore" href="../../reference/store/#agentlightning.store.mongo.MongoLightningStore"><code>MongoLightningStore</code></a>, make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via <a href="https://github.com/microsoft/agent-lightning/tree/3b5d733861cf313fc09821a23240bbdf3cb2ee5b/docker/compose.mongo.yml">compose.mongo.yml</a>. Unless targeting serious production use, we recommend creating the data folders and setting them to <code>777</code> permission to avoid permission issues.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>data/mongo-host
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>chmod<span class="w"> </span><span class="m">777</span><span class="w"> </span>data/mongo-host
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>compose.mongo.yml<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>Alternatively, you can also install MongoDB manually following the <a href="https://www.mongodb.com/docs/manual/installation/">official documentation</a>. If you installed MongoDB manually, an important note is that you need to ensure that the MongoDB instance has enabled replica set feature, since Agent-lightning uses the transactional operations internally. The simplest approach is to use the following script (executed in the MongoDB shell) to initialize the replica set:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nx">rs</span><span class="p">.</span><span class="nx">initiate</span><span class="p">({</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nx">_id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;rs0&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nx">members</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">_id</span><span class="o">:</span><span class="w"> </span><span class="mf">0</span><span class="p">,</span><span class="w"> </span><span class="nx">host</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;localhost:27017&quot;</span><span class="w"> </span><span class="p">}],</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p">});</span>
+</code></pre></div>
+</div>
+<p>To scale out further, launch the store server via <a href="../../reference/cli/"><code>agl store --backend mongo</code></a> (see <a class="autorefs autorefs-internal" title="Debug the Algorithm-Runner Boundary" href="../debug/#debug-with-external-store">Debugging with External Store</a>). The CLI accepts <code>--n-workers</code>, which starts the server under <code>gunicorn</code> with multiple worker processes so concurrent runners can push and pull at higher throughput. This option applies only to persistent backends; an in-memory store, on the other hand, cannot be sharded across workers because its state lives inside one process.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code>--n-workers</code> here is the number of worker processes for the store server, NOT related to the number of rollout runners.</p>
+</div>
+<h2 id="increasing-throughput-of-llm-proxy">Increasing Throughput of LLM Proxy<a class="headerlink" href="#increasing-throughput-of-llm-proxy" title="Permanent link">&para;</a></h2>
+<p>Agent-lightning includes an optional <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> that wraps <a href="https://docs.litellm.ai/">LiteLLM</a> to provide a unified OpenAI-compatible endpoint for your agents. When rollout throughput increases, the proxy can become a bottleneck. You can scale it out using the same pattern as the store server.</p>
+<p>To increase proxy throughput, pass <code>num_workers</code> when constructing the proxy:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">proxy</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">LLMProxy</span><span class="p">(</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    <span class="n">port</span><span class="o">=</span><span class="mi">4000</span><span class="p">,</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>    <span class="n">launch_mode</span><span class="o">=</span><span class="s2">&quot;mp&quot;</span><span class="p">,</span>  <span class="c1"># multiprocessing mode</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>    <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>  <span class="c1"># four gunicorn workers handle concurrent requests</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="p">)</span>
+</code></pre></div>
+<p>You can also configure the proxy through <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="n">n_runners</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>  <span class="c1"># The runners here is the rollout runners, not related to LLM proxy replicas</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="n">llm_proxy</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;port&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;num_workers&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">},</span>  <span class="c1"># launch mode is actually mp by default</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="p">)</span>
+</code></pre></div>
+<p>When <code>num_workers &gt; 1</code>, the launcher starts gunicorn with the specified number of worker processes. Each worker runs its own event loop, allowing the proxy to handle many concurrent LLM requests without being blocked by Python's GIL.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>When using <code>mp</code> launch mode, <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> will start the server in a separate process. To make sure the proxy is still accessing the same store as the main process, you need to set the store to be <a class="autorefs autorefs-internal" title="Capabilities" href="../../deep-dive/store/#store-capabilities">zero-copy compatible</a>, which means, either the store is a native zero-copy store like <a class="autorefs autorefs-internal" title="            agentlightning.store.mongo.MongoLightningStore" href="../../reference/store/#agentlightning.store.mongo.MongoLightningStore"><code>MongoLightningStore</code></a> or the store is wrapped via <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> or <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Shared Server Infrastructure</p>
+<p>Both <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> and <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> rely on a common utility called <a class="autorefs autorefs-internal" title="            agentlightning.utils.server_launcher.PythonServerLauncherArgs
+
+
+  
+      dataclass
+  " href="../../reference/utilities/#agentlightning.utils.server_launcher.PythonServerLauncherArgs"><code>PythonServerLauncherArgs</code></a>. This dataclass captures the settings needed to launch a FastAPI application:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">PythonServerLauncherArgs</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="n">args</span> <span class="o">=</span> <span class="n">PythonServerLauncherArgs</span><span class="p">(</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="n">port</span><span class="o">=</span><span class="mi">8000</span><span class="p">,</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    <span class="n">host</span><span class="o">=</span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    <span class="n">n_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>          <span class="c1"># spawn 4 gunicorn workers</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="n">launch_mode</span><span class="o">=</span><span class="s2">&quot;thread&quot;</span><span class="p">,</span> <span class="c1"># or &quot;mp&quot; for multiprocessing, &quot;asyncio&quot; for in-loop</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="p">)</span>
+</code></pre></div>
+<p>Under the hood, <a class="autorefs autorefs-internal" title="            agentlightning.utils.server_launcher.PythonServerLauncher" href="../../reference/utilities/#agentlightning.utils.server_launcher.PythonServerLauncher"><code>PythonServerLauncher</code></a> reads these arguments and chooses between uvicorn (single worker) and gunicorn (multiple workers) automatically.</p>
+</div>
+
+<!-- Was this page helpful? -->
+
+
+
+
+<!-- Comment system -->
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
+      
+        <script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
+      
+        <script src="../../javascripts/move-source-file.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+    
+  <script>
+    // Show warning banner if not viewing stable documentation
+    document.addEventListener("DOMContentLoaded", function() {
+      const currentURL = window.location.href;
+      const warningDiv = document.getElementById("version-warning");
+
+      // Check if we're on the stable docs or the redirect page
+      if (currentURL.includes('agent-lightning/latest/')) {
+        // Show warning for explicitly latest docs
+        warningDiv.style.display = "block";
+      }
+    });
+  </script>
+
+  </body>
+</html>

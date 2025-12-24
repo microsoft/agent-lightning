@@ -1,0 +1,2782 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/changelog/">
+      
+      
+        <link rel="prev" href="../community/maintainers/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Changelog - Agent-lightning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../css/timeago.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Agent-lightning" class="md-header__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agent-lightning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Agent-lightning" class="md-nav__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    Agent-lightning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Quickstart
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-to/train-first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train the First Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-to/write-first-algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write the First Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How-To Recipes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How-To Recipes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-to/examples-catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-to/unsloth-sft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFT with Unsloth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-to/train-sql-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train SQL Agent with RL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Learning More
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Learning More
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/write-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/debug/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/traces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Traces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/emitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Emitters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/parallelize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallelize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm Zoo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Algorithm Zoo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../algorithm-zoo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../algorithm-zoo/apo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    APO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../algorithm-zoo/verl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VERL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep Dive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deep-dive/birds-eye-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bird's Eye View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deep-dive/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deep-dive/serving-llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving LLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API References
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API References
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/instrumentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Instrumentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/semconv/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semantic Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/restful/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RESTful
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Miscellaneous
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Miscellaneous
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community/maintainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintainer Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v030-12242025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.3.0 (12/24/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.3.0 (12/24/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#highlights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Highlights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#store-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Store Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#maintenance-and-bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance and Bug fixes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance and Bug fixes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-store-interfaces-etc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core (Store, Interfaces, etc.)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy-adapters-and-algorithms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy, Adapters and Algorithms
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runners-tracers-and-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runners, Tracers and Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#miscellaneous" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Miscellaneous
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v022-11122025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.2.2 (11/12/2025)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v021-10302025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.2.1 (10/30/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.2.1 (10/30/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v020-10222025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.2.0 (10/22/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.2.0 (10/22/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Enhancements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation &amp; Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#developer-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ecosystem-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ecosystem &amp; Integrations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v012-08122025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.1.2 (08/12/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.1.2 (08/12/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whats-changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v011-08062025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.1.1 (08/06/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.1.1 (08/06/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whats-changed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v010-08042025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.1.0 (08/04/2025)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v030-12242025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.3.0 (12/24/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.3.0 (12/24/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#highlights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Highlights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#store-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Store Benchmark
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#maintenance-and-bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance and Bug fixes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance and Bug fixes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-store-interfaces-etc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core (Store, Interfaces, etc.)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy-adapters-and-algorithms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy, Adapters and Algorithms
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runners-tracers-and-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runners, Tracers and Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#miscellaneous" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Miscellaneous
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v022-11122025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.2.2 (11/12/2025)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v021-10302025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.2.1 (10/30/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.2.1 (10/30/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v020-10222025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.2.0 (10/22/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.2.0 (10/22/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Enhancements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation &amp; Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#developer-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ecosystem-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ecosystem &amp; Integrations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v012-08122025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.1.2 (08/12/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.1.2 (08/12/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whats-changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-contributors_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Contributors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v011-08062025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.1.1 (08/06/2025)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent-lightning v0.1.1 (08/06/2025)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whats-changed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-lightning-v010-08042025" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent-lightning v0.1.0 (08/04/2025)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  <div id="version-warning" class="version-warning" style="display: none;">
+    ⚠️ You are viewing development documentation. For stable documentation, please visit
+    <a href="https://microsoft.github.io/agent-lightning/stable/">https://microsoft.github.io/agent-lightning/stable/</a>
+  </div>
+  
+                  <!-- Copied and modified from https://github.com/squidfunk/mkdocs-material/blob/master/src/templates/partials/content.html -->
+
+<!-- Tags -->
+
+
+
+<!-- Actions -->
+
+  
+  
+
+
+<!--
+  Hack: check whether the content contains a h1 headline. If it doesn't, the
+  page title (or respectively site name) is used as the main headline.
+-->
+
+
+<!-- Source file information -->
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 24, 2025 01:46:58 UTC"><span class="timeago" datetime="2025-12-24T01:46:58+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 24, 2025 01:46:58 UTC">2025-12-24</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 30, 2025 00:31:45 UTC"><span class="timeago" datetime="2025-10-30T00:31:45+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 30, 2025 00:31:45 UTC">2025-10-30</span>
+  </span>
+
+    
+    
+      
+  
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Contributors">
+      
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4a4 4 0 0 1 4 4 4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4"/></svg>
+      
+    </span>
+    <nav>
+      
+        <a href="mailto:yuge.zhang@microsoft.com">Yuge Zhang</a>
+    </nav>
+  </span>
+
+    
+    
+  </aside>
+
+
+<!-- Page content -->
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="agent-lightning-v030-12242025">Agent-lightning v0.3.0 (12/24/2025)<a class="headerlink" href="#agent-lightning-v030-12242025" title="Permanent link">&para;</a></h2>
+<p>Agent-lightning v0.3.0 is a major release that introduces several new features and bug fixes. The release is a collaborative effort between Agent-lightning core teams and the community. Thanks to all the contributors who made this release possible.</p>
+<h3 id="highlights">Highlights<a class="headerlink" href="#highlights" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Tinker integration</strong>: Support Tinker as an alternative backend for Reinforcement Learning (#226 #245 #264 #269 #327). See <a href="https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/tinker">example code</a>, <a href="https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-1-1d8c9a397f0e">blog 1</a> and <a href="https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-2-332c5437f0dc">blog 2</a>.</li>
+<li><strong>Azure OpenAI integration</strong>: Support Azure OpenAI as a backend for LLM inference and supervised fine-tuning (#256 #327). <a href="https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/azure">Example code</a>.</li>
+<li><strong>MongoDB-based Lightning Store</strong> is added as an alternative backend for Lightning Store (#323). <a href="https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/parallelize/#parallelizing-lightningstore">Documentation</a>.</li>
+<li><strong>Contrib package</strong>: Add contrib package for community projects. Search-R1 is integrated as a contrib recipe. More coming. (#239 #396 #410 #412 #417).</li>
+<li><strong>RESTful API</strong>: Stabilize and document RESTful API for Lightning Store (#241 #275). <a href="https://microsoft.github.io/agent-lightning/v0.3.0/reference/restful/">Documentation</a>.</li>
+<li><strong>OTel Semantic Conventions</strong> that are specifically designed for Agent-optimization areas (#340). <a href="http://microsoft.github.io/agent-lightning/v0.3.0/reference/semconv/">Documentation</a>.</li>
+<li><em>[Preview]</em> <strong>Agent-lightning Dashboard</strong> is now available (#288 #289 #291 #296 #371 #375). It's the official web application for inspecting and debugging Agent-lightning experiments. See details <a href="https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/debug/">here</a>.</li>
+<li><em>[Preview]</em> <strong>Multi-modality example</strong> featuring VERL and a LangGraph agent on ChartQA dataset (#379). <a href="https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/chartqa">Example code</a>.</li>
+<li><em>[Preview]</em> Integrate <strong>Claude Code</strong> as a LitAgent and support training on SWE-Bench (#332 #346 #348). <a href="https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/claude_code">Example code</a>.</li>
+<li><em>[Preview]</em> <strong>Weave tracer</strong> as a substitute for AgentOps tracer (#277 #411 #420 #423). <a href="https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/traces/#weave-tracer-experimental">Documentation</a>.</li>
+<li><em>[Preview]</em> <strong>Trajectory Level Aggregation</strong> for more efficient training with VERL. See <a href="https://agent-lightning.github.io/posts/trajectory_level_aggregation/">blog</a> and <a href="https://microsoft.github.io/agent-lightning/v0.3.0/algorithm-zoo/verl/">documentation</a>.</li>
+</ul>
+<h3 id="store-benchmark">Store Benchmark<a class="headerlink" href="#store-benchmark" title="Permanent link">&para;</a></h3>
+<p>In this release, the Lightning Store core was redesigned for significantly greater efficiency and scalability (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). The benchmark results below demonstrate the impact: with large numbers of concurrent runners, v0.3.0 delivers up to a 15x increase in throughput compared to v0.2.2.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Throughput (#rollout/sec)</th>
+<th style="text-align: left;">v0.2.2</th>
+<th style="text-align: left;">v0.3.0 (in-memory)</th>
+<th style="text-align: left;">v0.3.0 (Mongo)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Minimal (batch, #runner=32, #turns=6)</td>
+<td style="text-align: left;">8.73</td>
+<td style="text-align: left;">9.06</td>
+<td style="text-align: left;">8.71</td>
+</tr>
+<tr>
+<td style="text-align: left;">Medium (batch, #runners=100, #turns=10)</td>
+<td style="text-align: left;">12.03</td>
+<td style="text-align: left;">23.26</td>
+<td style="text-align: left;">32.79</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mid-high (batch, #runners=300, #turns=6)</td>
+<td style="text-align: left;">10.61</td>
+<td style="text-align: left;">24.42</td>
+<td style="text-align: left;">40.24</td>
+</tr>
+<tr>
+<td style="text-align: left;">Large (batch, #runners=1000, #turns=3)</td>
+<td style="text-align: left;">3.36</td>
+<td style="text-align: left;">14.60</td>
+<td style="text-align: left;">50.05</td>
+</tr>
+<tr>
+<td style="text-align: left;">Long queue (queue, #runners=256, #turns=4)</td>
+<td style="text-align: left;">7.42</td>
+<td style="text-align: left;">30.86</td>
+<td style="text-align: left;">57.01</td>
+</tr>
+<tr>
+<td style="text-align: left;">Heavy trace (queue, #runners=512, #turns=20)</td>
+<td style="text-align: left;">5.93</td>
+<td style="text-align: left;">13.28</td>
+<td style="text-align: left;">29.41</td>
+</tr>
+</tbody>
+</table>
+<p><em>Notes:</em></p>
+<ol>
+<li>Benchmarks were run on a single Standard_D32as_v4 Azure VM (Large and heavy trace tests used Standard_D64ads_v5), executed via GitHub Actions.</li>
+<li>Two algorithm patterns are evaluated: the batch pattern submits a group of rollouts and waits for all to finish before starting the next group, while the queue pattern maintains a set number of in-flight rollouts, submitting new ones as soon as capacity frees up. Configuration details are available <a href="https://github.com/microsoft/agent-lightning/blob/v0.3.0/.github/workflows/benchmark.yml">here</a>.</li>
+<li>The number of turns is directly proportional to the number of spans each rollout generates.</li>
+</ol>
+<h3 id="maintenance-and-bug-fixes">Maintenance and Bug fixes<a class="headerlink" href="#maintenance-and-bug-fixes" title="Permanent link">&para;</a></h3>
+<h4 id="core-store-interfaces-etc">Core (Store, Interfaces, etc.)<a class="headerlink" href="#core-store-interfaces-etc" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Add Trainer port option for client-server strategies (#198)</li>
+<li>Fix store port conflict handling (#227)</li>
+<li>Unified PythonServerLauncher (#286 #292 #303)</li>
+<li>Make health timeout configurable (#305)</li>
+<li>Refactor logging (#306)</li>
+<li>Support OTLP in LightningStore (#313)</li>
+<li>Centralized metrics helper (#368)</li>
+<li>Fix redundant cancel tracebacks on Ctrl+C (#370)</li>
+</ul>
+<h4 id="proxy-adapters-and-algorithms">Proxy, Adapters and Algorithms<a class="headerlink" href="#proxy-adapters-and-algorithms" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Fix training metrics before and after processing in VERL (#145)</li>
+<li>Forward streaming requests for Anthropic and OpenAI APIs (as non-streaming requests) (#299)</li>
+<li>Check traces with reward for VERL (#317)</li>
+<li>Patch LiteLLM root span (#341)</li>
+<li>Handle ref_in_actor flag for LoRA compatibility (#386)</li>
+<li>Support <code>with_llm_proxy</code> and <code>with_store</code> in algorithms (#398)</li>
+<li>Support image URL export in TracerTraceToTriplets (#400)</li>
+<li>Fix match_rewards assign_to elements in TraceTree (#403)</li>
+<li>Support customizing trainer and daemon in VERL (#407)</li>
+</ul>
+<h4 id="runners-tracers-and-agents">Runners, Tracers and Agents<a class="headerlink" href="#runners-tracers-and-agents" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Refactor tracer initialization (#321)</li>
+<li>Fix OpenAI Agents 0.6 compatibility (#322)</li>
+<li><code>emit_operation</code>, <code>emit_annotation</code>, tags and links (#359)</li>
+<li>Sunset HTTP tracer (#402)</li>
+</ul>
+<h4 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Fix typos in train-first-agent.md (#263)</li>
+<li>Fix room_selector example which always runs the first task (#270)</li>
+<li>Fix typo in SQL agent example (#285)</li>
+<li>Add the README and script files for training SQL agent on NPU (#272)</li>
+<li>Examples Catalog and Refine Contribution Guide (#331)</li>
+<li>Upgrade LangChain to 1.x (#364)</li>
+<li>Update RAG example to Agent-lightning v0.2.x (#349)</li>
+</ul>
+<h4 id="miscellaneous">Miscellaneous<a class="headerlink" href="#miscellaneous" title="Permanent link">&para;</a></h4>
+<ul>
+<li>DeepWiki Badge (#263)</li>
+<li>Add AGENTS.md (#374)</li>
+</ul>
+<h3 id="new-contributors">New Contributors<a class="headerlink" href="#new-contributors" title="Permanent link">&para;</a></h3>
+<p>Warm welcome to our first-time contributors: @cptnm3, @TerryChan, @genji970, @zxgx, @xiaochulaoban, @lspinheiro, @Kwanghoon-Choi, @Vasuk12, @totoluo, @jinghuan-Chen 🎉</p>
+<p><strong>Full Changelog</strong>: https://github.com/microsoft/agent-lightning/compare/v0.2.0...v0.3.0</p>
+<hr />
+<h2 id="agent-lightning-v022-11122025">Agent-lightning v0.2.2 (11/12/2025)<a class="headerlink" href="#agent-lightning-v022-11122025" title="Permanent link">&para;</a></h2>
+<p>Agent-lightning v0.2.2 is a stabilization release for v0.2.1. It introduces several bug fixes.</p>
+<ul>
+<li>Fix compatibility issues with VERL 0.6.0.</li>
+<li>Fix model name for pre-downloaded models in VERL.</li>
+<li>Fix preparing status transition on rollout when creating attempts.</li>
+<li>Fix OpenAI Agents SDK compatibility issues.</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/microsoft/agent-lightning/compare/v0.2.1...v0.2.2</p>
+<hr />
+<h2 id="agent-lightning-v021-10302025">Agent-lightning v0.2.1 (10/30/2025)<a class="headerlink" href="#agent-lightning-v021-10302025" title="Permanent link">&para;</a></h2>
+<p>Agent-lightning v0.2.1 is a stabilization release for v0.2.0. It introduces several bug fixes and new features, plus a number of unlisted CI improvements.</p>
+<h3 id="bug-fixes">Bug fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Fix LiteLLM issues when restarting the proxy multiple times in the same process (#174 #206)</li>
+<li>Fix LiteLLM model name selection when multiple servers use the same model (#197)</li>
+<li>Fix store port conflict handling (#227)</li>
+</ul>
+<h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Add trainer port option for client-server strategies (#198)</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Add tutorial for launching workers on separate machines (#213)</li>
+<li>Add link to VERL framework (#210)</li>
+<li>Add link to vLLM blog (#215)</li>
+<li>Fix a couple of typos and avoid emacs backup files (#237)</li>
+</ul>
+<h3 id="new-contributors_1">New Contributors<a class="headerlink" href="#new-contributors_1" title="Permanent link">&para;</a></h3>
+<p>A warm welcome to our first-time contributors: @scott-vsi, @ddsfda99, @jeis4wpi 🎉</p>
+<p><strong>Full Changelog</strong>: https://github.com/microsoft/agent-lightning/compare/v0.2.0...v0.2.1</p>
+<hr />
+<h2 id="agent-lightning-v020-10222025">Agent-lightning v0.2.0 (10/22/2025)<a class="headerlink" href="#agent-lightning-v020-10222025" title="Permanent link">&para;</a></h2>
+<p>Agent-Lightning v0.2.0 introduces major framework improvements, new execution strategies, expanded documentation, and enhanced reliability across the agent training and deployment workflow. This release includes <strong>78 pull requests</strong> since v0.1.2.</p>
+<h3 id="core-enhancements">Core Enhancements<a class="headerlink" href="#core-enhancements" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Lightning Store</strong>: Added unified interface and implementation for Agent-lightning's core storage.</li>
+<li><strong>Emitter</strong>: Emitting any objects as spans to the store.</li>
+<li><strong>Adapter</strong> and <strong>Tracer</strong>: Adapting to OpenAI-like messages, and OpenTelemetry dummy tracer.</li>
+<li><strong>LLM Proxy</strong>: Added LLM Proxy as the first-class citizen in Agent-lightning.</li>
+<li><strong>Agent Runner</strong>: New version providing a more modular and robust runner design.</li>
+<li><strong>Embedded Algorithms</strong>: Algorithms are now embedded directly into trainers for simplicity.</li>
+<li><strong>New Execution Strategies</strong>: Introduced <em>Client-Server</em> and <em>Shared Memory</em> execution models.</li>
+<li><strong>Trainer Updates</strong>: Integrated v0.2 interfaces and FastAlgorithm validation.</li>
+</ul>
+<h3 id="documentation-examples">Documentation &amp; Examples<a class="headerlink" href="#documentation-examples" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Revamped documentation with new guides for <strong>agent creation</strong>, <strong>training</strong>, <strong>debugging</strong>, and <strong>store concepts</strong>.</li>
+<li>Improved quickstart tutorials, clarified installation and new deep-dive articles.</li>
+<li>Added and updated examples: <em>SQL Agent</em>, <em>Calc-X</em>, <em>Local SFT</em>, <em>Search-R1</em>, and <em>APO algorithm</em>.</li>
+</ul>
+<h3 id="developer-experience">Developer Experience<a class="headerlink" href="#developer-experience" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Migrated build and CI pipelines to <strong>1ES</strong>, split workflows and aggregate badges for clarity.</li>
+<li>Adopted <strong>uv</strong> as the dependency manager.</li>
+<li>Added GPU-based pytest workflows for full test coverage.</li>
+<li>Enhanced debugging UX, pre-commit configs, and linting (Pyright fixes, import sorting).</li>
+</ul>
+<h3 id="ecosystem-integrations">Ecosystem &amp; Integrations<a class="headerlink" href="#ecosystem-integrations" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added support for agents built with <a href="https://github.com/microsoft/agent-framework"><strong>Agent-framework</strong></a>.</li>
+<li>Added new community listings: <a href="https://github.com/af-74413592/DeepWerewolf"><em>DeepWerewolf</em></a> and <a href="https://agentflow.stanford.edu/"><em>AgentFlow</em></a>.</li>
+</ul>
+<h3 id="new-contributors_2">New Contributors<a class="headerlink" href="#new-contributors_2" title="Permanent link">&para;</a></h3>
+<p>A warm welcome to our first-time contributors:
+@hzy46, @lunaqiu, @syeehyn, @linhx1999, @SiyunZhao, and @acured 🎉</p>
+<p><strong>Full changelog:</strong> <a href="https://github.com/microsoft/agent-lightning/compare/v0.1.2...v0.2.0">v0.1.2 → v0.2.0</a></p>
+<hr />
+<h2 id="agent-lightning-v012-08122025">Agent-lightning v0.1.2 (08/12/2025)<a class="headerlink" href="#agent-lightning-v012-08122025" title="Permanent link">&para;</a></h2>
+<h3 id="whats-changed">What's Changed<a class="headerlink" href="#whats-changed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Add basic documentation in https://github.com/microsoft/agent-lightning/pull/33</li>
+<li>RAG example by @wizardlancet in https://github.com/microsoft/agent-lightning/pull/21</li>
+</ul>
+<h3 id="new-contributors_3">New Contributors<a class="headerlink" href="#new-contributors_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>@wizardlancet made their first contribution in https://github.com/microsoft/agent-lightning/pull/21</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/microsoft/agent-lightning/compare/v0.1.1...v0.1.2</p>
+<hr />
+<h2 id="agent-lightning-v011-08062025">Agent-lightning v0.1.1 (08/06/2025)<a class="headerlink" href="#agent-lightning-v011-08062025" title="Permanent link">&para;</a></h2>
+<h3 id="whats-changed_1">What's Changed<a class="headerlink" href="#whats-changed_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Disable HTTP tracer tests and bump to 0.1.1 in https://github.com/microsoft/agent-lightning/pull/26</li>
+<li>Fix trainer bugs in v0.1 in https://github.com/microsoft/agent-lightning/pull/24</li>
+</ul>
+<p><strong>Full Changelog</strong>: https://github.com/microsoft/agent-lightning/compare/v0.1...v0.1.1</p>
+<hr />
+<h2 id="agent-lightning-v010-08042025">Agent-lightning v0.1.0 (08/04/2025)<a class="headerlink" href="#agent-lightning-v010-08042025" title="Permanent link">&para;</a></h2>
+<p>The first release of Agent-lightning!</p>
+<ul>
+<li>Turn your agent into an optimizable beast with <strong>ZERO CODE CHANGE</strong> (almost)! 💤</li>
+<li>Build with <strong>ANY</strong> agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it! 🤖</li>
+<li><strong>Selectively</strong> optimize one or more agents in a multi-agent system. 🎯</li>
+<li>Embraces Reinforcement Learning, Automatic Prompt Optimization and more <strong>algorithms</strong>. 🤗</li>
+</ul>
+<p>Install via <code>pip install agentlightning</code>.</p>
+
+<!-- Was this page helpful? -->
+
+
+
+
+<!-- Comment system -->
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+        <script src="../js/timeago.min.js"></script>
+      
+        <script src="../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
+      
+        <script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
+      
+        <script src="../javascripts/charts.js"></script>
+      
+        <script src="../javascripts/move-source-file.js"></script>
+      
+        <script src="../javascripts/katex.js"></script>
+      
+    
+  <script>
+    // Show warning banner if not viewing stable documentation
+    document.addEventListener("DOMContentLoaded", function() {
+      const currentURL = window.location.href;
+      const warningDiv = document.getElementById("version-warning");
+
+      // Check if we're on the stable docs or the redirect page
+      if (currentURL.includes('agent-lightning/latest/')) {
+        // Show warning for explicitly latest docs
+        warningDiv.style.display = "block";
+      }
+    });
+  </script>
+
+  </body>
+</html>

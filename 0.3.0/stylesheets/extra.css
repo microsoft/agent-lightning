@@ -1,0 +1,111 @@
+.md-grid {
+  max-width: 88rem;
+}
+
+@media screen and (min-width: 100em) {
+  html {
+    font-size: 130%;
+  }
+}
+
+@media screen and (min-width: 125em) {
+  html {
+    font-size: 135%;
+  }
+}
+
+.md-typeset .admonition {
+  font-size: 0.72rem;
+}
+
+.md-typeset h4 {
+  font-size: 1.15em;
+}
+
+.md-typeset h5, .md-typeset h6 {
+  font-size: 1em;
+}
+
+/* Increase spacing between API references */
+.doc-class, .doc-function, .doc-attribute {
+  padding-bottom: 2em;
+  margin-bottom: 3em;
+  border-bottom: 1px solid #77777777;
+}
+
+.doc-class .doc-function:not(:last-child), .doc-class .doc-attribute:not(:last-child) {
+  padding-bottom: 0;
+  margin-bottom: 2.5em;
+  border-bottom: none;
+}
+
+.doc-class .doc-function:last-child, .doc-class .doc-attribute:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+[data-md-color-primary="agl"] {
+  --md-primary-fg-color:        #c45259;
+  --md-primary-fg-color--light: #e8b4b7;
+  --md-primary-fg-color--dark:  #9a3038;
+  --md-hue: 356;
+}
+
+[data-md-color-accent="agl"] {
+  --md-accent-fg-color:         #f69047;
+  --md-accent-fg-color--light:  #fcc59e;
+  --md-accent-fg-color--dark:   #da6005;
+}
+
+[data-md-color-scheme="slate"][data-md-color-primary="agl"] {
+  --md-default-fg-color: hsla(var(--md-hue), 15%, 90%, 0.88);
+  --md-default-bg-color: hsla(var(--md-hue), 6%, 4%, 1);
+  --md-code-bg-color: hsla(var(--md-hue), 5%, 20%, 0.5);
+}
+
+/* Documentation version warning banner */
+.version-warning {
+  background-color: #FFD15D18;
+  padding: 1em;
+  font-weight: 500;
+  position: relative;
+  z-index: 1000;
+  border: 2px solid #FFD15D;
+  border-radius: 0.25em;
+  margin-bottom: 2em;
+}
+
+/* To center images */
+.center {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Charts */
+canvas[data-chart] {
+  width: 100%;
+  display: block;
+}
+
+/* Grid behavior */
+.md-typeset .grid {
+  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+}
+
+/* Make cards fill equal height and push footer link to bottom */
+.md-typeset .grid.cards > ul > li {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.5em 0;
+}
+
+.md-typeset .grid.cards > ul > li > :last-child {
+  margin-top: auto; /* pushes the last element (Browse source) to bottom */
+  padding-top: 0.5em;
+}

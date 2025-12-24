@@ -1,0 +1,2222 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/tutorials/traces/">
+      
+      
+        <link rel="prev" href="../debug/">
+      
+      
+        <link rel="next" href="../emitter/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Work with Traces - Agent-lightning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#working-with-traces" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agent-lightning" class="md-header__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agent-lightning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Work with Traces
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agent-lightning" class="md-nav__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    Agent-lightning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Quickstart
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train the First Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/write-first-algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write the First Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How-To Recipes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How-To Recipes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/examples-catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/unsloth-sft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SFT with Unsloth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-sql-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train SQL Agent with RL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Learning More
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Learning More
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../debug/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Traces
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Traces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#writing-spans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Spans
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Writing Spans">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agentops-tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentOps Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opentelemetry-tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenTelemetry Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weave-tracer-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weave Tracer (Experimental)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-traces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading Traces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reading Traces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adapter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-rewards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading Rewards
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../emitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Emitters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parallelize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallelize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm Zoo
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Algorithm Zoo
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/apo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    APO
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/verl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VERL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep Dive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/birds-eye-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bird's Eye View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/serving-llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving LLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API References
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API References
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/instrumentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Instrumentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/semconv/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semantic Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/restful/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RESTful
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Miscellaneous
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Miscellaneous
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/maintainers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintainer Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#writing-spans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Spans
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Writing Spans">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agentops-tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentOps Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opentelemetry-tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenTelemetry Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weave-tracer-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weave Tracer (Experimental)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-tracer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-traces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading Traces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reading Traces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adapter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adapter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-rewards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading Rewards
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  <div id="version-warning" class="version-warning" style="display: none;">
+    ⚠️ You are viewing development documentation. For stable documentation, please visit
+    <a href="https://microsoft.github.io/agent-lightning/stable/">https://microsoft.github.io/agent-lightning/stable/</a>
+  </div>
+  
+                  <!-- Copied and modified from https://github.com/squidfunk/mkdocs-material/blob/master/src/templates/partials/content.html -->
+
+<!-- Tags -->
+
+
+
+<!-- Actions -->
+
+  
+  
+
+
+<!--
+  Hack: check whether the content contains a h1 headline. If it doesn't, the
+  page title (or respectively site name) is used as the main headline.
+-->
+
+
+<!-- Source file information -->
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 17, 2025 17:12:50 UTC"><span class="timeago" datetime="2025-12-17T17:12:50+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 17, 2025 17:12:50 UTC">2025-12-17</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 17, 2025 18:24:27 UTC"><span class="timeago" datetime="2025-10-17T18:24:27+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 17, 2025 18:24:27 UTC">2025-10-17</span>
+  </span>
+
+    
+    
+      
+  
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Contributors">
+      
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4a4 4 0 0 1 4 4 4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4"/></svg>
+      
+    </span>
+    <nav>
+      
+        <a href="mailto:yuge.zhang@microsoft.com">Yuge Zhang</a>
+    </nav>
+  </span>
+
+    
+    
+  </aside>
+
+
+<!-- Page content -->
+<h1 id="working-with-traces">Working with Traces<a class="headerlink" href="#working-with-traces" title="Permanent link">&para;</a></h1>
+<p>Tracing is the secret capability that lets Agent-lightning train almost any agent without rewriting its core logic. The idea was born in observability tooling inside LLMOps workflows and, in Agent-lightning, evolved into a first-class primitive inside the learning loop. Beyond helping you understand what happened inside a rollout, traces provide reward spans and other learning signals that power reinforcement learning and fine-tuning algorithms.</p>
+<p><img alt="OpenTelemetry spans" src="../../assets/opentelemetry-trace.jpg" /></p>
+<p>Agent-lightning stores every recorded operation as a <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span"><code>Span</code></a> inside a <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>. The naming comes from <a href="https://opentelemetry.io/docs/concepts/signals/traces/">OpenTelemetry spans</a>, shown in the screenshot above. A span can represent an LLM call, a tool invocation, a graph edge, an explicit reward emission, or an arbitrary Python code block. Spans form a tree where parent spans describe higher-level steps and children record the detailed work. The sections below walk through how spans are produced and how to interpret them once they reach the store.</p>
+<h2 id="writing-spans">Writing Spans<a class="headerlink" href="#writing-spans" title="Permanent link">&para;</a></h2>
+<p>Most <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a> implementations wire a <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer"><code>Tracer</code></a> into the agent’s lifecycle. The tracer is responsible for installing instrumentation, buffering OpenTelemetry spans, and committing them to the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>. When a runner executes a rollout, it allocates a store-backed tracing context:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">async</span> <span class="k">with</span> <span class="n">tracer</span><span class="o">.</span><span class="n">trace_context</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;my-rollout&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">store</span><span class="o">=</span><span class="n">store</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">rollout_id</span><span class="o">=</span><span class="n">rollout</span><span class="o">.</span><span class="n">rollout_id</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">attempt_id</span><span class="o">=</span><span class="n">attempt</span><span class="o">.</span><span class="n">attempt_id</span><span class="p">,</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">):</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="k">await</span> <span class="n">run_agent_logic</span><span class="p">()</span>
+</code></pre></div>
+<p>The context manager then requests sequence numbers from the store, converts OpenTelemetry spans into <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span"><code>Span</code></a> objects, and persists them in the middle or at the end of the attempt, depending on the tracer implementation. Agent-lightning ships two tracers out of the box; both rely on <a href="https://opentelemetry.io/docs/concepts/signals/traces/">OpenTelemetry Traces</a> and ignore metrics or logs.</p>
+<div class="admonition tip">
+<p class="admonition-title">What's instrumentation?</p>
+<p>In simple terms, <em>instrumentation</em> means adding "patches" or hooks inside your code so you can observe what it’s doing while it runs. Think of it like putting flight recorders in an airplane — instrumentation records key actions, inputs, outputs, and timings without changing how the code behaves. In Agent-lightning tracers, this instrumentation automatically creates spans (small, structured records of work) that show what each part of an agent did, how long it took, and how different steps connect together.</p>
+</div>
+<h3 id="agentops-tracer">AgentOps Tracer<a class="headerlink" href="#agentops-tracer" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a> will be the default tracer when <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> is used but no tracer is explicitly specified. It bootstraps the <a href="https://www.agentops.ai/">AgentOps SDK</a> locally, installs the supplied instrumentation hooks (LangChain, LangGraph, LiteLLM, FastAPI, and others) provided by the <a href="https://github.com/AgentOps-AI/agentops">AgentOps Python SDK</a>, and forwards everything through a local OpenTelemetry <a href="https://opentelemetry.io/docs/specs/otel/trace/api/"><code>TracerProvider</code></a>. <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a> never calls the hosted AgentOps service; instead, it attaches a <code>LightningSpanProcessor</code> implemented by the Agent-lightning team so that spans are captured and shipped straight into the store.</p>
+<p>Because it shares the AgentOps instrumentation surface, any framework supported by AgentOps automatically gains tracing in Agent-lightning. We layer additional hooks on top of AgentOps to capture features that the SDK misses today:</p>
+<ol>
+<li>Certain providers emit extra metadata — for example, <a href="../../deep-dive/serving-llm/">token IDs returned by vLLM</a> — that are not recorded by the stock SDK. We augment those spans with the missing payloads.</li>
+<li>AgentOps constructs parent-child relationships on a best-effort basis, but mixed instrumentation (for example, OpenAI Agent SDK alongside direct OpenAI Chat Completion calls) can leave segments disconnected. Our implementation (actually implemented in the <a class="autorefs autorefs-internal" title="            agentlightning.TracerTraceToTriplet" href="../../reference/algorithm/#agentlightning.TracerTraceToTriplet"><code>TracerTraceToTriplet</code></a> adapter) repairs those relationships when the hierarchy can be inferred from rollout context.</li>
+<li>Some versions of downstream frameworks simply do not emit spans for critical events (LangGraph node entrances are a common example). The tracer installs lightweight shims so those spans appear consistently.</li>
+</ol>
+<p>If a vendor integration behaves unexpectedly, users are encouraged to combine the tracer with <a href="../debug/">Hooks</a> to inspect the raw spans or diagnostics, and/or implement a specialized tracer for the framework in question.</p>
+<h3 id="opentelemetry-tracer">OpenTelemetry Tracer<a class="headerlink" href="#opentelemetry-tracer" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer" href="../../reference/runner/#agentlightning.OtelTracer"><code>OtelTracer</code></a> is a minimal implementation that initializes a vanilla <a href="https://opentelemetry.io/docs/specs/otel/trace/api/"><code>TracerProvider</code></a> and gives you direct control over span creation through the standard <code>opentelemetry.trace</code> API. Use it when you already have explicit instrumentation in your agent, when the AgentOps SDK does not support your framework, or when you want to emit custom spans from business logic.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><a href="https://github.com/microsoft/agent-framework">Microsoft Agent Framework</a> is a typical example with built-in OpenTelemetry support. Once you set <code>OBSERVABILITY_SETTINGS.enable_otel = True</code>, the framework will automatically emit OpenTelemetry spans, and <a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer" href="../../reference/runner/#agentlightning.OtelTracer"><code>OtelTracer</code></a> will be able to capture them. No extra instrumentation is needed.</p>
+</div>
+<p>Inside your agent you can call <code>opentelemetry.trace.get_trace_provider().get_tracer("my-agent")</code> and use that tracer to <a href="https://opentelemetry.io/docs/languages/python/cookbook/">create spans</a> exactly as you would in any OpenTelemetry application. The Lightning span processor attached by <a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer" href="../../reference/runner/#agentlightning.OtelTracer"><code>OtelTracer</code></a> guarantees that every span is sequenced, converted, and written to the store. The same applies for emitted rewards (<a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a>) and other emitter signals, which are just a special case of manually-created spans.</p>
+<h3 id="weave-tracer-experimental">Weave Tracer (Experimental)<a class="headerlink" href="#weave-tracer-experimental" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.tracer.weave.WeaveTracer" href="../../reference/runner/#agentlightning.tracer.weave.WeaveTracer"><code>WeaveTracer</code></a> is an experimental tracer that integrates with the <a href="https://docs.wandb.ai/weave">Weave Python SDK</a>. Use it as a substitute for <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a> when the AgentOps SDK does not fit your environment.</p>
+<p>The Weave SDK instruments LLM calls and agent libraries directly. Unlike <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a>, Weave does not rely on OpenTelemetry to export spans; it routes everything through a dedicated Weave Trace Server. Agent-lightning implements a custom Weave Trace Server so every call captured by the Weave SDK can be persisted to the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.tracer.weave.WeaveTracer" href="../../reference/runner/#agentlightning.tracer.weave.WeaveTracer"><code>WeaveTracer</code></a> remains experimental and has not been tested as thoroughly as <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a>. It may conflict with libraries that ship OpenTelemetry instrumentation by default (for example, LiteLLM-based LLM proxies). Use the tracer with caution and report any issues to the Agent-lightning team.</p>
+</div>
+<h3 id="llm-proxy">LLM Proxy<a class="headerlink" href="#llm-proxy" title="Permanent link">&para;</a></h3>
+<p>Sometimes the runner can’t observe the agent directly — because it’s in another language or running remotely. <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> bridges that gap by instrumenting the server side of LLM calls. It wraps <a href="https://docs.litellm.ai/">LiteLLM</a> and adds middleware that accepts prefixed routes like <code>/rollout/{rid}/attempt/{aid}/v1/chat/completions</code>. Before forwarding, the middleware rewrites the path to <code>/v1/chat/completions</code>, fetches a monotonic <code>sequence_id</code> from the <code>LightningStore</code>, injects <code>x-rollout-id</code>, <code>x-attempt-id</code>, and <code>x-sequence-id</code> into the request headers, and then forwards the request to the backend LLM endpoint.</p>
+<p>LiteLLM produces OpenTelemetry spans for the request/response. A custom <code>LightningSpanExporter</code> reads the rollout/attempt/sequence identifiers from the recorded request headers and persists each span to the store. Because the <code>sequence_id</code> is allocated at the start of the request, traces stay in strict order even across machines with skewed clocks or asynchronous responses.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    participant Agent
+    participant Proxy as LLM Proxy
+    participant Backend as LLM Backend
+    participant Store as LightningStore
+
+    Agent-&gt;&gt;Proxy: POST /rollout/{rid}/attempt/{aid}/v1/chat/completions
+    Proxy-&gt;&gt;Store: get_next_span_sequence_id(rid, aid)
+    Store--&gt;&gt;Proxy: sequence_id
+    Proxy-&gt;&gt;Backend: Forward /v1/chat/completions&lt;br&gt;(headers: rid, aid, sid)
+    Backend--&gt;&gt;Proxy: Response (tokens, usage, token_ids)
+    Proxy-&gt;&gt;Store: Export OTEL spans (rid, aid, sequence_id)
+    Proxy--&gt;&gt;Agent: OpenAI-compatible response</code></pre>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> actually provides more functionalities than just the middleware for tracing. Read <a href="../../deep-dive/serving-llm/">Serving LLM</a> for more details.</p>
+<p><a href="" id="distributed-tracing"></a></p>
+<div class="admonition note">
+<p class="admonition-title">Distributed Tracing</p>
+<p>Agent-lightning enforces deterministic span ordering by assigning a monotonic <a class="autorefs autorefs-internal" title="            sequence_id
+
+  
+      instance-attribute
+  " href="../../reference/types/#agentlightning.Span.sequence_id"><code>sequence_id</code></a> to every span within an attempt. Before calling <a class="autorefs autorefs-internal" title="            add_span(span)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.add_span"><code>LightningStore.add_span</code></a> or <a class="autorefs autorefs-internal" title="            add_otel_span(rollout_id, attempt_id, readable_span, sequence_id=None)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.add_otel_span"><code>LightningStore.add_otel_span</code></a>, tracers are expected to call <a class="autorefs autorefs-internal" title="            get_next_span_sequence_id(rollout_id, attempt_id)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.get_next_span_sequence_id"><code>LightningStore.get_next_span_sequence_id</code></a> to get the next sequence id. This removes clock skew and merges spans produced on different machines or threads. If you implement a custom tracer or exporter, make sure you do this (or respect the one provided in headers by components such as <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a>); otherwise, adapters will struggle to properly reconstruct the execution tree.</p>
+</div>
+<h3 id="custom-tracer">Custom Tracer<a class="headerlink" href="#custom-tracer" title="Permanent link">&para;</a></h3>
+<p>If none of the built-in tracers fit your environment, the first option to consider is to <a href="../write-agents/">return the spans</a> directly from your agent implementation. If that's not possible, or you want to support multiple agents in a unified effort, you can implement your own tracer by subclassing <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer"><code>Tracer</code></a>.</p>
+<p>Custom tracers must implement at least <a class="autorefs autorefs-internal" title="            trace_context(name=None, *, store=None, rollout_id=None, attempt_id=None)" href="../../reference/runner/#agentlightning.Tracer.trace_context"><code>trace_context</code></a>. The <a class="autorefs autorefs-internal" title="            trace_context(name=None, *, store=None, rollout_id=None, attempt_id=None)" href="../../reference/runner/#agentlightning.Tracer.trace_context"><code>trace_context</code></a> coroutine should install or activate whatever instrumentation you need, then yield a span processor that ultimately adds spans to the store. You can reuse the <code>LightningSpanProcessor</code> if you produce OpenTelemetry <code>ReadableSpan</code> objects, or call <a class="autorefs autorefs-internal" title="            add_span(span)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.add_span"><code>LightningStore.add_span</code></a> directly if you generate <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span"><code>Span</code></a> instances yourself.</p>
+<p>Advanced tracers often run auxiliary services (for example, starting a telemetry daemon or attaching to a container runtime) inside <code>init_worker</code> and tear them down in <code>teardown_worker</code>. The <a class="autorefs autorefs-internal" title="            agentlightning.ParallelWorkerBase" href="../../reference/types/#agentlightning.ParallelWorkerBase"><code>ParallelWorkerBase</code></a> lifecycle that <code>Tracer</code> inherits from ensures those hooks are executed in every runner subprocess.</p>
+<h2 id="reading-traces">Reading Traces<a class="headerlink" href="#reading-traces" title="Permanent link">&para;</a></h2>
+<p>Generally, there are two approaches to reading traces. When you only need a quick look, <a class="autorefs autorefs-internal" title="            get_last_trace()" href="../../reference/runner/#agentlightning.Tracer.get_last_trace"><code>Tracer.get_last_trace</code></a> returns the raw OpenTelemetry spans captured most recently. For historical analysis, use the <a class="autorefs autorefs-internal" title="            query_spans(rollout_id, attempt_id=None, *, trace_id=None, trace_id_contains=None, span_id=None, span_id_contains=None, parent_id=None, parent_id_contains=None, name=None, name_contains=None, filter_logic='and', limit=-1, offset=0, sort_by='sequence_id', sort_order='asc')
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.query_spans"><code>LightningStore.query_spans</code></a> API, which yields normalized <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span"><code>Span</code></a> objects keyed by rollout ID and attempt ID. Combine those queries with <a class="autorefs autorefs-internal" title="            query_rollouts(*, status_in=None, rollout_id_in=None, rollout_id_contains=None, filter_logic='and', sort_by=None, sort_order='asc', limit=-1, offset=0, status=None, rollout_ids=None)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.query_rollouts"><code>LightningStore.query_rollouts</code></a> to align spans with rollout status, retries, and timing information.</p>
+<p>Spans arrive asynchronously, originate from different processes, and form hierarchies rather than simple lists. The attributes of each span are tedious and unfriendly to human readers. This combination makes raw traces time-consuming to inspect, especially when you only care about specific signals such as rewards, LLM prompts, responses, or tool outputs. Understanding how the store exposes traces and how adapters reshape them will save hours when debugging or training.</p>
+<div class="admonition note">
+<p class="admonition-title">Why traces can be difficult to read?</p>
+<p>The trace tree for a single rollout typically mixes multiple abstraction layers: a planner span may contain several LLM spans, each of which contains tool execution spans that can themselves trigger nested agent invocations. There are also instrumentations at different levels. For example, when a request delegates to another library (e.g., from LangChain to OpenAI), two libraries might emit spans for the same request. At the top level, there could be concurrently running agents that may flush spans slightly out of order. Sorting by <code>sequence_id</code> restores the chronological view, but interpreting the tree requires additional context about parent-child relationships and rollout metadata.</p>
+</div>
+<h3 id="adapter">Adapter<a class="headerlink" href="#adapter" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter">Adapters</a> transform lists of spans into higher-level data structures that training algorithms can consume directly. Agent-lightning provides several adapters out of the box:</p>
+<ul>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.TracerTraceToTriplet" href="../../reference/algorithm/#agentlightning.TracerTraceToTriplet"><code>TracerTraceToTriplet</code></a> converts spans into <code>(prompt, response, reward)</code> triplets, which power reinforcement-learning algorithms such as <a href="../../algorithm-zoo/verl/">VERL</a> and connect trace data to gradient updates.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.TraceToMessages" href="../../reference/algorithm/#agentlightning.TraceToMessages"><code>TraceToMessages</code></a> rewrites spans into OpenAI chat message JSON suitable for supervised fine-tuning or evaluation harnesses.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.LlmProxyTraceToTriplet" href="../../reference/algorithm/#agentlightning.LlmProxyTraceToTriplet"><code>LlmProxyTraceToTriplet</code></a> mirrors <a class="autorefs autorefs-internal" title="            agentlightning.TracerTraceToTriplet" href="../../reference/algorithm/#agentlightning.TracerTraceToTriplet"><code>TracerTraceToTriplet</code></a> but understands spans emitted by <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy">LLMProxy</a>. It is experimental and might be merged with <a class="autorefs autorefs-internal" title="            agentlightning.TracerTraceToTriplet" href="../../reference/algorithm/#agentlightning.TracerTraceToTriplet"><code>TracerTraceToTriplet</code></a> in the future.</li>
+</ul>
+<p>Adapters are regular Python callable instances, so you can plug them into <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> via the <code>adapter</code> argument, or call them manually during exploration. When used in <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>, adapters are bundled into the <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm"><code>Algorithm</code></a> before the algorithm runs, through the <a class="autorefs autorefs-internal" title="            set_adapter(adapter)" href="../../reference/algorithm/#agentlightning.Algorithm.set_adapter"><code>Algorithm.set_adapter</code></a> method.</p>
+<p>You can also customize an <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter"><code>Adapter</code></a> by extending the implementations above or subclassing the base class. If you need a bespoke format, subclass <a class="autorefs autorefs-internal" title="            agentlightning.TraceAdapter" href="../../reference/algorithm/#agentlightning.TraceAdapter"><code>TraceAdapter</code></a> (for store spans) or <a class="autorefs autorefs-internal" title="            agentlightning.OtelTraceAdapter" href="../../reference/algorithm/#agentlightning.OtelTraceAdapter"><code>OtelTraceAdapter</code></a> (for raw OpenTelemetry spans) and implement <code>adapt</code> (these two classes can usually share the same implementation).</p>
+<h3 id="reading-rewards">Reading Rewards<a class="headerlink" href="#reading-rewards" title="Permanent link">&para;</a></h3>
+<p>Rewards are recorded as dedicated spans named <a class="autorefs autorefs-internal" title="            AGL_ANNOTATION = 'agentlightning.annotation'
+
+  
+      module-attribute
+  " href="../../reference/semconv/#agentlightning.semconv.AGL_ANNOTATION"><code>agentlightning.annotation</code></a>. Emitting a reward through <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> or <a class="autorefs autorefs-internal" title="            agentlightning.emit_annotation(annotation, propagate=True)" href="../../reference/agent/#agentlightning.emit_annotation"><code>emit_annotation</code></a> ensures the value is stored in the span’s <code>attributes</code>. To audit rewards, fetch spans from the store and use the helper utilities in <a href="../../reference/agent/"><code>agentlightning.emitter</code></a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.emitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">find_final_reward</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">spans</span> <span class="o">=</span> <span class="k">await</span> <span class="n">store</span><span class="o">.</span><span class="n">query_spans</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">reward</span> <span class="o">=</span> <span class="n">find_final_reward</span><span class="p">(</span><span class="n">spans</span><span class="p">)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Final reward: </span><span class="si">{</span><span class="n">reward</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.find_reward_spans(spans)" href="../../reference/agent/#agentlightning.find_reward_spans"><code>find_reward_spans</code></a> returns every reward span so you can visualize intermediate shaping signals, while <a class="autorefs autorefs-internal" title="            agentlightning.find_final_reward(spans)" href="../../reference/agent/#agentlightning.find_final_reward"><code>find_final_reward</code></a> extracts the last non-null reward per attempt. While these helpers are convenient, they may not help you fully understand the chronological or hierarchical relationships between reward spans and other spans. Using an <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter"><code>Adapter</code></a> — especially the same one used in the algorithm you’re working with — remains the recommended way to inspect your generated spans.</p>
+
+<!-- Was this page helpful? -->
+
+
+
+
+<!-- Comment system -->
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
+      
+        <script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
+      
+        <script src="../../javascripts/move-source-file.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+    
+  <script>
+    // Show warning banner if not viewing stable documentation
+    document.addEventListener("DOMContentLoaded", function() {
+      const currentURL = window.location.href;
+      const warningDiv = document.getElementById("version-warning");
+
+      // Check if we're on the stable docs or the redirect page
+      if (currentURL.includes('agent-lightning/latest/')) {
+        // Show warning for explicitly latest docs
+        warningDiv.style.display = "block";
+      }
+    });
+  </script>
+
+  </body>
+</html>
