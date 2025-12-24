@@ -20,14 +20,14 @@ Agent-lightning v0.3.0 is a major release that introduces several new features a
 
 ### Store Benchmark
 
-During this iteration, the core Lightning Store was rewritten to be more efficient and scalable (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). The following table shows its performance on benchmarks.
+In this release, the Lightning Store core was redesigned for significantly greater efficiency and scalability (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). The benchmark results below demonstrate the impact: with large numbers of concurrent runners, v0.3.0 delivers up to a 15x increase in throughput compared to v0.2.2.
 
 | Throughput (\#rollout/sec) | v0.2.2 | v0.3.0 (in-memory) | v0.3.0 (Mongo) |
 | :---- | :---- | :---- | :---- |
 | Minimal (batch, #runner=32, #turns=6) | 8.73 | 9.06 | 8.71 |
 | Medium (batch, #runners=100, #turns=10) | 12.03 | 23.26 | 32.79 |
 | Mid-high (batch, #runners=300, #turns=6) | 10.61 | 24.42 | 40.24 |
-| Large (batch, #runners=1000, #turns=3) | ??? | 14.60 | 50.05 |
+| Large (batch, #runners=1000, #turns=3) | 3.36 | 14.60 | 50.05 |
 | Long queue (queue, #runners=256, #turns=4) | 7.42 | 30.86 | 57.01 |
 | Heavy trace (queue, #runners=512, #turns=20) | 5.93 | 13.28 | 29.41 |
 
