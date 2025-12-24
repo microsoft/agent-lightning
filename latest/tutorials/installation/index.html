@@ -2089,7 +2089,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 11, 2025 08:29:02 UTC"><span class="timeago" datetime="2025-11-11T08:29:02+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 11, 2025 08:29:02 UTC">2025-11-11</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 24, 2025 01:46:58 UTC"><span class="timeago" datetime="2025-12-24T01:46:58+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 24, 2025 01:46:58 UTC">2025-12-24</span>
   </span>
 
     
@@ -2147,7 +2147,7 @@ See the sections on <a href="#algorithm-specific-installation">Algorithm-specifi
 </div>
 <h3 id="install-the-nightly-build-latest-features">Install the Nightly Build (Latest Features)<a class="headerlink" href="#install-the-nightly-build-latest-features" title="Permanent link">&para;</a></h3>
 <p>Agent-Lightning also publishes <strong>nightly builds</strong>, which contain the latest experimental features and improvements from the main branch. These are available via <strong>Test PyPI</strong>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>--index-url<span class="w"> </span>https://test.pypi.org/simple/<span class="w"> </span>--extra-index-url<span class="w"> </span>https://pypi.org/simple/<span class="w"> </span>agentlightning
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>--index-url<span class="w"> </span>https://test.pypi.org/simple/<span class="w"> </span>--extra-index-url<span class="w"> </span>https://pypi.org/simple/<span class="w"> </span>--pre<span class="w"> </span>agentlightning
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
@@ -2185,7 +2185,7 @@ For a more stable setup, install dependencies step-by-step:</p>
 <h2 id="example-specific-installation">Example-specific Installation<a class="headerlink" href="#example-specific-installation" title="Permanent link">&para;</a></h2>
 <p>Each example in the <code>examples/</code> directory may have its own additional dependencies.
 Please refer to the <strong>README</strong> file of each example for detailed setup instructions:</p>
-<p><a href="https://github.com/microsoft/agent-lightning/tree/158f5df28e544fdfb2ae8253c19d2d9c227e9c77/examples">See Example READMEs</a>.</p>
+<p><a href="https://github.com/microsoft/agent-lightning/tree/3b5d733861cf313fc09821a23240bbdf3cb2ee5b/examples">See Example READMEs</a>.</p>
 <h2 id="installing-from-source-for-developers-and-contributors">Installing from Source (for Developers and Contributors)<a class="headerlink" href="#installing-from-source-for-developers-and-contributors" title="Permanent link">&para;</a></h2>
 <p>If you plan to contribute to Agent-Lightning or prefer to work with the latest development code, install it directly from the <strong>source repository</strong>.</p>
 <h3 id="why-install-from-source">Why Install from Source?<a class="headerlink" href="#why-install-from-source" title="Permanent link">&para;</a></h3>
@@ -2232,7 +2232,7 @@ Please refer to the <strong>README</strong> file of each example for detailed se
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span>--group<span class="w"> </span>agents<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span>--no-default-groups
 </code></pre></div>
-<p>Read more about Agent-lightning managed dependency groups <a href="https://github.com/microsoft/agent-lightning/tree/158f5df28e544fdfb2ae8253c19d2d9c227e9c77/pyproject.toml">here</a>.</p>
+<p>Read more about Agent-lightning managed dependency groups <a href="https://github.com/microsoft/agent-lightning/tree/3b5d733861cf313fc09821a23240bbdf3cb2ee5b/pyproject.toml">here</a>.</p>
 <h3 id="building-the-dashboard">Building the Dashboard<a class="headerlink" href="#building-the-dashboard" title="Permanent link">&para;</a></h3>
 <p>The Agent-Lightning dashboard is built using <a href="https://vite.dev/">Vite</a>. To build the dashboard, run the following command:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nb">cd</span><span class="w"> </span>dashboard
