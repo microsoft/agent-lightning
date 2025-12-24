@@ -39,7 +39,7 @@ verl = [
 ]
 
 weave = [
-  "weave",
+  "weave>=0.52.22",
 ]
 
 # Store-related dependencies.
@@ -122,6 +122,17 @@ torch-legacy = [
   "litellm[proxy]==1.74.15",
 ]
 
+# Specific vllm versions for compatibility testing or workarounds.
+# Use these when you need a pinned vllm version separate from torch groups.
+vllm-0-10-2 = [
+  {include-group = "torch-stable"},
+  "vllm==0.10.2",
+]
+vllm-0-11-0 = [
+  {include-group = "torch-stable"},
+  "vllm==0.11.0",
+]
+
 # Flash-attention must build with CUDA toolkit.
 # Use this instead of --group torch-stable --group torch-gpu
 torch-gpu-stable = [
@@ -161,6 +172,17 @@ tinker = [
   "tinker>=0.2.2",
   "tinker_cookbook>=0.1.0",
   "wandb",
+]
+
+# For Multi-modality supports.
+image = [
+  # NOTE: It's tied to vLLM 0.10.2 but it will blow the uv.lock file if we include it.
+  # {include-group = "vllm-0-10-2"},
+  "datasets",
+  "Pillow",
+  "pandas",
+  "pyarrow",
+  "qwen-vl-utils",
 ]
 
 # Agent-related dependencies.
@@ -234,6 +256,10 @@ conflicts = [
     { group = "torch-stable" },
     { group = "torch-legacy" },
   ],
+  [
+    { group = "vllm-0-10-2" },
+    { group = "vllm-0-11-0" },
+  ],
   # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
   # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0
   [
@@ -262,6 +288,8 @@ override-dependencies = [
   # verl's numpy<2.0.0 constraint is related to Docker images, not code incompatibility
   # Lock to 2.3.0 because numba relies on numpy 2.2
   "numpy>=2.0.0,<2.3.0",
+  # vllm relies on setuptools<80, but polyfile-weave depends on setuptools>=80.9.0
+  "setuptools>=80.9.0",
 ]
 
 [tool.uv.sources]
@@ -300,19 +328,24 @@ include = [
   "agentlightning/**/*.yaml",
   "agentlightning/**/*.yml",
   "agentlightning/**/*.poml",
-  "agentlightning/**/*.html",
-  "agentlightning/**/*.js",
-  "agentlightning/**/*.css",
-  "agentlightning/**/*.svg",
+]
+artifacts = [
+  "agentlightning/dashboard/**",
 ]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
-  "examples/**",
-  "tests/**",
-  "docs/**",
-  "scripts/**",
-  "dashboard/**",
+  "/examples/**",
+  "/tests/**",
+  "/docs/**",
+  "/scripts/**",
+  "/dashboard/**",
+  "/docker/**",
+  "/contrib/**",
+  "/.github/**",
+]
+artifacts = [
+  "agentlightning/dashboard/**",
 ]
 
 [tool.pytest.ini_options]
@@ -321,11 +354,13 @@ markers = [
   "openai: tests that require OpenAI API",
   "gpu: tests that require GPU",
   "agentops: tests that require AgentOps",
+  "weave: tests that require Weave",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
   "store: tests for agentlightning.store module",
   "prometheus: tests that require Prometheus",
   "utils: tests for utility functions",
+  "langchain: tests that require LangChain",
 ]
 
 [tool.black]

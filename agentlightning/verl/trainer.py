@@ -8,7 +8,7 @@ import random
 from contextlib import contextmanager
 from copy import deepcopy
 from pprint import pprint
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Type
 
 import numpy as np
 import torch
@@ -174,12 +174,18 @@ class AgentLightningTrainer(RayPPOTrainer):
     """
 
     def __init__(
-        self, store: LightningStore | None, llm_proxy: LLMProxy | None, adapter: TraceAdapter | None, **kwargs
+        self,
+        store: LightningStore | None,
+        llm_proxy: LLMProxy | None,
+        adapter: TraceAdapter | None,
+        daemon_cls: Type[AgentModeDaemon],
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.store = store
         self.llm_proxy = llm_proxy
         self.adapter = adapter
+        self.daemon_cls = daemon_cls
 
     def _validate(self):
         assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
@@ -249,9 +255,18 @@ class AgentLightningTrainer(RayPPOTrainer):
                 )
                 self.agent_mode_daemon.run_until_all_finished()
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
-                    max_prompt_length=self.config.data.max_prompt_length,
-                    max_response_length=self.config.data.max_response_length,
+                    max_prompt_length=(
+                        self.config.agentlightning.trace_aggregator.trajectory_max_prompt_length
+                        if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
+                        else self.config.data.max_prompt_length
+                    ),
+                    max_response_length=(
+                        self.config.agentlightning.trace_aggregator.trajectory_max_response_length
+                        if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
+                        else self.config.data.max_response_length
+                    ),
                     device=gen_batch.batch["fake_ids"].device,
+                    global_steps=self.global_steps,
                 )
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
@@ -276,7 +291,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             # uid is used for algorithm like GRPO, should be aligned to data id
             batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
 
-            batch.batch["response_mask"] = compute_response_mask(batch)
+            if "response_mask" not in batch.batch:
+                batch.batch["response_mask"] = compute_response_mask(batch)
 
             # compute global_valid tokens
             batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
@@ -444,7 +460,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         else:
             # For other versions (e.g., 0.6.0), we use the full path to the model.
             model = self.config.actor_rollout_ref.model.path
-        self.agent_mode_daemon = AgentModeDaemon(
+        self.agent_mode_daemon = self.daemon_cls(
             self.config.agentlightning.port,
             self.config.actor_rollout_ref.rollout.n,
             train_information={
@@ -458,6 +474,9 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
+            processor=self.processor,  # For Qwen2-VL mrope position_ids
+            image_base_dir=getattr(self.config.data, "image_base_dir", None),
+            trace_aggregator=self.config.agentlightning.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 

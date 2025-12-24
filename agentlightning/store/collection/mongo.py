@@ -1077,7 +1077,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
 class MongoLightningCollections(LightningCollections):
     """Mongo implementation of LightningCollections using MongoDB collections.
 
-    Serves as the storage base for [`MongoLightningStore`][agentlightning.store.MongoLightningStore].
+    Serves as the storage base for [`MongoLightningStore`][agentlightning.store.mongo.MongoLightningStore].
     """
 
     def __init__(

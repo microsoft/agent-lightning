@@ -8,6 +8,12 @@ defaults:
 
 agentlightning:
   port: 9999
+  trace_aggregator:
+    level: transition  # transition or trajectory, docs refer to https://agent-lightning.github.io/posts/trajectory_level_aggregation/
+    trajectory_max_prompt_length: 2048  # supported in trajectory level aggregation, suggest to set as maximum length for the prompt in first turn
+    trajectory_max_response_length: 8192  # supported in trajectory level aggregation, suggest to set as maximum length for the cumulative agent responses in the full trajectory, i.e., n_turns * (max_response_length + max_prompt_length)
+    debug: False  # supported in trajectory level aggregation, enable to diagnose trace merging failures
+    mismatch_log_dir: ./mismatch_cases  # supported in trajectory level aggregation with debug=True, directory to store logs of mismatch cases
 
 data:
   filter_overlong_prompts: false

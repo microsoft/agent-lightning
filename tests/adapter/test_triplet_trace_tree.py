@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
+from agentlightning.adapter.triplet import RewardMatchPolicy, TracerTraceToTriplet, TraceTree
 from agentlightning.types import Span
 from agentlightning.types.tracer import SpanNames
 from agentlightning.utils.otel import filter_and_unflatten_attributes
@@ -596,6 +596,70 @@ def test_extract_prompt_image_urls_from_list_payload():
     image_urls = tree.extract_prompt_image_urls(prompt_raw_content)
 
     assert image_urls == ["https://example.com/a.png", "https://example.com/b.png"]
+
+
+def test_tracer_trace_to_triplet_reward_match_first_sibling():
+    root = make_span("root", "session", parent_id=None, start_time=0.0, end_time=10.0)
+    agent = make_span(
+        "agent",
+        "agent.node",
+        parent_id="root",
+        start_time=1.0,
+        end_time=9.0,
+        attributes={"agent.name": "sibling-agent"},
+    )
+    other_agent = make_span(
+        "agent-2",
+        "agent.node",
+        parent_id="root",
+        start_time=1.0,
+        end_time=9.0,
+        attributes={"agent.name": "sibling-agent"},
+    )
+    llm_1 = make_llm_span(
+        "llm-1",
+        parent_id="agent",
+        start=2.0,
+        end=3.0,
+        prompt_ids=[1],
+        response_ids=[2],
+        response_id="resp-1",
+    )
+    reward = make_span(
+        "reward",
+        "agent.reward",
+        parent_id="agent",
+        start_time=3.5,
+        end_time=3.6,
+        attributes=reward_attributes(0.8),
+    )
+    llm_2 = make_llm_span(
+        "llm-2",
+        parent_id="agent-2",
+        start=3.1,
+        end=3.2,
+        prompt_ids=[3],
+        response_ids=[4],
+        response_id="resp-2",
+    )
+
+    spans = [root, agent, other_agent, llm_1, reward, llm_2]
+
+    adapter = TracerTraceToTriplet(
+        agent_match="sibling-agent",
+        reward_match=RewardMatchPolicy.FIRST_SIBLING,
+        _skip_empty_token_spans=True,
+    )
+    triplets = adapter.adapt(spans)
+
+    assert len(triplets) == 2
+    t1, t2 = triplets
+
+    assert t1.metadata["response_id"] == "resp-1"
+    assert t1.reward == 0.8
+
+    assert t2.metadata["response_id"] == "resp-2"
+    assert t2.reward is None
 
 
 def test_extract_prompt_image_urls_handles_numeric_dict_keys():

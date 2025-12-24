@@ -30,6 +30,14 @@
 
     [:octicons-repo-24: Browse source]({{ src("examples/calc_x") }})
 
+-   :material-chart-box:{ .lg .middle } __ChartQA vision-language RL__
+
+    ---
+
+    LangGraph-powered workflow for answering chart questions end to end: rollout the multi-modality agent with GPT or vLLM, and train with VERL/GRPO plus self-refinement loops.
+
+    [:octicons-repo-24: Browse source]({{ src("examples/chartqa") }})
+
 -   :material-code-braces:{ .lg .middle } __Claude Code SWE-bench__
 
     ---
@@ -53,14 +61,6 @@
     Retrieval-Augmented Generation pipeline that preps a Wikipedia retriever via MCP and trains a MuSiQue QA agent with GRPO. Documented for historical reference (verified on Agent-lightning v0.1.x).
 
     [:octicons-repo-24: Browse source]({{ src("examples/rag") }})
-
--   :material-magnify:{ .lg .middle } __Search-R1 RL__
-
-    ---
-
-    Reproduction of the Search-R1 workflow that prepares its own retrieval backend, runs the rollout script, and coordinates GRPO-style training without extra orchestration layers (last validated on v0.1.x).
-
-    [:octicons-repo-24: Browse source]({{ src("examples/search_r1") }})
 
 -   :material-database:{ .lg .middle } __Spider SQL agent__
 
