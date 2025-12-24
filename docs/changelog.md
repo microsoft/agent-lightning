@@ -8,15 +8,15 @@ Agent-lightning v0.3.0 is a major release that introduces several new features a
 
 * **Tinker integration**: Support Tinker as an alternative backend for Reinforcement Learning (#226 #245 #264 #269 #327). See [example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/tinker), [blog 1](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-1-1d8c9a397f0e) and [blog 2](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-2-332c5437f0dc).
 * **Azure OpenAI integration**: Support Azure OpenAI as a backend for LLM inference and supervised fine-tuning (#256 #327). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/azure).
-* **MongoDB-based Lightning Store** is added as an alternative backend for Lightning Store (#323). [Documentation](https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/parallelize/#parallelizing-lightningstore).
+* **MongoDB-based Lightning Store** is added as an alternative backend for Lightning Store (#323). [Documentation](https://microsoft.github.io/agent-lightning/0.3.0/tutorials/parallelize/#parallelizing-lightningstore).
 * **Contrib package**: Add contrib package for community projects. Search-R1 is integrated as a contrib recipe. More coming. (#239 #396 #410 #412 #417).
-* **RESTful API**: Stabilize and document RESTful API for Lightning Store (#241 #275). [Documentation](https://microsoft.github.io/agent-lightning/v0.3.0/reference/restful/).
-* **OTel Semantic Conventions** that are specifically designed for Agent-optimization areas (#340). [Documentation](http://microsoft.github.io/agent-lightning/v0.3.0/reference/semconv/).
-* *[Preview]* **Agent-lightning Dashboard** is now available (#288 #289 #291 #296 #371 #375). It's the official web application for inspecting and debugging Agent-lightning experiments. See details [here](https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/debug/).
+* **RESTful API**: Stabilize and document RESTful API for Lightning Store (#241 #275). [Documentation](https://microsoft.github.io/agent-lightning/0.3.0/reference/restful/).
+* **OTel Semantic Conventions** that are specifically designed for Agent-optimization areas (#340). [Documentation](http://microsoft.github.io/agent-lightning/0.3.0/reference/semconv/).
+* *[Preview]* **Agent-lightning Dashboard** is now available (#288 #289 #291 #296 #371 #375). It's the official web application for inspecting and debugging Agent-lightning experiments. See details [here](https://microsoft.github.io/agent-lightning/0.3.0/tutorials/debug/).
 * *[Preview]* **Multi-modality example** featuring VERL and a LangGraph agent on ChartQA dataset (#379). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/chartqa).
 * *[Preview]* Integrate **Claude Code** as a LitAgent and support training on SWE-Bench (#332 #346 #348). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/claude_code).
-* *[Preview]* **Weave tracer** as a substitute for AgentOps tracer (#277 #411 #420 #423). [Documentation](https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/traces/#weave-tracer-experimental).
-* *[Preview]* **Trajectory Level Aggregation** for more efficient training with VERL. See [blog](https://agent-lightning.github.io/posts/trajectory_level_aggregation/) and [documentation](https://microsoft.github.io/agent-lightning/v0.3.0/algorithm-zoo/verl/).
+* *[Preview]* **Weave tracer** as a substitute for AgentOps tracer (#277 #411 #420 #423). [Documentation](https://microsoft.github.io/agent-lightning/0.3.0/tutorials/traces/#weave-tracer-experimental).
+* *[Preview]* **Trajectory Level Aggregation** for more efficient training with VERL. See [blog](https://agent-lightning.github.io/posts/trajectory_level_aggregation/) and [documentation](https://microsoft.github.io/agent-lightning/0.3.0/algorithm-zoo/verl/).
 
 ### Store Benchmark
 
