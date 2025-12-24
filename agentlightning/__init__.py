@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 from .adapter import *
 from .algorithm import *
