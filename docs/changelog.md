@@ -11,7 +11,7 @@ Agent-lightning v0.3.0 is a major release that introduces several new features a
 * **MongoDB-based Lightning Store** is added as an alternative backend for Lightning Store (#323). [Documentation](https://microsoft.github.io/agent-lightning/0.3.0/tutorials/parallelize/#parallelizing-lightningstore).
 * **Contrib package**: Add contrib package for community projects. Search-R1 is integrated as a contrib recipe. More coming. (#239 #396 #410 #412 #417).
 * **RESTful API**: Stabilize and document RESTful API for Lightning Store (#241 #275). [Documentation](https://microsoft.github.io/agent-lightning/0.3.0/reference/restful/).
-* **OTel Semantic Conventions** that are specifically designed for Agent-optimization areas (#340). [Documentation](http://microsoft.github.io/agent-lightning/0.3.0/reference/semconv/).
+* **OTel Semantic Conventions** that are specifically designed for Agent-optimization areas (#340). [Documentation](https://microsoft.github.io/agent-lightning/0.3.0/reference/semconv/).
 * *[Preview]* **Agent-lightning Dashboard** is now available (#288 #289 #291 #296 #371 #375). It's the official web application for inspecting and debugging Agent-lightning experiments. See details [here](https://microsoft.github.io/agent-lightning/0.3.0/tutorials/debug/).
 * *[Preview]* **Multi-modality example** featuring VERL and a LangGraph agent on ChartQA dataset (#379). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/chartqa).
 * *[Preview]* Integrate **Claude Code** as a LitAgent and support training on SWE-Bench (#332 #346 #348). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/claude_code).
