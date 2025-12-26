@@ -47,16 +47,17 @@ class ToSpans(SequenceAdapter[SpanLike, Span]):
 
 class ToTree(Adapter[Sequence[Span], Tree[Span]]):
 
-    def __init__(self, repair_hierarchy: bool = True):
-        self.repair_hierarchy = repair_hierarchy
-
     def adapt(self, source: Sequence[Span]) -> Tree[Span]: ...
 
 
-class ToChatCompletionCalls(Adapter[Sequence[Span], Sequence[ChatCompletionCall]]): ...
+class ToSortedSpans(Adapter[Sequence[Span], Sequence[Span]]):
+    """Sort the spans with sequence ID as the primary key and start time as the secondary key."""
+
+    def adapt(self, source: Sequence[Span]) -> Sequence[Span]:
+        return sorted(source, key=lambda span: (span.sequence_id, span.start_time))
 
 
-class ToAnnotations(Adapter[Sequence[Span], Sequence[Annotation]]): ...
+class ToTokenInputOutputTriplet(Adapter[Sequence[AnnotatedChatCompletionCall], Sequence[TokenInputOutputTriplet]]):
+    """Convert annotated chat completion calls to token input-output triplets."""
 
-
-class ToTokenInputOutputTriplet(Adapter[Sequence[AnnotatedChatCompletionCall], Sequence[TokenInputOutputTriplet]]): ...
+    def adapt(self, source: Sequence[AnnotatedChatCompletionCall]) -> Sequence[TokenInputOutputTriplet]: ...

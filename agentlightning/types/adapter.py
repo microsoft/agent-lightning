@@ -48,14 +48,24 @@ class Tree(Generic[T]):
         for child in self.children:
             yield from child.traverse()
 
-    def count(self) -> int:
-        return 1 + sum(child.count() for child in self.children)
+    def size(self) -> int:
+        return 1 + sum(child.size() for child in self.children)
 
     def __iter__(self) -> Iterator[T]:
         return iter(self.traverse())
 
+    def __getitem__(self, index: int) -> T:
+        """Get the index-th item in the tree (O(n) time complexity).
+
+        I think this is not efficient, but it's seldomly used.
+        """
+        for i, item in enumerate(self.traverse()):
+            if i == index:
+                return item
+        raise IndexError(f"Tree index out of range: {index}")
+
     def __len__(self) -> int:
-        return self.count()
+        return self.size()
 
     def add(self, child: Tree[T]) -> None:
         self.children.append(child)
