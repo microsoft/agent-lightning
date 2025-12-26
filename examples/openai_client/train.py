@@ -122,6 +122,7 @@ async def gsm8k_agent(task: Gsm8kProblem, llm: agl.LLM) -> None:
             answer = last_message
     except Exception as e:
         print("Failure:", str(e))
+        last_message = "None"
         answer = "None"
     gt_answer = re.search(regex_pattern, task["answer"]).group(1)
 
