@@ -244,7 +244,7 @@ class TokenOutput(BaseModel):
     """Token IDs of the model output."""
 
 
-class TokenIOTriplet(BaseModel):
+class TokenInputOutputTriplet(BaseModel):
     """A triplet of token IDs for the input and output, useful for reinforcement learning.
 
     This is not a stable interface and the fields here highly depend on RL implementations.

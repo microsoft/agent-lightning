@@ -66,6 +66,19 @@ class Adapter(Generic[T_from, T_to]):
         raise NotImplementedError("Adapter.adapt() is not implemented")
 
 
+class SequenceAdapter(Adapter[Sequence[T_from], Sequence[T_to]], Generic[T_from, T_to]):
+    """Base class for adapters that convert sequences of data from one format to another.
+
+    This class specializes [`Adapter`][agentlightning.Adapter] for working with sequences of data.
+    """
+
+    def adapt(self, source: Sequence[T_from]) -> Sequence[T_to]:
+        return [self.adapt_one(item) for item in source]
+
+    def adapt_one(self, source: T_from) -> T_to:
+        raise NotImplementedError("SequenceAdapter.adapt_one() is not implemented")
+
+
 class OtelTraceAdapter(Adapter[Sequence[ReadableSpan], T_to], Generic[T_to]):
     """Base class for adapters that convert OpenTelemetry trace spans into other formats.
 
