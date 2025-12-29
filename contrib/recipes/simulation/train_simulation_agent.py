@@ -70,11 +70,11 @@ if __name__ == "__main__":
         os.environ["TASK_NUM"] = str(args.task_num)
 
     # Load configs
-    agent_config_path = f"contrib/recipes/simulation/config_env/{args.env}.yaml"
+    agent_config_path = f"config_env/{args.env}.yaml"
     if args.debug:
-        trainer_config_path = f"contrib/recipes/simulation/config_verl/{args.env}/debug/{args.algorithm}.yaml"
+        trainer_config_path = f"config_verl/{args.env}/debug/{args.algorithm}.yaml"
     else:
-        trainer_config_path = f"contrib/recipes/simulation/config_verl/{args.env}/{args.algorithm}.yaml"
+        trainer_config_path = f"config_verl/{args.env}/{args.algorithm}.yaml"
     agent_config = get_config(agent_config_path)
 
     if "gigpo" in args.algorithm:

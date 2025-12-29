@@ -218,7 +218,3 @@ agentlightning/dashboard/**/*.svg
 
 # Docker data
 docker/data/
-
-# AGL simulation
-agl_envs/
-wandb/

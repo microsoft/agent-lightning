@@ -6,13 +6,13 @@ from typing import Any, Dict
 
 import numpy as np
 from add_instruction import add_chat_instruction, add_single_instruction
+from agl_envs.simulation import make_env_manager
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes
-from agl_envs.simulation import make_env_manager
 from contrib.recipes.simulation.prompt_builder import HistoryPromptBuilder
 
 logger = configure_logger(name=__name__, level=logging.ERROR)

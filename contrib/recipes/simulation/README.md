@@ -34,7 +34,7 @@ For more information about the supported simulation environments, please refer t
 Run the following script once to install simulation enviornment and related AGL dependency:
 
 ```bash
-git clone agl-envs
+git clone https://github.com/agent-lightning/agl-envs
 mv agl-envs agl_envs
 
 # Install alfworld dependency
@@ -85,11 +85,11 @@ We follow the single-mode prompt for ALFWorld from [verl-agent](https://github.c
 
 ```bash
 # Run alfworld
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env alfworld
+python3 train_simulation_agent.py --algorithm grpo --env alfworld
 
 # Run scienceworld single task task_num 0
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env scienceworld --task_num 0
+python3 train_simulation_agent.py --algorithm grpo --env scienceworld --task_num 0
 
 # Run scienceworld multi-task
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env scienceworld --task_num -1
+python3 train_simulation_agent.py --algorithm grpo --env scienceworld --task_num -1
 ```
