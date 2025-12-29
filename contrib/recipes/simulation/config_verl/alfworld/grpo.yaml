@@ -1,0 +1,86 @@
+# ==========================
+# Variable definitions
+# ==========================
+variables:
+  NUM_GPUS: 2
+  MINI_BATCH_SIZE: 32
+  PER_GPU_BATCH_SIZE: 16
+  TENSOR_MODEL_PARALLEL_SIZE: 2
+  NUM_ROLLOUTS: 8
+  BASE_MODEL: Qwen/Qwen2.5-1.5B-Instruct
+  PROJECT_NAME: AGL-Simulation-ALFWorld
+  TRIAL: ${oc.env:TRIAL,0}
+  EXPERIMENT_NAME: grpo-alfworld-${variables.TRIAL}
+  DATA_DIR: agl_envs/simulation/task_data/alfworld
+
+# ==========================
+# Main Config
+# ==========================
+agentlightning:
+  port: 9999
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+  use_final_reward_as_step_reward: true
+  use_intrinsic_reward: true
+
+data:
+  train_files: ${variables.DATA_DIR}/train.parquet
+  val_files: ${variables.DATA_DIR}/test.parquet
+  train_batch_size: 32
+  val_batch_size: 140
+  max_prompt_length: 2048
+  max_response_length: 512
+  truncation: error
+  return_raw_chat: true
+
+actor_rollout_ref:
+  rollout:
+    tensor_model_parallel_size: ${variables.TENSOR_MODEL_PARALLEL_SIZE}
+    n: ${variables.NUM_ROLLOUTS}
+    log_prob_micro_batch_size_per_gpu: ${variables.PER_GPU_BATCH_SIZE}
+    multi_turn:
+      format: hermes
+    name: vllm
+    gpu_memory_utilization: 0.6
+    enable_chunked_prefill: false
+    enforce_eager: false
+    free_cache_engine: true
+    val_kwargs:
+      temperature: 0.4
+      do_sample: true
+  actor:
+    ppo_mini_batch_size: ${variables.MINI_BATCH_SIZE}
+    ppo_micro_batch_size_per_gpu: ${variables.PER_GPU_BATCH_SIZE}
+    optim:
+      lr: 1.0e-6
+    use_kl_loss: true
+    kl_loss_coef: 0.01
+    kl_loss_type: low_var_kl
+    entropy_coeff: 0.001
+    fsdp_config:
+      param_offload: false
+      optimizer_offload: false
+  ref:
+    log_prob_micro_batch_size_per_gpu: ${variables.PER_GPU_BATCH_SIZE}
+    fsdp_config:
+      param_offload: true
+  model:
+    path: ${variables.BASE_MODEL}
+    use_remove_padding: true
+    enable_gradient_checkpointing: true
+
+trainer:
+  n_gpus_per_node: ${variables.NUM_GPUS}
+  val_before_train: false
+  critic_warmup: 0
+  logger:
+    - console
+    - wandb
+  project_name: ${variables.PROJECT_NAME}
+  experiment_name: ${variables.EXPERIMENT_NAME}
+  nnodes: 1
+  save_freq: 100
+  test_freq: 5
+  total_epochs: 200
