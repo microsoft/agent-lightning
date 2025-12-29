@@ -1,22 +1,15 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Non-opinionated conversion adapters for different data formats, without loss of information."""
+"""Span re-organization adapters."""
 
 from __future__ import annotations
 
-from typing import Generic, Sequence, TypeVar
+from typing import Sequence, TypeVar
 
-from agentlightning.types.adapter import (
-    AccumulatedTokenSequence,
-    AnnotatedChatCompletionCall,
-    Annotation,
-    ChatCompletionCall,
-    TokenInputOutputTriplet,
-    Tree,
-)
+from agentlightning.types.adapter import Tree
 from agentlightning.types.tracer import Span, SpanLike
 
-from .base import Adapter, SequenceAdapter
+from .base import Adapter, SequenceAdapter, Sort
 
 T_from = TypeVar("T_from")
 T_to = TypeVar("T_to")
@@ -50,14 +43,16 @@ class ToTree(Adapter[Sequence[Span], Tree[Span]]):
     def adapt(self, source: Sequence[Span]) -> Tree[Span]: ...
 
 
-class ToSortedSpans(Adapter[Sequence[Span], Sequence[Span]]):
+class ToSortedSpans(Sort[Span]):
     """Sort the spans with sequence ID as the primary key and start time as the secondary key."""
 
-    def adapt(self, source: Sequence[Span]) -> Sequence[Span]:
-        return sorted(source, key=lambda span: (span.sequence_id, span.start_time))
+    def __init__(self) -> None:
+        super().__init__(key=lambda span: (span.sequence_id, span.start_time))
 
 
-class ToTokenInputOutputTriplet(Adapter[Sequence[AnnotatedChatCompletionCall], Sequence[TokenInputOutputTriplet]]):
-    """Convert annotated chat completion calls to token input-output triplets."""
+class RepairTreeHierarchy(Adapter[Tree[Span], Tree[Span]]):
+    """Repair the tree hierarchy by ensuring that parent-child relationships are consistent
+    with span start and end times. Adding missing parent-child relationships as needed.
+    """
 
-    def adapt(self, source: Sequence[AnnotatedChatCompletionCall]) -> Sequence[TokenInputOutputTriplet]: ...
+    def adapt(self, source: Tree[Span]) -> Tree[Span]: ...

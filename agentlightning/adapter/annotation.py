@@ -1,15 +1,43 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Adapters that are making guesses based on heuristics to fill in missing information."""
+"""Find and repair the annotations from spans."""
 
 from __future__ import annotations
 
-from typing import Literal, Sequence, Tuple
+from typing import Literal, Sequence, Tuple, TypeVar
 
-from agentlightning.types.adapter import Annotation, Tree
+from agentlightning.types.adapter import Annotation
 from agentlightning.types.tracer import Span
 
 from .base import Adapter
+
+T_SpanSequence = TypeVar("T_SpanSequence", bound=Sequence[Span])
+
+
+class CurateAnnotations(Adapter[Sequence[Span], Sequence[Annotation]]):
+    """Curate the annotations from the spans."""
+
+    def adapt(self, source: Sequence[Span]) -> Sequence[Annotation]: ...
+
+
+class SelectByAnnotation(Adapter[Tuple[T_SpanSequence, Sequence[Annotation]], T_SpanSequence]):
+    """Select the corresponding spans within the annotation sequence, as well as their linked spans
+    (and subtree spans if applicable).
+
+    The effective radius of an annotation is as follows:
+
+    - If the annotation has links, it applies to the linked spans only.
+    - If the annotation is on a tree node, it applies to all spans in the subtree.
+    - If the annotation has neither links nor tree nodes, it applies to only itself.
+
+    Args:
+        mode: "include" to select spans within the annotations; "exclude" to exclude them.
+    """
+
+    def __init__(self, mode: Literal["include", "exclude"]) -> None:
+        self.mode = mode
+
+    def adapt(self, source: Tuple[T_SpanSequence, Sequence[Annotation]]) -> T_SpanSequence: ...
 
 
 class FillMissingLinks(Adapter[Tuple[Sequence[Span], Sequence[Annotation]], Sequence[Span]]):
@@ -60,11 +88,3 @@ class FillMissingLinks(Adapter[Tuple[Sequence[Span], Sequence[Annotation]], Sequ
         self.allow_reuse_linked_spans = allow_reuse_linked_spans
 
     def adapt(self, source: Tuple[Sequence[Span], Sequence[Annotation]]) -> Sequence[Span]: ...
-
-
-class RepairTreeHierarchy(Adapter[Tree[Span], Tree[Span]]):
-    """Repair the tree hierarchy by ensuring that parent-child relationships are consistent
-    with span start and end times. Adding missing parent-child relationships as needed.
-    """
-
-    def adapt(self, source: Tree[Span]) -> Tree[Span]: ...

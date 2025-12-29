@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Generic, Sequence, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -77,6 +77,26 @@ class SequenceAdapter(Adapter[Sequence[T_from], Sequence[T_to]], Generic[T_from,
 
     def adapt_one(self, source: T_from) -> T_to:
         raise NotImplementedError("SequenceAdapter.adapt_one() is not implemented")
+
+
+class Filter(Adapter[Sequence[T_from], Sequence[T_from]], Generic[T_from]):
+    """Filter items of type T to items of type T based on a predicate."""
+
+    def __init__(self, predicate: Callable[[T_from], bool]) -> None:
+        self.predicate = predicate
+
+    def adapt(self, source: Sequence[T_from]) -> Sequence[T_from]:
+        return [item for item in source if self.predicate(item)]
+
+
+class Sort(Adapter[Sequence[T_from], Sequence[T_from]], Generic[T_from]):
+    """Sort items of type T based on a key function."""
+
+    def __init__(self, key: Callable[[T_from], Any]) -> None:
+        self.key = key
+
+    def adapt(self, source: Sequence[T_from]) -> Sequence[T_from]:
+        return sorted(source, key=self.key)
 
 
 class OtelTraceAdapter(Adapter[Sequence[ReadableSpan], T_to], Generic[T_to]):
