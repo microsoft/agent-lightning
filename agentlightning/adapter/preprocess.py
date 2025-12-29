@@ -159,7 +159,7 @@ class ToTree(Adapter[Sequence[Span], Tree[Span]]):
             source,
             key=lambda span: (
                 depths[span.span_id],
-                span.ensure_end_time() - span.ensure_start_time(),
+                -(span.ensure_end_time() - span.ensure_start_time()),
                 span.ensure_start_time(),
             ),
         )
