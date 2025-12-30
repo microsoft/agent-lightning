@@ -242,11 +242,18 @@ class SelectByAnnotation(Adapter[Tuple[T_SpanSequence, Sequence[Annotation]], T_
     The effective radius of an annotation is as follows:
 
     - If the annotation has links, it applies to the linked spans only.
-    - If the annotation is on a tree node, it applies to all spans in the subtree.
+    - If the annotation is on a tree node, it applies to all spans in its subtree.
     - If the annotation has neither links nor tree nodes, it applies to only itself.
+
+    The adapter either selects the union of the effective radius of all annotations,
+    or excludes the union of effective radius.
+
+    When the source is a tree, to avoid the tree nodes from becoming fragmented,
+    the adapter will also include the ancestors of the tree nodes in "include" mode.
 
     Args:
         mode: "include" to select spans within the annotations; "exclude" to exclude them.
+
     """
 
     def __init__(self, mode: Literal["include", "exclude"]) -> None:
