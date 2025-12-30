@@ -26,7 +26,7 @@ from openai.types.chat import (
 )
 from pydantic import BaseModel, Field
 
-from agentlightning.semconv import LinkPydanticModel
+from agentlightning.semconv import LinkPydanticModel, RewardPydanticModel
 
 from .tracer import Attributes
 
@@ -113,7 +113,7 @@ class Annotation(BaseModel):
     span_id: str
     """Span ID of the annotation span. Not necessarily an [AGL_ANNOTATION][agentlightning.semconv.AGL_ANNOTATION] span."""
 
-    links: Optional[Sequence[LinkPydanticModel]] = None
+    links: Sequence[LinkPydanticModel] = Field(default_factory=list[LinkPydanticModel])
     """Links to other spans or objects."""
 
 
@@ -139,13 +139,13 @@ class GeneralAnnotation(Annotation):
     annotation_type = "general"
     """Type of the annotation."""
 
-    reward: Dict[str, float] = Field(default_factory=dict)
+    rewards: Sequence[RewardPydanticModel] = Field(default_factory=list[RewardPydanticModel])
     """Reward dimensions and values."""
 
     primary_reward: Optional[float] = None
     """Primary reward value."""
 
-    tag: Sequence[str] = Field(default_factory=list)
+    tags: Sequence[str] = Field(default_factory=list)
     """Tags for the annotation."""
 
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
