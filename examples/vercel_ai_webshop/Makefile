@@ -2,13 +2,13 @@
 #
 # Usage:
 #   make setup      # Initialize .env
-#   make dev        # Run full stack (UI + Server + Coordinator)
+#   make dev        # Run dev stack (Server + Coordinator + Runner)
 #   make train      # Run training stack (GPU)
 #   make logs       # Follow logs
 #   make stop       # Stop all services
 
 .PHONY: help setup dev train scale logs stop clean status \
-        logs-webshop logs-runner logs-agl logs-ui \
+        logs-webshop logs-runner logs-agl \
         watch watch-steps watch-progress logs-latest
 
 N ?= 1
@@ -29,8 +29,8 @@ help: ## Show this help message
 	@echo "  make setup       Create .env configuration"
 	@echo ""
 	@echo "Run:"
-	@echo "  make dev         Start Dev Stack (UI + Server + Coordinator)"
-	@echo "  make train       Start Training Stack (Server + GPU Coordinator)"
+	@echo "  make dev         Start Dev Stack (Server + Coordinator + Runner)"
+	@echo "  make train       Start Training Stack (Server + GPU Coordinator + Runner)"
 	@echo "  make scale N=3   Scale dev runners to N instances"
 	@echo ""
 	@echo "Watch (Training Visibility):"
@@ -41,7 +41,6 @@ help: ## Show this help message
 	@echo "Logs:"
 	@echo "  make logs        Follow all logs (live)"
 	@echo "  make logs-latest Tail the latest log file"
-	@echo "  make logs-ui     Follow UI logs"
 	@echo "  make logs-runner Follow runner logs"
 	@echo "  make logs-agl    Follow coordinator logs"
 	@echo "  make logs-webshop Follow WebShop server logs"
@@ -70,9 +69,8 @@ setup: ## Create .env configuration
 # Run
 #==============================================================================
 
-dev: setup ## Start Dev Stack (UI + Server + Coordinator)
+dev: setup ## Start Dev Stack (Server + Coordinator + Runner)
 	@echo "Starting Dev Stack..."
-	@echo "  - UI:       http://localhost:3001"
 	@echo "  - WebShop:  http://localhost:3000"
 	@echo "  - Store:    http://localhost:4747"
 	@echo ""
@@ -143,9 +141,6 @@ logs-latest: ## Tail the latest log file
 		echo "No log files found in $(LOGS_DIR)/"; \
 		echo "Run 'make dev' or 'make train' first"; \
 	fi
-
-logs-ui: ## Follow UI logs
-	docker compose logs -f ui
 
 logs-runner: ## Follow runner logs
 	docker compose logs -f runner runner-gpu

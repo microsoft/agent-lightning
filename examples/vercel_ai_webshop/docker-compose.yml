@@ -1,7 +1,7 @@
 # WebShop Docker Compose
 #
 # Profiles:
-#   - dev: Starts UI, WebShop, CPU Coordinator, and Headless Runner
+#   - dev: Starts WebShop, CPU Coordinator, and Headless Runner
 #          Uses OPENAI_API_BASE for LLM inference (set in .env)
 #   - gpu: Starts WebShop, GPU Coordinator (VERL + vLLM), and Headless Runner
 #          VERL manages vLLM internally and publishes endpoint to Store
@@ -37,32 +37,6 @@ services:
       timeout: 5s
       start_period: 60s  # Allow time for first-run download
       retries: 5
-    networks:
-      - webshop-net
-
-  # ==========================================================================
-  # Management UI (Dev Profile) - Uses OPENAI_API_BASE for inference
-  # ==========================================================================
-  ui:
-    build:
-      context: .
-      dockerfile: Dockerfile.runner
-    profiles: ["dev"]
-    command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
-    ports:
-      - "3001:3001"
-    environment:
-      - WEBSHOP_URL=http://webshop:3000
-      - NEXT_PUBLIC_WEBSHOP_URL=http://localhost:3000
-      # LLM endpoint from .env file
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
-      - WEBSHOP_MODEL=${WEBSHOP_MODEL:-gpt-4o-mini}
-    volumes:
-      - ./src:/app/src
-    depends_on:
-      webshop:
-        condition: service_healthy
     networks:
       - webshop-net
 

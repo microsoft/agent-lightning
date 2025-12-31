@@ -4,18 +4,13 @@ This example demonstrates how to train a Vercel AI SDK agent on the WebShop benc
 
 ## Overview
 
-The primary workflow is:
+The training pipeline consists of:
 
 1. **Training Coordinator (agl)** — Manages the task queue, collects traces, and runs the training algorithm
 2. **Headless Runner** — Executes the Vercel AI agent in a loop, polling for tasks and reporting rewards
 3. **WebShop Server** — The shopping environment (Flask + OpenAI Gym)
 
-A **React-based debugging UI** is also included for interactive testing and visualization of the agent's behavior. This UI is secondary to the training pipeline and is useful for:
-- Debugging tool behavior and prompt engineering
-- Verifying WebShop server connectivity
-- Manually exporting trajectories for inspection
-
-## Training Features
+## Features
 
 - **Headless Execution**: Run agent rollouts without a browser using the TypeScript headless runner
 - **Agent Lightning Integration**: Full tracing via OpenTelemetry, task queue management, and reward reporting
@@ -23,19 +18,12 @@ A **React-based debugging UI** is also included for interactive testing and visu
 - **Scalable Runners**: Launch multiple headless runners in parallel for faster rollout collection
 - **Dev Mode**: CPU-only prototyping using external LLM endpoints (OpenAI, local vLLM, etc.)
 
-## Debugging UI Features
-
-- **Real-time Streaming**: Watch the agent think and act using the AI SDK's streaming capabilities
-- **Observation Display**: View raw observations from the WebShop server as the agent navigates
-- **Trajectory Export**: Download recorded trajectories in OpenAI fine-tuning format, simple chat format, or full ADP JSON
-- **Session Management**: Each task runs in an isolated session with its own environment state
-
 ## Prerequisites
 
 - Node.js 22+
 - pnpm 10+
 - Docker (recommended) OR Python 3.8+ with Java 17+ (for the WebShop server)
-- OpenAI API key (only needed for debugging UI with OpenAI models)
+- OpenAI API key (only needed for dev mode with external LLM)
 
 ## Quick Start
 
@@ -58,7 +46,7 @@ make dev
 This starts:
 - **WebShop**: http://localhost:3000 — Shopping environment API
 - **Store**: http://localhost:4747 — Agent Lightning coordinator
-- **Debugging UI**: http://localhost:3001 — Interactive interface (dev mode only)
+- **Headless Runner** — Polls for tasks and executes agent rollouts
 
 In **GPU training mode** (`make train`), VERL manages vLLM internally with the Qwen model—no external API key is needed. The headless runners automatically discover the LLM endpoint from the Store.
 
@@ -123,38 +111,6 @@ The agent interacts with the WebShop server using a simple action grammar:
 - `click[element]` - Click on an element (product, option, button)
 - `click[Buy Now]` - Complete the purchase (convenience: `buy` tool)
 
-### Debugging UI Architecture
-
-The React-based UI provides an interactive interface for testing and debugging the agent:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     React Frontend                          │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │TaskSelector │  │MessageRenderer│  │TrajectoryExport │   │
-│  └─────────────┘  └──────────────┘  └──────────────────┘   │
-└────────────────────────────┬────────────────────────────────┘
-                             │ useChat hook
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    API Route (/api/chat)                    │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │ createAgentUIStreamResponse(agent, messages)          │   │
-│  └──────────────────────────────────────────────────────┘   │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             ▼
-                    WebShop Agent + Session Manager
-                             │
-                             ▼
-                    WebShop Python Server
-```
-
-UI-specific components:
-- **Task Selector**: Choose from predefined shopping tasks with different requirements
-- **Message Renderer**: Renders agent steps with observation text from the server
-- **Trajectory Export**: Download recorded trajectories in various formats for fine-tuning
-
 ### Sample Tasks
 
 | Task ID | Description |
@@ -212,7 +168,6 @@ make status       # Show all container states
 | `make logs-runner` | LLM endpoint discovery, agent steps, rewards |
 | `make logs-agl` | Task queue status, training progress |
 | `make logs-webshop` | Session creation, action execution |
-| `make logs-ui` | Next.js server, API requests |
 
 **Verify LLM endpoint configuration:**
 ```bash
@@ -257,7 +212,7 @@ make watch            # 3-pane tmux view (requires tmux)
 | Command | Description |
 |---------|-------------|
 | `make setup` | Create `.env` from template |
-| `make dev` | Start full dev stack (UI + Server + Coordinator + Runner) |
+| `make dev` | Start dev stack (Server + Coordinator + Runner) |
 | `make train` | Start GPU training stack (Server + GPU Coordinator + Runner) |
 | `make scale N=3` | Scale dev runners to N instances |
 | `make watch` | Launch tmux with 3-pane training visibility |
@@ -265,7 +220,6 @@ make watch            # 3-pane tmux view (requires tmux)
 | `make watch-progress` | Follow only training progress logs |
 | `make logs` | Follow all logs (live) |
 | `make logs-latest` | Tail the most recent log file |
-| `make logs-ui` | Follow UI logs |
 | `make logs-runner` | Follow runner logs |
 | `make logs-agl` | Follow coordinator logs |
 | `make logs-webshop` | Follow WebShop server logs |
@@ -277,7 +231,6 @@ make watch            # 3-pane tmux view (requires tmux)
 
 - **Automatic Log Collection**: Logs are saved to `logs/<profile>-<timestamp>.log` for post-run inspection.
 - **Data Persistence**: The WebShop dataset (~100MB) is stored in a Docker volume (`webshop_data`). It downloads once on first run and persists across rebuilds.
-- **Hot Reloading**: The `src/` directory is mounted as a volume. Editing files instantly updates the running UI.
 - **Unified Setup**: No local Node.js or Python installation required.
 
 ### Training Visibility
@@ -312,7 +265,7 @@ Requires `tmux` to be installed. Use `Ctrl+B D` to detach from the session.
 
 Two profiles are available:
 
-- **`dev`** - CPU-only mode. Starts UI, WebShop, Coordinator (Baseline algorithm), and Headless Runner. Uses `OPENAI_API_BASE` for LLM inference (configure in `.env`).
+- **`dev`** - CPU-only mode. Starts WebShop, Coordinator (Baseline algorithm), and Headless Runner. Uses `OPENAI_API_BASE` for LLM inference (configure in `.env`).
 - **`gpu`** - GPU training mode. Starts WebShop, Coordinator (VERL + vLLM), and Headless Runner. VERL manages vLLM internally and publishes the endpoint to the Store for automatic discovery.
 
 ```bash
@@ -557,88 +510,26 @@ python run_training.py [config] [options]
 
 ---
 
-### Debugging with the UI
-
-The Next.js UI runs in standalone mode (not connected to Agent Lightning) for debugging:
-
-```bash
-cd examples/vercel_ai_webshop
-pnpm dev --port 3001
-# Open http://localhost:3001
-```
-
-Use the UI to:
-- Test prompts and agent configurations
-- Debug tool behavior
-- Verify WebShop server connectivity
-- Export trajectories manually
-
-## Manual Fine-tuning Workflow
-
-If you prefer to fine-tune without Agent Lightning:
-
-1. **Run tasks and export trajectories**:
-   - Use the UI to run multiple tasks
-   - After each successful task, export the trajectory in OpenAI format
-
-2. **Collect trajectories**:
-   - Combine multiple trajectory files into a single JSONL file
-   - Filter for successful trajectories with high rewards
-
-3. **Fine-tune with OpenAI**:
-   ```bash
-   openai api fine_tuning.jobs.create -t training.jsonl -m gpt-4o-mini
-   ```
-
-4. **Use the fine-tuned model**:
-   ```typescript
-   // Update src/agent/webshop-agent.ts
-   const agent = new ToolLoopAgent({
-     model: openai('ft:gpt-4o-mini:your-org::your-model-id'),
-     // ...
-   });
-   ```
-
 ## Project Structure
 
 ```
 vercel_ai_webshop/
-├── src/                              # Vercel AI / Next.js frontend
-├── agl/                              # Python Agent Lightning code
+├── src/                              # TypeScript source code
+│   ├── agent/                        # Agent definition
+│   ├── environment/                  # WebShop HTTP client
+│   ├── data/                         # Task definitions
+│   └── utils/agentlightning/         # Store client, tracing
 ├── scripts/
 │   └── headless-runner.ts            # Headless rollout runner
+├── agl/                              # Python Agent Lightning code
+│   ├── run_training.py               # Training coordinator
+│   └── config.py                     # Training configurations
 ├── server/                           # Python WebShop backend
-```
-
-## API Reference
-
-### POST /api/chat
-
-Run the agent with a task.
-
-**Request Body:**
-```json
-{
-  "messages": [{ "role": "user", "content": "..." }],
-  "taskId": "ws_001",
-  "sessionId": "session_123..." // optional, for continuing a session
-}
-```
-
-**Response:** Server-Sent Events stream with agent messages
-
-### GET /api/chat?sessionId=...
-
-Get trajectory data for a session.
-
-**Response:**
-```json
-{
-  "id": "trajectory_...",
-  "version": "1.0",
-  "content": [...],
-  "details": { ... }
-}
+│   └── webshop_server.py             # Flask server
+├── docker-compose.yml                # Service orchestration
+├── Dockerfile.runner                 # Headless runner image
+├── Dockerfile.agl                    # Coordinator image
+└── Makefile                          # Build and run commands
 ```
 
 ## Troubleshooting
@@ -662,12 +553,8 @@ If port 3000 is already in use:
 # Run WebShop on a different port
 python webshop_server.py --port 3001
 
-# Update .env.local
+# Update .env
 WEBSHOP_URL=http://localhost:3001
-NEXT_PUBLIC_WEBSHOP_URL=http://localhost:3001
-
-# Run Next.js on yet another port (from the example directory)
-pnpm dev --port 3002
 ```
 
 ### Python Version Issues
