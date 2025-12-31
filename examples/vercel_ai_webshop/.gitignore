@@ -1,6 +1,7 @@
 node_modules/
 .venv/
 .next/
+*.tsbuildinfo
 server/webshop/
 
 # Log files from make dev/train

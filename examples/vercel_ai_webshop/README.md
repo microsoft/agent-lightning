@@ -285,8 +285,8 @@ If you prefer to run services manually without Docker, follow the instructions b
 
 **Terminal 1 - WebShop Server:**
 ```bash
-cd examples/vercel_ai_webshop/server
-docker compose up --build
+cd examples/vercel_ai_webshop
+docker compose up webshop --build
 ```
 
 **Terminal 2 - Training Coordinator (Dev Mode):**
@@ -335,8 +335,8 @@ For RL-based fine-tuning with VERL, you need a GPU with 40GB+ memory.
 
 **Terminal 1 - WebShop Server:**
 ```bash
-cd examples/vercel_ai_webshop/server
-docker compose up --build
+cd examples/vercel_ai_webshop
+docker compose up webshop --build
 ```
 
 **Terminal 2 - Training Coordinator:**

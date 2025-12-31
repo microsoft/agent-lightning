@@ -3,11 +3,6 @@ node_modules/
 .pnpm-store/
 agl/venv/
 
-# Build outputs
-.next/
-out/
-dist/
-
 # IDE and editor files
 .idea/
 .vscode/
@@ -23,18 +18,19 @@ dist/
 .git/
 .gitignore
 
-# Documentation
+# Documentation (except README)
 *.md
 !README.md
 
 # Test files
 *.test.ts
-*.test.tsx
 *.spec.ts
-*.spec.tsx
 __tests__/
+
+# Logs
+logs/
+*.log
 
 # Misc
 .DS_Store
 Thumbs.db
-*.log
