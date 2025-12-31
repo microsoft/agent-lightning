@@ -1,0 +1,166 @@
+# WebShop Docker Compose
+#
+# Profiles:
+#   - dev: Starts WebShop, CPU Coordinator, and Headless Runner
+#          Uses OPENAI_API_BASE for LLM inference (set in .env)
+#   - gpu: Starts WebShop, GPU Coordinator (VERL + vLLM), and Headless Runner
+#          VERL manages vLLM internally and publishes endpoint to Store
+#
+# Usage:
+#   make dev          # Run dev stack (requires OPENAI_API_BASE in .env)
+#   make train        # Run training stack with VERL (GPU required)
+#   make logs         # Follow logs
+#   make stop         # Stop all services
+#
+# Dev mode is CPU-only and uses an external LLM endpoint via OPENAI_API_BASE.
+# GPU mode uses VERL which internally manages vLLM and publishes the endpoint
+# to the Store for dynamic discovery by runners.
+
+services:
+  # ==========================================================================
+  # WebShop Server (Shared)
+  # ==========================================================================
+  webshop:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - webshop_data:/app/webshop/data
+    environment:
+      - WEBSHOP_NUM_PRODUCTS=1000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s  # Allow time for first-run download
+      retries: 5
+    networks:
+      - webshop-net
+
+  # ==========================================================================
+  # Coordinator (Dev / CPU)
+  # ==========================================================================
+  agl-server-dev:
+    build:
+      context: ../..
+      dockerfile: examples/vercel_ai_webshop/Dockerfile.agl
+    profiles: ["dev"]
+    ports:
+      - "4747:4747"
+    environment:
+      - AGENT_LIGHTNING_STORE_HOST=0.0.0.0
+      - AGENT_LIGHTNING_STORE_PORT=4747
+      - PYTHONUNBUFFERED=1
+    command: ["python", "run_training.py", "--dev", "--max-tasks", "10"]
+    volumes:
+      - ./agl:/app/agl  # Hot reload for python logic
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4747/v1/agl/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - webshop-net
+    depends_on:
+      webshop:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Coordinator (Train / GPU)
+  # ==========================================================================
+  agl-server-gpu:
+    build:
+      context: ../..
+      dockerfile: examples/vercel_ai_webshop/Dockerfile.agl
+      args:
+        - INSTALL_GPU=true
+    profiles: ["gpu"]
+    ports:
+      - "4747:4747"
+    environment:
+      - AGENT_LIGHTNING_STORE_HOST=0.0.0.0
+      - AGENT_LIGHTNING_STORE_PORT=4747
+      - PYTHONUNBUFFERED=1
+    command: ["python", "run_training.py", "qwen"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4747/v1/agl/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - webshop-net
+    depends_on:
+      webshop:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Headless Runner (Dev Profile) - Uses Store resources or OPENAI_API_BASE
+  # ==========================================================================
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    profiles: ["dev"]
+    environment:
+      - WEBSHOP_URL=http://webshop:3000
+      - AGENT_LIGHTNING_STORE_URL=http://agl-server-dev:4747
+      - AGENT_LIGHTNING_OTLP_ENDPOINT=http://agl-server-dev:4747/v1/traces
+      - AGENT_LIGHTNING_MODE=train
+      - AGENT_LIGHTNING_SERVICE_NAME=webshop-runner
+      # LLM endpoint: fetched from Store (VERL mode) or fallback to env vars
+      - WEBSHOP_MODEL=${WEBSHOP_MODEL:-gpt-4o-mini}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - WORKER_ID=runner-${HOSTNAME:-1}
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+    networks:
+      - webshop-net
+    depends_on:
+      agl-server-dev:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Headless Runner (GPU Profile)
+  # ==========================================================================
+  runner-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    profiles: ["gpu"]
+    environment:
+      - WEBSHOP_URL=http://webshop:3000
+      - AGENT_LIGHTNING_STORE_URL=http://agl-server-gpu:4747
+      - AGENT_LIGHTNING_OTLP_ENDPOINT=http://agl-server-gpu:4747/v1/traces
+      - AGENT_LIGHTNING_MODE=train
+      - AGENT_LIGHTNING_SERVICE_NAME=webshop-runner
+      - WEBSHOP_MODEL=${WEBSHOP_MODEL:-gpt-4o-mini}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - WORKER_ID=runner-${HOSTNAME:-1}
+    restart: unless-stopped
+    networks:
+      - webshop-net
+    depends_on:
+      agl-server-gpu:
+        condition: service_healthy
+
+volumes:
+  webshop_data:
+
+networks:
+  webshop-net:
+    driver: bridge

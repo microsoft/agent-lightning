@@ -1,0 +1,58 @@
+# Agent Lightning Training Coordinator
+# Starts the Store server and coordinates training with external runners
+#
+# Build context should be the repository root:
+#   docker build -f examples/vercel_ai_webshop/Dockerfile.agl -t agl-server .
+#
+# For GPU training:
+#   docker build -f examples/vercel_ai_webshop/Dockerfile.agl --build-arg INSTALL_GPU=true -t agl-server-gpu .
+FROM python:3.11-slim
+
+# Build argument for GPU support
+ARG INSTALL_GPU=false
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the entire agentlightning package from repo root
+# README.md is required by hatchling for package metadata
+COPY pyproject.toml uv.lock README.md ./
+COPY agentlightning/ ./agentlightning/
+
+# Copy the example's agl directory
+COPY examples/vercel_ai_webshop/agl/ ./agl/
+
+# Install pip and dependencies
+# For GPU mode, install with VERL extras
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
+    if [ "$INSTALL_GPU" = "true" ]; then \
+        pip install --no-cache-dir -e ".[verl]" || pip install --no-cache-dir -e .; \
+    else \
+        pip install --no-cache-dir -e .; \
+    fi && \
+    pip install --no-cache-dir -r agl/requirements.txt
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV AGENT_LIGHTNING_STORE_HOST=0.0.0.0
+ENV AGENT_LIGHTNING_STORE_PORT=4747
+
+# Expose the Store server port
+EXPOSE 4747
+
+# Health check for the Store server
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:4747/health || exit 1
+
+# Default command runs dev mode
+# Override with command args for different modes:
+#   --dev              : CPU-only dev mode (default)
+#   fast               : Fast training (requires GPU)
+#   qwen               : Full Qwen training (requires GPU)
+WORKDIR /app/agl
+CMD ["python", "run_training.py", "--dev"]

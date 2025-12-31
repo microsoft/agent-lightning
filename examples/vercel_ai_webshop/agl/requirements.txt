@@ -1,0 +1,16 @@
+# Agent Lightning Training Dependencies
+# Python 3.10+ required
+#
+# For dev mode (CPU-only): pip install -r requirements.txt
+# For GPU training: ./setup.sh --gpu (installs VERL extras)
+
+# Core dependency (installed from repo root by setup.sh)
+# agentlightning>=0.3.0
+
+# Task loading
+pandas>=2.0.0
+pyarrow>=14.0.0  # For parquet support
+
+# Logging and utilities
+rich>=13.0.0
+tqdm>=4.64.0

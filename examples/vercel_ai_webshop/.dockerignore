@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+agl/venv/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Documentation (except README)
+*.md
+!README.md
+
+# Test files
+*.test.ts
+*.spec.ts
+__tests__/
+
+# Logs
+logs/
+*.log
+
+# Misc
+.DS_Store
+Thumbs.db
