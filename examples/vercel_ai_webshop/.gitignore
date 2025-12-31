@@ -1,0 +1,7 @@
+node_modules/
+.venv/
+.next/
+server/webshop/
+
+# Log files from make dev/train
+logs/

@@ -1,0 +1,29 @@
+# Headless Runner & UI Image
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install pnpm and procps (for healthchecks/debugging)
+RUN npm install -g pnpm && apt-get update && apt-get install -y --no-install-recommends procps && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY package.json pnpm-lock.yaml* ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Copy source code
+COPY tsconfig.json next.config.js tailwind.config.js postcss.config.js ./
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+
+# Environment defaults
+ENV WEBSHOP_URL=http://webshop:3000
+ENV PORT=3001
+
+# Expose ports for UI (3001) and any other services
+EXPOSE 3001
+
+# Default Command (Headless Runner)
+# Can be overridden by docker-compose for UI: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
+CMD ["sh", "-c", "pnpm headless -- --worker-id ${WORKER_ID:-runner-1}"]
