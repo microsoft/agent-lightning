@@ -16,6 +16,8 @@ from typing import (
     Optional,
     Sequence,
     TypeVar,
+    Union,
+    overload,
 )
 
 from openai.types.chat import (
@@ -36,7 +38,7 @@ T = TypeVar("T")
 # General containers
 
 
-class Tree(Generic[T]):
+class Tree(Sequence[T], Generic[T]):
     """This is a generic tree data structure that can be used to represent the structure of a tree."""
 
     def __init__(self, item: T, children: MutableSequence[Tree[T]]) -> None:
@@ -54,15 +56,18 @@ class Tree(Generic[T]):
     def __iter__(self) -> Iterator[T]:
         return iter(self.traverse())
 
-    def __getitem__(self, index: int) -> T:
+    @overload
+    def __getitem__(self, index: int) -> T: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[T]: ...
+
+    def __getitem__(self, index: Union[int, slice]) -> Union[T, Sequence[T]]:
         """Get the index-th item in the tree (O(n) time complexity).
 
         I think this is not efficient, but it's seldomly used.
         """
-        for i, item in enumerate(self.traverse()):
-            if i == index:
-                return item
-        raise IndexError(f"Tree index out of range: {index}")
+        return list(self.traverse())[index]
 
     def __len__(self) -> int:
         return self.size()
@@ -70,8 +75,31 @@ class Tree(Generic[T]):
     def add(self, child: Tree[T]) -> None:
         self.children.append(child)
 
+    def _retain_subtree(self, predicate: Callable[[T], bool]) -> Optional[Tree[T]]:
+        if predicate(self.item):
+            # If the current node satisfies the predicate, retain the subtree
+            return self
+
+        subtrees = [child._retain_subtree(predicate) for child in self.children]
+        if all(subtree is None for subtree in subtrees):
+            # no subtrees satisfy the predicate, remove the current node
+            return None
+
+        return Tree(self.item, [subtree for subtree in subtrees if subtree is not None])
+
+    def retain(self, predicate: Callable[[T], bool]) -> Tree[T]:
+        """Prune the tree by retaining subtrees with root nodes that satisfy the predicate.
+
+        The root node is always retained.
+        """
+        return self._retain_subtree(predicate) or Tree(self.item, [])
+
     def prune(self, predicate: Callable[[T], bool]) -> Tree[T]:
-        return Tree(self.item, [child.prune(predicate) for child in self.children if predicate(child.item)])
+        """Prune the tree by removing nodes that satisfy the predicate.
+
+        The root node is always retained.
+        """
+        return Tree(self.item, [child.prune(predicate) for child in self.children if not predicate(child.item)])
 
     def visualize(self, filename: str, item_to_str: Callable[[T], str]) -> None:
         """Render the tree with Graphviz for debugging purposes.

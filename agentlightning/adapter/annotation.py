@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, TypeVar, cast
+from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, TypeVar, cast
 
 from opentelemetry.semconv.attributes import exception_attributes
 
@@ -29,9 +29,11 @@ from agentlightning.types.adapter import (
     MessageAnnotation,
     ObjectAnnotation,
     OperationAnnotation,
+    Tree,
 )
 from agentlightning.types.tracer import Span
 from agentlightning.utils.otel import (
+    check_linked_span,
     extract_links_from_attributes,
     extract_tags_from_attributes,
     filter_and_unflatten_attributes,
@@ -259,10 +261,31 @@ class SelectByAnnotation(Adapter[Tuple[T_SpanSequence, Sequence[Annotation]], T_
     def __init__(self, mode: Literal["include", "exclude"]) -> None:
         self.mode = mode
 
-    def adapt(self, source: Tuple[T_SpanSequence, Sequence[Annotation]]) -> T_SpanSequence: ...
+    def _filter_linked_spans(self, source: Sequence[Span], annotation: Sequence[Annotation]) -> Iterable[Span]:
+        annotation_span_ids = set(annotation.span_id for annotation in annotation)
+        for span in source:
+            if span.span_id in annotation_span_ids:
+                yield span
+            elif any(check_linked_span(span, annotation.links) for annotation in annotation):
+                yield span
+            # ignore the current span for now
+
+    def adapt(self, source: Tuple[T_SpanSequence, Sequence[Annotation]]) -> T_SpanSequence:
+        spans, annotations = source
+        linked_spans = self._filter_linked_spans(spans, annotations)
+        if isinstance(spans, Tree):
+            if self.mode == "include":
+                return cast(T_SpanSequence, spans.retain(lambda span: span in linked_spans))
+            else:
+                return cast(T_SpanSequence, spans.prune(lambda span: span not in linked_spans))
+        else:
+            if self.mode == "include":
+                return cast(T_SpanSequence, list(linked_spans))
+            else:
+                return cast(T_SpanSequence, [span for span in spans if span not in linked_spans])
 
 
-class FillMissingLinks(Adapter[Tuple[Sequence[Span], Sequence[Annotation]], Sequence[Span]]):
+class RepairMissingLinks(Adapter[Tuple[Sequence[Span], Sequence[Annotation]], Sequence[Span]]):
     """Populate missing annotation links by searching nearby spans.
 
     This adapter scans annotations and, for any annotation that has no linked spans, attempts
@@ -272,16 +295,18 @@ class FillMissingLinks(Adapter[Tuple[Sequence[Span], Sequence[Annotation]], Sequ
     but failed to attach their target spans; this adapter backfills those links based on
     proximity and eligibility rules.
 
+    The annotation spans do not necessarily have to appear in the input span sequence.
+
     Args:
-        require_annotation_span_child:
-            If True, only attempt to fill links for annotations whose *own* span is present
-            as a child span in the candidate span set. If False, annotations are considered
-            regardless of whether their span is a child.
+        annotation_span_required:
+            If True, only attempt to fill links for annotations whose *span_id* is present
+            in the candidate span set. If False, annotations are considered
+            regardless of whether their span is in the input span sequence.
 
         candidate_scope:
             Controls which spans are eligible as link targets:
 
-            - "siblings": search only among sibling spans of the annotation span.
+            - "siblings": search only among sibling spans of the annotation span. Only applicable when input span sequence is a tree.
             - "all": search among all spans provided to the adapter.
 
         scan_direction:
