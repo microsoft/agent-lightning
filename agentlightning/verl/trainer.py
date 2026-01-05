@@ -28,7 +28,6 @@ from verl.trainer.ppo.ray_trainer import (
     AdvantageEstimator,
     RayPPOTrainer,
     apply_kl_penalty,
-    compute_advantage,
     compute_response_mask,
 )
 from verl.utils.metric import reduce_metrics
@@ -38,11 +37,95 @@ from agentlightning.adapter import TraceAdapter, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.store.base import LightningStore
 
+from . import core_algos
 from .daemon import AgentModeDaemon
 
 __all__ = [
     "AgentLightningTrainer",
 ]
+
+
+def compute_advantage(
+    batch: DataProto,
+    adv_estimator: AdvantageEstimator,
+    gamma: float = 1.0,
+    lam: float = 1.0,
+    num_repeat: int = 1,
+    norm_adv_by_std_in_grpo: bool = True,
+    compute_mean_std_cross_all_data: bool = True,
+    config: Any = None,
+) -> DataProto:
+    """Compute advantage estimates for policy optimization.
+
+    This function computes advantage estimates using various estimators like GAE, GRPO, REINFORCE++, etc.
+    The advantage estimates are used to guide policy optimization in RL algorithms.
+
+    Args:
+        batch: DataProto object containing batch data
+        adv_estimator: The advantage estimator to use (e.g., GAE, GRPO, REINFORCE++)
+        gamma: Discount factor for future rewards
+        lam: Lambda parameter for GAE
+        num_repeat: Number of rollouts per sample
+        norm_adv_by_std_in_grpo: Whether to normalize by std in GRPO
+        compute_mean_std_cross_all_data: Whether to compute mean/std across all data
+        config: Additional configuration dictionary
+
+    Returns:
+        Updated batch with advantages and returns computed
+    """
+    # Ensure response_mask exists
+    if "response_mask" not in batch.batch:
+        batch.batch["response_mask"] = compute_response_mask(batch)
+
+    if adv_estimator == AdvantageEstimator.GAE:
+        # Compute advantages using Generalized Advantage Estimation (GAE)
+        advantages, returns = core_algos.compute_gae_advantage_return(
+            token_level_rewards=batch.batch["token_level_rewards"],
+            values=batch.batch["values"],
+            response_mask=batch.batch["response_mask"],
+            gamma=gamma,
+            lam=lam,
+        )
+        batch.batch["advantages"] = advantages
+        batch.batch["returns"] = returns
+    elif adv_estimator == AdvantageEstimator.GRPO:
+        # GRPO with trajectory-level deduplication
+        advantages, returns = core_algos.compute_grpo_outcome_advantage(
+            token_level_rewards=batch.batch["token_level_rewards"],
+            response_mask=batch.batch["response_mask"],
+            index=batch.non_tensor_batch["data_id_list"],
+            traj_index=batch.non_tensor_batch["rollout_id_list"],
+            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+            compute_mean_std_cross_all_data=compute_mean_std_cross_all_data,
+        )
+        batch.batch["advantages"] = advantages
+        batch.batch["returns"] = returns
+    else:
+        # Handle all other advantage estimator types
+        adv_estimator_fn = core_algos.get_adv_estimator_fn(adv_estimator)
+        adv_kwargs = {
+            "token_level_rewards": batch.batch["token_level_rewards"],
+            "response_mask": batch.batch["response_mask"],
+            "config": config,
+        }
+        # Add optional parameters if available
+        if "data_id_list" in batch.non_tensor_batch:
+            adv_kwargs["index"] = batch.non_tensor_batch["data_id_list"]
+        if "rollout_id_list" in batch.non_tensor_batch:
+            adv_kwargs["traj_index"] = batch.non_tensor_batch["rollout_id_list"]
+        if "reward_baselines" in batch.batch:
+            adv_kwargs["reward_baselines"] = batch.batch["reward_baselines"]
+
+        # Add GRPO-related parameters
+        adv_kwargs["norm_adv_by_std_in_grpo"] = norm_adv_by_std_in_grpo
+        adv_kwargs["compute_mean_std_cross_all_data"] = compute_mean_std_cross_all_data
+        adv_kwargs["gamma"] = gamma
+
+        advantages, returns = adv_estimator_fn(**adv_kwargs)
+        batch.batch["advantages"] = advantages
+        batch.batch["returns"] = returns
+
+    return batch
 
 
 @contextmanager
@@ -350,11 +433,14 @@ class AgentLightningTrainer(RayPPOTrainer):
                     batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
                 # compute advantages, executed on the driver process
-
                 norm_adv_by_std_in_grpo = self.config.algorithm.get(
                     "norm_adv_by_std_in_grpo", True
                 )  # GRPO adv normalization factor
-
+                compute_mean_std_cross_all_data = self.config.algorithm.get(
+                    "compute_mean_std_cross_all_data", True
+                )
+                
+                # Unified entry point for all advantage estimation algorithms
                 batch = compute_advantage(
                     batch,
                     adv_estimator=self.config.algorithm.adv_estimator,
@@ -362,6 +448,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                     lam=self.config.algorithm.lam,
                     num_repeat=self.config.actor_rollout_ref.rollout.n,
                     norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+                    compute_mean_std_cross_all_data=compute_mean_std_cross_all_data,
                     config=self.config.algorithm,
                 )
 
