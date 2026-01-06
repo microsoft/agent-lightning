@@ -148,8 +148,8 @@ class APO(Algorithm, Generic[T_task]):
         self.beam_rounds = beam_rounds
         self.rollout_batch_timeout = rollout_batch_timeout
         self.run_initial_validation = run_initial_validation
-        self.gradient_prompt_files = gradient_prompt_files if not None else GRADIENT_PROMPT_FILES
-        self.apply_edit_prompt_files = apply_edit_prompt_files if not None else APPLY_EDIT_PROMPT_FILES
+        self.gradient_prompt_files = gradient_prompt_files or GRADIENT_PROMPT_FILES
+        self.apply_edit_prompt_files = apply_edit_prompt_files or APPLY_EDIT_PROMPT_FILES
 
         self._history_best_prompt: Optional[PromptTemplate] = None
         self._history_best_score: float = float("-inf")
