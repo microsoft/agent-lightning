@@ -112,10 +112,10 @@ class APO(Algorithm, Generic[T_task]):
         beam_rounds: int = 3,
         rollout_batch_timeout: float = 3600.0,
         run_initial_validation: bool = True,
-        # Internal flags for debugging
-        _poml_trace: bool = False,
         gradient_prompt_files: Optional[List[Path]] = None,
         apply_edit_prompt_files: Optional[List[Path]] = None,
+        # Internal flags for debugging
+        _poml_trace: bool = False,
     ):
         """
         Initialize the APO algorithm with configuration parameters.
