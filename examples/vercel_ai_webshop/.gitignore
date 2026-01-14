@@ -1,6 +1,7 @@
 node_modules/
 .venv/
 .next/
+dist/
 *.tsbuildinfo
 server/webshop/
 

@@ -24,7 +24,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": False,
     },
     "data": {
-        "train_batch_size": 16,
+        "train_batch_size": 8,  # Must be <= number of tasks (sample tasks = 8)
         "max_prompt_length": 4096,
         "max_response_length": 1024,
         "truncation": "error",
@@ -45,7 +45,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 16,
+            "ppo_mini_batch_size": 8,  # Must be <= train_batch_size
             "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
@@ -73,12 +73,12 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "n_gpus_per_node": 1,
         "val_before_train": True,
         "critic_warmup": 0,
-        "logger": ["console"],
+        "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
         "experiment_name": "webshop",
         "nnodes": 1,
         "test_freq": 32,
-        "total_epochs": 2,
+        "total_epochs": 10,
     },
 }
 

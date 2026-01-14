@@ -61,6 +61,9 @@ In **dev mode** (`make dev`), runners connect to an external LLM endpoint config
 | `OPENAI_API_KEY` | API key for external LLM endpoint | Dev mode only |
 | `OPENAI_API_BASE` | OpenAI-compatible endpoint URL | Dev mode only |
 | `WEBSHOP_URL` | WebShop server URL | No (default: `http://localhost:3000`) |
+| `WANDB_API_KEY` | Weights & Biases API key for metrics tracking | No (recommended) |
+
+Training metrics (rewards, success rates, response lengths) are automatically logged to [Weights & Biases](https://wandb.ai). Set `WANDB_API_KEY` to enable experiment tracking.
 
 ## How It Works
 
@@ -129,21 +132,35 @@ The agent interacts with the WebShop server using a simple action grammar:
 
 The training pipeline uses Docker Compose to orchestrate all services. This section covers configuration options, monitoring, and manual setup alternatives.
 
-### Why Docker Compose?
+### Architecture
 
-Each component has distinct runtime requirements that make containerization beneficial:
+The training pipeline uses a **unified container** that runs all three services (WebShop, Coordinator, Runners) as processes within a single container. This architecture:
 
-| Component | Runtime | Key Dependencies |
-|-----------|---------|------------------|
-| **WebShop Server** | Python 3.11 + Java 21 | Flask, OpenAI Gym, pyserini (neural search), spacy, PyTorch |
-| **Training Coordinator** | Python 3.10+ | Agent Lightning, VERL + vLLM (GPU mode), pandas, PyTorch |
-| **Headless Runner** | Node.js 20+ | Vercel AI SDK, OpenTelemetry, TypeScript |
+- **Simplifies deployment** - Single image to build and deploy
+- **Enables localhost communication** - All services communicate via `127.0.0.1`
+- **Matches Azure ML pattern** - Same architecture works locally and in the cloud
+- **Isolates dependencies** - Python 3.11 + Java 21 + Node.js 20 in one image
 
-Running these in Docker containers:
-- **Isolates conflicting dependencies** - The WebShop server requires Java 21 for pyserini, which may conflict with other system Java versions
-- **Ensures reproducibility** - Same environment across development machines and CI
-- **Simplifies setup** - No need to manually install Python, Node.js, Java, and their dependencies
-- **Enables scaling** - Easily run multiple headless runners in parallel
+| Component | Runtime | Port | Description |
+|-----------|---------|------|-------------|
+| **WebShop Server** | Python + Java 21 | 3000 | Flask shopping environment with pyserini search |
+| **Training Coordinator** | Python | 4747 | Agent Lightning Store + training algorithm |
+| **Headless Runners** | Node.js 20 | - | Vercel AI SDK agent execution |
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 Single Container (webshop-agl)              │
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │  WebShop    │  │    AGL      │  │   N x Runners       │  │
+│  │   Server    │  │ Coordinator │  │   (Node.js)         │  │
+│  │  :3000      │  │   :4747     │  │                     │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+│         │                │                    │             │
+│         └────────────────┴────────────────────┘             │
+│                    localhost                                │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### Inspecting Logs
 
@@ -161,17 +178,9 @@ make logs         # Follow all logs (live)
 make status       # Show all container states
 ```
 
-**Log inspection by component:**
-
-| Command | What to Look For |
-|---------|------------------|
-| `make logs-runner` | LLM endpoint discovery, agent steps, rewards |
-| `make logs-agl` | Task queue status, training progress |
-| `make logs-webshop` | Session creation, action execution |
-
 **Verify LLM endpoint configuration:**
 ```bash
-docker compose logs runner 2>&1 | grep -E "LLM resource|OPENAI_API_BASE|Using"
+docker compose logs 2>&1 | grep -E "LLM resource|OPENAI_API_BASE|Using"
 ```
 
 Expected output in dev mode:
@@ -188,7 +197,7 @@ In GPU mode (with VERL), you'll see:
 
 **Verify tasks are being processed:**
 ```bash
-docker compose logs agl-server-dev 2>&1 | grep -E "PROGRESS|Enqueued|rollout"
+docker compose logs 2>&1 | grep -E "PROGRESS|Enqueued|rollout"
 ```
 
 **Filtered views for training:**
@@ -212,20 +221,22 @@ make watch            # 3-pane tmux view (requires tmux)
 | Command | Description |
 |---------|-------------|
 | `make setup` | Create `.env` from template |
-| `make dev` | Start dev stack (Server + Coordinator + Runner) |
-| `make train` | Start GPU training stack (Server + GPU Coordinator + Runner) |
-| `make scale N=3` | Scale dev runners to N instances |
-| `make watch` | Launch tmux with 3-pane training visibility |
+| `make build` | Build Docker image |
+| `make dev` | Start dev stack (single container, CPU) |
+| `make train` | Start training stack (single container, GPU) |
+| `make scale N=3` | Set number of runners |
+| `make watch` | Launch tmux with training visibility |
 | `make watch-steps` | Follow only agent step logs (compact) |
 | `make watch-progress` | Follow only training progress logs |
 | `make logs` | Follow all logs (live) |
 | `make logs-latest` | Tail the most recent log file |
-| `make logs-runner` | Follow runner logs |
-| `make logs-agl` | Follow coordinator logs |
-| `make logs-webshop` | Follow WebShop server logs |
 | `make status` | Show container status |
 | `make stop` | Stop all services |
 | `make clean` | Stop, remove volumes and images |
+| `make aml-setup` | One-time Azure ML setup (compute + environment) |
+| `make aml-train` | Submit training job to Azure ML |
+| `make aml-logs` | Stream logs from running AML job |
+| `make aml-status` | Show AML job status |
 
 ### Docker Features
 
@@ -263,10 +274,10 @@ Requires `tmux` to be installed. Use `Ctrl+B D` to detach from the session.
 
 ### Docker Compose Profiles
 
-Two profiles are available:
+Two profiles are available, both using the unified container architecture:
 
-- **`dev`** - CPU-only mode. Starts WebShop, Coordinator (Baseline algorithm), and Headless Runner. Uses `OPENAI_API_BASE` for LLM inference (configure in `.env`).
-- **`gpu`** - GPU training mode. Starts WebShop, Coordinator (VERL + vLLM), and Headless Runner. VERL manages vLLM internally and publishes the endpoint to the Store for automatic discovery.
+- **`dev`** - CPU-only mode. Runs all services in a single container. Uses `OPENAI_API_BASE` for LLM inference (configure in `.env`).
+- **`gpu`** - GPU training mode. Runs all services in a single container with GPU access. VERL manages vLLM internally.
 
 ```bash
 # GPU mode (recommended) - VERL manages vLLM, no API key needed
@@ -275,8 +286,8 @@ docker compose --profile gpu up --build
 # Dev mode - requires OPENAI_API_KEY and OPENAI_API_BASE in .env
 docker compose --profile dev up --build
 
-# Scale runners
-docker compose --profile dev up --build --scale runner=3
+# Run with more runners
+N_RUNNERS=3 docker compose --profile dev up --build
 ```
 
 ### Manual Setup (Without Docker)
@@ -520,16 +531,67 @@ vercel_ai_webshop/
 │   ├── data/                         # Task definitions
 │   └── utils/agentlightning/         # Store client, tracing
 ├── scripts/
-│   └── headless-runner.ts            # Headless rollout runner
+│   ├── headless-runner.ts            # Headless rollout runner
+│   ├── run_stack.sh                  # Stack orchestration script
+│   └── watch-training.sh             # Training visibility (tmux)
 ├── agl/                              # Python Agent Lightning code
 │   ├── run_training.py               # Training coordinator
 │   └── config.py                     # Training configurations
 ├── server/                           # Python WebShop backend
 │   └── webshop_server.py             # Flask server
+├── aml/                              # Azure ML configuration
+│   ├── compute.yml                   # GPU compute cluster
+│   ├── environment.yml               # Training environment
+│   ├── job.yml                       # Training job spec
+│   └── README.md                     # AML instructions
 ├── docker-compose.yml                # Service orchestration
-├── Dockerfile.runner                 # Headless runner image
-├── Dockerfile.agl                    # Coordinator image
+├── Dockerfile                        # Unified training image
 └── Makefile                          # Build and run commands
+```
+
+## Running on Azure ML
+
+The `aml/` directory contains Azure ML configuration files for running training jobs in the cloud. See [aml/README.md](aml/README.md) for detailed instructions.
+
+### Quick Start
+
+```bash
+# Prerequisites
+az extension add -n ml
+az login
+export AZURE_SUBSCRIPTION_ID="your-subscription-id"
+export HF_TOKEN="your-huggingface-token"
+export WANDB_API_KEY="your-wandb-api-key"
+
+# One-time setup
+make aml-setup
+
+# Submit training job
+make aml-train
+
+# Stream logs
+make aml-logs
+```
+
+### How It Works
+
+Azure ML jobs use the same unified container architecture as local development. The `scripts/run_stack.sh` script runs all three services (WebShop, Coordinator, Runners) as processes within a single container on a GPU node:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Azure ML GPU Node                         │
+│                  (Standard_NC24ads_A100_v4)                  │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              Single Container (webshop-agl-gpu)       │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │   │
+│  │  │  WebShop    │  │    AGL      │  │   Runners   │   │   │
+│  │  │   :3000     │  │   :4747     │  │  (N procs)  │   │   │
+│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘   │   │
+│  │         └────────────────┴────────────────┘          │   │
+│  │                    localhost                          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Troubleshooting

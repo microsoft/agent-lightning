@@ -3,10 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "headless": "npx tsx scripts/headless-runner.ts"
+    "build:headless": "tsup scripts/headless-runner.ts --format cjs --out-dir dist --clean",
+    "headless": "node dist/headless-runner.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "3.0.0-beta.89",
+    "@dqbd/tiktoken": "^1.0.22",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/context-async-hooks": "^1.30.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "20.17.24",
+    "tsup": "^8.0.0",
     "tsx": "^4.19.0",
     "typescript": "5.8.3"
   }

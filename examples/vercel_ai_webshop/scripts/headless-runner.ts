@@ -24,7 +24,8 @@ import {
   AgentLightningStoreClient,
   createRolloutTracer,
   getOtlpEndpoint,
-  makeAiSdkTelemetry,
+  emitReward,
+  emitLlmCallSpan,
   getProxyLLMBaseUrl,
   getMainLLM,
   isProxyLLM,
@@ -33,7 +34,7 @@ import {
   type LLMResource,
 } from '../src/utils/agentlightning';
 import { WebShopServerEnv } from '../src/environment/webshop-server';
-import { WEBSHOP_SYSTEM_PROMPT } from '../src/agent/webshop-agent';
+import { WEBSHOP_SYSTEM_PROMPT } from '../src/agent/prompts';
 
 interface RunnerOptions {
   workerId: string;
@@ -137,14 +138,15 @@ async function runRollout(
     ...(baseURL && { baseURL }),
   });
 
-  // Create tracer for this rollout
+  // Create tracer for this rollout (custom telemetry with token IDs for training)
   const otlpEndpoint = getOtlpEndpoint();
   const serviceName =
     process.env.AGENT_LIGHTNING_SERVICE_NAME ?? 'webshop-headless-runner';
-  let provider: Awaited<ReturnType<typeof createRolloutTracer>>['provider'];
-  let telemetry: ReturnType<typeof makeAiSdkTelemetry> | undefined;
+  let provider: Awaited<ReturnType<typeof createRolloutTracer>>['provider'] | undefined;
+  let tracer: Awaited<ReturnType<typeof createRolloutTracer>>['tracer'] | undefined;
 
   if (otlpEndpoint) {
+    console.log(`[${options.workerId}] Tracing enabled: ${otlpEndpoint}`);
     const result = createRolloutTracer({
       otlpEndpoint,
       serviceName,
@@ -152,7 +154,9 @@ async function runRollout(
       attemptId: attempt_id,
     });
     provider = result.provider;
-    telemetry = makeAiSdkTelemetry(result.tracer);
+    tracer = result.tracer;
+  } else {
+    console.log(`[${options.workerId}] Tracing DISABLED (no OTLP endpoint)`);
   }
 
   try {
@@ -165,13 +169,21 @@ async function runRollout(
     while (!done && stepCount < options.maxSteps) {
       stepCount++;
 
+      // Construct the prompt for this step
+      const stepPrompt = `Task: ${task.instruction}\n\nCurrent observation:\n${currentObservation}\n\nWhat action should I take next? Respond with search[query] or click[element].`;
+
       // Generate next action using the model
       const response = await generateText({
         model: openai(modelId),
         system: WEBSHOP_SYSTEM_PROMPT,
-        prompt: `Task: ${task.instruction}\n\nCurrent observation:\n${currentObservation}\n\nWhat action should I take next? Respond with search[query] or click[element].`,
-        experimental_telemetry: telemetry,
+        prompt: stepPrompt,
       });
+
+      // Emit LLM call span with token IDs for training
+      if (tracer) {
+        const fullPrompt = `${WEBSHOP_SYSTEM_PROMPT}\n\n${stepPrompt}`;
+        emitLlmCallSpan(tracer, fullPrompt, response.text, modelId);
+      }
 
       // Parse action from response
       const action = parseAction(response.text);
@@ -199,10 +211,20 @@ async function runRollout(
       console.log(`[STEP] ${stepCount}. ${action} ${resultIcon}${done ? ` reward=${reward.toFixed(2)}` : ''}`);
     }
 
+    // Emit reward span so the daemon can extract final_reward from traces
+    // This must happen BEFORE flushing traces
+    if (tracer) {
+      emitReward(tracer, reward);
+    }
+
     // Flush traces BEFORE completing the attempt to avoid race condition
     // The coordinator queries for spans immediately when it sees the rollout is complete
     if (provider) {
+      console.log(`[${options.workerId}] Flushing traces to ${otlpEndpoint}...`);
+      const flushStart = Date.now();
       await provider.forceFlush();
+      const flushDuration = Date.now() - flushStart;
+      console.log(`[${options.workerId}] Traces flushed in ${flushDuration}ms for rollout ${rollout_id.slice(0, 8)}...`);
     }
 
     // Report success
@@ -258,22 +280,9 @@ async function runLoop(options: RunnerOptions): Promise<void> {
   console.log(`[${options.workerId}] Poll interval: ${options.pollIntervalMs}ms`);
   console.log(`[${options.workerId}] Max steps per task: ${options.maxSteps}`);
 
-  // Fetch LLM resource from Store (published by VERL/LLM Proxy)
-  // This allows dynamic discovery of the vLLM endpoint during training
-  let llmResource: ProxyLLMResource | LLMResource | null = null;
-  const resources = await storeClient.getLatestResources();
-  if (resources) {
-    llmResource = getMainLLM(resources);
-    if (llmResource) {
-      const resourceType = isProxyLLM(llmResource) ? 'ProxyLLM' : 'LLM';
-      console.log(`[${options.workerId}] Found ${resourceType} resource: ${llmResource.model} @ ${llmResource.endpoint}`);
-    }
-  }
-  if (!llmResource && process.env.OPENAI_API_BASE) {
-    console.log(`[${options.workerId}] No LLM resource in Store, using OPENAI_API_BASE fallback`);
-  } else if (!llmResource) {
-    console.log(`[${options.workerId}] No LLM resource found, will use OpenAI default endpoint`);
-  }
+  // Track consecutive errors to detect server shutdown
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 3;
 
   while (true) {
     try {
@@ -281,7 +290,25 @@ async function runLoop(options: RunnerOptions): Promise<void> {
       const rollouts = await storeClient.dequeueRollouts(1, options.workerId);
 
       if (rollouts.length > 0) {
+        // Fetch LLM resource from Store on each rollout (not cached at startup)
+        // This ensures we discover the vLLM endpoint after VERL registers it
+        let llmResource: ProxyLLMResource | LLMResource | null = null;
+        const resources = await storeClient.getLatestResources();
+        if (resources) {
+          llmResource = getMainLLM(resources);
+          if (llmResource) {
+            const resourceType = isProxyLLM(llmResource) ? 'ProxyLLM' : 'LLM';
+            console.log(`[${options.workerId}] Using ${resourceType}: ${llmResource.model} @ ${llmResource.endpoint}`);
+          }
+        }
+        if (!llmResource && process.env.OPENAI_API_BASE) {
+          console.log(`[${options.workerId}] No LLM resource in Store, using OPENAI_API_BASE fallback`);
+        } else if (!llmResource) {
+          console.log(`[${options.workerId}] No LLM resource found, using OpenAI default endpoint`);
+        }
+
         await runRollout(rollouts[0], storeClient, options, llmResource);
+        consecutiveErrors = 0; // Reset on successful processing
 
         if (options.once) {
           console.log(`[${options.workerId}] Single run mode, exiting`);
@@ -289,6 +316,7 @@ async function runLoop(options: RunnerOptions): Promise<void> {
         }
       } else {
         // No work available, wait and poll again
+        consecutiveErrors = 0; // Server is responsive, reset error counter
         if (options.once) {
           console.log(`[${options.workerId}] No tasks available, exiting (single run mode)`);
           break;
@@ -298,7 +326,15 @@ async function runLoop(options: RunnerOptions): Promise<void> {
         );
       }
     } catch (error) {
+      consecutiveErrors++;
       console.error(`[${options.workerId}] Error:`, error);
+
+      // Check if server might be down (e.g., ECONNREFUSED after training completes)
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        console.log(`[${options.workerId}] Too many consecutive errors (${consecutiveErrors}), server may be down. Exiting gracefully.`);
+        break;
+      }
+
       await new Promise((resolve) =>
         setTimeout(resolve, options.pollIntervalMs)
       );
