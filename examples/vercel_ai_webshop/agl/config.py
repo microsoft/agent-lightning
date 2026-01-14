@@ -78,7 +78,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "experiment_name": "webshop",
         "nnodes": 1,
         "test_freq": 32,
-        "total_epochs": 10,
+        "total_epochs": 50,
     },
 }
 

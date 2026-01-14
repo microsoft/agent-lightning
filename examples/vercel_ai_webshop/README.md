@@ -521,22 +521,67 @@ python run_training.py [config] [options]
 
 ---
 
+## Included Files
+
+### Training Coordinator (`agl/`)
+
+| File | Description |
+|------|-------------|
+| `run_training.py` | Main entry point for training with dev/VERL modes |
+| `config.py` | VERL/GRPO configuration (model, epochs, batch sizes) |
+| `tasks.py` | Task loading utilities (JSON, Parquet, sample tasks) |
+
+### Source Code (`src/`)
+
+| File | Description |
+|------|-------------|
+| `agent/webshop-agent.ts` | ToolLoopAgent for UI with Vercel AI SDK |
+| `agent/prompts.ts` | System prompts shared between UI and headless runner |
+| `environment/webshop-server.ts` | HTTP client for WebShop Flask server |
+
+### Agent Lightning Integration (`src/utils/agentlightning/`)
+
+| File | Description |
+|------|-------------|
+| `store-client.ts` | REST client for Store API (dequeue, complete, resources) |
+| `otel.ts` | OpenTelemetry tracer factory with rollout attribution |
+| `proxy-llm.ts` | ProxyLLM URL construction for rollout/attempt routing |
+| `types.ts` | TypeScript types matching Python models |
+| `index.ts` | Re-exports all utilities |
+
+### Scripts (`scripts/`)
+
+| File | Description |
+|------|-------------|
+| `headless-runner.ts` | Headless rollout runner for training |
+| `run_stack.sh` | Stack orchestration script |
+| `watch-training.sh` | Training visibility (tmux) |
+
 ## Project Structure
 
 ```
 vercel_ai_webshop/
 ├── src/                              # TypeScript source code
 │   ├── agent/                        # Agent definition
+│   │   ├── webshop-agent.ts          # ToolLoopAgent for Next.js UI
+│   │   └── prompts.ts                # System prompts (shared)
 │   ├── environment/                  # WebShop HTTP client
+│   │   └── webshop-server.ts         # HTTP client for WebShop API
 │   ├── data/                         # Task definitions
-│   └── utils/agentlightning/         # Store client, tracing
+│   └── utils/agentlightning/         # Agent Lightning integration
+│       ├── index.ts                  # Re-exports
+│       ├── store-client.ts           # Store REST client
+│       ├── otel.ts                   # OpenTelemetry tracing
+│       ├── proxy-llm.ts              # ProxyLLM URL helpers
+│       └── types.ts                  # TypeScript types
 ├── scripts/
 │   ├── headless-runner.ts            # Headless rollout runner
 │   ├── run_stack.sh                  # Stack orchestration script
 │   └── watch-training.sh             # Training visibility (tmux)
 ├── agl/                              # Python Agent Lightning code
 │   ├── run_training.py               # Training coordinator
-│   └── config.py                     # Training configurations
+│   ├── config.py                     # Training configurations
+│   └── tasks.py                      # Task loading utilities
 ├── server/                           # Python WebShop backend
 │   └── webshop_server.py             # Flask server
 ├── aml/                              # Azure ML configuration
@@ -548,6 +593,117 @@ vercel_ai_webshop/
 ├── Dockerfile                        # Unified training image
 └── Makefile                          # Build and run commands
 ```
+
+## Agent Lightning Integration
+
+The `src/utils/agentlightning/` directory provides TypeScript utilities that enable training Vercel AI SDK agents with Agent Lightning. These utilities handle task queue management, OpenTelemetry tracing, and LLM endpoint discovery.
+
+### Store Client (`store-client.ts`)
+
+REST client for the Agent Lightning Store server:
+
+- **Task Queue**: `dequeueRollouts()` / `completeAttempt()` - poll for work and report results
+- **Resources**: `getLatestResources()` - discover vLLM endpoint dynamically
+- **Health**: `health()` - check server availability
+
+```typescript
+import { AgentLightningStoreClient } from './utils/agentlightning';
+
+const client = new AgentLightningStoreClient({ baseUrl: 'http://localhost:4747' });
+const rollouts = await client.dequeueRollouts(1, 'runner-1');
+// ... execute rollout ...
+await client.completeAttempt(rolloutId, attemptId, { success: true, reward: 1.0 });
+```
+
+### OpenTelemetry Tracing (`otel.ts`)
+
+Creates per-rollout tracers that emit spans to the Agent Lightning Store:
+
+- `createRolloutTracer()` - factory that embeds rollout_id/attempt_id in Resource attributes
+- `emitLlmCallSpan()` - emit LLM call with tokenized prompt/response for training
+- `emitReward()` - emit reward span that the daemon extracts for training signal
+- `getOtlpEndpoint()` - derive OTLP endpoint from Store URL
+
+```typescript
+import { createRolloutTracer, emitLlmCallSpan, emitReward } from './utils/agentlightning';
+
+const { tracer, provider } = createRolloutTracer({
+  otlpEndpoint: 'http://localhost:4747/v1/traces',
+  serviceName: 'webshop-runner',
+  rolloutId: 'ro-abc123',
+  attemptId: 'at-def456',
+});
+
+// During agent execution, emit LLM calls with token IDs for training
+emitLlmCallSpan(tracer, promptText, responseText, modelId);
+
+// At the end, emit the final reward
+emitReward(tracer, reward);
+
+// Flush traces before completing the attempt
+await provider.forceFlush();
+```
+
+### ProxyLLM Routing (`proxy-llm.ts`)
+
+Utilities for constructing routed LLM endpoints that enable trace attribution:
+
+- `getProxyLLMBaseUrl()` - construct `{endpoint}/rollout/{id}/attempt/{id}/v1`
+- `getMainLLM()` - extract main_llm resource from Store response
+- `isProxyLLM()` - type guard for ProxyLLM vs regular LLM
+
+```typescript
+import { getMainLLM, getProxyLLMBaseUrl, isProxyLLM } from './utils/agentlightning';
+
+const resources = await client.getLatestResources();
+const llmResource = getMainLLM(resources);
+
+if (llmResource && isProxyLLM(llmResource)) {
+  // Construct routed URL for proper trace attribution
+  const baseURL = getProxyLLMBaseUrl(llmResource, rolloutId, attemptId);
+  // baseURL = "http://proxy:8080/rollout/ro-abc123/attempt/at-def456/v1"
+}
+```
+
+### Integration Flow
+
+The following diagram shows how the TypeScript utilities integrate with the training loop:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Training Loop                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. DEQUEUE TASK                                                             │
+│     └─► storeClient.dequeueRollouts()                                       │
+│         Returns: { rollout_id, attempt_id, input: { instruction, ... } }    │
+│                                                                              │
+│  2. DISCOVER LLM ENDPOINT                                                    │
+│     └─► storeClient.getLatestResources()                                    │
+│     └─► getMainLLM(resources) → ProxyLLM or LLM resource                   │
+│     └─► getProxyLLMBaseUrl(resource, rolloutId, attemptId)                 │
+│                                                                              │
+│  3. CREATE TRACER                                                            │
+│     └─► createRolloutTracer({ otlpEndpoint, rolloutId, attemptId, ... })   │
+│         Returns: { tracer, provider }                                        │
+│                                                                              │
+│  4. EXECUTE AGENT LOOP                                                       │
+│     for each step:                                                           │
+│       └─► LLM call via Vercel AI SDK                                        │
+│       └─► emitLlmCallSpan(tracer, prompt, response, model)                  │
+│       └─► Execute action in WebShop environment                             │
+│                                                                              │
+│  5. EMIT REWARD                                                              │
+│     └─► emitReward(tracer, finalReward)                                     │
+│                                                                              │
+│  6. FLUSH & COMPLETE                                                         │
+│     └─► provider.forceFlush()  // Send all spans to Store                   │
+│     └─► storeClient.completeAttempt(rolloutId, attemptId, { reward })       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+The training coordinator (Python) collects spans via the OTLP endpoint, extracts token IDs from `emitLlmCallSpan()` spans, and uses the reward from `emitReward()` spans to compute policy gradients for GRPO training.
 
 ## Running on Azure ML
 
