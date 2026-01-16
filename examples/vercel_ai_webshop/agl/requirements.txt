@@ -1,8 +1,7 @@
 # Agent Lightning Training Dependencies
 # Python 3.10+ required
 #
-# For dev mode (CPU-only): pip install -r requirements.txt
-# For GPU training: ./setup.sh --gpu (installs VERL extras)
+# For GPU training: ./setup.sh (installs VERL extras)
 
 # Core dependency (installed from repo root by setup.sh)
 # agentlightning>=0.3.0

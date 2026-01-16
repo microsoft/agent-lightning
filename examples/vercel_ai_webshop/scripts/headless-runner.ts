@@ -70,6 +70,44 @@ function parseAction(text: string): string | null {
 }
 
 /**
+ * Result of action validation.
+ */
+interface ValidationResult {
+  valid: boolean;
+  feedback?: string;
+}
+
+/**
+ * Validate action format and detect common errors (e.g., placeholder text).
+ * Returns feedback to help the model correct its output.
+ */
+function validateAction(action: string): ValidationResult {
+  // Detect literal placeholder text from prompts
+  const placeholderPatterns = [
+    { pattern: /^search\[(query|your query here)\]$/i, feedback: 'Invalid: Replace "query" with actual search terms from the task. Example: search[red t-shirt size large]' },
+    { pattern: /^click\[(element|exact text)\]$/i, feedback: 'Invalid: Replace "element" with a specific product ID or button text from the observation.' },
+    { pattern: /^search\[\.\.\.?\]$/i, feedback: 'Invalid: Replace "..." with actual search terms. Example: search[blue running shoes size 10]' },
+  ];
+
+  for (const { pattern, feedback } of placeholderPatterns) {
+    if (pattern.test(action)) {
+      return { valid: false, feedback };
+    }
+  }
+
+  // Validate search has meaningful content (at least 3 characters)
+  const searchMatch = action.match(/search\[([^\]]+)\]/i);
+  if (searchMatch && searchMatch[1].trim().length < 3) {
+    return {
+      valid: false,
+      feedback: 'Invalid: Search query too short. Include product type and attributes from the task.',
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Execute a single rollout.
  */
 async function runRollout(
@@ -170,38 +208,68 @@ async function runRollout(
       stepCount++;
 
       // Construct the prompt for this step
-      const stepPrompt = `Task: ${task.instruction}\n\nCurrent observation:\n${currentObservation}\n\nWhat action should I take next? Respond with search[query] or click[element].`;
+      let stepPrompt = `Task: ${task.instruction}\n\nCurrent observation:\n${currentObservation}\n\nWhat action should I take next? Respond with a single action like search[your search terms] or click[button text].`;
 
-      // Generate next action using the model
-      const response = await generateText({
-        model: openai(modelId),
-        system: WEBSHOP_SYSTEM_PROMPT,
-        prompt: stepPrompt,
-      });
+      // Retry loop for invalid actions (max 2 retries)
+      const MAX_RETRIES = 2;
+      let action: string | null = null;
+      let retryCount = 0;
 
-      // Emit LLM call span with token IDs for training
-      if (tracer) {
-        const fullPrompt = `${WEBSHOP_SYSTEM_PROMPT}\n\n${stepPrompt}`;
-        emitLlmCallSpan(tracer, fullPrompt, response.text, modelId);
+      while (retryCount <= MAX_RETRIES) {
+        // Generate next action using the model
+        const response = await generateText({
+          model: openai(modelId),
+          system: WEBSHOP_SYSTEM_PROMPT,
+          prompt: stepPrompt,
+        });
+
+        // Emit LLM call span with token IDs for training
+        if (tracer) {
+          const fullPrompt = `${WEBSHOP_SYSTEM_PROMPT}\n\n${stepPrompt}`;
+          emitLlmCallSpan(tracer, fullPrompt, response.text, modelId);
+        }
+
+        // Parse action from response
+        action = parseAction(response.text);
+        if (!action) {
+          console.log(
+            `[${options.workerId}] Step ${stepCount}: Could not parse action from: ${response.text.slice(0, 100)}...`
+          );
+          // Try to extract any actionable text
+          const fallbackAction = response.text.includes('search')
+            ? 'search[product]'
+            : response.text.includes('click')
+              ? 'click[Buy Now]'
+              : null;
+          if (!fallbackAction) break;
+          action = fallbackAction;
+        }
+
+        // Validate the action format
+        const validation = validateAction(action);
+        if (validation.valid) {
+          break; // Action is valid, proceed
+        }
+
+        // Action is invalid, retry with feedback
+        retryCount++;
+        if (retryCount <= MAX_RETRIES) {
+          console.log(
+            `[${options.workerId}] Step ${stepCount}: Invalid action "${action}" - ${validation.feedback} (retry ${retryCount}/${MAX_RETRIES})`
+          );
+          stepPrompt = `Task: ${task.instruction}\n\nCurrent observation:\n${currentObservation}\n\nPrevious action was invalid: ${validation.feedback}\n\nWhat action should I take? Respond with a single action.`;
+        } else {
+          console.log(
+            `[${options.workerId}] Step ${stepCount}: Max retries reached for invalid action "${action}"`
+          );
+        }
       }
 
-      // Parse action from response
-      const action = parseAction(response.text);
-      if (!action) {
-        console.log(
-          `[${options.workerId}] Step ${stepCount}: Could not parse action from: ${response.text.slice(0, 100)}...`
-        );
-        // Try to extract any actionable text
-        const fallbackAction = response.text.includes('search')
-          ? 'search[product]'
-          : response.text.includes('click')
-            ? 'click[Buy Now]'
-            : null;
-        if (!fallbackAction) break;
-      }
+      // If no valid action after retries, skip this step
+      if (!action) break;
 
       // Execute action
-      const result = await env.step(action!);
+      const result = await env.step(action);
       currentObservation = result.observation;
       done = result.done;
       reward = result.reward ?? 0;

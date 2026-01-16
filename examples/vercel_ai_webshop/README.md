@@ -1,6 +1,6 @@
 # WebShop Training Pipeline with Agent Lightning
 
-This example demonstrates how to train a Vercel AI SDK agent on the WebShop benchmark using Agent Lightning (agl). The training pipeline uses a **headless runner** that executes agent rollouts, reports traces to the Agent Lightning coordinator, and supports both CPU-based prototyping (with external LLMs) and GPU-based RL training (with VERL/vLLM).
+This example demonstrates how to train a Vercel AI SDK agent on the WebShop benchmark using Agent Lightning (agl). The training pipeline uses a **headless runner** that executes agent rollouts, reports traces to the Agent Lightning coordinator, and runs GPU-based RL training with VERL/vLLM.
 
 ## Overview
 
@@ -14,16 +14,15 @@ The training pipeline consists of:
 
 - **Headless Execution**: Run agent rollouts without a browser using the TypeScript headless runner
 - **Agent Lightning Integration**: Full tracing via OpenTelemetry, task queue management, and reward reporting
-- **VERL/vLLM Support**: GPU training mode with automatic LLM endpoint discovery
+- **VERL/vLLM Support**: GPU training with automatic LLM endpoint discovery
 - **Scalable Runners**: Launch multiple headless runners in parallel for faster rollout collection
-- **Dev Mode**: CPU-only prototyping using external LLM endpoints (OpenAI, local vLLM, etc.)
 
 ## Prerequisites
 
 - Node.js 22+
 - pnpm 10+
 - Docker (recommended) OR Python 3.8+ with Java 17+ (for the WebShop server)
-- OpenAI API key (only needed for dev mode with external LLM)
+- GPU with 40GB+ VRAM (for VERL training)
 
 ## Quick Start
 
@@ -37,10 +36,6 @@ make setup
 
 # 2. Run GPU training (VERL manages the Qwen model via vLLM)
 make train
-
-# Or run dev mode for CPU-only prototyping with an external LLM
-# Edit .env and set OPENAI_API_KEY + OPENAI_API_BASE first
-make dev
 ```
 
 This starts:
@@ -48,9 +43,7 @@ This starts:
 - **Store**: http://localhost:4747 — Agent Lightning coordinator
 - **Headless Runner** — Polls for tasks and executes agent rollouts
 
-In **GPU training mode** (`make train`), VERL manages vLLM internally with the Qwen model—no external API key is needed. The headless runners automatically discover the LLM endpoint from the Store.
-
-In **dev mode** (`make dev`), runners connect to an external LLM endpoint configured via `OPENAI_API_BASE`. This is useful for CPU-only prototyping or testing with different models.
+VERL manages vLLM internally with the Qwen model—no external API key is needed. The headless runners automatically discover the LLM endpoint from the Store.
 
 > **Note:** The first run downloads ~100MB of dataset files. This takes about 2 minutes but only happens once (data is persisted in a Docker volume).
 
@@ -58,10 +51,9 @@ In **dev mode** (`make dev`), runners connect to an external LLM endpoint config
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `OPENAI_API_KEY` | API key for external LLM endpoint | Dev mode only |
-| `OPENAI_API_BASE` | OpenAI-compatible endpoint URL | Dev mode only |
-| `WEBSHOP_URL` | WebShop server URL | No (default: `http://localhost:3000`) |
+| `HF_TOKEN` | HuggingFace token for model access | Yes |
 | `WANDB_API_KEY` | Weights & Biases API key for metrics tracking | No (recommended) |
+| `WEBSHOP_URL` | WebShop server URL | No (default: `http://localhost:3000`) |
 
 Training metrics (rewards, success rates, response lengths) are automatically logged to [Weights & Biases](https://wandb.ai). Set `WANDB_API_KEY` to enable experiment tracking.
 
@@ -100,7 +92,7 @@ The training pipeline consists of three main components that communicate via RES
 
 ### Key Components
 
-1. **Training Coordinator (`agl/run_training.py`)**: Manages the task queue, collects traces via OTLP, and runs the training algorithm (Baseline for dev mode, VERL for GPU training)
+1. **Training Coordinator (`agl/run_training.py`)**: Manages the task queue, collects traces via OTLP, and runs the VERL training algorithm
 2. **Headless Runner (`scripts/headless-runner.ts`)**: Polls for tasks, executes the Vercel AI agent, and reports rewards back to the coordinator
 3. **WebShop Agent (`src/agent/webshop-agent.ts`)**: Uses `ToolLoopAgent` with three tools (search, click, buy) to navigate the store
 4. **WebShopServerEnv**: HTTP adapter that connects to the WebShop Python server
@@ -164,17 +156,8 @@ The training pipeline uses a **unified container** that runs all three services 
 
 ### Inspecting Logs
 
-Logs are automatically saved to `logs/<profile>-<timestamp>.log` when running `make dev` or `make train`. This makes it easy to inspect what happened after a training run without needing to keep a terminal open.
-
-**Log files:**
+**Check container status:**
 ```bash
-make logs-latest  # Tail the most recent log file
-ls logs/          # List all saved log files
-```
-
-**Live log streaming:**
-```bash
-make logs         # Follow all logs (live)
 make status       # Show all container states
 ```
 
@@ -183,13 +166,7 @@ make status       # Show all container states
 docker compose logs 2>&1 | grep -E "LLM resource|OPENAI_API_BASE|Using"
 ```
 
-Expected output in dev mode:
-```
-[runner-1] No LLM resource in Store, using OPENAI_API_BASE fallback
-[runner-1] Using OPENAI_API_BASE: https://api.openai.com/v1
-```
-
-In GPU mode (with VERL), you'll see:
+Expected output with VERL:
 ```
 [runner-1] Found ProxyLLM resource: Qwen/Qwen2.5-1.5B-Instruct @ http://...
 [runner-1] Using LLM Proxy: http://.../rollout/{id}/attempt/{id}/v1
@@ -200,36 +177,21 @@ In GPU mode (with VERL), you'll see:
 docker compose logs 2>&1 | grep -E "PROGRESS|Enqueued|rollout"
 ```
 
-**Filtered views for training:**
-```bash
-make watch-steps      # Agent decisions only (most useful)
-make watch-progress   # Training coordinator status
-make watch            # 3-pane tmux view (requires tmux)
-```
-
 **Troubleshooting common issues:**
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `No LLM resource in Store` | Expected in dev mode | Ensure `OPENAI_API_BASE` is set in `.env` |
-| `Incorrect API key` | Invalid `OPENAI_API_KEY` | Update `.env` with valid key |
 | `connect ECONNREFUSED` | Service not ready | Wait for healthcheck or run `make status` |
-| Container `Exited (1)` | Service crashed | Check logs: `make logs-<service>` |
+| Container `Exited (1)` | Service crashed | Check logs: `docker compose logs` |
 
 ### Makefile Commands
 
 | Command | Description |
 |---------|-------------|
 | `make setup` | Create `.env` from template |
-| `make build` | Build Docker image |
-| `make dev` | Start dev stack (single container, CPU) |
+| `make build-gpu` | Build GPU Docker image |
 | `make train` | Start training stack (single container, GPU) |
 | `make scale N=3` | Set number of runners |
-| `make watch` | Launch tmux with training visibility |
-| `make watch-steps` | Follow only agent step logs (compact) |
-| `make watch-progress` | Follow only training progress logs |
-| `make logs` | Follow all logs (live) |
-| `make logs-latest` | Tail the most recent log file |
 | `make status` | Show container status |
 | `make stop` | Stop all services |
 | `make clean` | Stop, remove volumes and images |
@@ -240,54 +202,19 @@ make watch            # 3-pane tmux view (requires tmux)
 
 ### Docker Features
 
-- **Automatic Log Collection**: Logs are saved to `logs/<profile>-<timestamp>.log` for post-run inspection.
 - **Data Persistence**: The WebShop dataset (~100MB) is stored in a Docker volume (`webshop_data`). It downloads once on first run and persists across rebuilds.
 - **Unified Setup**: No local Node.js or Python installation required.
 
-### Training Visibility
+### Docker Compose
 
-Use `make watch` to launch a tmux session with 3 panes showing training activity in order of importance:
-
-```
-+---------------------------------------------------------------+
-| AGENT DECISIONS (top, largest pane)                           |
-| [TASK] runner-1 | rollout=abc123... | Find a red t-shirt...  |
-| [STEP] 1. search[red t-shirt] →                               |
-| [STEP] 2. click[B07XYZ123] →                                  |
-| [STEP] 3. click[Buy Now] ✓ reward=1.00                        |
-| [DONE] runner-1 | reward=1.00 | steps=3 | SUCCESS             |
-+---------------------------------------------------------------+
-| TRAINING PROGRESS (middle pane)                               |
-| [PROGRESS] Running 10 tasks (max_tasks=10)                    |
-| [PROGRESS] External runners should connect to execute tasks   |
-+---------------------------------------------------------------+
-| WEBSHOP SERVER (bottom, smallest pane)                        |
-| webshop | INFO - Created session sess_abc123                  |
-+---------------------------------------------------------------+
-```
-
-- **Top pane**: Agent decisions - shows task starts, each action step, and completion status
-- **Middle pane**: Training coordinator progress - shows task queue and training status
-- **Bottom pane**: WebShop server logs - for debugging environment issues
-
-Requires `tmux` to be installed. Use `Ctrl+B D` to detach from the session.
-
-### Docker Compose Profiles
-
-Two profiles are available, both using the unified container architecture:
-
-- **`dev`** - CPU-only mode. Runs all services in a single container. Uses `OPENAI_API_BASE` for LLM inference (configure in `.env`).
-- **`gpu`** - GPU training mode. Runs all services in a single container with GPU access. VERL manages vLLM internally.
+The training stack runs all services in a single container with GPU access. VERL manages vLLM internally.
 
 ```bash
-# GPU mode (recommended) - VERL manages vLLM, no API key needed
+# Start GPU training - VERL manages vLLM, no API key needed
 docker compose --profile gpu up --build
 
-# Dev mode - requires OPENAI_API_KEY and OPENAI_API_BASE in .env
-docker compose --profile dev up --build
-
 # Run with more runners
-N_RUNNERS=3 docker compose --profile dev up --build
+N_RUNNERS=3 docker compose --profile gpu up --build
 ```
 
 ### Manual Setup (Without Docker)
@@ -300,62 +227,12 @@ cd examples/vercel_ai_webshop
 docker compose up webshop --build
 ```
 
-**Terminal 2 - Training Coordinator (Dev Mode):**
-```bash
-cd examples/vercel_ai_webshop/agl
-
-# First time setup (creates venv and installs dependencies)
-./setup.sh
-
-# Activate the environment
-source activate.sh
-
-# Run dev mode with 5 tasks (default)
-python run_training.py --dev
-
-# Or specify more tasks
-python run_training.py --dev --max-tasks 10
-```
-
-**Terminal 3 - Headless Runner:**
-```bash
-cd examples/vercel_ai_webshop
-
-export AGENT_LIGHTNING_STORE_URL="http://localhost:4747"
-
-# For dev mode only: set external LLM endpoint
-export OPENAI_API_KEY="your-api-key"
-export OPENAI_API_BASE="https://api.openai.com/v1"  # or local vLLM, etc.
-
-# Run the headless agent
-pnpm headless -- --worker-id runner-1
-```
-
-The headless runner will:
-1. Connect to the Agent Lightning Store
-2. Check for LLM resources published by VERL (GPU mode)
-3. If no resources found, fall back to `OPENAI_API_BASE` (dev mode)
-4. Poll for tasks and execute the WebShop agent
-5. Report traces and rewards back to the coordinator
-
----
-
-### Full Training with VERL (GPU Required)
-
-For RL-based fine-tuning with VERL, you need a GPU with 40GB+ memory.
-
-**Terminal 1 - WebShop Server:**
-```bash
-cd examples/vercel_ai_webshop
-docker compose up webshop --build
-```
-
 **Terminal 2 - Training Coordinator:**
 ```bash
 cd examples/vercel_ai_webshop/agl
 
-# First time setup with GPU support
-./setup.sh --gpu
+# First time setup (creates venv and installs dependencies with VERL)
+./setup.sh
 
 # Activate the environment
 source activate.sh
@@ -380,6 +257,12 @@ pnpm headless -- --worker-id runner-1
 # In another terminal:
 pnpm headless -- --worker-id runner-2
 ```
+
+The headless runner will:
+1. Connect to the Agent Lightning Store
+2. Discover the LLM endpoint published by VERL
+3. Poll for tasks and execute the WebShop agent
+4. Report traces and rewards back to the coordinator
 
 ---
 
@@ -449,13 +332,6 @@ RL_TRAINING_CONFIG = {
 }
 ```
 
-**Dev Mode vs Training Mode:**
-
-| Mode | Model Serving | How Endpoint is Configured |
-|------|---------------|---------------------------|
-| Dev (`--dev`) | External API | `OPENAI_API_BASE` env var |
-| Training (`fast`, `qwen`) | VERL-managed vLLM | Auto-discovered from Store |
-
 ---
 
 ### Headless Runner Reference
@@ -483,12 +359,9 @@ npx tsx scripts/headless-runner.ts [options]
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `AGENT_LIGHTNING_STORE_URL` | Store server URL (e.g., `http://localhost:4747`) | Yes |
-| `OPENAI_API_KEY` | API key for external LLM endpoint | Dev mode only |
-| `OPENAI_API_BASE` | OpenAI-compatible endpoint URL | Dev mode only |
-| `WEBSHOP_MODEL` | Model ID for inference | No (default: `gpt-4o-mini`) |
 | `WEBSHOP_URL` | WebShop server URL | No (default: `http://localhost:3000`) |
 
-In GPU mode with VERL, the runner automatically discovers the LLM endpoint from the Store—no API key or base URL needed.
+The runner automatically discovers the LLM endpoint from the Store—no API key or base URL needed.
 
 ---
 
@@ -506,7 +379,6 @@ python run_training.py [config] [options]
 
 | Config | Model | GPU Required | Use Case |
 |--------|-------|--------------|----------|
-| `--dev` | External (via `OPENAI_API_BASE`) | No | CPU-only prototyping |
 | `fast` | Qwen2.5-0.5B-Instruct | Yes (40GB) | CI testing |
 | `qwen` | Qwen2.5-1.5B-Instruct | Yes (40GB) | Full training |
 
@@ -514,8 +386,6 @@ python run_training.py [config] [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--dev` | Run in dev mode (Baseline algorithm, no GPU) | - |
-| `--max-tasks N` | Max tasks in dev mode | `5` |
 | `--tasks-file PATH` | Custom tasks file (JSON/Parquet) | Sample tasks |
 | `--val-tasks-file PATH` | Custom validation tasks | First 10 training tasks |
 
@@ -555,7 +425,6 @@ python run_training.py [config] [options]
 |------|-------------|
 | `headless-runner.ts` | Headless rollout runner for training |
 | `run_stack.sh` | Stack orchestration script |
-| `watch-training.sh` | Training visibility (tmux) |
 
 ## Project Structure
 
@@ -576,8 +445,7 @@ vercel_ai_webshop/
 │       └── types.ts                  # TypeScript types
 ├── scripts/
 │   ├── headless-runner.ts            # Headless rollout runner
-│   ├── run_stack.sh                  # Stack orchestration script
-│   └── watch-training.sh             # Training visibility (tmux)
+│   └── run_stack.sh                  # Stack orchestration script
 ├── agl/                              # Python Agent Lightning code
 │   ├── run_training.py               # Training coordinator
 │   ├── config.py                     # Training configurations

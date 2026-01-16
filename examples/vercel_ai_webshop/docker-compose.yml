@@ -1,13 +1,7 @@
 # WebShop Training Docker Compose
 #
-# Profiles:
-#   - dev: CPU-only dev mode with external LLM (set OPENAI_API_BASE in .env)
-#   - gpu: GPU training mode with VERL
-#
 # Usage:
-#   make dev          # Run dev stack
 #   make train        # Run GPU training stack
-#   make logs         # Follow logs
 #   make stop         # Stop all services
 #
 # Architecture:
@@ -16,39 +10,6 @@
 #   deployment pattern recommended in NOTES.md.
 
 services:
-  # ==========================================================================
-  # Dev Stack (CPU-only, external LLM)
-  # ==========================================================================
-  webshop-stack-dev:
-    build:
-      context: ../..
-      dockerfile: examples/vercel_ai_webshop/Dockerfile
-    profiles: ["dev"]
-    ports:
-      - "3000:3000"
-      - "4747:4747"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
-      - WEBSHOP_MODEL=${WEBSHOP_MODEL:-gpt-4o-mini}
-      - PYTHONUNBUFFERED=1
-      - N_RUNNERS=${N_RUNNERS:-1}
-      - MAX_TASKS=${MAX_TASKS:-10}
-    command: ["bash", "scripts/run_stack.sh", "--dev"]
-    volumes:
-      - webshop_data:/app/webshop/data
-      # Hot reload for development
-      - ./src:/app/src:ro
-      - ./agl:/app/agl:ro
-      - ./scripts:/app/scripts:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4747/v1/agl/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 120s
-      retries: 3
-
   # ==========================================================================
   # GPU Training Stack (VERL + vLLM)
   # ==========================================================================
