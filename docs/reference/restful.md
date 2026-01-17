@@ -1,10 +1,8 @@
 # RESTful API References
 
-!!! warning
+!!! note
 
-    The following contents are still under construction.
-
-## Store RESTful API
+    Shown in the following is the RESTful API for Lightning Store.
 
 <div id="swagger-ui"></div>
 <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />

@@ -1,8 +1,15 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
+from typing import Optional
+
 import agentops
 import agentops.sdk.core as agentops_core
 import opentelemetry.trace as trace_api
+
+from agentlightning.tracer.dummy import DummyTracer
+from agentlightning.types import Attributes, SpanCoreFields, TraceStatus
 
 
 # pyright: reportPrivateUsage=false
@@ -33,3 +40,22 @@ def clear_agentops_init() -> None:
     """Make agentops.init() runnable again."""
     agentops.get_client().initialized = False
     agentops_core.tracer._initialized = False
+
+
+class RecordingDummyTracer(DummyTracer):
+    """Dummy tracer that captures the most recent span request for assertions."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_span: Optional[SpanCoreFields] = None
+
+    def create_span(
+        self,
+        name: str,
+        attributes: Optional[Attributes] = None,
+        timestamp: Optional[float] = None,
+        status: Optional[TraceStatus] = None,
+    ) -> SpanCoreFields:
+        span = super().create_span(name, attributes, timestamp, status)
+        self.last_span = span
+        return span

@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import threading
+import time
 from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
 
 from rich.console import Console
@@ -17,9 +18,48 @@ from agentlightning.utils.otel import get_tracer
 
 from .utils import flatten_dict, random_dict
 
-console = Console()
+console = Console(width=200)
 
-MAX_RUNTIME_SECONDS = 45 * 60
+# Minus 10 to leave time for setting up env.
+MAX_RUNTIME_SECONDS = (int(os.getenv("GITHUB_ACTIONS_TIMEOUT_MINUTES", "30")) - 10) * 60
+MAX_STALE_SECONDS = 300
+
+
+class RolloutProgressTracker:
+    """Helper for tracking rollout progress and surfacing stale worker states."""
+
+    def __init__(self, max_stale_seconds: float = MAX_STALE_SECONDS) -> None:
+        self._max_stale_seconds = max_stale_seconds
+        self._last_progress = time.perf_counter()
+
+    def record_progress(self) -> None:
+        self._last_progress = time.perf_counter()
+
+    async def handle_progress(
+        self,
+        *,
+        progress_made: bool,
+        pending_rollout_ids: Sequence[str],
+        store: agl.LightningStore,
+    ) -> None:
+        if progress_made:
+            self.record_progress()
+            return
+        await self._check_for_stale(pending_rollout_ids=pending_rollout_ids, store=store)
+
+    async def _check_for_stale(self, *, pending_rollout_ids: Sequence[str], store: agl.LightningStore) -> None:
+        if not pending_rollout_ids:
+            return
+        elapsed = time.perf_counter() - self._last_progress
+        if elapsed <= self._max_stale_seconds / 2:
+            return
+        console.print(f"Stale rollouts: {pending_rollout_ids}")
+        if elapsed > self._max_stale_seconds:
+            current_workers = await store.query_workers()
+            console.print("Stalled. Current worker status shown below:")
+            for worker in current_workers:
+                console.print(f"  Worker: {worker}", no_wrap=True, overflow="ignore", crop=False)
+            raise RuntimeError("Rollout progress has stalled for too long")
 
 
 def _abort_due_to_timeout() -> None:
@@ -135,6 +175,7 @@ class AlgorithmBatch(agl.Algorithm):
         After that, the algorithm will enqueue a new batch of new tasks, until the total number of tasks is reached.
         """
         store = self.get_store()
+        tracker = RolloutProgressTracker()
         submitted = 0
 
         while submitted < total_tasks:
@@ -157,11 +198,13 @@ class AlgorithmBatch(agl.Algorithm):
 
             pending = {rollout_id: task_name for rollout_id, task_name in batch_rollouts}
             completed_ids: Set[str] = set()
+            tracker.record_progress()
             while len(completed_ids) < len(batch_rollouts):
                 finished_rollouts = await store.wait_for_rollouts(
                     rollout_ids=[rollout_id for rollout_id, _ in batch_rollouts],
                     timeout=0.0,
                 )
+                complete_ids_updated: bool = False
                 for rollout in finished_rollouts:
                     rollout_id = rollout.rollout_id
                     if rollout_id in completed_ids:
@@ -171,6 +214,15 @@ class AlgorithmBatch(agl.Algorithm):
                     spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
                     check_spans(spans, pending[rollout_id])
                     completed_ids.add(rollout_id)
+                    complete_ids_updated = True
+
+                unfinished_ids = [rollout_id for rollout_id, _ in batch_rollouts if rollout_id not in completed_ids]
+                await tracker.handle_progress(
+                    progress_made=complete_ids_updated,
+                    pending_rollout_ids=unfinished_ids,
+                    store=store,
+                )
+
                 await asyncio.sleep(5.0)
 
     async def algorithm_batch_with_completion_threshold(self, total_tasks: int, batch_size: int, remaining_tasks: int):
@@ -178,6 +230,7 @@ class AlgorithmBatch(agl.Algorithm):
         It will enqueue a new batch of new tasks when the number of running rollouts is less than the remaining tasks threshold.
         """
         store = self.get_store()
+        tracker = RolloutProgressTracker()
         submitted = 0
         completed = 0
         active_rollouts: Dict[str, str] = {}
@@ -220,6 +273,12 @@ class AlgorithmBatch(agl.Algorithm):
                 completed += 1
                 newly_completed += 1
 
+            await tracker.handle_progress(
+                progress_made=newly_completed > 0,
+                pending_rollout_ids=list(active_rollouts.keys()),
+                store=store,
+            )
+
             if newly_completed == 0:
                 await asyncio.sleep(5.0)
 
@@ -231,6 +290,19 @@ class AlgorithmBatch(agl.Algorithm):
         """
         store = self.get_store()
         semaphore = asyncio.Semaphore(concurrency)
+        tracker = RolloutProgressTracker()
+        active_rollouts: Set[str] = set()
+        active_lock = asyncio.Lock()
+
+        async def emit_progress(progress_made: bool) -> None:
+            if progress_made:
+                async with active_lock:
+                    pending_ids = list(active_rollouts)
+                await tracker.handle_progress(progress_made=True, pending_rollout_ids=pending_ids, store=store)
+                return
+            async with active_lock:
+                pending_ids = list(active_rollouts)
+            await tracker.handle_progress(progress_made=False, pending_rollout_ids=pending_ids, store=store)
 
         async def handle_single(task_index: int) -> None:
             task_name = f"task-{task_index}"
@@ -246,15 +318,23 @@ class AlgorithmBatch(agl.Algorithm):
                 )
                 rollout = await store.enqueue_rollout(input=task_name, mode="train")
                 rollout_id = rollout.rollout_id
-                while True:
-                    current = await store.get_rollout_by_id(rollout_id)
-                    if current is not None and current.status in ("failed", "succeeded", "cancelled"):
-                        if current.status != "succeeded":
-                            raise RuntimeError(f"Rollout {rollout_id} finished with status {current.status}")
-                        break
-                    await asyncio.sleep(5.0)
-                spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
-                check_spans(spans, task_name)
+                async with active_lock:
+                    active_rollouts.add(rollout_id)
+                try:
+                    while True:
+                        current = await store.get_rollout_by_id(rollout_id)
+                        if current is not None and current.status in ("failed", "succeeded", "cancelled"):
+                            if current.status != "succeeded":
+                                raise RuntimeError(f"Rollout {rollout_id} finished with status {current.status}")
+                            break
+                        await emit_progress(progress_made=False)
+                        await asyncio.sleep(5.0)
+                    spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
+                    check_spans(spans, task_name)
+                    await emit_progress(progress_made=True)
+                finally:
+                    async with active_lock:
+                        active_rollouts.discard(rollout_id)
 
         all_tasks = [handle_single(i) for i in range(total_tasks)]
         await asyncio.gather(*all_tasks)
@@ -281,6 +361,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--n-runners", type=int, default=32, help="Number of runner processes to launch.")
     parser.add_argument("--max-rounds", type=int, default=10, help="Maximum number of rounds for each rollout.")
     parser.add_argument("--sleep-seconds", type=float, default=1.0, help="Sleep seconds for each rollout.")
+    parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging.")
+    parser.add_argument("--debug-otel", action="store_true", help="Enable verbose debug logging for OTel.")
     args = parser.parse_args(argv)
 
     if args.total_tasks <= 0:
@@ -303,6 +385,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
+    agl.setup_logging(
+        "DEBUG" if args.debug else "INFO",
+        submodule_levels={"agentlightning.utils.otel": "DEBUG" if args.debug_otel else "INFO"},
+    )
     store = agl.LightningStoreClient(args.store_url)
     timeout_guard = _start_timeout_guard(MAX_RUNTIME_SECONDS)
     try:

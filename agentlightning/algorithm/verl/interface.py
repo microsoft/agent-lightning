@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 from hydra import compose, initialize
 from omegaconf import OmegaConf
@@ -9,6 +11,10 @@ from agentlightning.algorithm.base import Algorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.types import Dataset
 from agentlightning.verl.entrypoint import run_ppo  # type: ignore
+
+if TYPE_CHECKING:
+    from agentlightning.verl.daemon import AgentModeDaemon
+    from agentlightning.verl.trainer import AgentLightningTrainer
 
 
 class VERL(Algorithm):
@@ -23,6 +29,32 @@ class VERL(Algorithm):
         config: Dictionary mirroring the overrides passed to the VERL CLI. The
             overrides are merged with VERL's packaged defaults via Hydra before
             launching training.
+        trainer_cls: Optional override for the trainer class. Experimental.
+        daemon_cls: Optional override for the daemon class. Experimental.
+
+    !!! note "Trajectory aggregation (experimental)"
+
+        Trajectory-level aggregation merges an entire multi-turn rollout into a single,
+        masked training sample so GPU time is spent once per trajectory rather than N times
+        per turn. Enable it via:
+
+        ```python
+        config["agentlightning"]["trace_aggregator"] = {
+            "level": "trajectory",
+            "trajectory_max_prompt_length": 4096,
+            "trajectory_max_response_length": 34384,
+        }
+        ```
+
+        Keep conversations structured (message lists rather than manual string
+        concatenation) so prefix matching can stitch traces. `trajectory_max_prompt_length`
+        should be set to the maximum length of the prompt for the first turn, and
+        `trajectory_max_response_length` should be set to the maximum cumulative
+        length of agent responses in the full trajectory.
+        Toggle `debug=True` plus `mismatch_log_dir` when you need to inspect
+        retokenization or chat-template mismatches. See
+        [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
+        for more details.
 
     Examples:
         ```python
@@ -90,7 +122,12 @@ class VERL(Algorithm):
         ```
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        trainer_cls: Optional[Type[AgentLightningTrainer]] = None,
+        daemon_cls: Optional[Type[AgentModeDaemon]] = None,
+    ):
         super().__init__()
 
         # Compose the base config exactly like your decorator:
@@ -102,6 +139,8 @@ class VERL(Algorithm):
         # Allow adding new fields
         OmegaConf.set_struct(base_cfg, False)
         self.config = OmegaConf.merge(base_cfg, override_conf)
+        self.trainer_cls = trainer_cls
+        self.daemon_cls = daemon_cls
 
     def run(
         self,
@@ -119,6 +158,11 @@ class VERL(Algorithm):
                 adapter have been garbage-collected when using the V1 execution
                 mode.
         """
+        from agentlightning.verl.daemon import AgentModeDaemon
+        from agentlightning.verl.trainer import AgentLightningTrainer
+
+        trainer_cls = self.trainer_cls or AgentLightningTrainer
+        daemon_cls = self.daemon_cls or AgentModeDaemon
         try:
             store = self.get_store()
         except Exception:
@@ -130,6 +174,8 @@ class VERL(Algorithm):
                 store=None,
                 llm_proxy=None,
                 adapter=None,
+                trainer_cls=trainer_cls,
+                daemon_cls=daemon_cls,
             )
         else:
             print("Store is set. Assuming v1 execution mode.")
@@ -142,6 +188,8 @@ class VERL(Algorithm):
                 store=store,
                 llm_proxy=llm_proxy,
                 adapter=adapter,
+                trainer_cls=trainer_cls,
+                daemon_cls=daemon_cls,
             )
 
     def get_client(self) -> AgentLightningClient:

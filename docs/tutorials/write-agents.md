@@ -115,17 +115,17 @@ The value your agent function returns (i.e., the return value of the function de
 
 !!! important "Emitting the Final Reward"
 
-    When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the [Emitter section][using-emitter] below). Wrapping your reward calculation function with the `@reward` decorator is NOT the recommended approach any more.
+    When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the [Use Emitters](./emitter.md) documentation). Wrapping your reward calculation function with the `@reward` decorator is NOT the recommended approach any more.
 
-* **`list[ReadableSpan]`** or **`list[Span]`**: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry `ReadableSpan` objects or Agent-lightning's native `Span` objects.
+* **`list[ReadableSpan]`**, **`list[SpanCoreFields]`**, or **`list[Span]`**: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry `ReadableSpan` objects or Agent-lightning's native `Span` objects.
 
 For most users, returning a **`float`** for simple agents or returning **`None`** and using the emitter for more complex ones are the recommended approaches.
 
 ## Class-based Agents
 
-For more complex agents that require state, helper methods, or distinct logic for training versus validation, you can create a class that inherits from `LitAgent`. This object-oriented approach provides more structure and control over the agent's lifecycle.
+For more complex agents that require state, helper methods, or distinct logic for training versus validation, you can create a class that inherits from [`LitAgent`][agentlightning.LitAgent]. This object-oriented approach provides more structure and control over the agent's lifecycle.
 
-To create a class-based agent, you subclass [agentlightning.LitAgent][] and implement its `rollout` method.
+To create a class-based agent, you subclass [agentlightning.LitAgent][] and implement its [`rollout`][agentlightning.LitAgent.rollout] method.
 
 [](){ #introduction-to-named-resources }
 
@@ -156,11 +156,11 @@ class RoomSelectorAgent(agl.LitAgent[RoomSelectionTask]):
 # trainer.fit(agent=agent, ...)
 ```
 
-The `LitAgent` class provides several methods you can override for more fine-grained control:
+The [`LitAgent`][agentlightning.LitAgent] class provides several methods you can override for more fine-grained control:
 
-* `rollout()`: The primary method for the agent's logic. It's called for both training and validation by default.
-* `training_rollout()` / `validation_rollout()`: Implement these if you need different behavior during training (e.g., with exploration) and validation (e.g., with deterministic choices).
-* `rollout_async()` / `training_rollout_async()` / `validation_rollout_async()`: Implement the asynchronous versions of these methods if your agent uses `asyncio`.
+* [`rollout()`][agentlightning.LitAgent.rollout]: The primary method for the agent's logic. It's called for both training and validation by default.
+* [`training_rollout()`][agentlightning.LitAgent.training_rollout] / [`validation_rollout()`][agentlightning.LitAgent.validation_rollout]: Implement these if you need different behavior during training (e.g., with exploration) and validation (e.g., with deterministic choices).
+* [`rollout_async()`][agentlightning.LitAgent.rollout_async] / [`training_rollout_async()`][agentlightning.LitAgent.training_rollout_async] / [`validation_rollout_async()`][agentlightning.LitAgent.validation_rollout_async]: Implement the asynchronous versions of these methods if your agent uses `asyncio`.
 
 !!! note
 
@@ -202,57 +202,3 @@ The `LitAgent` class provides several methods you can override for more fine-gra
             return payload
         raise payload
     ```
-
-## Using the Emitter
-
-[](){ #using-emitter }
-
-While returning a single float for the final reward is sufficient for many algorithms, some advanced scenarios require richer feedback. For instance, an algorithm might learn more effectively if it receives intermediate rewards throughout a multi-step task.
-
-Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by [Tracer][agentlightning.Tracer], the emitter will also send a [Span][agentlightning.Span] that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See [Working with Traces](./traces.md) for more details.
-
-You can find the emitter functions from [agentlightning.emitter](../reference/agent.md).
-
-### Emitting Rewards, Messages, and More
-
-Here are the primary emitter functions:
-
-* [`emit_reward(value: float)`][agentlightning.emit_reward]: Records an intermediate reward.
-* [`emit_message(message: str)`][agentlightning.emit_message]: Records a simple log message as a span.
-* [`emit_exception(exception: BaseException)`][agentlightning.emit_exception]: Records a Python exception, including its type, message, and stack trace.
-* [`emit_object(obj: Any)`][agentlightning.emit_object]: Records any JSON-serializable object, perfect for structured data.
-
-Let's see an example of an agent using these emitters to provide detailed feedback.
-
-```python
-import agentlightning as agl
-
-@agl.rollout
-def multi_step_agent(task: dict, prompt_template: PromptTemplate) -> float:
-    try:
-        # Step 1: Initial planning
-        agl.emit_message("Starting planning phase.")
-        plan = generate_plan(task, prompt_template)
-        agl.emit_object({"plan_steps": len(plan), "first_step": plan[0]})
-
-        # Award a small reward for a valid plan
-        plan_reward = grade_plan(plan)
-        agl.emit_reward(plan_reward)
-
-        # Step 2: Execute the plan
-        agl.emit_message(f"Executing {len(plan)}-step plan.")
-        execution_result = execute_plan(plan)
-
-        # Step 3: Final evaluation
-        final_reward = custom_grade_final_result(execution_result, task["expected_output"])
-
-        # The return value is treated as the final reward for the rollout
-        return final_reward
-
-    except ValueError as e:
-        # Record the specific error and return a failure reward
-        agl.emit_exception(e)
-        return 0.0
-```
-
-By using the emitter, you create a rich, detailed trace of your agent's execution. This data can be invaluable for debugging and is essential for advanced algorithms that can learn from more than just a single final score.

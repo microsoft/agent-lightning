@@ -171,12 +171,12 @@ jobs:
       - name: Sync dependencies (latest)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group agents --group torch-gpu-stable
+            --group dev --group experiment --group agents --extra weave --extra mongo --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+            --group dev --group experiment --group agents --extra weave --extra mongo --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
@@ -266,6 +266,104 @@ jobs:
         run: |
           set -ex
           uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_llm_proxy.outputs.project_name }} ${{ steps.calc_x_train_llm_proxy.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
+      - name: Setup Docker environments
+        run: ./scripts/mongodb_docker_run.sh
+        shell: bash
+
+      - name: Training with MongoDB
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast --mongo-uri mongodb://localhost:27017/?replicaSet=rs0
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_mongo
+
+      - name: Validate training with MongoDB
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_mongo.outputs.project_name }} ${{ steps.calc_x_train_mongo.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
+      - name: Training with LoRA
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast --lora
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_lora
+        if: matrix.setup-script != 'legacy'
+
+      - name: Validate training with LoRA
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_lora.outputs.project_name }} ${{ steps.calc_x_train_lora.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        if: matrix.setup-script != 'legacy'
+
+      - name: Training with trajectory level aggregation
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast --trajectory-level
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_trajectory_level
+
+      - name: Validate training with trajectory level aggregation
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_trajectory_level.outputs.project_name }} ${{ steps.calc_x_train_trajectory_level.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
+      - name: Training with Weave
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast --weave
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_weave
+
+      - name: Validate training with Weave
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_weave.outputs.project_name }} ${{ steps.calc_x_train_weave.outputs.run_name }}
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

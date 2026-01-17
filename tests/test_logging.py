@@ -17,6 +17,8 @@ from agentlightning.logging import (
     DEFAULT_FORMAT,
 )
 
+pytestmark = pytest.mark.utils
+
 
 def _logging_worker(case: str, queue: Queue[Dict[str, Any]]) -> None:
     """

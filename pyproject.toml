@@ -1,6 +1,6 @@
 [project]
 name = "agentlightning"
-version = "0.3.0"
+version = "0.3.1"
 description = "Agent-lightning is the absolute trainer to light up AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,7 +11,6 @@ dependencies = [
   "setproctitle",
   "flask",
   "agentops>=0.4.13",
-  "httpdbg",
   "uvicorn",
   "fastapi",
   "aiohttp",
@@ -25,6 +24,7 @@ dependencies = [
   "portpicker",
   "gunicorn",
   "uvicorn_worker",
+  "aiologic",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +36,10 @@ apo = [
 verl = [
   "verl>=0.5.0",
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
+]
+
+weave = [
+  "weave>=0.52.22",
 ]
 
 # Store-related dependencies.
@@ -102,8 +106,8 @@ torch-stable = [
   "transformers>=4.55.0,!=4.57.2",
   # vLLM 0.11.1 requires PyTorch 2.9.0, which is incompatible with flash-attn
   # https://github.com/Dao-AILab/flash-attention/issues/1967
-  # Similar issues with vLLM 0.11.2
-  "vllm>=0.10.2,!=0.11.1,!=0.11.2",
+  # Similar issues with vLLM 0.11.2 and 0.12.0
+  "vllm>=0.10.2,!=0.11.1,!=0.11.2,!=0.12.0",
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]
@@ -114,9 +118,19 @@ torch-legacy = [
   "torchvision==0.22.0",
   "transformers==4.53.3",
   "tokenizers>=0.21,<0.22",
-  "flash-attn==2.8.1",
   "vllm==0.9.2",
   "litellm[proxy]==1.74.15",
+]
+
+# Specific vllm versions for compatibility testing or workarounds.
+# Use these when you need a pinned vllm version separate from torch groups.
+vllm-0-10-2 = [
+  {include-group = "torch-stable"},
+  "vllm==0.10.2",
+]
+vllm-0-11-0 = [
+  {include-group = "torch-stable"},
+  "vllm==0.11.0",
 ]
 
 # Flash-attention must build with CUDA toolkit.
@@ -156,8 +170,19 @@ trl = [
 tinker = [
   {include-group = "torch-stable"},
   "tinker>=0.2.2",
-  "tinker_cookbook",
+  "tinker_cookbook>=0.1.0",
   "wandb",
+]
+
+# For Multi-modality supports.
+image = [
+  # NOTE: It's tied to vLLM 0.10.2 but it will blow the uv.lock file if we include it.
+  # {include-group = "vllm-0-10-2"},
+  "datasets",
+  "Pillow",
+  "pandas",
+  "pyarrow",
+  "qwen-vl-utils",
 ]
 
 # Agent-related dependencies.
@@ -182,14 +207,19 @@ anthropic = [
   "anthropic",
 ]
 langchain = [
-  "langgraph<1.0",
-  "langchain[openai]<1.0",
-  "langchain-community",
-  "langchain-text-splitters<1.0",
+  "langgraph>=1.0.0",
+  "langchain[openai]>=1.0.0",
+  "langchain-community>=0.4.0",
+  "langchain-text-splitters>=1.0.0",
 ]
 sql = [
   "sqlparse",
   "nltk",
+]
+rag = [
+  "fastmcp>=2.13.1",
+  "faiss-cpu>=1.11.0",
+  "sentence-transformers>=4.1.0",
 ]
 crewai = [
   # https://github.com/crewAIInc/crewAI/issues/3959
@@ -200,10 +230,11 @@ swebench = [
 ]
 
 # Summarize into large installable groups.
+# Note: langchain is excluded from agents to avoid conflicts with torch-legacy.
+# Use --group langchain explicitly when needed.
 agents = [
   {include-group = "autogen"},
   {include-group = "openai-agents"},
-  {include-group = "langchain"},
   {include-group = "sql"},
   {include-group = "anthropic"},
   {include-group = "crewai"},
@@ -225,6 +256,16 @@ conflicts = [
     { group = "torch-stable" },
     { group = "torch-legacy" },
   ],
+  [
+    { group = "vllm-0-10-2" },
+    { group = "vllm-0-11-0" },
+  ],
+  # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
+  # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0
+  [
+    { group = "langchain" },
+    { group = "torch-legacy" },
+  ],
 ]
 environments = [
   "sys_platform == 'linux'",
@@ -241,6 +282,14 @@ override-dependencies = [
   "uvicorn>=0.38.0",
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
   "packaging>=24.0",
+  # Conflicts between litellm and fastmcp
+  "websockets>=15.0.1",
+  "rich>=13.9.4",
+  # verl's numpy<2.0.0 constraint is related to Docker images, not code incompatibility
+  # Lock to 2.3.0 because numba relies on numpy 2.2
+  "numpy>=2.0.0,<2.3.0",
+  # vllm relies on setuptools<80, but polyfile-weave depends on setuptools>=80.9.0
+  "setuptools>=80.9.0",
 ]
 
 [tool.uv.sources]
@@ -248,7 +297,6 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
-tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
 
 [[tool.uv.index]]
 name = "pypi"
@@ -280,19 +328,24 @@ include = [
   "agentlightning/**/*.yaml",
   "agentlightning/**/*.yml",
   "agentlightning/**/*.poml",
-  "agentlightning/**/*.html",
-  "agentlightning/**/*.js",
-  "agentlightning/**/*.css",
-  "agentlightning/**/*.svg",
+]
+artifacts = [
+  "agentlightning/dashboard/**",
 ]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
-  "examples/**",
-  "tests/**",
-  "docs/**",
-  "scripts/**",
-  "dashboard/**",
+  "/examples/**",
+  "/tests/**",
+  "/docs/**",
+  "/scripts/**",
+  "/dashboard/**",
+  "/docker/**",
+  "/contrib/**",
+  "/.github/**",
+]
+artifacts = [
+  "agentlightning/dashboard/**",
 ]
 
 [tool.pytest.ini_options]
@@ -301,8 +354,13 @@ markers = [
   "openai: tests that require OpenAI API",
   "gpu: tests that require GPU",
   "agentops: tests that require AgentOps",
+  "weave: tests that require Weave",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
+  "store: tests for agentlightning.store module",
+  "prometheus: tests that require Prometheus",
+  "utils: tests for utility functions",
+  "langchain: tests that require LangChain",
 ]
 
 [tool.black]

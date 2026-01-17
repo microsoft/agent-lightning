@@ -60,22 +60,19 @@ def unsloth_training(model_path: str, sft_dataset: HuggingFaceDataset, next_mode
         loftq_config=None,  # And LoftQ
     )
 
-    sft_config = (
-        SFTConfig(
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=4,  # Use GA to mimic batch size!
-            warmup_steps=5,
-            max_steps=60,  # Maximum number of steps to train for
-            # num_train_epochs = 1, # Set this for 1 full training run
-            learning_rate=2e-4,  # Reduce to 2e-5 for long training runs
-            logging_steps=1,
-            optim="adamw_8bit",
-            weight_decay=0.01,
-            lr_scheduler_type="linear",
-            seed=3407,
-            # FIXME: For some reason, report_to="none" still tries to report to W&B when it's installed.
-            report_to="none",  # Use this for W&B etc
-        ),
+    sft_config = SFTConfig(
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,  # Use GA to mimic batch size!
+        warmup_steps=5,
+        max_steps=60,  # Maximum number of steps to train for
+        # num_train_epochs = 1, # Set this for 1 full training run
+        learning_rate=2e-4,  # Reduce to 2e-5 for long training runs
+        logging_steps=1,
+        optim="adamw_8bit",
+        weight_decay=0.01,
+        lr_scheduler_type="linear",
+        seed=3407,
+        report_to="none",  # Use this for W&B etc
     )
 
     trainer = SFTTrainer(

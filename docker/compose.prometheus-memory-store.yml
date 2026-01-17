@@ -4,7 +4,27 @@ services:
       file: compose.store.yml
       service: app
 
-    command: agl store --host 0.0.0.0 --port 4747 --prometheus --backend memory
+    depends_on:
+      - app-exporter  # Wait for the exporter to be ready first
+
+    command: agl store --host 0.0.0.0 --port 4747 --tracker console prometheus --backend memory
+    environment:
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+    volumes:
+      - prometheus_multiproc:/tmp/prometheus_multiproc
+
+  app-exporter:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.dev
+
+    command: agl prometheus --host 0.0.0.0 --port 4748
+    ports:
+      - "4748:4748"
+    environment:
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+    volumes:
+      - prometheus_multiproc:/tmp/prometheus_multiproc
 
   node-exporter:
     image: prom/node-exporter:latest
@@ -22,10 +42,11 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=1h"
     volumes:
-      - ./prometheus.memory-store.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.base.yml:/etc/prometheus/prometheus.yml:ro
       - ./data/prometheus:/prometheus
     depends_on:
       - app
+      - app-exporter
       - node-exporter
     ports:
       - "9090:9090"
@@ -51,3 +72,10 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/agentlightning.json
+
+volumes:
+  prometheus_multiproc:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs

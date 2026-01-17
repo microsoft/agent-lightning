@@ -7,11 +7,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import Iterable
+from typing import Iterable, List
 
 from agentlightning import setup_logging
 from agentlightning.store.client_server import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.utils.metrics import (
+    ConsoleMetricsBackend,
+    MetricsBackend,
+    MultiMetricsBackend,
+    PrometheusMetricsBackend,
+    setup_multiprocess_prometheus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +40,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="Configure the logging level for the store.",
     )
     parser.add_argument(
-        "--prometheus",
-        action="store_true",
-        help="Enable Prometheus metrics.",
+        "--tracker",
+        nargs="+",
+        choices=["prometheus", "console"],
+        help="Enable metrics tracking. Repeat for multiple trackers.",
     )
     parser.add_argument(
         "--n-workers",
@@ -63,12 +71,36 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     setup_logging(args.log_level)
 
+    trackers: List[MetricsBackend] = []
+    if args.tracker:
+        if "prometheus" in args.tracker:
+            logger.info("Enabling Prometheus metrics tracking.")
+            if args.n_workers > 1:
+                # This has to be done before prometheus_client is imported
+                setup_multiprocess_prometheus()
+                logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
+            trackers.append(PrometheusMetricsBackend())
+
+        if "console" in args.tracker:
+            logger.info("Enabling console metrics tracking.")
+            trackers.append(ConsoleMetricsBackend())
+
+    if len(trackers) == 0:
+        tracker: MetricsBackend | None = None
+    elif len(trackers) == 1:
+        tracker = trackers[0]
+    else:
+        tracker = MultiMetricsBackend(trackers)
+
     if args.backend == "memory":
-        store = InMemoryLightningStore(prometheus=args.prometheus)
+        store = InMemoryLightningStore(
+            thread_safe=True,  # Using thread_safe store for server
+            tracker=tracker,
+        )
     elif args.backend == "mongo":
         from agentlightning.store.mongo import MongoLightningStore
 
-        store = MongoLightningStore(client=args.mongo_uri, prometheus=args.prometheus)
+        store = MongoLightningStore(mongo_uri=args.mongo_uri, tracker=tracker)
     else:
         raise ValueError(f"Invalid backend: {args.backend}")
 
@@ -84,7 +116,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         port=args.port,
         cors_allow_origins=args.cors_origins,
         launch_mode=launch_mode,
-        prometheus=args.prometheus,
+        tracker=tracker,
         n_workers=args.n_workers,
     )
     try:

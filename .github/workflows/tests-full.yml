@@ -27,13 +27,43 @@ jobs:
       github.event_name != 'repository_dispatch' ||
       github.event.action == 'ci-gpu' ||
       github.event.action == 'ci-all'
-    name: GPU Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Full Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
 
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    runs-on: ${{ matrix.mark.runs-on }}
     timeout-minutes: 30
     strategy:
       matrix:
-        include:
+        mark:
+          - id: store
+            display-name: Store
+            pytest-mark: 'store'  # store tests should not require gpu
+            runs-on: ubuntu-latest
+            has-gpu: false
+          # AgentOps needs to be separated because it injects tricky global state.
+          - id: agentops
+            display-name: AgentOps
+            pytest-mark: 'agentops'  # including agentops+litellm tests here
+            runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+            has-gpu: true
+          # Similar for Weave.
+          - id: weave
+            display-name: Weave
+            pytest-mark: 'weave'
+            runs-on: ubuntu-latest  # No GPU tests for Weave.
+            has-gpu: false
+          # Other tests that require GPU
+          - id: gpu
+            display-name: GPU required
+            pytest-mark: '(gpu or llmproxy) and not agentops'
+            runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+            has-gpu: true
+          # Other uncovered tests
+          - id: others
+            display-name: Others
+            pytest-mark: 'not store and not agentops and not weave and not gpu and not llmproxy'
+            runs-on: ubuntu-latest
+            has-gpu: false
+        env:
         - python-version: '3.10'
           setup-script: 'legacy'
         - python-version: '3.12'
@@ -43,6 +73,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Check GPU status
+        if: matrix.mark.has-gpu
         run: nvidia-smi
       - uses: actions/checkout@v4
         with:
@@ -51,16 +82,32 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.env.python-version }}
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
-        if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (latest)
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-stable
-        if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+        if: matrix.env.setup-script == 'latest'
+
+      - name: Sync dependencies (latest, gpu)
+        if: matrix.env.setup-script == 'latest' && matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group torch-gpu-stable
+      # Don't install vllm/pytorch on CPU counterparts
+      - name: Sync dependencies (latest, cpu)
+        if: matrix.env.setup-script == 'latest' && !matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group core-stable
+      - name: Sync dependencies (stable, gpu)
+        if: matrix.env.setup-script == 'stable' && matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.env.setup-script }}
+      - name: Sync dependencies (stable, cpu)
+        if: matrix.env.setup-script == 'stable' && !matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group core-stable
+      # Don't install langchain for legacy dependency because it has conflicts with torch.
+      - name: Sync dependencies (legacy, gpu)
+        if: matrix.env.setup-script == 'legacy' && matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group torch-gpu-legacy
+      - name: Sync dependencies (legacy, cpu)
+        if: matrix.env.setup-script == 'legacy' && !matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group core-legacy
+
       - name: Freeze dependencies
         run: |
           set -ex
@@ -70,62 +117,22 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-tests-full-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-tests-full-${{ matrix.mark.id }}-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Build dashboard
         run: cd dashboard && npm run build
 
       - name: Setup Docker environments
-        run: |
-          set -euo pipefail
-
-          cd docker
-
-          # Setup data directories
-          ./setup.sh
-
-          # Start Dockers
-          docker compose -f compose.mongo.yml up -d
-
-          SERVICE_NAME=mongo
-          TIMEOUT=60   # seconds
-          SLEEP=2
-
-          cid="$(docker compose -f compose.mongo.yml ps -q "$SERVICE_NAME")"
-          if [ -z "$cid" ]; then
-            echo "Service $SERVICE_NAME is not running"
-            exit 1
-          fi
-
-          echo "Waiting for $SERVICE_NAME to become healthy..."
-          end=$((SECONDS + TIMEOUT))
-
-          while [ "$SECONDS" -lt "$end" ]; do
-            status="$(docker inspect -f '{{.State.Health.Status}}' "$cid")"
-            echo "Current status: $status"
-
-            if [ "$status" = "healthy" ]; then
-              echo "$SERVICE_NAME is healthy ✅"
-              exit 0
-            elif [ "$status" = "unhealthy" ]; then
-              echo "$SERVICE_NAME is unhealthy ❌"
-              docker logs "$cid" || true
-              exit 1
-            fi
-
-            sleep "$SLEEP"
-          done
-
-          echo "Timed out waiting for $SERVICE_NAME to become healthy after ${TIMEOUT}s"
-          docker logs "$cid" || true
-          exit 1
+        run: ./scripts/mongodb_docker_run.sh
         shell: bash
 
       - name: Launch LiteLLM Proxy
@@ -135,9 +142,10 @@ jobs:
           AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
 
+      # mongo, openai, gpu, all enabled by default
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests -m "${{ matrix.mark.pytest-mark }}${{ matrix.env.setup-script == 'legacy' && ' and not langchain' || '' }}"
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/
@@ -178,11 +186,15 @@ jobs:
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-stable
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+      - name: Sync dependencies (stable)
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script == 'stable'
+      # Don't install langchain for legacy dependency because it has conflicts with torch.
+      - name: Sync dependencies (legacy)
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
+        if: matrix.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -220,6 +232,14 @@ jobs:
           source .venv/bin/activate
           cd examples/minimal
           python write_traces.py agentops
+          sleep 5
+
+      - name: Write Traces with Operations
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/minimal
+          python write_traces.py operation
           sleep 5
 
       - name: Write Traces via Otel Tracer with Client
@@ -320,3 +340,24 @@ jobs:
             echo "Waiting for llm_proxy.py to finish..."
             sleep 5
           done
+
+      - name: MultiMetrics backend example
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/minimal
+          python write_metrics.py --duration 8 --prom-port 9105 --prom-host 0.0.0.0 2>&1 | tee metrics.log &
+          pid=$!
+
+          for attempt in $(seq 1 20); do
+            if curl -sSf http://localhost:9105/metrics | grep -q minimal_requests_total; then
+              echo "Metrics endpoint responding"
+              wait $pid
+              cat metrics.log
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Metrics endpoint did not respond"
+          exit 1

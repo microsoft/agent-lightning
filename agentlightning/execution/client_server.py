@@ -151,6 +151,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 logger.debug("Algorithm bundle starting against endpoint %s", wrapper_store.endpoint)
             await algorithm(wrapper_store, stop_evt)
             logger.debug("Algorithm bundle completed successfully")
+        except asyncio.CancelledError:
+            logger.info("Algorithm received CancelledError; signaling stop event")
+            stop_evt.set()
+            raise
         except KeyboardInterrupt:
             logger.warning("Algorithm received KeyboardInterrupt; signaling stop event")
             stop_evt.set()
@@ -189,6 +193,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 logger.debug("Runner %s executing with provided store", worker_id)
             await runner(client_store, worker_id, stop_evt)
             logger.debug("Runner %s completed successfully", worker_id)
+        except asyncio.CancelledError:
+            logger.debug("Runner %s received CancelledError; signaling stop event", worker_id)
+            stop_evt.set()
+            raise
         except KeyboardInterrupt:
             logger.warning("Runner %s received KeyboardInterrupt; signaling stop event", worker_id)
             stop_evt.set()
@@ -220,7 +228,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
+            try:
+                asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
+            except KeyboardInterrupt:
+                logger.warning("Runner (asyncio) %s received KeyboardInterrupt; exiting gracefully", worker_id)
+            except BaseException as exc:
+                logger.exception("Runner (asyncio) %s crashed by %s; signaling stop event", worker_id, exc)
+                raise
 
         for i in range(self.n_runners):
             process = cast(
@@ -244,7 +258,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         """Used when `main_process == "runner"`."""
 
         def _algorithm_sync(algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent) -> None:
-            asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+            try:
+                asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+            except KeyboardInterrupt:
+                logger.warning("Algorithm (asyncio.run) received KeyboardInterrupt; exiting gracefully")
+            except BaseException as exc:
+                logger.exception("Algorithm (asyncio.run) crashed by %s; signaling stop event", exc)
+                raise
 
         process = cast(
             multiprocessing.Process,

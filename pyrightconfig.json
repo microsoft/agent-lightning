@@ -1,7 +1,7 @@
 {
   // Paths to check
   "include": ["agentlightning", "tests", "examples"],
-  "exclude": ["**/data", "**/assets"],
+  "exclude": ["**/data", "**/assets", "contrib/**"],
 
   // Lock Python version for consistent semantics
   "pythonVersion": "3.12",

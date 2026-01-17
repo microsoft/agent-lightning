@@ -28,31 +28,43 @@ from agentlightning.reward import emit_reward, find_reward_spans, get_reward_val
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import LightningSpanProcessor
 from agentlightning.tracer.otel import OtelTracer
+from agentlightning.types import TraceStatus
+from agentlightning.types.tracer import Span
 from agentlightning.utils import otlp
 
-from ..common.tracer import clear_agentops_init, clear_tracer_provider
+from ..common.tracer import clear_tracer_provider
 
 
-def create_span(name: str, sampled: bool = True, with_context: bool = True) -> MagicMock:
+def create_span(name: str, sampled: bool = True, with_context: bool = True) -> ReadableSpan:
     """Helper to create mock spans with different properties."""
-    span = MagicMock(spec=ReadableSpan)
-    span.name = name
-    if with_context:
-        span.context = SpanContext(
-            trace_id=hash(name) % (2**64),
-            span_id=hash(name) % (2**64),
-            is_remote=False,
-            trace_flags=TraceFlags(0x01 if sampled else 0x00),
-        )
-    else:
-        span.context = None
+    return ReadableSpan(
+        name=name,
+        context=(
+            SpanContext(
+                trace_id=hash(name) % (2**64),
+                span_id=hash(name) % (2**64),
+                is_remote=False,
+                trace_flags=TraceFlags(0x01 if sampled else 0x00),
+            )
+            if with_context
+            else None
+        ),
+    )
+
+
+async def add_otel_span(
+    rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+) -> Span:
+    span = Span.from_opentelemetry(
+        readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id or 0
+    )
     return span
 
 
 def create_mock_store(otlp_supported: bool = False) -> MagicMock:
     """Helper to create a mock LightningStore."""
     store = MagicMock(spec=LightningStore)
-    store.add_otel_span = AsyncMock(return_value=None)
+    store.add_otel_span = AsyncMock(side_effect=add_otel_span)
     store.capabilities = {"otlp_traces": otlp_supported}
     store.otlp_traces_endpoint.return_value = "http://store/v1/traces"
     return store
@@ -114,6 +126,51 @@ def store(store_supports_otlp: bool, otlp_server: Optional[Dict[str, Any]]) -> M
     return mock_store
 
 
+@pytest.fixture
+def otel_tracer():
+    clear_tracer_provider()
+    tracer = OtelTracer()
+    with tracer.lifespan():
+        yield tracer
+    clear_tracer_provider()
+
+
+def test_otel_tracer_create_span_records_fields(otel_tracer: OtelTracer) -> None:
+    timestamp = 2000.123
+    status = TraceStatus(status_code="ERROR", description="boom")
+
+    span = otel_tracer.create_span(
+        "otel-span",
+        attributes={"foo": "bar"},
+        timestamp=timestamp,
+        status=status,
+    )
+
+    assert span.name == "otel-span"
+    assert span.attributes["foo"] == "bar"
+    assert span.start_time == pytest.approx(timestamp)  # type: ignore
+    assert span.end_time == pytest.approx(timestamp)  # type: ignore
+    assert span.status.status_code == "ERROR"
+    assert span.status.description == "boom"
+
+
+def test_otel_tracer_operation_context_records_span(otel_tracer: OtelTracer) -> None:
+    with pytest.raises(RuntimeError):
+        with otel_tracer.operation_context("otel-operation", attributes={"initial": "value"}) as ctx:
+            ctx.record_attributes({"custom": "attr"})
+            raise RuntimeError("otel failure")
+
+    recorded_span = ctx.get_recorded_span()  # type: ignore
+    assert recorded_span.name == "otel-operation"
+    assert recorded_span.attributes["initial"] == "value"
+    assert recorded_span.attributes["custom"] == "attr"
+    assert recorded_span.status.status_code == "ERROR"
+    assert recorded_span.status.description is not None
+    assert "otel failure" in recorded_span.status.description
+    assert recorded_span.start_time is not None
+    assert recorded_span.end_time is not None
+
+
 def test_initialization_and_shutdown():
     """Test processor lifecycle: initialization, loop thread, and shutdown."""
     processor = LightningSpanProcessor()
@@ -167,7 +224,7 @@ def test_span_collection_with_filtering():
     # Only sampled span with context should be collected
     collected = processor.spans()
     assert len(collected) == 1
-    assert collected[0] == sampled_span
+    assert collected[0].name == "sampled"
 
     processor.shutdown()
 
@@ -384,7 +441,7 @@ def test_store_write_timeout(store: MagicMock):
 
     # Create a slow async function that exceeds timeout
     async def slow_write(*args: Any, **kwargs: Any) -> None:
-        await asyncio.sleep(10)
+        await asyncio.sleep(15)
 
     store.add_otel_span = AsyncMock(side_effect=slow_write)
 
@@ -423,8 +480,8 @@ def test_multiple_processors_in_same_process():
 
     assert len(processor1.spans()) == 1
     assert len(processor2.spans()) == 1
-    assert processor1.spans()[0] == span1
-    assert processor2.spans()[0] == span2
+    assert processor1.spans()[0].name == "p1_span"
+    assert processor2.spans()[0].name == "p2_span"
 
     processor1.shutdown()
     processor2.shutdown()
@@ -462,11 +519,6 @@ def _otel_reward_subprocess(mode: str, conn: Connection[tuple[str, Any]]) -> Non
 async def _otel_reward_subprocess_async(mode: str, conn: Connection[tuple[str, Any]]) -> None:
     tracer: OtelTracer | None = None
     try:
-        try:
-            clear_agentops_init()
-        except Exception:
-            # Some environments ship a minimal agentops stub without tracer helpers.
-            pass
         clear_tracer_provider()
 
         tracer = OtelTracer()

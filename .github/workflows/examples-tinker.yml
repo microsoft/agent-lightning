@@ -68,13 +68,23 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
-      - name: Tinker LLM sanity check
+      # TODO: Currently only test the client tracer implementation.
+      - name: Tinker LLM sanity check (tracer text)
         run: |
           set -euo pipefail
           source .venv/bin/activate
           cd examples/tinker
-          # TODO: Currently only test the client tracer implementation.
-          python -m tests.test_tinker_llm
+          python -m tests.test_tinker_llm tracer-text
+        shell: bash
+        env:
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+
+      - name: Tinker LLM sanity check (tracer tool)
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          python -m tests.test_tinker_llm tracer-tool
         shell: bash
         env:
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}

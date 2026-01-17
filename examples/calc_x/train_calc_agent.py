@@ -117,6 +117,12 @@ def train(
     ci_fast: bool,
     n_runners: int,
     external_store_address: str,
+    lora: bool,
+    lora_rank: int,
+    lora_adapter_path: Optional[str],
+    trajectory_level: bool = False,
+    weave: bool,
+    mongo_uri: Optional[str],
 ):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
 
@@ -129,6 +135,12 @@ def train(
         n_runners: The number of runners for the Trainer.
         ci_fast: Whether to cap the training loop at a single step (implies CI toggles).
         external_store_address: Connects to an external store instead of creating a new one in memory.
+        lora: Whether to enable LoRA training.
+        lora_rank: LoRA rank to use when LoRA is enabled.
+        lora_adapter_path: Optional path to a pre-trained LoRA adapter to load.
+        trajectory_level: Whether to enable trajectory level in trace aggregator.
+        weave: Whether to enable Weave tracing.
+        mongo_uri: MongoDB URI to use for the store.
     """
     # Load datasets (respect CLI file paths)
     train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())  # type: ignore
@@ -143,6 +155,25 @@ def train(
 
     if model:
         config["actor_rollout_ref"]["model"]["path"] = model
+
+    # Enable LoRA configuration if requested
+    if lora:
+        config["actor_rollout_ref"]["model"]["lora_rank"] = lora_rank
+        print(f"LoRA enabled: lora_rank={lora_rank}")
+        if lora_adapter_path:
+            config["actor_rollout_ref"]["model"]["lora_adapter_path"] = lora_adapter_path
+            print(f"Loading LoRA adapter from: {lora_adapter_path}")
+        print("LoRA configuration will trigger verl to set ref_in_actor=True (LoRA mode)")
+
+    if trajectory_level:
+        config["agentlightning"] = {
+            "trace_aggregator": {
+                "level": "trajectory",
+                "trajectory_max_prompt_length": 2048,
+                "trajectory_max_response_length": 8192,
+            }
+        }
+        print("Trajectory level enabled in trace aggregator.")
 
     # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
     if ci or ci_fast:
@@ -187,6 +218,10 @@ def train(
 
     if external_store_address:
         store: Optional[agl.LightningStore] = agl.LightningStoreClient(external_store_address)
+    elif mongo_uri:
+        from agentlightning.store.mongo import MongoLightningStore
+
+        store = MongoLightningStore(mongo_uri=mongo_uri)
     else:
         store = None
 
@@ -194,6 +229,14 @@ def train(
         tracer = agl.OtelTracer()  # dummy tracer for LLM Proxy
         adapter = agl.LlmProxyTraceToTriplet()
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store, tracer=tracer, adapter=adapter)
+    elif weave:
+        # NOTE: Don't import WeaveTracer at the module level or in __init__.py files.
+        # Always import it lazily/conditionally (behind a feature flag) to avoid interfering
+        # with other libraries like LiteLLM/OpenTelemetry when weave is not explicitly enabled.
+        from agentlightning.tracer.weave import WeaveTracer
+
+        tracer = WeaveTracer()
+        trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store, tracer=tracer)
     else:
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store)
 
@@ -206,6 +249,7 @@ def main():
     parser.add_argument("--val-file", type=str, default="data/test.parquet", help="Path to val parquet file")
     parser.add_argument("--model", type=str, default=None, help="HF model id or path (optional)")
     parser.add_argument("--llm-proxy", action="store_true", help="Enable LLM Proxy tracing/adapter")
+    parser.add_argument("--weave", action="store_true", help="Enable Weave tracing")
     parser.add_argument("--ci", action="store_true", help="Run a minimal CI-style training loop")
     parser.add_argument(
         "--ci-fast", action="store_true", help="Limit the training loop to a single step (implies --ci)"
@@ -218,6 +262,34 @@ def main():
         help="Connect to an external store instead of creating a new one in memory",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--lora",
+        action="store_true",
+        help="Enable LoRA training. When enabled, the reference policy is computed by the actor rollout worker.",
+    )
+    parser.add_argument(
+        "--lora-rank",
+        type=int,
+        default=32,
+        help="LoRA rank to use when --lora is enabled (default: 32)",
+    )
+    parser.add_argument(
+        "--lora-adapter-path",
+        type=str,
+        default=None,
+        help="Optional path to a pre-trained LoRA adapter to load when --lora is enabled",
+    )
+    parser.add_argument(
+        "--trajectory-level",
+        action="store_true",
+        help="Enable trajectory level in trace aggregator.",
+    )
+    parser.add_argument(
+        "--mongo-uri",
+        type=str,
+        default=None,
+        help="MongoDB URI to use for the store.",
+    )
 
     args = parser.parse_args()
 
@@ -243,6 +315,12 @@ def main():
         ci_fast=args.ci_fast,
         n_runners=args.n_runners,
         external_store_address=args.external_store_address,
+        lora=args.lora,
+        lora_rank=args.lora_rank,
+        lora_adapter_path=args.lora_adapter_path,
+        trajectory_level=args.trajectory_level,
+        weave=args.weave,
+        mongo_uri=args.mongo_uri,
     )
 
 

@@ -7,6 +7,8 @@ on:
       - Examples - Spider
       - Examples - APO
       - Examples - Unsloth
+      - Examples - RAG
+      - Examples - Claude Code
       - GPU Test
     types: [completed]
 
@@ -32,6 +34,8 @@ jobs:
               { workflow: 'examples-spider.yml', label: 'spider.latest', variants: ['latest'] },
               { workflow: 'examples-apo.yml', label: 'apo.latest', variants: ['latest'] },
               { workflow: 'examples-unsloth.yml', label: 'unsloth.latest', variants: ['latest'] },
+              { workflow: 'examples-claude-code.yml', label: 'claude-code.latest', variants: ['latest'] },
+              { workflow: 'examples-rag.yml', label: 'rag.latest', variants: ['latest'] },
               { workflow: 'tests-full.yml', label: 'tests-full.latest', variants: ['latest'] },
             ];
             await badgeAggregation({ github, context, core, dependencies });

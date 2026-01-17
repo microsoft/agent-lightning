@@ -22,6 +22,8 @@
 
 ## Emitter
 
+::: agentlightning.operation
+
 ::: agentlightning.emit_annotation
 
 ::: agentlightning.emit_reward

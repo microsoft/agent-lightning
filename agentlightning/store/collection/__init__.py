@@ -1,9 +1,21 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from .base import Collection, FilterOptions, KeyValue, LightningCollections, PaginatedResult, Queue, SortOptions
+from .base import (
+    AtomicLabels,
+    AtomicMode,
+    Collection,
+    FilterOptions,
+    KeyValue,
+    LightningCollections,
+    PaginatedResult,
+    Queue,
+    SortOptions,
+)
 from .memory import DequeBasedQueue, DictBasedKeyValue, InMemoryLightningCollections, ListBasedCollection
 
 __all__ = [
+    "AtomicLabels",
+    "AtomicMode",
     "Collection",
     "Queue",
     "KeyValue",
