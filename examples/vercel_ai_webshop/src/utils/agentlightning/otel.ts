@@ -137,17 +137,15 @@ export function getOtlpEndpoint(): string | null {
 
 /**
  * Emit a reward span that can be recognized by Agent Lightning daemon.
- * Uses the AgentOps format: {"type": "reward", "value": <float>}
+ * Uses the Agent Lightning format: agentlightning.reward.{index}.name/value
  *
  * This span will be matched by the daemon's get_reward_value() function
  * when extracting final_reward for training.
  */
 export function emitReward(tracer: Tracer, reward: number): void {
   const span = tracer.startSpan('reward', { kind: SpanKind.INTERNAL });
-  span.setAttribute(
-    'agentops.task.output',
-    JSON.stringify({ type: 'reward', value: reward })
-  );
+  span.setAttribute('agentlightning.reward.0.name', 'primary');
+  span.setAttribute('agentlightning.reward.0.value', reward);
   span.end();
 }
 
