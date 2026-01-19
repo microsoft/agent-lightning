@@ -663,6 +663,9 @@ class MongoBasedCollection(Collection[T_model]):
                     return_document=ReturnDocument.AFTER,
                 )
 
+            if result_doc is None:  # pyright: ignore[reportUnnecessaryComparison]
+                raise RuntimeError(f"Upsert resulted in no document for filter: {pk_filter}")
+
             # Because upsert=True, result_doc is guaranteed to be not None
             new_item = self._model_validate_item(result_doc)
             upserted_items.append(new_item)

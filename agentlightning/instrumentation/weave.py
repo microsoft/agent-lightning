@@ -424,6 +424,29 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
     def score_delete(self, req: tsi.ScoreDeleteReq) -> tsi.ScoreDeleteRes:
         return tsi.ScoreDeleteRes(num_deleted=0)
 
+    # Experimental unstable APIs
+    # We don't support these APIs yet.
+    def annotation_queue_create(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queues_query_stream(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_read(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_add_calls(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queues_stats(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_items_query(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotator_queue_items_progress_update(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
 
 # Module-level storage for originals
 _original_init_weave_get_server: Callable[..., Any] | None = None

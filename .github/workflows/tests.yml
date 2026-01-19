@@ -57,10 +57,13 @@ jobs:
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
         run: uv run --locked --no-sync scripts/check_headers.py
+        if: matrix.setup == 'fast'
       - name: Run Black
         run: uv run --locked --no-sync black --check .
+        if: matrix.setup != 'next'
       - name: Run isort
         run: uv run --locked --no-sync isort --check-only .
+        if: matrix.setup != 'next'
       - name: Run pyright (fast)
         run: uv run --locked --no-sync pyright -p pyrightconfig.fast.json
         if: matrix.setup == 'fast'
