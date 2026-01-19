@@ -12,9 +12,19 @@ The key difference from the Spider example is that this uses n_runners=0
 (external runner mode) because the agent is implemented in TypeScript/Vercel AI SDK
 rather than Python.
 
+Task Loading:
+    By default, this script auto-generates tasks from WebShop human instruction data
+    (items_human_ins.json) if available. If not found, it falls back to sample tasks.
+
 Usage:
     python agl/run_training.py fast    # Fast training for CI
-    python agl/run_training.py qwen    # Full Qwen training
+    python agl/run_training.py qwen    # Full Qwen training (auto-generates tasks)
+
+    # Limit auto-generated tasks:
+    python agl/run_training.py qwen --max-tasks 100
+
+    # Disable auto-generation:
+    python agl/run_training.py qwen --no-auto-generate
 
     # With custom tasks file:
     python agl/run_training.py qwen --tasks-file data/tasks.json
@@ -39,12 +49,57 @@ from agentlightning.adapter.triplet import TracerTraceToTriplet
 from agentlightning.types import NamedResources, Rollout, RolloutRawResult
 
 from config import config_fast, config_qwen
+from generate_tasks import generate_tasks, load_human_instructions
 from tasks import load_sample_tasks, load_tasks_from_file
+
+# Paths where WebShop human instruction data may be found
+WEBSHOP_DATA_PATHS = [
+    Path(__file__).parent.parent / "server" / "webshop" / "data" / "items_human_ins.json",
+    Path("/app/webshop/data/items_human_ins.json"),  # Docker path
+]
 
 # Vercel AI SDK produces spans with names like "ai.generateText", "ai.streamText", etc.
 # The default adapter matches "openai.chat.completion" which doesn't match these.
 # This pattern matches the AI SDK span names for LLM calls.
 VERCEL_AI_SDK_LLM_CALL_PATTERN = r"ai\.(generateText|streamText|generateObject)(\.do(Generate|Stream))?"
+
+
+def find_human_instructions_path() -> Path | None:
+    """Find the items_human_ins.json file in known locations.
+
+    Returns:
+        Path to the file if found, None otherwise.
+    """
+    for path in WEBSHOP_DATA_PATHS:
+        if path.exists():
+            return path
+    return None
+
+
+def auto_generate_tasks(
+    max_tasks: int | None = None,
+    shuffle: bool = True,
+    seed: int = 42,
+) -> list[Dict[str, Any]] | None:
+    """Auto-generate tasks from WebShop human instruction data if available.
+
+    Args:
+        max_tasks: Maximum number of tasks to generate (None for all).
+        shuffle: Whether to shuffle tasks before limiting.
+        seed: Random seed for reproducibility when shuffling.
+
+    Returns:
+        List of generated tasks, or None if human instruction data not found.
+    """
+    human_ins_path = find_human_instructions_path()
+    if human_ins_path is None:
+        return None
+
+    logger.info(f"[PROGRESS] Auto-generating tasks from {human_ins_path}")
+    human_instructions = load_human_instructions(human_ins_path)
+    tasks = generate_tasks(human_instructions, max_tasks=max_tasks, shuffle=shuffle, seed=seed)
+    logger.info(f"[PROGRESS] Generated {len(tasks)} tasks")
+    return tasks
 
 
 class ExternalRunnerAgent(LitAgent[Dict[str, Any]]):
@@ -160,15 +215,36 @@ def main() -> None:
         help="Path to validation tasks file. Defaults to first 10 training tasks.",
     )
 
+    parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=None,
+        help="Maximum number of tasks to use (applies to auto-generated tasks).",
+    )
+
+    parser.add_argument(
+        "--no-auto-generate",
+        action="store_true",
+        help="Disable auto-generation of tasks; use sample tasks if no --tasks-file provided.",
+    )
+
     args = parser.parse_args()
 
     # Load tasks
     if args.tasks_file:
         tasks = load_tasks_from_file(Path(args.tasks_file))
         logger.info(f"[PROGRESS] Loaded {len(tasks)} tasks from {args.tasks_file}")
-    else:
+    elif args.no_auto_generate:
         tasks = load_sample_tasks()
-        logger.info(f"[PROGRESS] Using {len(tasks)} sample tasks")
+        logger.info(f"[PROGRESS] Using {len(tasks)} sample tasks (auto-generation disabled)")
+    else:
+        # Try auto-generation first, fall back to sample tasks
+        tasks = auto_generate_tasks(max_tasks=args.max_tasks, shuffle=True)
+        if tasks is None:
+            tasks = load_sample_tasks()
+            logger.info(f"[PROGRESS] Using {len(tasks)} sample tasks (WebShop data not found)")
+        else:
+            logger.info(f"[PROGRESS] Auto-generated {len(tasks)} tasks from WebShop data")
 
     # Get config
     config_functions = {

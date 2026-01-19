@@ -6,6 +6,12 @@ This module provides utilities for loading WebShop tasks from various sources:
 - Sample tasks matching the TypeScript sample-tasks.ts
 - JSON files
 - Parquet files
+
+To generate a full task set from WebShop data, use `generate_tasks.py`:
+    python agl/generate_tasks.py --output agl/webshop_tasks.json
+
+Then load in training:
+    python agl/run_training.py qwen --tasks-file agl/webshop_tasks.json
 """
 
 from __future__ import annotations
