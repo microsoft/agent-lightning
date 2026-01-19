@@ -16,8 +16,8 @@
 N ?= 1
 
 # Azure ML defaults (override with environment variables)
-AML_RG ?= evalsdemo
-AML_WS ?= evalsdemo-ml
+AML_RG ?= <your-resource-group>
+AML_WS ?= <your-workspace>
 
 .DEFAULT_GOAL := help
 
@@ -43,11 +43,9 @@ help: ## Show this help message
 	@echo "  make clean       Stop and remove volumes"
 	@echo ""
 	@echo "Azure ML:"
-	@echo "  make aml-setup       One-time AML setup (compute cluster)"
 	@echo "  make aml-train       Submit Qwen training job"
-	@echo "  make aml-logs        Stream logs from running AML job"
-	@echo "  make aml-status      Show AML job status"
-
+	@echo "  make aml-compute     Create AML compute cluster"
+	@echo ""
 #==============================================================================
 # Setup
 #==============================================================================
@@ -84,53 +82,19 @@ scale: ## Set number of runners (e.g., make scale N=3)
 	@echo "Or set N_RUNNERS=$(N) in your .env file"
 
 #==============================================================================
-# Manage
-#==============================================================================
-
-status: ## Show container status
-	docker compose ps -a
-
-stop: ## Stop all services
-	docker compose --profile gpu down
-
-clean: ## Stop and remove volumes
-	docker compose --profile gpu down -v --rmi local
-	@echo "Cleaned up containers, volumes, and local images"
-
-#==============================================================================
 # Azure ML
 #==============================================================================
-
-aml-setup: aml-compute ## One-time AML setup (compute cluster)
-	@echo ""
-	@echo "Azure ML setup complete!"
-	@echo "You can now run 'make aml-train' to submit a training job."
 
 aml-compute: ## Create Azure ML compute cluster
 	@echo "Creating Azure ML compute cluster..."
 	az ml compute create -f aml/compute.yml -g $(AML_RG) -w $(AML_WS) || \
 		echo "Compute cluster may already exist (this is OK)"
 
-aml-train: aml-train-qwen ## Submit training job (alias for qwen)
 
-aml-train-qwen: ## Submit Qwen training job
+aml-train: ## Submit Qwen training job
 	@echo "Submitting Qwen training job to Azure ML..."
 	@echo "Note: Requires HF_TOKEN and WANDB_API_KEY environment variables"
 	az ml job create -f aml/jobs/webshop-qwen.yml --stream \
 		--set environment_variables.HF_TOKEN="$$HF_TOKEN" \
 		--set environment_variables.WANDB_API_KEY="$$WANDB_API_KEY" \
 		-g $(AML_RG) -w $(AML_WS)
-
-aml-logs: ## Stream logs from running AML job
-	@echo "Streaming logs from most recent job..."
-	@JOB_NAME=$$(az ml job list -g $(AML_RG) -w $(AML_WS) --query "[0].name" -o tsv); \
-	if [ -n "$$JOB_NAME" ]; then \
-		echo "Job: $$JOB_NAME"; \
-		az ml job stream -n "$$JOB_NAME" -g $(AML_RG) -w $(AML_WS); \
-	else \
-		echo "No jobs found"; \
-	fi
-
-aml-status: ## Show AML job status
-	@echo "Recent Azure ML jobs:"
-	az ml job list -g $(AML_RG) -w $(AML_WS) --query "[].{name:name,status:status,created:creation_context.created_at}" -o table

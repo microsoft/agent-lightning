@@ -150,8 +150,8 @@ make aml-status
 ### Using az ml CLI directly
 
 ```bash
-RG=evalsdemo
-WS=evalsdemo-ml
+RG=<your-resource-group>
+WS=<your-workspace>
 
 # Create compute cluster (one-time)
 az ml compute create -f aml/compute.yml -g $RG -w $WS
