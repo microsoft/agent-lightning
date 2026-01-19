@@ -46,7 +46,8 @@ from typing import Any, Dict, List, Optional
 import agentlightning as agl
 from agentlightning import LitAgent
 from agentlightning.adapter.triplet import TracerTraceToTriplet
-from agentlightning.types import NamedResources, Rollout, RolloutRawResult
+from agentlightning.types import LLM, NamedResources, Rollout, RolloutRawResult
+from agentlightning.verl.daemon import AgentModeDaemon
 
 from config import config_fast, config_qwen
 from generate_tasks import generate_tasks, load_human_instructions
@@ -135,6 +136,112 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class WebShopDaemon(AgentModeDaemon):
+    """Custom daemon that bypasses LLMProxy for external runner mode.
+
+    In external runner mode, TypeScript runners connect directly to the vLLM HTTP server
+    rather than going through LLMProxy. This avoids startup issues with LLMProxy's asyncio
+    event loop conflicts when running inside Ray actors.
+
+    Known limitations (from bypassing LLMProxy):
+    - Token IDs are not captured (LLMProxy adds `return_token_ids=True` to requests)
+    - LLM spans may not have rollout/attempt attribution from the proxy
+    - Training may be less accurate due to retokenization issues
+
+    The TypeScript runner still captures traces via Vercel AI SDK's `experimental_telemetry`,
+    so basic tracing works.
+    """
+
+    async def _async_set_up(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
+        """Set up data and resources, bypassing LLMProxy startup.
+
+        Instead of starting LLMProxy, this registers the vLLM server directly as an LLM resource.
+        External runners will connect directly to the vLLM HTTP server.
+        """
+        self.clear_data_and_server()
+
+        # Store server addresses but don't start LLMProxy
+        if server_addresses != self.backend_llm_server_addresses:
+            self.backend_llm_server_addresses = server_addresses
+            logger.info("[WebShopDaemon] Skipping LLMProxy startup. vLLM servers: %s", server_addresses)
+
+        self.is_train = is_train
+
+        # Register vLLM server directly as an LLM resource (no LLMProxy)
+        if server_addresses:
+            vllm_address = server_addresses[0]  # Use first server
+            llm_resource = LLM(
+                endpoint=f"http://{vllm_address}/v1",
+                model=self.train_information.get("model", "default-model"),
+                sampling_parameters={
+                    "temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)
+                },
+            )
+            logger.info("[WebShopDaemon] Registered vLLM resource: %s", llm_resource.endpoint)
+        else:
+            # Fallback: create a placeholder resource
+            llm_resource = LLM(
+                endpoint="http://localhost:8000/v1",
+                model=self.train_information.get("model", "default-model"),
+                sampling_parameters={
+                    "temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)
+                },
+            )
+            logger.warning("[WebShopDaemon] No vLLM servers available, using placeholder resource")
+
+        resources: NamedResources = {"main_llm": llm_resource}
+
+        # Add resources to store
+        resources_update = await self.store.add_resources(resources)
+        resources_id = resources_update.resources_id
+
+        # Queue tasks for agents to process (same as parent class)
+        import uuid
+
+        from agentlightning.types import EnqueueRolloutRequest, RolloutConfig
+        from agentlightning.verl.daemon import to_native
+
+        keys = list(data.keys())
+        num_samples = len(data[keys[0]])
+        rollouts_per_sample = self.train_rollout_n if is_train else 1
+
+        enqueue_rollout_requests: List[EnqueueRolloutRequest] = []
+        data_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
+
+        for i in range(num_samples):
+            data_id = str(uuid.uuid4())
+            original_sample = {key: data[key][i] for key in keys}
+            original_sample["data_id"] = data_id
+            data_id_to_original_sample[data_id] = original_sample
+
+            for _ in range(rollouts_per_sample):
+                task_metadata = {"data_id": data_id, "is_train": is_train}
+                enqueue_rollout_requests.append(
+                    EnqueueRolloutRequest(
+                        input=to_native(original_sample),
+                        mode="train" if is_train else "val",
+                        resources_id=resources_id,
+                        config=RolloutConfig(
+                            unresponsive_seconds=self.llm_timeout_seconds,
+                            timeout_seconds=self.llm_timeout_seconds,
+                        ),
+                        metadata=task_metadata,
+                    )
+                )
+
+        # Enqueue all the tasks in a single batch
+        from typing import cast
+
+        rollouts = await self.store.enqueue_many_rollouts(enqueue_rollout_requests)
+        self._task_id_to_original_sample.update(
+            {
+                rollout.rollout_id: data_id_to_original_sample[cast(Dict[str, Any], rollout.metadata)["data_id"]]
+                for rollout in rollouts
+            }
+        )
+        self._total_tasks_queued += len(rollouts)
+
+
 def train(config: Dict[str, Any], tasks: List[Dict[str, Any]], val_tasks: Optional[List[Dict[str, Any]]] = None) -> None:
     """Run training with external runner mode.
 
@@ -143,8 +250,9 @@ def train(config: Dict[str, Any], tasks: List[Dict[str, Any]], val_tasks: Option
         tasks: List of training tasks.
         val_tasks: Optional list of validation tasks. Defaults to first 10 training tasks.
     """
-    # Use the default AgentModeDaemon which manages LLMProxy internally
-    algorithm = agl.VERL(config)
+    # Use custom WebShopDaemon that bypasses LLMProxy startup
+    # External runners connect directly to vLLM HTTP server
+    algorithm = agl.VERL(config, daemon_cls=WebShopDaemon)
 
     # Configure adapter to match span names from our custom emitLlmCallSpan() telemetry
     # The span name pattern matches "ai.generateText" which is what emitLlmCallSpan uses
