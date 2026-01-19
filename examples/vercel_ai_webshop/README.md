@@ -1,32 +1,17 @@
-# WebShop Training Pipeline with Agent Lightning
+# WebShop Example
 
-This example demonstrates how to train a Vercel AI SDK agent on the WebShop benchmark using Agent Lightning (agl). The training pipeline uses a **headless runner** that executes agent rollouts, reports traces to the Agent Lightning coordinator, and runs GPU-based RL training with VERL/vLLM.
+This example demonstrates how to train a Vercel AI SDK agent on the WebShop benchmark using Agent Lightning with reinforcement learning (VERL/GRPO). The training pipeline uses a headless TypeScript runner that executes agent rollouts and reports traces to the Agent Lightning coordinator.
 
-## Overview
+## Requirements
 
-The training pipeline consists of:
-
-1. **Training Coordinator (agl)** — Manages the task queue, collects traces, and runs the training algorithm
-2. **Headless Runner** — Executes the Vercel AI agent in a loop, polling for tasks and reporting rewards
-3. **WebShop Server** — The shopping environment (Flask + OpenAI Gym)
-
-## Features
-
-- **Headless Execution**: Run agent rollouts without a browser using the TypeScript headless runner
-- **Agent Lightning Integration**: Full tracing via OpenTelemetry, task queue management, and reward reporting
-- **VERL/vLLM Support**: GPU training with automatic LLM endpoint discovery
-- **Scalable Runners**: Launch multiple headless runners in parallel for faster rollout collection
-
-## Prerequisites
-
-- Node.js 22+
-- pnpm 10+
-- Docker (recommended) OR Python 3.8+ with Java 17+ (for the WebShop server)
+- Node.js 22+ and pnpm 10+
+- Docker (recommended) OR Python 3.8+ with Java 17+
 - GPU with 40GB+ VRAM (for VERL training)
+- HuggingFace token (`HF_TOKEN`)
 
 ## Quick Start
 
-The recommended way to run the training pipeline is with Docker Compose, which starts all services with a single command.
+The recommended way to run the training pipeline is with Docker, which starts all services with a single command.
 
 ```bash
 cd examples/vercel_ai_webshop
@@ -39,187 +24,57 @@ make train
 ```
 
 This starts:
-- **WebShop**: http://localhost:3000 — Shopping environment API
-- **Store**: http://localhost:4747 — Agent Lightning coordinator
-- **Headless Runner** — Polls for tasks and executes agent rollouts
+- **WebShop Server** (`:3000`) - Flask shopping environment
+- **Training Coordinator** (`:4747`) - Agent Lightning Store + VERL
+- **Headless Runners** - Poll for tasks and execute agent rollouts
 
-VERL manages vLLM internally with the Qwen model—no external API key is needed. The headless runners automatically discover the LLM endpoint from the Store.
-
-> **Note:** The first run downloads ~100MB of dataset files. This takes about 2 minutes but only happens once (data is persisted in a Docker volume).
+> **Note:** The first run downloads ~100MB of dataset files. This takes about 2 minutes but only happens once.
 
 ### Environment Variables
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `HF_TOKEN` | HuggingFace token for model access | Yes |
-| `WANDB_API_KEY` | Weights & Biases API key for metrics tracking | No (recommended) |
+| `WANDB_API_KEY` | Weights & Biases API key for metrics | No |
 | `WEBSHOP_URL` | WebShop server URL | No (default: `http://localhost:3000`) |
 
-Training metrics (rewards, success rates, response lengths) are automatically logged to [Weights & Biases](https://wandb.ai). Set `WANDB_API_KEY` to enable experiment tracking.
+## Included Files
 
-## How It Works
+| File/Directory | Description |
+|----------------|-------------|
+| `agl/run_training.py` | Training coordinator entry point |
+| `agl/config.py` | VERL/GRPO configuration (model, epochs, batch sizes) |
+| `agl/tasks.py` | Task loading utilities (JSON, Parquet) |
+| `agl/generate_tasks.py` | Generate tasks from WebShop human instruction data |
+| `scripts/headless-runner.ts` | Headless rollout runner for training |
+| `scripts/run_stack.sh` | Stack orchestration script |
+| `src/agent/webshop-agent.ts` | ToolLoopAgent with Vercel AI SDK |
+| `src/environment/webshop-server.ts` | HTTP client for WebShop Flask server |
+| `src/utils/agentlightning/` | Store client, OpenTelemetry tracing, ProxyLLM utilities |
+| `server/` | Python WebShop backend |
+| `aml/` | Azure ML configuration files |
 
-### Training Architecture
+## Running Examples
 
-The training pipeline consists of three main components that communicate via REST APIs and OpenTelemetry:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Training Coordinator (agl)                       │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐      │
-│  │ Task Queue      │    │ Algorithm       │    │ Trace Collector │      │
-│  │ (enqueue tasks) │    │ (VERL/Baseline) │    │ (OTLP receiver) │      │
-│  └────────┬────────┘    └─────────────────┘    └────────▲────────┘      │
-└───────────┼──────────────────────────────────────────────┼──────────────┘
-            │ REST API                              OTLP HTTP
-            │ (dequeue/update)                    (/v1/traces)
-            ▼                                              │
-┌───────────────────────┐                                  │
-│    Headless Runner    │──────────────────────────────────┘
-│   (TypeScript/Node)   │
-│  ┌─────────────────┐  │     ┌─────────────────┐
-│  │ WebShop Agent   │◄─┼────►│ LLM Endpoint    │
-│  │ (Vercel AI SDK) │  │     │ (OpenAI/vLLM)   │
-│  └────────┬────────┘  │     └─────────────────┘
-└───────────┼───────────┘
-            │ HTTP (search, click, buy)
-            ▼
-┌───────────────────────┐
-│    WebShop Server     │
-│   (Flask @ :3000)     │
-└───────────────────────┘
-```
-
-### Key Components
-
-1. **Training Coordinator (`agl/run_training.py`)**: Manages the task queue, collects traces via OTLP, and runs the VERL training algorithm
-2. **Headless Runner (`scripts/headless-runner.ts`)**: Polls for tasks, executes the Vercel AI agent, and reports rewards back to the coordinator
-3. **WebShop Agent (`src/agent/webshop-agent.ts`)**: Uses `ToolLoopAgent` with three tools (search, click, buy) to navigate the store
-4. **WebShopServerEnv**: HTTP adapter that connects to the WebShop Python server
-5. **Store Client (`src/utils/agentlightning/`)**: REST client for task queue operations and LLM endpoint discovery
-
-### Action Grammar
-
-The agent interacts with the WebShop server using a simple action grammar:
-
-- `search[query]` - Search for products matching the query
-- `click[element]` - Click on an element (product, option, button)
-- `click[Buy Now]` - Complete the purchase (convenience: `buy` tool)
-
-### Sample Tasks
-
-| Task ID | Description |
-|---------|-------------|
-| ws_001 | Red cotton t-shirt, men, size L, under $30 |
-| ws_002 | Black running shorts, men, M, athletic style |
-| ws_003 | Gray fleece hoodie, women, size S |
-| ws_004 | White canvas sneakers, size 9, under $50 |
-| ws_005 | Navy slim fit chino pants, waist 32, length 32 |
-| ws_006 | Black yoga leggings, women, size M |
-| ws_007 | White organic cotton blouse, women, size M |
-| ws_008 | Navy polo shirt, men, size XL, under $50 |
-
-
-## Running the Training Pipeline
-
-The training pipeline uses Docker Compose to orchestrate all services. This section covers configuration options, monitoring, and manual setup alternatives.
-
-### Architecture
-
-The training pipeline uses a **unified container** that runs all three services (WebShop, Coordinator, Runners) as processes within a single container. This architecture:
-
-- **Simplifies deployment** - Single image to build and deploy
-- **Enables localhost communication** - All services communicate via `127.0.0.1`
-- **Matches Azure ML pattern** - Same architecture works locally and in the cloud
-- **Isolates dependencies** - Python 3.11 + Java 21 + Node.js 20 in one image
-
-| Component | Runtime | Port | Description |
-|-----------|---------|------|-------------|
-| **WebShop Server** | Python + Java 21 | 3000 | Flask shopping environment with pyserini search |
-| **Training Coordinator** | Python | 4747 | Agent Lightning Store + training algorithm |
-| **Headless Runners** | Node.js 20 | - | Vercel AI SDK agent execution |
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 Single Container (webshop-agl)              │
-│                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  WebShop    │  │    AGL      │  │   N x Runners       │  │
-│  │   Server    │  │ Coordinator │  │   (Node.js)         │  │
-│  │  :3000      │  │   :4747     │  │                     │  │
-│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
-│         │                │                    │             │
-│         └────────────────┴────────────────────┘             │
-│                    localhost                                │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Inspecting Logs
-
-**Check container status:**
-```bash
-make status       # Show all container states
-```
-
-**Verify LLM endpoint configuration:**
-```bash
-docker compose logs 2>&1 | grep -E "LLM resource|OPENAI_API_BASE|Using"
-```
-
-Expected output with VERL:
-```
-[runner-1] Found ProxyLLM resource: Qwen/Qwen2.5-1.5B-Instruct @ http://...
-[runner-1] Using LLM Proxy: http://.../rollout/{id}/attempt/{id}/v1
-```
-
-**Verify tasks are being processed:**
-```bash
-docker compose logs 2>&1 | grep -E "PROGRESS|Enqueued|rollout"
-```
-
-**Troubleshooting common issues:**
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `connect ECONNREFUSED` | Service not ready | Wait for healthcheck or run `make status` |
-| Container `Exited (1)` | Service crashed | Check logs: `docker compose logs` |
-
-### Makefile Commands
-
-| Command | Description |
-|---------|-------------|
-| `make setup` | Create `.env` from template |
-| `make build-gpu` | Build GPU Docker image |
-| `make train` | Start training stack (single container, GPU) |
-| `make scale N=3` | Set number of runners |
-| `make status` | Show container status |
-| `make stop` | Stop all services |
-| `make clean` | Stop, remove volumes and images |
-| `make aml-setup` | One-time Azure ML setup (compute + environment) |
-| `make aml-train` | Submit training job to Azure ML |
-| `make aml-logs` | Stream logs from running AML job |
-| `make aml-status` | Show AML job status |
-
-### Docker Features
-
-- **Data Persistence**: The WebShop dataset (~100MB) is stored in a Docker volume (`webshop_data`). It downloads once on first run and persists across rebuilds.
-- **Unified Setup**: No local Node.js or Python installation required.
-
-### Docker Compose
-
-The training stack runs all services in a single container with GPU access. VERL manages vLLM internally.
+### Training (Docker)
 
 ```bash
 # Start GPU training - VERL manages vLLM, no API key needed
-docker compose --profile gpu up --build
+make train
 
 # Run with more runners
-N_RUNNERS=3 docker compose --profile gpu up --build
+N_RUNNERS=3 make train
+
+# Check container status
+make status
+
+# Stop all services
+make stop
 ```
 
-### Manual Setup (Without Docker)
+### Training (Manual)
 
-If you prefer to run services manually without Docker, follow the instructions below. This is useful for development or debugging individual components.
+If you prefer to run services manually without Docker:
 
 **Terminal 1 - WebShop Server:**
 ```bash
@@ -230,364 +85,56 @@ docker compose up webshop --build
 **Terminal 2 - Training Coordinator:**
 ```bash
 cd examples/vercel_ai_webshop/agl
-
-# First time setup (creates venv and installs dependencies with VERL)
-./setup.sh
-
-# Activate the environment
+./setup.sh                    # First time only
 source activate.sh
-
-# Fast training for CI/testing (smaller model)
-python run_training.py fast
-
-# Full Qwen training
-python run_training.py qwen
-
-# With custom tasks file
-python run_training.py qwen --tasks-file data/tasks.json
+python run_training.py qwen   # Full training
 ```
 
-**Terminal 3+ - Headless Runners (one or more):**
+**Terminal 3+ - Headless Runners:**
 ```bash
 cd examples/vercel_ai_webshop
 export AGENT_LIGHTNING_STORE_URL="http://localhost:4747"
-
-# Run multiple workers for parallel rollouts
 pnpm headless -- --worker-id runner-1
-# In another terminal:
-pnpm headless -- --worker-id runner-2
 ```
 
-The headless runner will:
-1. Connect to the Agent Lightning Store
-2. Discover the LLM endpoint published by VERL
-3. Poll for tasks and execute the WebShop agent
-4. Report traces and rewards back to the coordinator
+### Generating Tasks
 
----
+By default, training uses `sample_tasks.json` with 8 tasks. For full training, generate tasks from the WebShop dataset:
 
-### vLLM Integration
-
-When training with VERL, the system uses vLLM to serve the Qwen model locally instead of calling external APIs. This enables:
-
-- **Automatic model loading**: VERL starts vLLM with the configured model (e.g., `Qwen/Qwen2.5-1.5B-Instruct`)
-- **LLM Proxy**: An OpenAI-compatible proxy wraps vLLM to capture token IDs and emit traces
-- **Dynamic endpoint discovery**: Runners fetch the LLM endpoint from the Store (no manual configuration)
-- **Trace attribution**: Each request is routed with rollout/attempt IDs for accurate training
-
-**Architecture with vLLM:**
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                          VERL Training Coordinator                          │
-│                                                                              │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────────────────────────┐ │
-│  │ Task Queue   │   │ vLLM Server  │   │ LLM Proxy                        │ │
-│  │              │   │ (Qwen model) │◄──┤ - OpenAI-compatible API          │ │
-│  │              │   │              │   │ - Token ID capture               │ │
-│  │              │   │              │   │ - Rollout/attempt routing        │ │
-│  └──────┬───────┘   └──────────────┘   └──────────────┬───────────────────┘ │
-└─────────┼──────────────────────────────────────────────┼────────────────────┘
-          │ GET /v1/agl/resources/latest                 │
-          │ POST /v1/agl/queues/rollouts/dequeue         │
-          ▼                                              ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                            Headless Runner                                    │
-│  1. Fetch resources from Store → discovers ProxyLLM endpoint                 │
-│  2. For each rollout, construct routed URL:                                   │
-│     {proxy_endpoint}/rollout/{rollout_id}/attempt/{attempt_id}/v1            │
-│  3. Use routed URL with Vercel AI SDK's createOpenAI()                       │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Endpoint Discovery:**
-
-The headless runner automatically discovers the LLM endpoint:
-
-1. On startup, queries `GET /v1/agl/resources/latest` from the Store
-2. Extracts the `main_llm` resource (a `ProxyLLM` with the vLLM endpoint)
-3. For each rollout, constructs a routed URL with rollout/attempt IDs
-4. Falls back to `OPENAI_API_BASE` environment variable if no resource found
-
-**Configuration in `agl/config.py`:**
-
-```python
-RL_TRAINING_CONFIG = {
-    "actor_rollout_ref": {
-        "rollout": {
-            "name": "vllm",  # Use vLLM for inference
-            "gpu_memory_utilization": 0.8,
-            "engine_kwargs": {
-                "vllm": {
-                    "enable_auto_tool_choice": True,
-                    "tool_call_parser": "hermes",
-                }
-            },
-        },
-        "model": {
-            "path": "Qwen/Qwen2.5-1.5B-Instruct",  # HuggingFace model ID
-        },
-    },
-    # ...
-}
-```
-
----
-
-### Headless Runner Reference
-
-The headless runner (`scripts/headless-runner.ts`) executes agent rollouts outside of a browser environment.
-
-**Usage:**
 ```bash
-pnpm headless -- [options]
-# Or directly:
-npx tsx scripts/headless-runner.ts [options]
+# Generate all tasks (~12,000 tasks)
+python agl/generate_tasks.py
+
+# With custom options
+python agl/generate_tasks.py --output agl/webshop_tasks.json --max-tasks 1000 --shuffle
+
+# Train with generated tasks
+python agl/run_training.py qwen --tasks-file agl/webshop_tasks.json
 ```
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--worker-id <id>` | Unique worker identifier | `runner-{timestamp}` |
-| `--poll-interval <ms>` | Task polling interval | `1000` |
-| `--max-steps <n>` | Maximum steps per task | `15` |
-| `--once` | Run single task and exit | `false` |
-
-**Environment Variables:**
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `AGENT_LIGHTNING_STORE_URL` | Store server URL (e.g., `http://localhost:4747`) | Yes |
-| `WEBSHOP_URL` | WebShop server URL | No (default: `http://localhost:3000`) |
-
-The runner automatically discovers the LLM endpoint from the Store—no API key or base URL needed.
-
----
-
-### Training Coordinator Reference
-
-The training coordinator (`agl/run_training.py`) manages the task queue and training loop.
-
-**Usage:**
-```bash
-cd examples/vercel_ai_webshop/agl
-python run_training.py [config] [options]
-```
-
-**Configurations:**
-
-| Config | Model | GPU Required | Use Case |
-|--------|-------|--------------|----------|
-| `fast` | Qwen2.5-0.5B-Instruct | Yes (40GB) | CI testing |
-| `qwen` | Qwen2.5-1.5B-Instruct | Yes (40GB) | Full training |
-
-**Options:**
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--tasks-file PATH` | Custom tasks file (JSON/Parquet) | Sample tasks |
-| `--val-tasks-file PATH` | Custom validation tasks | First 10 training tasks |
-
----
-
-## Included Files
-
-### Training Coordinator (`agl/`)
-
-| File | Description |
-|------|-------------|
-| `run_training.py` | Main entry point for training with dev/VERL modes |
-| `config.py` | VERL/GRPO configuration (model, epochs, batch sizes) |
-| `tasks.py` | Task loading utilities (JSON, Parquet, sample tasks) |
-
-### Source Code (`src/`)
-
-| File | Description |
-|------|-------------|
-| `agent/webshop-agent.ts` | ToolLoopAgent for UI with Vercel AI SDK |
-| `agent/prompts.ts` | System prompts shared between UI and headless runner |
-| `environment/webshop-server.ts` | HTTP client for WebShop Flask server |
-
-### Agent Lightning Integration (`src/utils/agentlightning/`)
-
-| File | Description |
-|------|-------------|
-| `store-client.ts` | REST client for Store API (dequeue, complete, resources) |
-| `otel.ts` | OpenTelemetry tracer factory with rollout attribution |
-| `proxy-llm.ts` | ProxyLLM URL construction for rollout/attempt routing |
-| `types.ts` | TypeScript types matching Python models |
-| `index.ts` | Re-exports all utilities |
-
-### Scripts (`scripts/`)
-
-| File | Description |
-|------|-------------|
-| `headless-runner.ts` | Headless rollout runner for training |
-| `run_stack.sh` | Stack orchestration script |
-
-## Project Structure
-
-```
-vercel_ai_webshop/
-├── src/                              # TypeScript source code
-│   ├── agent/                        # Agent definition
-│   │   ├── webshop-agent.ts          # ToolLoopAgent for Next.js UI
-│   │   └── prompts.ts                # System prompts (shared)
-│   ├── environment/                  # WebShop HTTP client
-│   │   └── webshop-server.ts         # HTTP client for WebShop API
-│   ├── data/                         # Task definitions
-│   └── utils/agentlightning/         # Agent Lightning integration
-│       ├── index.ts                  # Re-exports
-│       ├── store-client.ts           # Store REST client
-│       ├── otel.ts                   # OpenTelemetry tracing
-│       ├── proxy-llm.ts              # ProxyLLM URL helpers
-│       └── types.ts                  # TypeScript types
-├── scripts/
-│   ├── headless-runner.ts            # Headless rollout runner
-│   └── run_stack.sh                  # Stack orchestration script
-├── agl/                              # Python Agent Lightning code
-│   ├── run_training.py               # Training coordinator
-│   ├── config.py                     # Training configurations
-│   └── tasks.py                      # Task loading utilities
-├── server/                           # Python WebShop backend
-│   └── webshop_server.py             # Flask server
-├── aml/                              # Azure ML configuration
-│   ├── compute.yml                   # GPU compute cluster
-│   ├── environment.yml               # Training environment
-│   ├── job.yml                       # Training job spec
-│   └── README.md                     # AML instructions
-├── docker-compose.yml                # Service orchestration
-├── Dockerfile                        # Unified training image
-└── Makefile                          # Build and run commands
-```
-
-## Agent Lightning Integration
-
-The `src/utils/agentlightning/` directory provides TypeScript utilities that enable training Vercel AI SDK agents with Agent Lightning. These utilities handle task queue management, OpenTelemetry tracing, and LLM endpoint discovery.
-
-### Store Client (`store-client.ts`)
-
-REST client for the Agent Lightning Store server:
-
-- **Task Queue**: `dequeueRollouts()` / `completeAttempt()` - poll for work and report results
-- **Resources**: `getLatestResources()` - discover vLLM endpoint dynamically
-- **Health**: `health()` - check server availability
-
-```typescript
-import { AgentLightningStoreClient } from './utils/agentlightning';
-
-const client = new AgentLightningStoreClient({ baseUrl: 'http://localhost:4747' });
-const rollouts = await client.dequeueRollouts(1, 'runner-1');
-// ... execute rollout ...
-await client.completeAttempt(rolloutId, attemptId, { success: true, reward: 1.0 });
-```
-
-### OpenTelemetry Tracing (`otel.ts`)
-
-Creates per-rollout tracers that emit spans to the Agent Lightning Store:
-
-- `createRolloutTracer()` - factory that embeds rollout_id/attempt_id in Resource attributes
-- `emitLlmCallSpan()` - emit LLM call with tokenized prompt/response for training
-- `emitReward()` - emit reward span that the daemon extracts for training signal
-- `getOtlpEndpoint()` - derive OTLP endpoint from Store URL
-
-```typescript
-import { createRolloutTracer, emitLlmCallSpan, emitReward } from './utils/agentlightning';
-
-const { tracer, provider } = createRolloutTracer({
-  otlpEndpoint: 'http://localhost:4747/v1/traces',
-  serviceName: 'webshop-runner',
-  rolloutId: 'ro-abc123',
-  attemptId: 'at-def456',
-});
-
-// During agent execution, emit LLM calls with token IDs for training
-emitLlmCallSpan(tracer, promptText, responseText, modelId);
-
-// At the end, emit the final reward
-emitReward(tracer, reward);
-
-// Flush traces before completing the attempt
-await provider.forceFlush();
-```
-
-### ProxyLLM Routing (`proxy-llm.ts`)
-
-Utilities for constructing routed LLM endpoints that enable trace attribution:
-
-- `getProxyLLMBaseUrl()` - construct `{endpoint}/rollout/{id}/attempt/{id}/v1`
-- `getMainLLM()` - extract main_llm resource from Store response
-- `isProxyLLM()` - type guard for ProxyLLM vs regular LLM
-
-```typescript
-import { getMainLLM, getProxyLLMBaseUrl, isProxyLLM } from './utils/agentlightning';
-
-const resources = await client.getLatestResources();
-const llmResource = getMainLLM(resources);
-
-if (llmResource && isProxyLLM(llmResource)) {
-  // Construct routed URL for proper trace attribution
-  const baseURL = getProxyLLMBaseUrl(llmResource, rolloutId, attemptId);
-  // baseURL = "http://proxy:8080/rollout/ro-abc123/attempt/at-def456/v1"
-}
-```
-
-### Integration Flow
-
-The following diagram shows how the TypeScript utilities integrate with the training loop:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Training Loop                                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  1. DEQUEUE TASK                                                             │
-│     └─► storeClient.dequeueRollouts()                                       │
-│         Returns: { rollout_id, attempt_id, input: { instruction, ... } }    │
-│                                                                              │
-│  2. DISCOVER LLM ENDPOINT                                                    │
-│     └─► storeClient.getLatestResources()                                    │
-│     └─► getMainLLM(resources) → ProxyLLM or LLM resource                   │
-│     └─► getProxyLLMBaseUrl(resource, rolloutId, attemptId)                 │
-│                                                                              │
-│  3. CREATE TRACER                                                            │
-│     └─► createRolloutTracer({ otlpEndpoint, rolloutId, attemptId, ... })   │
-│         Returns: { tracer, provider }                                        │
-│                                                                              │
-│  4. EXECUTE AGENT LOOP                                                       │
-│     for each step:                                                           │
-│       └─► LLM call via Vercel AI SDK                                        │
-│       └─► emitLlmCallSpan(tracer, prompt, response, model)                  │
-│       └─► Execute action in WebShop environment                             │
-│                                                                              │
-│  5. EMIT REWARD                                                              │
-│     └─► emitReward(tracer, finalReward)                                     │
-│                                                                              │
-│  6. FLUSH & COMPLETE                                                         │
-│     └─► provider.forceFlush()  // Send all spans to Store                   │
-│     └─► storeClient.completeAttempt(rolloutId, attemptId, { reward })       │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-The training coordinator (Python) collects spans via the OTLP endpoint, extracts token IDs from `emitLlmCallSpan()` spans, and uses the reward from `emitReward()` spans to compute policy gradients for GRPO training.
 
 ## Running on Azure ML
 
-The `aml/` directory contains Azure ML configuration files for running training jobs in the cloud. See [aml/README.md](aml/README.md) for detailed instructions.
+The `aml/` directory contains Azure ML configuration for running training jobs in the cloud. The job runs all services in a single container on a GPU node.
 
-### Quick Start
+### Prerequisites
+
+1. Install Azure CLI with ML extension:
+   ```bash
+   az extension add -n ml
+   az login
+   ```
+
+2. Set environment variables:
+   ```bash
+   export AZURE_SUBSCRIPTION_ID="your-subscription-id"
+   export HF_TOKEN="your-huggingface-token"
+   export WANDB_API_KEY="your-wandb-api-key"
+   ```
+
+### Submit Job
 
 ```bash
-# Prerequisites
-az extension add -n ml
-az login
-export AZURE_SUBSCRIPTION_ID="your-subscription-id"
-export HF_TOKEN="your-huggingface-token"
-export WANDB_API_KEY="your-wandb-api-key"
-
-# One-time setup
+# One-time setup (creates compute cluster)
 make aml-setup
 
 # Submit training job
@@ -595,74 +142,58 @@ make aml-train
 
 # Stream logs
 make aml-logs
+
+# Check job status
+make aml-status
 ```
 
-### How It Works
+### Using az ml CLI directly
 
-Azure ML jobs use the same unified container architecture as local development. The `scripts/run_stack.sh` script runs all three services (WebShop, Coordinator, Runners) as processes within a single container on a GPU node:
+```bash
+RG=evalsdemo
+WS=evalsdemo-ml
 
+# Create compute cluster (one-time)
+az ml compute create -f aml/compute.yml -g $RG -w $WS
+
+# Submit job
+az ml job create -f aml/jobs/webshop-qwen.yml --stream \
+  --set environment_variables.HF_TOKEN="$HF_TOKEN" \
+  --set environment_variables.WANDB_API_KEY="$WANDB_API_KEY" \
+  -g $RG -w $WS
+
+# Stream logs
+az ml job stream -n <job-name> -g $RG -w $WS
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Azure ML GPU Node                         │
-│                  (Standard_NC24ads_A100_v4)                  │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              Single Container (webshop-agl-gpu)       │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │   │
-│  │  │  WebShop    │  │    AGL      │  │   Runners   │   │   │
-│  │  │   :3000     │  │   :4747     │  │  (N procs)  │   │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘   │   │
-│  │         └────────────────┴────────────────┘          │   │
-│  │                    localhost                          │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+
+### Customization
+
+```bash
+# Change number of runners
+az ml job create -f aml/jobs/webshop-qwen.yml --stream \
+  --set environment_variables.N_RUNNERS=4 \
+  --set environment_variables.HF_TOKEN="$HF_TOKEN" \
+  -g $RG -w $WS
+
+# Use different compute
+az ml compute create --name my-gpu-cluster --size Standard_NC48ads_A100_v4 \
+  --min-instances 0 --max-instances 2 -g $RG -w $WS
+az ml job create -f aml/jobs/webshop-qwen.yml --set compute=azureml:my-gpu-cluster ...
 ```
 
 ## Troubleshooting
 
-### WebShop Server Not Running
-
-If you see connection errors, ensure the Python server is running:
-
-```bash
-# In the server directory
-cd examples/vercel_ai_webshop/server
-source activate.sh
-python webshop_server.py
-```
-
-### Port Conflicts
-
-If port 3000 is already in use:
-
-```bash
-# Run WebShop on a different port
-python webshop_server.py --port 3001
-
-# Update .env
-WEBSHOP_URL=http://localhost:3001
-```
-
-### Python Version Issues
-
-The WebShop environment requires Python 3.8+. Check your version:
-
-```bash
-python3 --version
-```
-
-If needed, install Python 3.8 or later from [python.org](https://www.python.org/downloads/) or using your system's package manager.
-
-### Setup Script Fails
-
-If `setup.sh` fails to download data, you can try manually:
-
-```bash
-cd server/webshop
-# Follow WebShop's README for manual setup
-```
+| Issue | Solution |
+|-------|----------|
+| `connect ECONNREFUSED` | Wait for service healthcheck or run `make status` |
+| Container `Exited (1)` | Check logs: `docker compose logs` |
+| Port 3000 in use | Set `WEBSHOP_URL=http://localhost:3001` in `.env` |
+| WebShop data download fails | Check network access; data downloads from Google Drive |
+| AML compute not starting | Check quota limits and VM availability in your region |
+| vLLM/flash-attn build errors | Ensure `VLLM_USE_V1=1` is set; check CUDA 12.6+ support |
 
 ## Related
 
 - [AI SDK Documentation](https://sdk.vercel.ai/docs)
 - [WebShop Benchmark](https://github.com/princeton-nlp/WebShop)
+- [Agent Lightning Docs](../../docs/)
