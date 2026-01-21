@@ -1,0 +1,1384 @@
+== WebShop AML Job ==
+Config: qwen
+Setup script: stable
+
+== Diagnostics ==
+Mon Jan 19 00:57:27 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 560.35.03              Driver Version: 560.35.03      CUDA Version: 12.6     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100 80GB PCIe          On  |   00000001:00:00.0 Off |                    0 |
+| N/A   29C    P0             45W /  300W |       1MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Python 3.10.19
+/opt/miniconda/bin/python
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         124G   43G   81G  35% /
+tmpfs            64M     0   64M   0% /dev
+tmpfs           109G     0  109G   0% /sys/fs/cgroup
+shm             2.0G     0  2.0G   0% /dev/shm
+/dev/sdb1        63G  684M   59G   2% /tmp
+/dev/root       124G   43G   81G  35% /etc/hosts
+tmpfs           109G   12K  109G   1% /proc/driver/nvidia
+tmpfs            44G  1.8M   44G   1% /run/nvidia-persistenced/socket
+
+== Installing build dependencies ==
+Get:1 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64  InRelease [1581 B]
+Get:2 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64  Packages [1159 kB]
+Get:3 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:4 http://archive.ubuntu.com/ubuntu noble InRelease [256 kB]
+Get:5 http://security.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [33.1 kB]
+Get:6 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:7 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1769 kB]
+Get:8 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:9 http://archive.ubuntu.com/ubuntu noble/multiverse amd64 Packages [331 kB]
+Get:10 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages [1808 kB]
+Get:11 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [2919 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble/restricted amd64 Packages [117 kB]
+Get:13 http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages [19.3 MB]
+Get:14 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1191 kB]
+Get:15 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1959 kB]
+Get:16 http://archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [3077 kB]
+Get:17 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [2142 kB]
+Get:18 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [35.9 kB]
+Get:19 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [34.6 kB]
+Get:20 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [49.5 kB]
+Fetched 36.6 MB in 3s (13.7 MB/s)
+Reading package lists...
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+Reading package lists...
+Building dependency tree...
+Reading state information...
+gcc is already the newest version (4:13.2.0-7ubuntu1).
+gcc set to manually installed.
+g++ is already the newest version (4:13.2.0-7ubuntu1).
+g++ set to manually installed.
+curl is already the newest version (8.5.0-2ubuntu10.6).
+wget is already the newest version (1.21.4-1ubuntu4.1).
+gnupg is already the newest version (2.4.4-2ubuntu17.4).
+gnupg set to manually installed.
+ca-certificates is already the newest version (20240203).
+The following additional packages will be installed:
+  libexpat1-dev libjs-jquery libjs-sphinxdoc libjs-underscore libpython3-dev
+  libpython3.12-dev libpython3.12t64 python3.12-dev zlib1g-dev
+Recommended packages:
+  javascript-common
+The following NEW packages will be installed:
+  libexpat1-dev libjs-jquery libjs-sphinxdoc libjs-underscore libpython3-dev
+  libpython3.12-dev libpython3.12t64 python3-dev python3.12-dev zlib1g-dev
+0 upgraded, 10 newly installed, 0 to remove and 4 not upgraded.
+Need to get 10.2 MB of archives.
+After this operation, 43.0 MB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libexpat1-dev amd64 2.6.1-2ubuntu0.3 [140 kB]
+Get:2 http://archive.ubuntu.com/ubuntu noble/main amd64 libjs-jquery all 3.6.1+dfsg+~3.5.14-1 [328 kB]
+Get:3 http://archive.ubuntu.com/ubuntu noble/main amd64 libjs-underscore all 1.13.4~dfsg+~1.11.4-3 [118 kB]
+Get:4 http://archive.ubuntu.com/ubuntu noble/main amd64 libjs-sphinxdoc all 7.2.6-6 [149 kB]
+Get:5 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpython3.12t64 amd64 3.12.3-1ubuntu0.10 [2338 kB]
+Get:6 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 zlib1g-dev amd64 1:1.3.dfsg-3.1ubuntu2.1 [894 kB]
+Get:7 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpython3.12-dev amd64 3.12.3-1ubuntu0.10 [5681 kB]
+Get:8 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpython3-dev amd64 3.12.3-0ubuntu2.1 [10.3 kB]
+Get:9 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 python3.12-dev amd64 3.12.3-1ubuntu0.10 [498 kB]
+Get:10 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 python3-dev amd64 3.12.3-0ubuntu2.1 [26.7 kB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 10.2 MB in 1s (7254 kB/s)
+Selecting previously unselected package libexpat1-dev:amd64.
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 23544 files and directories currently installed.)
+Preparing to unpack .../0-libexpat1-dev_2.6.1-2ubuntu0.3_amd64.deb ...
+Unpacking libexpat1-dev:amd64 (2.6.1-2ubuntu0.3) ...
+Selecting previously unselected package libjs-jquery.
+Preparing to unpack .../1-libjs-jquery_3.6.1+dfsg+~3.5.14-1_all.deb ...
+Unpacking libjs-jquery (3.6.1+dfsg+~3.5.14-1) ...
+Selecting previously unselected package libjs-underscore.
+Preparing to unpack .../2-libjs-underscore_1.13.4~dfsg+~1.11.4-3_all.deb ...
+Unpacking libjs-underscore (1.13.4~dfsg+~1.11.4-3) ...
+Selecting previously unselected package libjs-sphinxdoc.
+Preparing to unpack .../3-libjs-sphinxdoc_7.2.6-6_all.deb ...
+Unpacking libjs-sphinxdoc (7.2.6-6) ...
+Selecting previously unselected package libpython3.12t64:amd64.
+Preparing to unpack .../4-libpython3.12t64_3.12.3-1ubuntu0.10_amd64.deb ...
+Unpacking libpython3.12t64:amd64 (3.12.3-1ubuntu0.10) ...
+Selecting previously unselected package zlib1g-dev:amd64.
+Preparing to unpack .../5-zlib1g-dev_1%3a1.3.dfsg-3.1ubuntu2.1_amd64.deb ...
+Unpacking zlib1g-dev:amd64 (1:1.3.dfsg-3.1ubuntu2.1) ...
+Selecting previously unselected package libpython3.12-dev:amd64.
+Preparing to unpack .../6-libpython3.12-dev_3.12.3-1ubuntu0.10_amd64.deb ...
+Unpacking libpython3.12-dev:amd64 (3.12.3-1ubuntu0.10) ...
+Selecting previously unselected package libpython3-dev:amd64.
+Preparing to unpack .../7-libpython3-dev_3.12.3-0ubuntu2.1_amd64.deb ...
+Unpacking libpython3-dev:amd64 (3.12.3-0ubuntu2.1) ...
+Selecting previously unselected package python3.12-dev.
+Preparing to unpack .../8-python3.12-dev_3.12.3-1ubuntu0.10_amd64.deb ...
+Unpacking python3.12-dev (3.12.3-1ubuntu0.10) ...
+Selecting previously unselected package python3-dev.
+Preparing to unpack .../9-python3-dev_3.12.3-0ubuntu2.1_amd64.deb ...
+Unpacking python3-dev (3.12.3-0ubuntu2.1) ...
+Setting up libpython3.12t64:amd64 (3.12.3-1ubuntu0.10) ...
+Setting up libexpat1-dev:amd64 (2.6.1-2ubuntu0.3) ...
+Setting up zlib1g-dev:amd64 (1:1.3.dfsg-3.1ubuntu2.1) ...
+Setting up libjs-jquery (3.6.1+dfsg+~3.5.14-1) ...
+Setting up libjs-underscore (1.13.4~dfsg+~1.11.4-3) ...
+Setting up libpython3.12-dev:amd64 (3.12.3-1ubuntu0.10) ...
+Setting up python3.12-dev (3.12.3-1ubuntu0.10) ...
+Setting up libjs-sphinxdoc (7.2.6-6) ...
+Setting up libpython3-dev:amd64 (3.12.3-0ubuntu2.1) ...
+Setting up python3-dev (3.12.3-0ubuntu2.1) ...
+Processing triggers for runit (2.1.2-59ubuntu1) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+== Installing Node.js 20 ==
+[38;5;79m2026-01-19 00:57:36 - Installing pre-requisites[0m
+
+WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+
+Hit:1 http://security.ubuntu.com/ubuntu noble-security InRelease
+Hit:2 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64  InRelease
+Hit:3 http://archive.ubuntu.com/ubuntu noble InRelease
+Hit:4 http://archive.ubuntu.com/ubuntu noble-updates InRelease
+Hit:5 http://archive.ubuntu.com/ubuntu noble-backports InRelease
+Reading package lists...
+Building dependency tree...
+Reading state information...
+4 packages can be upgraded. Run 'apt list --upgradable' to see them.
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+
+WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+
+Reading package lists...
+Building dependency tree...
+Reading state information...
+ca-certificates is already the newest version (20240203).
+curl is already the newest version (8.5.0-2ubuntu10.6).
+gnupg is already the newest version (2.4.4-2ubuntu17.4).
+The following NEW packages will be installed:
+  apt-transport-https
+0 upgraded, 1 newly installed, 0 to remove and 4 not upgraded.
+Need to get 3970 B of archives.
+After this operation, 36.9 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 apt-transport-https all 2.8.3 [3970 B]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 3970 B in 0s (13.6 kB/s)
+Selecting previously unselected package apt-transport-https.
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 23934 files and directories currently installed.)
+Preparing to unpack .../apt-transport-https_2.8.3_all.deb ...
+Unpacking apt-transport-https (2.8.3) ...
+Setting up apt-transport-https (2.8.3) ...
+
+WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+
+Hit:1 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64  InRelease
+Get:2 https://deb.nodesource.com/node_20.x nodistro InRelease [12.1 kB]
+Hit:3 http://security.ubuntu.com/ubuntu noble-security InRelease
+Get:4 https://deb.nodesource.com/node_20.x nodistro/main amd64 Packages [13.8 kB]
+Hit:5 http://archive.ubuntu.com/ubuntu noble InRelease
+Hit:6 http://archive.ubuntu.com/ubuntu noble-updates InRelease
+Hit:7 http://archive.ubuntu.com/ubuntu noble-backports InRelease
+Fetched 26.0 kB in 1s (43.5 kB/s)
+Reading package lists...
+Building dependency tree...
+Reading state information...
+4 packages can be upgraded. Run 'apt list --upgradable' to see them.
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+[1;34m2026-01-19 00:57:41 - Repository configured successfully.[0m
+[38;5;79m2026-01-19 00:57:41 - To install Node.js, run: apt install nodejs -y[0m
+[38;5;79m2026-01-19 00:57:41 - You can use N|solid Runtime as a node.js alternative[0m
+[1;32m2026-01-19 00:57:41 - To install N|solid Runtime, run: apt install nsolid -y 
+[0m
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following NEW packages will be installed:
+  nodejs
+0 upgraded, 1 newly installed, 0 to remove and 4 not upgraded.
+Need to get 32.0 MB of archives.
+After this operation, 197 MB of additional disk space will be used.
+Get:1 https://deb.nodesource.com/node_20.x nodistro/main amd64 nodejs amd64 20.20.0-1nodesource1 [32.0 MB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 32.0 MB in 0s (84.6 MB/s)
+Selecting previously unselected package nodejs.
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 23938 files and directories currently installed.)
+Preparing to unpack .../nodejs_20.20.0-1nodesource1_amd64.deb ...
+Unpacking nodejs (20.20.0-1nodesource1) ...
+Setting up nodejs (20.20.0-1nodesource1) ...
+Processing triggers for runit (2.1.2-59ubuntu1) ...
+
+added 1 package in 953ms
+
+1 package is looking for funding
+  run `npm fund` for details
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 11.7.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+npm notice To update run: npm install -g npm@11.7.0
+npm notice
+== Installing Java 21 (Temurin) ==
+Hit:1 https://deb.nodesource.com/node_20.x nodistro InRelease
+Hit:2 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64  InRelease
+Get:3 https://packages.adoptium.net/artifactory/deb noble InRelease [7501 B]
+Hit:4 http://security.ubuntu.com/ubuntu noble-security InRelease
+Hit:5 http://archive.ubuntu.com/ubuntu noble InRelease
+Hit:6 http://archive.ubuntu.com/ubuntu noble-updates InRelease
+Hit:7 http://archive.ubuntu.com/ubuntu noble-backports InRelease
+Get:8 https://packages.adoptium.net/artifactory/deb noble/main amd64 Packages [12.0 kB]
+Fetched 19.5 kB in 1s (24.9 kB/s)
+Reading package lists...
+W: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease: Key is stored in legacy trusted.gpg keyring (/etc/apt/trusted.gpg), see the DEPRECATION section in apt-key(8) for details.
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  adoptium-ca-certificates fontconfig-config fonts-dejavu-core
+  fonts-dejavu-mono java-common libfontconfig1 libfreetype6
+  liboss4-salsa-asound2 liboss4-salsa2 libpng16-16t64 libxi6 libxrender1
+  libxtst6 p11-kit p11-kit-modules x11-common
+Suggested packages:
+  default-jre
+Recommended packages:
+  fonts-dejavu-extra
+The following NEW packages will be installed:
+  adoptium-ca-certificates fontconfig-config fonts-dejavu-core
+  fonts-dejavu-mono java-common libfontconfig1 libfreetype6
+  liboss4-salsa-asound2 liboss4-salsa2 libpng16-16t64 libxi6 libxrender1
+  libxtst6 p11-kit p11-kit-modules temurin-21-jdk x11-common
+0 upgraded, 17 newly installed, 0 to remove and 4 not upgraded.
+Need to get 180 MB of archives.
+After this operation, 370 MB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpng16-16t64 amd64 1.6.43-5ubuntu0.3 [188 kB]
+Get:2 https://packages.adoptium.net/artifactory/deb noble/main amd64 adoptium-ca-certificates all 1.0.4-1 [2368 B]
+Get:3 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 p11-kit-modules amd64 0.25.3-4ubuntu2.1 [328 kB]
+Get:4 https://packages.adoptium.net/artifactory/deb noble/main amd64 temurin-21-jdk amd64 21.0.9.0.0+10-0 [177 MB]
+Get:5 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 p11-kit amd64 0.25.3-4ubuntu2.1 [141 kB]
+Get:6 http://archive.ubuntu.com/ubuntu noble/main amd64 fonts-dejavu-mono all 2.37-8 [502 kB]
+Get:7 http://archive.ubuntu.com/ubuntu noble/main amd64 fonts-dejavu-core all 2.37-8 [835 kB]
+Get:8 http://archive.ubuntu.com/ubuntu noble/main amd64 fontconfig-config amd64 2.15.0-1.1ubuntu2 [37.3 kB]
+Get:9 http://archive.ubuntu.com/ubuntu noble/main amd64 java-common all 0.75+exp1 [6798 B]
+Get:10 http://archive.ubuntu.com/ubuntu noble/main amd64 libfreetype6 amd64 2.13.2+dfsg-1build3 [402 kB]
+Get:11 http://archive.ubuntu.com/ubuntu noble/main amd64 libfontconfig1 amd64 2.15.0-1.1ubuntu2 [139 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble/universe amd64 liboss4-salsa2 amd64 4.2-build2020-1ubuntu3 [46.3 kB]
+Get:13 http://archive.ubuntu.com/ubuntu noble/universe amd64 liboss4-salsa-asound2 amd64 4.2-build2020-1ubuntu3 [3608 B]
+Get:14 http://archive.ubuntu.com/ubuntu noble/main amd64 libxi6 amd64 2:1.8.1-1build1 [32.4 kB]
+Get:15 http://archive.ubuntu.com/ubuntu noble/main amd64 libxrender1 amd64 1:0.9.10-1.1build1 [19.0 kB]
+Get:16 http://archive.ubuntu.com/ubuntu noble/main amd64 x11-common all 1:7.7+23ubuntu3 [21.7 kB]
+Get:17 http://archive.ubuntu.com/ubuntu noble/main amd64 libxtst6 amd64 2:1.2.3-1.1build1 [12.6 kB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 180 MB in 5s (39.4 MB/s)
+Selecting previously unselected package libpng16-16t64:amd64.
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 29301 files and directories currently installed.)
+Preparing to unpack .../00-libpng16-16t64_1.6.43-5ubuntu0.3_amd64.deb ...
+Unpacking libpng16-16t64:amd64 (1.6.43-5ubuntu0.3) ...
+Selecting previously unselected package p11-kit-modules:amd64.
+Preparing to unpack .../01-p11-kit-modules_0.25.3-4ubuntu2.1_amd64.deb ...
+Unpacking p11-kit-modules:amd64 (0.25.3-4ubuntu2.1) ...
+Selecting previously unselected package p11-kit.
+Preparing to unpack .../02-p11-kit_0.25.3-4ubuntu2.1_amd64.deb ...
+Unpacking p11-kit (0.25.3-4ubuntu2.1) ...
+Selecting previously unselected package adoptium-ca-certificates.
+Preparing to unpack .../03-adoptium-ca-certificates_1.0.4-1_all.deb ...
+Unpacking adoptium-ca-certificates (1.0.4-1) ...
+Selecting previously unselected package fonts-dejavu-mono.
+Preparing to unpack .../04-fonts-dejavu-mono_2.37-8_all.deb ...
+Unpacking fonts-dejavu-mono (2.37-8) ...
+Selecting previously unselected package fonts-dejavu-core.
+Preparing to unpack .../05-fonts-dejavu-core_2.37-8_all.deb ...
+Unpacking fonts-dejavu-core (2.37-8) ...
+Selecting previously unselected package fontconfig-config.
+Preparing to unpack .../06-fontconfig-config_2.15.0-1.1ubuntu2_amd64.deb ...
+Unpacking fontconfig-config (2.15.0-1.1ubuntu2) ...
+Selecting previously unselected package java-common.
+Preparing to unpack .../07-java-common_0.75+exp1_all.deb ...
+Unpacking java-common (0.75+exp1) ...
+Selecting previously unselected package libfreetype6:amd64.
+Preparing to unpack .../08-libfreetype6_2.13.2+dfsg-1build3_amd64.deb ...
+Unpacking libfreetype6:amd64 (2.13.2+dfsg-1build3) ...
+Selecting previously unselected package libfontconfig1:amd64.
+Preparing to unpack .../09-libfontconfig1_2.15.0-1.1ubuntu2_amd64.deb ...
+Unpacking libfontconfig1:amd64 (2.15.0-1.1ubuntu2) ...
+Selecting previously unselected package liboss4-salsa2:amd64.
+Preparing to unpack .../10-liboss4-salsa2_4.2-build2020-1ubuntu3_amd64.deb ...
+Unpacking liboss4-salsa2:amd64 (4.2-build2020-1ubuntu3) ...
+Selecting previously unselected package liboss4-salsa-asound2:amd64.
+Preparing to unpack .../11-liboss4-salsa-asound2_4.2-build2020-1ubuntu3_amd64.deb ...
+Unpacking liboss4-salsa-asound2:amd64 (4.2-build2020-1ubuntu3) ...
+Selecting previously unselected package libxi6:amd64.
+Preparing to unpack .../12-libxi6_2%3a1.8.1-1build1_amd64.deb ...
+Unpacking libxi6:amd64 (2:1.8.1-1build1) ...
+Selecting previously unselected package libxrender1:amd64.
+Preparing to unpack .../13-libxrender1_1%3a0.9.10-1.1build1_amd64.deb ...
+Unpacking libxrender1:amd64 (1:0.9.10-1.1build1) ...
+Selecting previously unselected package x11-common.
+Preparing to unpack .../14-x11-common_1%3a7.7+23ubuntu3_all.deb ...
+Unpacking x11-common (1:7.7+23ubuntu3) ...
+Selecting previously unselected package libxtst6:amd64.
+Preparing to unpack .../15-libxtst6_2%3a1.2.3-1.1build1_amd64.deb ...
+Unpacking libxtst6:amd64 (2:1.2.3-1.1build1) ...
+Selecting previously unselected package temurin-21-jdk.
+Preparing to unpack .../16-temurin-21-jdk_21.0.9.0.0+10-0_amd64.deb ...
+Unpacking temurin-21-jdk (21.0.9.0.0+10-0) ...
+Setting up libxi6:amd64 (2:1.8.1-1build1) ...
+Setting up java-common (0.75+exp1) ...
+Setting up libxrender1:amd64 (1:0.9.10-1.1build1) ...
+Setting up x11-common (1:7.7+23ubuntu3) ...
+invoke-rc.d: could not determine current runlevel
+invoke-rc.d: policy-rc.d denied execution of start.
+Setting up p11-kit-modules:amd64 (0.25.3-4ubuntu2.1) ...
+Setting up liboss4-salsa2:amd64 (4.2-build2020-1ubuntu3) ...
+Setting up fonts-dejavu-mono (2.37-8) ...
+Setting up libpng16-16t64:amd64 (1.6.43-5ubuntu0.3) ...
+Setting up liboss4-salsa-asound2:amd64 (4.2-build2020-1ubuntu3) ...
+Setting up fonts-dejavu-core (2.37-8) ...
+Setting up p11-kit (0.25.3-4ubuntu2.1) ...
+Setting up adoptium-ca-certificates (1.0.4-1) ...
+/etc/ssl/certs/adoptium/cacerts successfully populated.
+Setting up fontconfig-config (2.15.0-1.1ubuntu2) ...
+Setting up libxtst6:amd64 (2:1.2.3-1.1build1) ...
+Setting up libfreetype6:amd64 (2.13.2+dfsg-1build3) ...
+Setting up libfontconfig1:amd64 (2.15.0-1.1ubuntu2) ...
+Setting up temurin-21-jdk (21.0.9.0.0+10-0) ...
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jar to provide /usr/bin/jar (jar) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jarsigner to provide /usr/bin/jarsigner (jarsigner) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/java to provide /usr/bin/java (java) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/javac to provide /usr/bin/javac (javac) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/javadoc to provide /usr/bin/javadoc (javadoc) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/javap to provide /usr/bin/javap (javap) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jcmd to provide /usr/bin/jcmd (jcmd) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jconsole to provide /usr/bin/jconsole (jconsole) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jdb to provide /usr/bin/jdb (jdb) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jdeprscan to provide /usr/bin/jdeprscan (jdeprscan) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jdeps to provide /usr/bin/jdeps (jdeps) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jfr to provide /usr/bin/jfr (jfr) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jhsdb to provide /usr/bin/jhsdb (jhsdb) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jimage to provide /usr/bin/jimage (jimage) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jinfo to provide /usr/bin/jinfo (jinfo) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jlink to provide /usr/bin/jlink (jlink) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jmap to provide /usr/bin/jmap (jmap) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jmod to provide /usr/bin/jmod (jmod) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jpackage to provide /usr/bin/jpackage (jpackage) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jps to provide /usr/bin/jps (jps) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jrunscript to provide /usr/bin/jrunscript (jrunscript) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jshell to provide /usr/bin/jshell (jshell) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jstack to provide /usr/bin/jstack (jstack) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jstat to provide /usr/bin/jstat (jstat) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jstatd to provide /usr/bin/jstatd (jstatd) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/jwebserver to provide /usr/bin/jwebserver (jwebserver) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/keytool to provide /usr/bin/keytool (keytool) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/rmiregistry to provide /usr/bin/rmiregistry (rmiregistry) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/bin/serialver to provide /usr/bin/serialver (serialver) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/lib/jexec to provide /usr/bin/jexec (jexec) in auto mode
+update-alternatives: using /usr/lib/jvm/temurin-21-jdk-amd64/lib/jspawnhelper to provide /usr/bin/jspawnhelper (jspawnhelper) in auto mode
+Processing triggers for runit (2.1.2-59ubuntu1) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+== Installing uv ==
+Requirement already satisfied: pip in /opt/miniconda/lib/python3.10/site-packages (25.3)
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+Collecting uv
+  Downloading uv-0.9.26-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (11 kB)
+Downloading uv-0.9.26-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (23.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23.3/23.3 MB 84.7 MB/s  0:00:00
+Installing collected packages: uv
+Successfully installed uv-0.9.26
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+== Installing Python dependencies with uv sync (stable) ==
+Using CPython 3.12.3 interpreter at: /usr/bin/python3.12
+Creating virtual environment at: .venv
+warning: The `extra-build-dependencies` option is experimental and may change without warning. Pass `--preview-features extra-build-dependencies` to disable this warning.
+   Building agentlightning @ file:///mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd
+Downloading grpcio (6.3MiB)
+Downloading pycountry (6.0MiB)
+Downloading babel (9.7MiB)
+Downloading pandas (11.8MiB)
+Downloading tensorboard (5.3MiB)
+Downloading virtualenv (5.7MiB)
+Downloading tensorboard-data-server (6.3MiB)
+Downloading transformers (11.4MiB)
+Downloading nvidia-cufft-cu12 (184.2MiB)
+Downloading nvidia-curand-cu12 (60.7MiB)
+Downloading sympy (6.0MiB)
+Downloading mkdocs-material (8.9MiB)
+Downloading lxml (5.0MiB)
+Downloading onnxruntime (16.6MiB)
+Downloading nvidia-cudnn-cu12 (674.0MiB)
+Downloading nvidia-cublas-cu12 (566.8MiB)
+Downloading xgrammar (8.3MiB)
+Downloading nvidia-cuda-nvrtc-cu12 (84.0MiB)
+Downloading ray (68.0MiB)
+Downloading numpy (15.8MiB)
+Downloading polars-runtime-32 (39.4MiB)
+Downloading pylance (46.4MiB)
+Downloading triton (148.4MiB)
+Downloading nvidia-cusparselt-cu12 (273.9MiB)
+Downloading lancedb (37.4MiB)
+Downloading uv (20.3MiB)
+Downloading wandb (19.3MiB)
+Downloading vllm (417.9MiB)
+Downloading pyarrow (45.5MiB)
+Downloading xformers (111.8MiB)
+Downloading llvmlite (40.4MiB)
+Downloading llguidance (14.3MiB)
+Downloading nvidia-nccl-cu12 (307.4MiB)
+Downloading torch (846.8MiB)
+Downloading pdfminer-six (5.4MiB)
+Downloading litellm (10.0MiB)
+Downloading nvidia-cuda-cupti-cu12 (9.8MiB)
+Downloading torchvision (8.2MiB)
+Downloading nvidia-nvjitlink-cu12 (37.4MiB)
+Downloading mistral-common (6.2MiB)
+Downloading cupy-cuda12x (107.7MiB)
+Downloading botocore (12.7MiB)
+Downloading nvidia-cusolver-cu12 (255.1MiB)
+Downloading pyright (5.7MiB)
+Downloading nvidia-cusparse-cu12 (274.9MiB)
+Downloading chromadb (19.0MiB)
+Downloading zstandard (5.2MiB)
+Downloading scipy (34.0MiB)
+Downloading opencv-python-headless (47.7MiB)
+Downloading pillow (6.7MiB)
+ Downloaded zstandard
+Downloading uvloop (4.5MiB)
+ Downloaded pdfminer-six
+ Downloaded tensorboard
+Downloading cryptography (4.3MiB)
+Downloading torchaudio (3.8MiB)
+ Downloaded lxml
+ Downloaded virtualenv
+Downloading numba (3.7MiB)
+Downloading mkdocs (3.7MiB)
+ Downloaded pyright
+Downloading hf-xet (3.2MiB)
+ Downloaded sympy
+Downloading tokenizers (3.1MiB)
+ Downloaded pycountry
+Downloading pypdfium2 (2.9MiB)
+ Downloaded tensorboard-data-server
+Downloading openai-harmony (2.8MiB)
+ Downloaded grpcio
+Downloading py-spy (2.6MiB)
+ Downloaded mistral-common
+Downloading outlines-core (2.2MiB)
+ Downloaded pillow
+Downloading pydantic-core (2.0MiB)
+ Downloaded torchvision
+Downloading networkx (1.9MiB)
+ Downloaded xgrammar
+Downloading kubernetes (1.9MiB)
+ Downloaded pydantic-core
+Downloading aiohttp (1.7MiB)
+ Downloaded outlines-core
+Downloading black (1.6MiB)
+ Downloaded pypdfium2
+Downloading jedi (1.5MiB)
+ Downloaded openai-harmony
+ Downloaded py-spy
+Downloading nltk (1.4MiB)
+Downloading pynacl (1.3MiB)
+ Downloaded hf-xet
+Downloading sentencepiece (1.3MiB)
+ Downloaded tokenizers
+Downloading pygments (1.2MiB)
+ Downloaded torchaudio
+Downloading setuptools (1.1MiB)
+ Downloaded mkdocs
+ Downloaded babel
+Downloading nvidia-cufile-cu12 (1.1MiB)
+Downloading random-word (1.1MiB)
+ Downloaded nvidia-cuda-cupti-cu12
+ Downloaded numba
+Downloading soundfile (1.1MiB)
+Downloading tiktoken (1.1MiB)
+ Downloaded uvloop
+ Downloaded cryptography
+ Downloaded litellm
+ Downloaded networkx
+ Downloaded pygments
+ Downloaded sentencepiece
+ Downloaded pynacl
+ Downloaded nltk
+ Downloaded aiohttp
+ Downloaded random-word
+ Downloaded black
+ Downloaded nvidia-cufile-cu12
+ Downloaded setuptools
+ Downloaded kubernetes
+ Downloaded tiktoken
+ Downloaded soundfile
+ Downloaded transformers
+ Downloaded pandas
+ Downloaded botocore
+ Downloaded jedi
+   Building pypika==0.48.9
+   Building gpustat==1.1.1
+   Building antlr4-python3-runtime==4.9.3
+   Building pylatexenc==2.10
+ Downloaded llguidance
+      Built agentlightning @ file:///mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd
+ Downloaded numpy
+ Downloaded onnxruntime
+      Built gpustat==1.1.1
+      Built pypika==0.48.9
+      Built antlr4-python3-runtime==4.9.3
+      Built pylatexenc==2.10
+ Downloaded chromadb
+ Downloaded wandb
+ Downloaded uv
+ Downloaded mkdocs-material
+ Downloaded scipy
+ Downloaded lancedb
+ Downloaded nvidia-nvjitlink-cu12
+ Downloaded polars-runtime-32
+ Downloaded llvmlite
+ Downloaded pylance
+ Downloaded opencv-python-headless
+ Downloaded nvidia-curand-cu12
+ Downloaded pyarrow
+ Downloaded nvidia-cuda-nvrtc-cu12
+ Downloaded xformers
+ Downloaded cupy-cuda12x
+ Downloaded ray
+   Building flash-attn==2.8.3
+ Downloaded triton
+ Downloaded nvidia-cufft-cu12
+ Downloaded nvidia-cusolver-cu12
+ Downloaded nvidia-cusparselt-cu12
+ Downloaded nvidia-cusparse-cu12
+ Downloaded nvidia-nccl-cu12
+ Downloaded vllm
+ Downloaded nvidia-cublas-cu12
+ Downloaded nvidia-cudnn-cu12
+ Downloaded torch
+      Built flash-attn==2.8.3
+Prepared 399 packages in 1m 02s
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 399 packages in 17.41s
+ + absl-py==2.3.1
+ + accelerate==1.11.0
+ + agentlightning==0.3.1 (from file:///mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd)
+ + agentops==0.4.21
+ + aiofiles==25.1.0
+ + aiohappyeyeballs==2.6.1
+ + aiohttp==3.13.2
+ + aiohttp-cors==0.8.1
+ + aiologic==0.16.0
+ + aiosignal==1.4.0
+ + annotated-doc==0.0.4
+ + annotated-types==0.7.0
+ + anthropic==0.73.0
+ + antlr4-python3-runtime==4.9.3
+ + anyio==4.11.0
+ + appdirs==1.4.4
+ + apscheduler==3.11.1
+ + astor==0.8.1
+ + asttokens==3.0.1
+ + attrs==25.4.0
+ + autogen-agentchat==0.7.5
+ + autogen-core==0.7.5
+ + autogen-ext==0.7.5
+ + azure-core==1.36.0
+ + azure-identity==1.25.1
+ + azure-storage-blob==12.27.1
+ + babel==2.17.0
+ + backoff==2.2.1
+ + backrefs==6.1
+ + bcrypt==5.0.0
+ + beautifulsoup4==4.14.2
+ + black==25.11.0
+ + blake3==1.0.8
+ + blessed==1.24.0
+ + blinker==1.9.0
+ + boto3==1.36.0
+ + botocore==1.36.1
+ + build==1.3.0
+ + cachetools==6.2.2
+ + cbor2==5.7.1
+ + certifi==2025.11.12
+ + cffi==2.0.0
+ + cfgv==3.4.0
+ + chardet==5.2.0
+ + charset-normalizer==3.4.4
+ + chromadb==1.1.1
+ + click==8.2.1
+ + cloudpickle==3.1.2
+ + codetiming==1.4.0
+ + colorama==0.4.6
+ + coloredlogs==15.0.1
+ + colorful==0.5.8
+ + compressed-tensors==0.11.0
+ + crewai==1.2.0
+ + crewai-tools==1.2.0
+ + croniter==6.0.0
+ + cryptography==46.0.3
+ + cupy-cuda12x==13.6.0
+ + datasets==4.3.0
+ + decorator==5.2.1
+ + defusedxml==0.7.1
+ + deprecation==2.1.0
+ + depyf==0.19.0
+ + dill==0.4.0
+ + diskcache==5.6.3
+ + distlib==0.4.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docker==7.1.0
+ + docstring-parser==0.17.0
+ + durationpy==0.10
+ + einops==0.8.1
+ + email-validator==2.3.0
+ + et-xmlfile==2.0.0
+ + executing==2.2.1
+ + fastapi==0.121.2
+ + fastapi-cli==0.0.16
+ + fastapi-cloud-cli==0.3.1
+ + fastapi-sso==0.16.0
+ + fastcore==1.8.16
+ + fastrlock==0.8.3
+ + fastuuid==0.14.0
+ + filelock==3.20.0
+ + flake8==7.3.0
+ + flash-attn==2.8.3
+ + flask==3.1.2
+ + flatbuffers==25.9.23
+ + frozendict==2.4.7
+ + frozenlist==1.8.0
+ + fsspec==2025.9.0
+ + gdown==5.2.0
+ + gguf==0.17.1
+ + ghapi==1.0.8
+ + ghp-import==2.1.0
+ + gitdb==4.0.12
+ + gitpython==3.1.45
+ + google-api-core==2.28.1
+ + google-auth==2.43.0
+ + googleapis-common-protos==1.72.0
+ + gpustat==1.1.1
+ + graphviz==0.21
+ + griffe==1.15.0
+ + grpcio==1.76.0
+ + grpclib==0.4.8
+ + gunicorn==23.0.0
+ + h11==0.16.0
+ + h2==4.3.0
+ + hatch==1.15.1
+ + hatchling==1.27.0
+ + hf-xet==1.2.0
+ + hjson==3.1.0
+ + hpack==4.1.0
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==0.36.0
+ + humanfriendly==10.0
+ + hydra-core==1.3.2
+ + hyperframe==6.1.0
+ + hyperlink==21.0.0
+ + identify==2.6.15
+ + idna==3.11
+ + importlib-metadata==8.7.0
+ + importlib-resources==6.5.2
+ + iniconfig==2.3.0
+ + instructor==1.11.3
+ + interegular==0.3.3
+ + ipython==9.7.0
+ + ipython-pygments-lexers==1.1.1
+ + isodate==0.7.2
+ + isort==7.0.0
+ + itsdangerous==2.2.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.0.1
+ + jaraco-functools==4.3.0
+ + jedi==0.19.2
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.12.0
+ + jmespath==1.0.1
+ + joblib==1.5.2
+ + json-repair==0.25.2
+ + json5==0.12.1
+ + jsonpickle==4.1.1
+ + jsonref==1.1.0
+ + jsonschema==4.25.1
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + kubernetes==33.1.0
+ + lance-namespace==0.0.21
+ + lance-namespace-urllib3-client==0.0.21
+ + lancedb==0.25.3
+ + lark==1.2.2
+ + litellm==1.80.0
+ + litellm-enterprise==0.1.21
+ + litellm-proxy-extras==0.4.5
+ + llguidance==0.7.30
+ + llvmlite==0.44.0
+ + lm-format-enforcer==0.11.3
+ + lxml==6.0.2
+ + markdown==3.10
+ + markdown-it-py==4.0.0
+ + markupsafe==3.0.3
+ + matplotlib-inline==0.2.1
+ + mccabe==0.7.0
+ + mcp==1.21.1
+ + mdurl==0.1.2
+ + mergedeep==1.3.4
+ + mike==2.1.3
+ + mistral-common==1.8.5
+ + mkdocs==1.6.1
+ + mkdocs-autorefs==1.4.3
+ + mkdocs-get-deps==0.2.0
+ + mkdocs-git-authors-plugin==0.10.0
+ + mkdocs-git-revision-date-localized-plugin==1.5.0
+ + mkdocs-macros-plugin==1.5.0
+ + mkdocs-material==9.7.0
+ + mkdocs-material-extensions==1.3.1
+ + mkdocstrings==0.30.1
+ + mkdocstrings-python==1.19.0
+ + mmh3==5.2.0
+ + modal==1.2.4
+ + more-itertools==10.8.0
+ + mpmath==1.3.0
+ + msal==1.34.0
+ + msal-extensions==1.3.1
+ + msgpack==1.1.2
+ + msgspec==0.19.0
+ + multidict==6.7.0
+ + multiprocess==0.70.16
+ + mypy-extensions==1.1.0
+ + networkx==3.5
+ + ninja==1.13.0
+ + nltk==3.9.2
+ + nodeenv==1.9.1
+ + numba==0.61.2
+ + numpy==2.2.6
+ + nvidia-cublas-cu12==12.8.4.1
+ + nvidia-cuda-cupti-cu12==12.8.90
+ + nvidia-cuda-nvrtc-cu12==12.8.93
+ + nvidia-cuda-runtime-cu12==12.8.90
+ + nvidia-cudnn-cu12==9.10.2.21
+ + nvidia-cufft-cu12==11.3.3.83
+ + nvidia-cufile-cu12==1.13.1.3
+ + nvidia-curand-cu12==10.3.9.90
+ + nvidia-cusolver-cu12==11.7.3.90
+ + nvidia-cusparse-cu12==12.5.8.93
+ + nvidia-cusparselt-cu12==0.7.1
+ + nvidia-ml-py==13.580.82
+ + nvidia-nccl-cu12==2.27.3
+ + nvidia-nvjitlink-cu12==12.8.93
+ + nvidia-nvtx-cu12==12.8.90
+ + oauthlib==3.3.1
+ + omegaconf==2.3.0
+ + onnxruntime==1.23.2
+ + openai==2.8.0
+ + openai-agents==0.5.1
+ + openai-harmony==0.0.8
+ + opencensus==0.11.4
+ + opencensus-context==0.1.3
+ + opencv-python-headless==4.11.0.86
+ + openpyxl==3.1.5
+ + opentelemetry-api==1.38.0
+ + opentelemetry-exporter-otlp==1.38.0
+ + opentelemetry-exporter-otlp-proto-common==1.38.0
+ + opentelemetry-exporter-otlp-proto-grpc==1.38.0
+ + opentelemetry-exporter-otlp-proto-http==1.38.0
+ + opentelemetry-exporter-prometheus==0.59b0
+ + opentelemetry-instrumentation==0.59b0
+ + opentelemetry-proto==1.38.0
+ + opentelemetry-sdk==1.38.0
+ + opentelemetry-semantic-conventions==0.59b0
+ + ordered-set==4.1.0
+ + orjson==3.11.4
+ + outlines-core==0.2.11
+ + overrides==7.7.0
+ + packaging==25.0
+ + paginate==0.5.7
+ + pandas==2.3.3
+ + parso==0.8.5
+ + partial-json-parser==0.2.1.1.post6
+ + pathspec==0.12.1
+ + pdfminer-six==20250506
+ + pdfplumber==0.11.7
+ + peft==0.18.0
+ + pexpect==4.9.0
+ + pillow==12.0.0
+ + platformdirs==4.5.0
+ + pluggy==1.6.0
+ + polars==1.35.2
+ + polars-runtime-32==1.35.2
+ + portalocker==2.7.0
+ + portpicker==1.6.0
+ + posthog==5.4.0
+ + pre-commit==4.4.0
+ + prometheus-client==0.23.1
+ + prometheus-fastapi-instrumentator==7.1.0
+ + prompt-toolkit==3.0.52
+ + propcache==0.4.1
+ + proto-plus==1.26.1
+ + protobuf==5.29.5
+ + psutil==7.0.0
+ + ptyprocess==0.7.0
+ + pure-eval==0.2.3
+ + py-cpuinfo==9.0.0
+ + py-spy==0.4.1
+ + pyarrow==22.0.0
+ + pyasn1==0.6.1
+ + pyasn1-modules==0.4.2
+ + pybase64==1.4.2
+ + pybind11==3.0.1
+ + pycodestyle==2.14.0
+ + pycountry==24.6.1
+ + pycparser==2.23
+ + pydantic==2.12.4
+ + pydantic-core==2.41.5
+ + pydantic-extra-types==2.10.6
+ + pydantic-settings==2.12.0
+ + pyflakes==3.4.0
+ + pygments==2.19.2
+ + pyjwt==2.10.1
+ + pylance==0.39.0
+ + pylatexenc==2.10
+ + pymdown-extensions==10.17.1
+ + pynacl==1.6.1
+ + pyparsing==3.2.5
+ + pypdf==6.3.0
+ + pypdfium2==5.0.0
+ + pypika==0.48.9
+ + pyproject-hooks==1.2.0
+ + pyright==1.1.407
+ + pysocks==1.7.1
+ + pytest==9.0.1
+ + pytest-asyncio==1.3.0
+ + pytest-rerunfailures==16.1
+ + python-dateutil==2.9.0.post0
+ + python-docx==1.2.0
+ + python-dotenv==1.2.1
+ + python-json-logger==4.0.0
+ + python-multipart==0.0.18
+ + pytokens==0.3.0
+ + pytube==15.0.0
+ + pytz==2025.2
+ + pyvers==0.1.0
+ + pyvis==0.3.2
+ + pyyaml==6.0.3
+ + pyyaml-env-tag==1.1
+ + pyzmq==27.1.0
+ + random-word==1.0.11
+ + ray==2.51.1
+ + redis==7.0.1
+ + referencing==0.36.2
+ + regex==2025.11.3
+ + requests==2.32.5
+ + requests-oauthlib==2.0.0
+ + rich==14.2.0
+ + rich-toolkit==0.15.1
+ + rignore==0.7.6
+ + rpds-py==0.29.0
+ + rq==2.6.0
+ + rsa==4.9.1
+ + s3transfer==0.11.3
+ + safetensors==0.6.2
+ + scipy==1.16.3
+ + secretstorage==3.4.1
+ + sentencepiece==0.2.1
+ + sentry-sdk==2.44.0
+ + setproctitle==1.3.7
+ + setuptools==80.9.0
+ + shellingham==1.5.4
+ + six==1.17.0
+ + smart-open==7.5.0
+ + smmap==5.0.2
+ + sniffio==1.3.1
+ + soundfile==0.12.1
+ + soupsieve==2.8
+ + soxr==1.0.0
+ + sqlparse==0.5.3
+ + sse-starlette==3.0.3
+ + stack-data==0.6.3
+ + starlette==0.49.3
+ + super-collections==0.6.2
+ + swebench==4.1.0
+ + sympy==1.14.0
+ + synchronicity==0.10.4
+ + tenacity==9.1.2
+ + tensorboard==2.20.0
+ + tensorboard-data-server==0.7.2
+ + tensordict==0.10.0
+ + termcolor==2.4.0
+ + tiktoken==0.12.0
+ + tokenizers==0.22.1
+ + toml==0.10.2
+ + tomli==2.3.0
+ + tomli-w==1.2.0
+ + tomlkit==0.13.3
+ + torch==2.8.0
+ + torchaudio==2.8.0
+ + torchdata==0.11.0
+ + torchvision==0.23.0
+ + tqdm==4.67.1
+ + traitlets==5.14.3
+ + transformers==4.57.1
+ + triton==3.4.0
+ + trove-classifiers==2025.11.14.15
+ + typer==0.20.0
+ + types-certifi==2021.10.8.3
+ + types-requests==2.32.4.20250913
+ + types-toml==0.10.8.20240310
+ + typing-extensions==4.15.0
+ + typing-inspection==0.4.2
+ + tzdata==2025.2
+ + tzlocal==5.3.1
+ + unidiff==0.7.5
+ + urllib3==2.5.0
+ + userpath==1.9.2
+ + uv==0.9.9
+ + uvicorn==0.38.0
+ + uvicorn-worker==0.4.0
+ + uvloop==0.21.0
+ + verl==0.6.1
+ + verspec==0.1.0
+ + virtualenv==20.35.4
+ + vllm==0.11.0
+ + wandb==0.23.0
+ + watchdog==6.0.0
+ + watchfiles==1.1.1
+ + wcwidth==0.2.14
+ + websocket-client==1.9.0
+ + websockets==15.0.1
+ + werkzeug==3.1.3
+ + wrapt==1.17.3
+ + xformers==0.0.32.post1
+ + xgrammar==0.1.25
+ + xxhash==3.6.0
+ + yarl==1.22.0
+ + youtube-transcript-api==1.2.3
+ + zipp==3.23.0
+ + zstandard==0.23.0
+Using Python: .venv/bin/python
+Python 3.12.3
+== Installing WebShop server dependencies ==
+warning: The `extra-build-dependencies` option is experimental and may change without warning. Pass `--preview-features extra-build-dependencies` to disable this warning.
+Resolved 204 packages in 6.95s
+Downloading matplotlib (8.3MiB)
+Downloading beartype (1.3MiB)
+Downloading fonttools (4.7MiB)
+Downloading thinc (3.7MiB)
+Downloading blis (10.8MiB)
+Downloading pyjnius (1.5MiB)
+Downloading srsly (1.1MiB)
+Downloading cython (3.2MiB)
+Downloading rapidfuzz (3.0MiB)
+Downloading kiwisolver (1.4MiB)
+Downloading selenium (9.2MiB)
+Downloading lupa (2.0MiB)
+Downloading spacy (31.7MiB)
+Downloading scikit-learn (8.5MiB)
+   Building pyserini==1.4.0
+   Building gym==0.24.0
+ Downloaded pyjnius
+ Downloaded kiwisolver
+ Downloaded lupa
+ Downloaded srsly
+ Downloaded rapidfuzz
+      Built gym==0.24.0
+ Downloaded thinc
+ Downloaded cython
+ Downloaded beartype
+ Downloaded blis
+ Downloaded fonttools
+ Downloaded selenium
+ Downloaded matplotlib
+ Downloaded scikit-learn
+ Downloaded spacy
+      Built pyserini==1.4.0
+Prepared 65 packages in 14.68s
+Uninstalled 7 packages in 16ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 65 packages in 2.18s
+ + async-generator==1.10
+ + authlib==1.6.6
+ + beartype==0.22.9
+ + blis==1.3.3
+ + catalogue==2.0.10
+ - certifi==2025.11.12
+ + certifi==2026.1.4
+ + cleantext==1.1.4
+ + cloudpathlib==0.23.0
+ + confection==0.1.5
+ + contourpy==1.3.3
+ + cycler==0.12.1
+ + cyclopts==4.5.0
+ + cymem==2.0.13
+ + cython==3.2.4
+ + docutils==0.22.4
+ + exceptiongroup==1.3.1
+ + fakeredis==2.33.0
+ + fastmcp==2.14.3
+ + flask-cors==6.0.2
+ + fonttools==4.61.1
+ + gym==0.24.0
+ + gym-notices==0.1.0
+ + jsonschema-path==0.3.4
+ + kiwisolver==1.4.9
+ + lupa==2.6
+ + matplotlib==3.10.8
+ + murmurhash==1.0.15
+ + openapi-pydantic==0.5.1
+ - opentelemetry-api==1.38.0
+ + opentelemetry-api==1.39.1
+ - opentelemetry-exporter-prometheus==0.59b0
+ + opentelemetry-exporter-prometheus==0.60b1
+ - opentelemetry-instrumentation==0.59b0
+ + opentelemetry-instrumentation==0.60b1
+ - opentelemetry-sdk==1.38.0
+ + opentelemetry-sdk==1.39.1
+ - opentelemetry-semantic-conventions==0.59b0
+ + opentelemetry-semantic-conventions==0.60b1
+ + outcome==1.3.0.post0
+ + pathable==0.4.4
+ + pathvalidate==3.3.1
+ + preshed==3.0.12
+ + py-key-value-aio==0.3.0
+ + py-key-value-shared==0.3.0
+ + pydocket==0.16.6
+ + pyjnius==1.7.0
+ + pyperclip==1.11.0
+ + pyserini==1.4.0
+ + rank-bm25==0.2.2
+ + rapidfuzz==3.14.3
+ + rich-rst==1.3.2
+ + scikit-learn==1.8.0
+ + selenium==4.40.0
+ + sortedcontainers==2.4.0
+ + spacy==3.8.11
+ + spacy-legacy==3.0.12
+ + spacy-loggers==1.0.5
+ + srsly==2.5.2
+ + thefuzz==0.22.1
+ + thinc==8.3.10
+ + threadpoolctl==3.6.0
+ + trio==0.32.0
+ + trio-typing==0.10.0
+ + trio-websocket==0.12.2
+ + typer-slim==0.21.1
+ + types-urllib3==1.26.25.14
+ - urllib3==2.5.0
+ + urllib3==2.6.3
+ + wasabi==1.1.3
+ + weasel==0.4.3
+ + wsproto==1.3.2
+warning: The `extra-build-dependencies` option is experimental and may change without warning. Pass `--preview-features extra-build-dependencies` to disable this warning.
+Audited 4 packages in 75ms
+== Verifying critical packages ==
+cleantext version: 1.1.4
+pyserini OK
+== Downloading spaCy model en_core_web_sm ==
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/bin/python: No module named pip
+WARNING: spacy download failed, trying uv pip install...
+warning: The `extra-build-dependencies` option is experimental and may change without warning. Pass `--preview-features extra-build-dependencies` to disable this warning.
+Resolved 1 package in 5.49s
+Downloading en-core-web-sm (12.2MiB)
+ Downloaded en-core-web-sm
+Prepared 1 package in 2.59s
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 1 package in 354ms
+ + en-core-web-sm==3.8.0 (from https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl)
+spaCy model en_core_web_sm loaded successfully
+== Installing Node.js dependencies ==
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +94
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 94, reused 0, downloaded 12, added 0
+Progress: resolved 94, reused 0, downloaded 88, added 87
+Progress: resolved 94, reused 0, downloaded 94, added 94, done
+
+dependencies:
++ @ai-sdk/openai 3.0.0-beta.89
++ @dqbd/tiktoken 1.0.22
++ @opentelemetry/api 1.9.0
++ @opentelemetry/context-async-hooks 1.30.1
++ @opentelemetry/exporter-trace-otlp-http 0.57.2
++ @opentelemetry/resources 1.30.1
++ @opentelemetry/sdk-trace-base 1.30.1
++ @opentelemetry/semantic-conventions 1.38.0
++ ai 6.0.0-beta.139
++ zod 3.25.76
+
+devDependencies:
++ @types/node 20.17.24
++ tsup 8.5.1
++ tsx 4.21.0
++ typescript 5.8.3
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: esbuild@0.27.2, protobufjs@7.5.4.                   │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 5.7s using pnpm v10.28.0
+== Starting Ray cluster ==
+2026-01-19 01:00:38,448	INFO scripts.py:1332 -- Did not find any active Ray processes.
+2026-01-19 01:00:39,858	INFO usage_lib.py:447 -- Usage stats collection is disabled.
+2026-01-19 01:00:39,858	INFO scripts.py:914 -- [37mLocal node IP[39m: [1m10.0.0.4[22m
+2026-01-19 01:00:42,232	WARNING services.py:2155 -- WARNING: The object store is using /tmp instead of /dev/shm because /dev/shm has only 2147483648 bytes available. This will harm performance! You may be able to free up space by deleting files in /dev/shm. If you are inside a Docker container, you can increase /dev/shm size by passing '--shm-size=10.24gb' to 'docker run' (or add it to the run_options list in a Ray cluster config). Make sure to set this to more than 30% of available RAM.
+2026-01-19 01:00:42,378	SUCC scripts.py:950 -- [32m--------------------[39m
+2026-01-19 01:00:42,379	SUCC scripts.py:951 -- [32mRay runtime started.[39m
+2026-01-19 01:00:42,379	SUCC scripts.py:952 -- [32m--------------------[39m
+2026-01-19 01:00:42,379	INFO scripts.py:954 -- [36mNext steps[39m
+2026-01-19 01:00:42,379	INFO scripts.py:957 -- To add another node to this Ray cluster, run
+2026-01-19 01:00:42,379	INFO scripts.py:960 -- [1m  ray start --address='10.0.0.4:6379'[22m
+2026-01-19 01:00:42,379	INFO scripts.py:969 -- To connect to this Ray cluster:
+2026-01-19 01:00:42,379	INFO scripts.py:971 -- [35mimport[39m[26m ray
+2026-01-19 01:00:42,379	INFO scripts.py:972 -- ray[35m.[39m[26minit()
+2026-01-19 01:00:42,379	INFO scripts.py:984 -- To submit a Ray job using the Ray Jobs CLI:
+2026-01-19 01:00:42,379	INFO scripts.py:985 -- [1m  RAY_API_SERVER_ADDRESS='http://127.0.0.1:8265' ray job submit --working-dir . -- python my_script.py[22m
+2026-01-19 01:00:42,379	INFO scripts.py:994 -- See https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html 
+2026-01-19 01:00:42,379	INFO scripts.py:998 -- for more information on submitting Ray jobs to the Ray cluster.
+2026-01-19 01:00:42,379	INFO scripts.py:1003 -- To terminate the Ray runtime, run
+2026-01-19 01:00:42,379	INFO scripts.py:1004 -- [1m  ray stop[22m
+2026-01-19 01:00:42,379	INFO scripts.py:1007 -- To view the status of the cluster, use
+2026-01-19 01:00:42,379	INFO scripts.py:1008 --   [1mray status[22m[26m
+2026-01-19 01:00:42,379	INFO scripts.py:1012 -- To monitor and debug Ray, view the dashboard at 
+2026-01-19 01:00:42,379	INFO scripts.py:1013 --   [1m127.0.0.1:8265[22m[26m
+2026-01-19 01:00:42,379	INFO scripts.py:1020 -- [4mIf connection to the dashboard fails, check your firewall settings and network configuration.[24m
+== Starting WebShop training ==
+Contents of scripts/:
+total 32
+drwxr-xr-x 2 root root  4096 Jan 19 00:57 .
+drwxr-xr-x 8 root root  4096 Jan 19 01:00 ..
+-rwxr-xr-x 1 root root 15074 Jan 19 00:57 headless-runner.ts
+-rwxr-xr-x 1 root root  7066 Jan 19 00:57 run_stack.sh
+========================================
+WebShop Training Stack
+========================================
+Mode: qwen
+Runners: 2
+
+Base directory: /mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/examples/vercel_ai_webshop
+WebShop base: /mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/examples/vercel_ai_webshop/server/webshop
+
+PYTHONPATH: /mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/examples/vercel_ai_webshop/server/webshop:
+>> Dataset found. Skipping download.
+>> Building search index (first run only)...
+WARNING: Using incubator modules: jdk.incubator.vector
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/lib/python3.12/site-packages/transformers/utils/hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/lib/python3.12/site-packages/pyserini/trectools/_base.py:56: SyntaxWarning: invalid escape sequence '\s'
+  self.qrels_data = pd.read_csv(filepath, sep='\s+', names=Qrels.columns)
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/lib/python3.12/site-packages/pyserini/trectools/_base.py:110: SyntaxWarning: invalid escape sequence '\s'
+  self.run_data = pd.read_csv(filepath, sep='\s+', names=TrecRun.columns, dtype={'docid': 'str', 'score': 'float'})
+Products loaded.
+Keys cleaned.
+Attributes loaded.
+
+  0%|          | 0/1000 [00:00<?, ?it/s]
+100%|██████████| 1000/1000 [00:00<00:00, 61247.70it/s]
+
+  0%|          | 0/1000 [00:00<?, ?it/s]
+100%|██████████| 1000/1000 [00:00<00:00, 279433.98it/s]
+WARNING: Using incubator modules: jdk.incubator.vector
+2026-01-19 01:01:00,767 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:208) - Setting log level to INFO
+2026-01-19 01:01:00,769 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:211) - ============ Loading Index Configuration ============
+2026-01-19 01:01:00,769 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:212) - AbstractIndexer settings:
+2026-01-19 01:01:00,775 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:213) -  + DocumentCollection path: resources_1k
+2026-01-19 01:01:00,775 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:214) -  + CollectionClass: JsonCollection
+2026-01-19 01:01:00,775 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:215) -  + Index path: indexes_1k
+2026-01-19 01:01:00,776 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:216) -  + Threads: 1
+2026-01-19 01:01:00,776 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:217) -  + Optimize (merge segments)? false
+Jan 19, 2026 1:01:00 AM org.apache.lucene.store.MemorySegmentIndexInputProvider <init>
+INFO: Using MemorySegmentIndexInput with Java 21; to disable start with -Dorg.apache.lucene.store.MMapDirectory.enableMemorySegments=false
+2026-01-19 01:01:00,793 INFO  [main] index.IndexCollection (IndexCollection.java:237) - Using DefaultEnglishAnalyzer
+2026-01-19 01:01:00,793 INFO  [main] index.IndexCollection (IndexCollection.java:238) - Stemmer: porter
+2026-01-19 01:01:00,793 INFO  [main] index.IndexCollection (IndexCollection.java:239) - Keep stopwords? false
+2026-01-19 01:01:00,794 INFO  [main] index.IndexCollection (IndexCollection.java:240) - Stopwords file: null
+2026-01-19 01:01:00,868 INFO  [main] index.IndexCollection (IndexCollection.java:188) - IndexCollection settings:
+2026-01-19 01:01:00,868 INFO  [main] index.IndexCollection (IndexCollection.java:189) -  + Generator: DefaultLuceneDocumentGenerator
+2026-01-19 01:01:00,869 INFO  [main] index.IndexCollection (IndexCollection.java:190) -  + Language: en
+2026-01-19 01:01:00,869 INFO  [main] index.IndexCollection (IndexCollection.java:191) -  + Stemmer: porter
+2026-01-19 01:01:00,869 INFO  [main] index.IndexCollection (IndexCollection.java:192) -  + Keep stopwords? false
+2026-01-19 01:01:00,869 INFO  [main] index.IndexCollection (IndexCollection.java:193) -  + Stopwords: null
+2026-01-19 01:01:00,870 INFO  [main] index.IndexCollection (IndexCollection.java:194) -  + Store positions? true
+2026-01-19 01:01:00,870 INFO  [main] index.IndexCollection (IndexCollection.java:195) -  + Store docvectors? true
+2026-01-19 01:01:00,870 INFO  [main] index.IndexCollection (IndexCollection.java:196) -  + Store document "contents" field? false
+2026-01-19 01:01:00,870 INFO  [main] index.IndexCollection (IndexCollection.java:197) -  + Store document "raw" field? true
+2026-01-19 01:01:00,870 INFO  [main] index.IndexCollection (IndexCollection.java:198) -  + Additional fields to index: []
+2026-01-19 01:01:00,870 INFO  [main] index.IndexCollection (IndexCollection.java:199) -  + Whitelist: null
+2026-01-19 01:01:00,871 INFO  [main] index.IndexCollection (IndexCollection.java:200) -  + Pretokenized?: false
+2026-01-19 01:01:00,871 INFO  [main] index.IndexCollection (IndexCollection.java:201) -  + Codec: Lucene99
+2026-01-19 01:01:00,871 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:241) - ============ Indexing Collection ============
+2026-01-19 01:01:00,872 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:250) - Thread pool with 1 threads initialized.
+2026-01-19 01:01:00,873 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:251) - 1 file found in resources_1k
+2026-01-19 01:01:00,873 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:252) - Starting to index...
+2026-01-19 01:01:01,572 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:292) - Indexing Complete! 1,000 documents indexed
+2026-01-19 01:01:01,572 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:293) - ============ Final Counter Values ============
+2026-01-19 01:01:01,572 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:294) - indexed:            1,000
+2026-01-19 01:01:01,572 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:295) - unindexable:            0
+2026-01-19 01:01:01,572 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:296) - empty:                  0
+2026-01-19 01:01:01,573 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:297) - skipped:                0
+2026-01-19 01:01:01,573 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:298) - errors:                 0
+2026-01-19 01:01:01,577 INFO  [main] index.AbstractIndexer (AbstractIndexer.java:301) - Total 1,000 documents indexed in 00:00:00
+   Search index built.
+
+>> Starting WebShop server on port 3000...
+   WebShop PID: 3433
+
+>> Starting Agent Lightning coordinator on port 4747...
+   Mode: Training (qwen)
+   Coordinator PID: 3434
+
+>> Waiting for WebShop to be healthy (http://127.0.0.1:3000/health)...
+2026-01-19 01:01:01,793 - __main__ - INFO - Starting WebShop server on 127.0.0.1:3000
+2026-01-19 01:01:01,793 - __main__ - INFO - Loading 1000 products...
+Warning: Gym version v0.24.0 has a number of critical issues with `gym.make` such that the `reset` and `step` functions are called before returning the environment. It is recommend to downgrading to v0.23.1 or upgrading to v0.25.1
+Additionally, Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+WARNING: Using incubator modules: jdk.incubator.vector
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/lib/python3.12/site-packages/transformers/utils/hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+INFO: [PROGRESS] Auto-generating tasks from /mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/examples/vercel_ai_webshop/server/webshop/data/items_human_ins.json
+INFO: Loading human instructions from /mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/examples/vercel_ai_webshop/server/webshop/data/items_human_ins.json
+INFO: Loaded instructions for 10136 products
+INFO: Generated 12087 tasks from human instructions
+INFO: Shuffling tasks with seed 42
+INFO: [PROGRESS] Generated 12087 tasks
+INFO: [PROGRESS] Auto-generated 12087 tasks from WebShop data
+INFO: [PROGRESS] Starting training with 'qwen' configuration
+2026-01-19 01:01:09,353 - __main__ - INFO - WebShop gym environment registered successfully
+Products loaded.
+Keys cleaned.
+Attributes loaded.
+
+  0%|          | 0/1000 [00:00<?, ?it/s]
+100%|██████████| 1000/1000 [00:00<00:00, 72100.53it/s]
+Jan 19, 2026 1:01:09 AM org.apache.lucene.store.MemorySegmentIndexInputProvider <init>
+INFO: Using MemorySegmentIndexInput with Java 21; to disable start with -Dorg.apache.lucene.store.MMapDirectory.enableMemorySegments=false
+Loaded 6910 goals.
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/examples/vercel_ai_webshop/server/webshop/web_agent_site/envs/web_agent_text_env.py:212: DeprecationWarning: Call to deprecated method findAll. (Replaced by find_all) -- Deprecated since version 4.0.0.
+  texts = self._parse_html(html).findAll(text=True)
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/lib/python3.12/site-packages/bs4/_deprecation.py:61: DeprecationWarning: The 'text' argument to find()-type methods is deprecated. Use 'string' instead.
+  return getattr(self, new_name)(*args, **kwargs)
+/mnt/azureml/cr/j/d30164230f714448b19f7f2d75838b8b/exe/wd/.venv/lib/python3.12/site-packages/gym/envs/registration.py:619: UserWarning: [33mWARN: Env check failed with the following message: You must specify an observation space (cf gym.spaces) cf https://github.com/openai/gym/blob/master/gym/spaces/
+You can set `disable_env_checker=True` to disable this check.[0m
+  logger.warn(
+2026-01-19 01:01:09,605 - __main__ - INFO - Created session session_40e1b744a7ca with 1000 products
+2026-01-19 01:01:09,605 - __main__ - INFO - WebShop environment initialized successfully
+ * Serving Flask app 'webshop_server'
+ * Debug mode: off
+2026-01-19 01:01:09,609 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:3000
+2026-01-19 01:01:09,609 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2026-01-19 01:01:09,689 - werkzeug - INFO - 127.0.0.1 - - [19/Jan/2026 01:01:09] "GET /health HTTP/1.1" 200 -
+   WebShop is healthy.
+>> Waiting for Coordinator to be healthy (http://127.0.0.1:4747/v1/agl/health)...
+WARNING: healthcheck_url is not set. LLM Proxy will not be checked for healthiness after starting.
+WARNING: No host provided, using 0.0.0.0.
+WARNING: No access host provided, using default outbound IPv4 address for this machine.
+INFO: Starting LLMProxy server in thread mode with store capabilities: {'thread_safe': True, 'async_safe': True, 'zero_copy': False, 'otlp_traces': False}
+INFO: Starting server fastapi.applications:app...
+INFO: Starting uvicorn thread server...
+INFO: Adding middleware <class 'agentlightning.llm_proxy.RolloutAttemptMiddleware'> to the FastAPI app.
+INFO: Adding middleware <class 'agentlightning.llm_proxy.StreamConversionMiddleware'> to the FastAPI app.
+   ERROR: Coordinator did not become healthy within 60s
+
+>> Shutting down services...
+   Stopping PID 3433
+   Stopping PID 3434
+>> All services stopped.

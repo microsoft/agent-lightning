@@ -1,0 +1,17 @@
+# Azure ML Compute Cluster for WebShop Training
+#
+# Creates a GPU compute cluster with A100 GPUs for VERL training.
+# Auto-scales from 0-1 nodes to minimize costs when idle.
+#
+# Usage:
+#   az ml compute create -f compute.yml -g <resource-group> -w <workspace>
+
+$schema: https://azuremlschemas.azureedge.net/latest/amlCompute.schema.json
+
+name: gpu-a100-cluster
+type: amlcompute
+size: Standard_NC24ads_A100_v4  # A100 40GB GPU, 24 vCPU, 220 GB RAM
+min_instances: 0
+max_instances: 1
+idle_time_before_scale_down: 600  # 10 minutes
+tier: Dedicated
