@@ -188,7 +188,7 @@ jobs:
       PROM_ARCHIVE_BASENAME: ${{ format('prometheus-{0}-{1}', matrix.workload.id, matrix.backend.id) }}
       ARTIFACT_NAME: ${{ format('{0}-{1}', matrix.workload.id, matrix.backend.id) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -321,7 +321,7 @@ jobs:
 
       - name: Upload workload artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_DIR }}
@@ -372,7 +372,7 @@ jobs:
       ARTIFACT_NAME: ${{ format('collections-{0}-{1}', matrix.backend.id, matrix.workload.id) }}
       MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -434,7 +434,7 @@ jobs:
 
       - name: Upload collection artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_DIR }}
