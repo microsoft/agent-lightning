@@ -32,6 +32,8 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CACHE_CAPACITY = 100
+
 
 class ServerDataStore:
     """Async-safe container for in-memory server state.
@@ -53,7 +55,7 @@ class ServerDataStore:
         from agentlightning.utils.cache import LRUCache
 
         # Store for versioned resources
-        self._resource_versions: Dict[str, NamedResources] = LRUCache(capacity=100)
+        self._resource_versions: Dict[str, NamedResources] = LRUCache(capacity=DEFAULT_CACHE_CAPACITY)
         self._latest_resources_id: Optional[str] = None
 
         # Locks for thread-safe access
