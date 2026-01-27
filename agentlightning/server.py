@@ -50,8 +50,10 @@ class ServerDataStore:
         self._processing_tasks: Dict[str, Task] = {}  # Currently processing tasks
         self._completed_rollouts: Dict[str, RolloutLegacy] = {}
 
+        from agentlightning.utils.cache import LRUCache
+
         # Store for versioned resources
-        self._resource_versions: Dict[str, NamedResources] = {}
+        self._resource_versions: Dict[str, NamedResources] = LRUCache(capacity=100)
         self._latest_resources_id: Optional[str] = None
 
         # Locks for thread-safe access

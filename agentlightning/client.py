@@ -64,7 +64,10 @@ class AgentLightningClient:
         self.task_count = 0
         self.poll_interval = poll_interval
         self.timeout = timeout
-        self._resource_cache: Dict[str, ResourcesUpdate] = {}  # TODO: mechanism to evict cache
+
+        from agentlightning.utils.cache import LRUCache
+
+        self._resource_cache: Dict[str, ResourcesUpdate] = LRUCache(capacity=100)
         self._default_headers = {"X-AgentLightning-Client": "true"}
 
     async def _request_json_async(self, url: str) -> Optional[Dict[str, Any]]:
