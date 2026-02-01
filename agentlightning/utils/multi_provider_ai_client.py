@@ -11,7 +11,7 @@ Model name must be in "provider-model" format.
 
 ## Usage
 ```python
-from multi_provider_client import MultiProviderClient
+from agentlightning.utils.multi_provider_ai_client import MultiProviderClient
 client = MultiProviderClient()
 # Use with APO
 algo = agl.APO(
