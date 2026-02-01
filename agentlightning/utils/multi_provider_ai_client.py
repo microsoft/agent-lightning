@@ -42,7 +42,8 @@ class MultiProviderClient:
             custom_providers: Additional providers. Format:
                 {
                     "provider_name": {
-                        "api_key": "...",  # or env var name
+                        "api_key": "...",          # literal API key value (optional)
+                        "api_key_env": "ENV_VAR",  # name of env var containing the API key (optional)
                         "base_url": "https://..."
                     }
                 }
