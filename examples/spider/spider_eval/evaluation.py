@@ -996,7 +996,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # only evaluting exact match needs this argument
+    # only evaluating exact match needs this argument
     kmaps = None
     if args.etype in ["all", "match"]:
         assert args.table is not None, "table argument must be non-None if exact set match is evaluated"

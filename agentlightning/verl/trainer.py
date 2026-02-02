@@ -368,7 +368,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
             metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_before_processing"))
 
-            # after advantages are assinged, we begin to drop (1) long prompt (2) floor to ppo minisize
+            # after advantages are assigned, we begin to drop (1) long prompt (2) floor to ppo minisize
             keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
             metrics["training/n_triplets_prompt_too_long"] = (
                 batch.batch["is_drop_mask"].shape[0] - keep_indices.shape[0]

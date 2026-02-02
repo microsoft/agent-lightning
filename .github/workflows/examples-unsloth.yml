@@ -44,7 +44,7 @@ jobs:
         run: nvidia-smi
       - name: Check disk space
         run: df -h
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
       - uses: astral-sh/setup-uv@v7
@@ -65,7 +65,7 @@ jobs:
           echo "UV_LOCKED=1" >> $GITHUB_ENV
           echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dependencies-unsloth-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
