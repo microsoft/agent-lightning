@@ -23,6 +23,8 @@ from agentlightning.adapter.triplet import TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
+from agentlightning.reward import find_final_reward
+
 from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
 
 __all__ = [
@@ -476,6 +478,7 @@ class SimulationAgentModeDaemon:
         """
         # Query spans for this rollout (latest attempt)
         spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
+        final_reward = find_final_reward(spans)
 
         # Convert spans to triplets using the adapter
         if not spans:
@@ -485,14 +488,14 @@ class SimulationAgentModeDaemon:
             # triplets = self.adapter.adapt(spans)
             triplets = self.adapter.adapt_group(spans)
 
-        # Extract final reward from triplets
-        final_reward: Optional[float] = None
-        if triplets:
-            # Search backwards through triplets for the first non-None reward
-            for triplet in reversed(triplets):
-                if triplet.reward is not None:
-                    final_reward = triplet.reward
-                    break
+        # # Extract final reward from triplets
+        # final_reward: Optional[float] = None
+        # if triplets:
+        #     # Search backwards through triplets for the first non-None reward
+        #     for triplet in reversed(triplets):
+        #         if triplet.reward is not None:
+        #             final_reward = triplet.reward
+        #             break
 
         # Construct the Task object from Rollout
         task = Task(

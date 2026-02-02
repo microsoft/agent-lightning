@@ -74,7 +74,7 @@ actor_rollout_ref:
 
 trainer:
   n_gpus_per_node: ${variables.NUM_GPUS}
-  val_before_train: false
+  val_before_train: true
   critic_warmup: 0
   logger:
     - console

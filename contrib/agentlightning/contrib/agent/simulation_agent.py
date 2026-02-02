@@ -120,7 +120,7 @@ class SimulationAgent(LitAgent):
                     emit_object(env_obs, attributes=make_link_attributes({"step_count": str(step_count)}))
 
                 env_obs, executed_action, is_valid, step_reward, terminated, truncated, info, available_actions_hint = (
-                    self.env.step(output, use_reasoning=self.config.captioner.type == "cot")
+                    self.env.step(output, use_reasoning=self.config.captioner.type == "cot", use_success_rate=self.config.use_success_rate)
                 )
 
                 prompt_builder.update_step_count()

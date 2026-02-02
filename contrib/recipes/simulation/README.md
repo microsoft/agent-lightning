@@ -34,6 +34,8 @@ For more information about the supported simulation environments, please refer t
 Run the following script once to install simulation enviornment and related AGL dependency:
 
 ```bash
+cd contrib/recipes/simulation
+
 git clone https://github.com/agent-lightning/agl-envs
 mv agl-envs agl_envs
 
@@ -46,7 +48,7 @@ bash agl_envs/simulation/setup/setup_sciworld.sh
 conda activate sciworld
 
 # Install AGL dependency
-bash contrib/recipes/simulation/install_agl.sh
+bash install_agl.sh
 ```
 
 > If you plan to use WandB for experiment tracking, log in to WandB before training.
