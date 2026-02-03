@@ -158,10 +158,10 @@ class EMPO2Agent(SimulationAgent):
                             ret_tips += mem+"\n"
 
                         tip_list.append(ret_tips)
-                        intrinsic_reward = 0.1 / (count+1)
+                        intrinsic_reward = 1 / (count+1)
                     else:
                         tip_list.append("")
-                        intrinsic_reward = 0.1
+                        intrinsic_reward = 1
 
                 try:
                     if count > 0:

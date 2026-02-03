@@ -34,6 +34,8 @@ For more information about the supported simulation environments, please refer t
 Run the following script once to install simulation enviornment and related AGL dependency:
 
 ```bash
+cd contrib/recipes/simulation/
+
 git clone agl-envs
 mv agl-envs agl_envs
 
@@ -46,7 +48,7 @@ bash agl_envs/simulation/setup/setup_sciworld.sh
 conda activate sciworld
 
 # Install AGL dependency
-bash contrib/recipes/simulation/install_agl.sh
+bash install_agl.sh
 ```
 
 > If you plan to use WandB for experiment tracking, log in to WandB before training.
@@ -87,18 +89,18 @@ We follow the single-mode prompt for ALFWorld from [verl-agent](https://github.c
 
 ```bash
 # Run alfworld 
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env alfworld
+python3 train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env alfworld
 
 # Run scienceworld single task task_num 0
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num 0
+python3 train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num 0
 
 # Run scienceworld multi-task
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num -1
+python3 train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num -1
 ```
 
 ### EMPO2
 
 ```bash
 # Run scienceworld single task task_num 25
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm empo2_qwen_7b_instruct --env scienceworld2 --task_num 25
+python3 train_simulation_agent.py --algorithm empo2_qwen_7b_instruct --env scienceworld2 --task_num 25
 ```
