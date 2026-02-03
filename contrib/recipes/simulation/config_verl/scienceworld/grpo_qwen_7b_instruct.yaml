@@ -4,7 +4,7 @@
 variables:
   NUM_GPUS: 8
   MINI_BATCH_SIZE: 16
-  PER_GPU_BATCH_SIZE: 2
+  PER_GPU_BATCH_SIZE: 1
   TENSOR_MODEL_PARALLEL_SIZE: 2
   NUM_ROLLOUTS: 8
   BASE_MODEL: Qwen/Qwen2.5-7B-Instruct
@@ -13,7 +13,6 @@ variables:
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/1223/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
