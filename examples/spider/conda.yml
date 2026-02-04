@@ -1,0 +1,17 @@
+name: agent-lightning
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - agentlightning[verl]
+    - verl==0.5.0
+    - openai==1.99.5
+    - torch==2.8.0  --index-url https://download.pytorch.org/whl/cu128
+    - torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+    - vllm==0.10.2
+    # flash-attn installation requires torch. pip install it manually
+    # - flash-attn
+
