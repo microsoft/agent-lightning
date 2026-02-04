@@ -4,6 +4,9 @@ channels:
   - defaults
 dependencies:
   - python=3.10
+  # libgcc and libstdcxx require: export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+  - libgcc-ng
+  - libstdcxx-ng
   - pip
   - pip:
     - agentlightning[verl]
@@ -14,4 +17,7 @@ dependencies:
     - vllm==0.10.2
     # flash-attn installation requires torch. pip install it manually
     # - flash-attn
-
+    - gdown
+    - langchain
+    - langchain-community
+    - sqlparse
