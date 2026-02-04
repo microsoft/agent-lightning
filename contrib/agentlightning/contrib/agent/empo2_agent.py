@@ -165,7 +165,7 @@ class EMPO2Agent(SimulationAgent):
 
                 try:
                     if count > 0:
-                        tip_prompt = self._get_tip_prompt(prompt, ret_tips)
+                        tip_prompt = self._get_all_tip_prompt(prompt, tip_list)
                         instructed_prompt = self._get_instructed_prompt(tip_prompt, sep="")
                     else:
                         instructed_prompt = self._get_instructed_prompt(prompt)
