@@ -18,6 +18,10 @@ dependencies:
     # flash-attn installation requires torch. pip install it manually
     # - flash-attn
     - gdown
-    - langchain
+    - langgraph<1.0
+    - langchain[openai]<1.0
     - langchain-community
+    - langchain-text-splitters<1.0
     - sqlparse
+    - nltk
+
