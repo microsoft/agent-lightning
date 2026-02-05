@@ -7,7 +7,7 @@ Kernel-level safety during AI agent training.
 [Agent-OS](https://github.com/imran-siddique/agent-os) provides deterministic governance
 for AI agents. This integration enables:
 
-- **0% policy violations during training** - Unsafe actions are blocked or penalized
+- **0% unpenalized policy violations** - All unsafe actions are detected and penalized
 - **Policy violations → RL penalties** - Agents learn to avoid unsafe behavior
 - **Complete audit trail** - From training to production
 
@@ -89,8 +89,10 @@ adapter.import_to_store(lightning_store)
 
 | Metric | Without Agent-OS | With Agent-OS |
 |--------|------------------|---------------|
-| Policy Violations | 12.3% | **0.0%** |
+| Undetected Policy Violations | 12.3% | **0.0%** |
 | Task Accuracy | 76.4% | **79.2%** |
+
+*Note: "0% undetected violations" means all policy violations are caught and penalized, not that agents never attempt unsafe actions. Over training, agents learn to minimize violation attempts.*
 
 ## Documentation
 

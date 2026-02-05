@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Generic, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class PolicyViolation:
     description: str
     severity: str
     blocked: bool
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def penalty(self) -> float:
@@ -100,6 +100,10 @@ class AgentOSRunner(Generic[T_task]):
         self._violations: list[PolicyViolation] = []
         self._total_rollouts = 0
         self._total_violations = 0
+
+        # Worker attributes (set by init_worker)
+        self.worker_id: Optional[int] = None
+        self.store: Optional[Any] = None
 
         self._setup_hooks()
 
