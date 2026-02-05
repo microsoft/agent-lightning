@@ -218,11 +218,19 @@ class AgentOSRunner(Generic[T_task]):
         
         try:
             if hasattr(self.kernel, 'execute_async'):
+                logger.debug("AgentOSRunner: executing task via kernel.execute_async")
                 result = await self.kernel.execute_async(self.agent, input)
             elif hasattr(self.kernel, 'execute'):
+                logger.debug("AgentOSRunner: executing task via kernel.execute")
                 result = self.kernel.execute(self.agent, input)
             else:
-                result = await self.agent(input)
+                logger.error(
+                    "AgentOSRunner: kernel does not support 'execute_async' or 'execute'; "
+                    "governed execution is not possible."
+                )
+                raise RuntimeError(
+                    "Kernel does not support governed execution (missing 'execute_async' and 'execute')."
+                )
             success = True
         except PolicyViolationError as e:
             # Record the policy violation and mark rollout as unsuccessful.
