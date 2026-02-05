@@ -8,7 +8,7 @@ Wraps agent execution with Agent-OS kernel governance.
 from __future__ import annotations
 
 import logging
-from typing import Any, Generic, Optional, Sequence, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 from dataclasses import dataclass, field
 from datetime import datetime
 
