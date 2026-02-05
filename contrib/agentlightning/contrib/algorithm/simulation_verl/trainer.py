@@ -387,7 +387,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     config=self.config.algorithm,
                 )
 
-                if self.config.tips.use_tips:
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
                     batch = core_empo2.low_prob_token_masking(batch)
 
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
