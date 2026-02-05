@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 class FlightRecorderAdapter:
     """
     Import Agent-OS Flight Recorder logs to LightningStore.
-    
+
     Example:
         >>> from agent_os import FlightRecorder
-        >>> 
+        >>>
         >>> recorder = FlightRecorder()
         >>> adapter = FlightRecorderAdapter(recorder)
-        >>> 
+        >>>
         >>> # Import to Lightning store
         >>> adapter.import_to_store(lightning_store)
     """
@@ -36,7 +36,7 @@ class FlightRecorderAdapter:
     ):
         """
         Initialize adapter.
-        
+
         Args:
             flight_recorder: Agent-OS FlightRecorder
             trace_id_prefix: Prefix for trace IDs
@@ -55,7 +55,9 @@ class FlightRecorderAdapter:
             "span_id": f"{self.trace_id_prefix}-{index}",
             "trace_id": f"{self.trace_id_prefix}-{agent_id}",
             "name": f"agent_os.{entry_type}",
-            "start_time": timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
+            "start_time": timestamp.isoformat()
+            if hasattr(timestamp, "isoformat")
+            else str(timestamp),
             "attributes": {
                 "agent_os.entry_type": entry_type,
                 "agent_os.agent_id": agent_id,
@@ -64,14 +66,18 @@ class FlightRecorderAdapter:
 
         # Add type-specific attributes
         if entry_type == "policy_check":
-            span["attributes"].update({
-                "agent_os.policy_name": getattr(entry, "policy_name", "unknown"),
-                "agent_os.policy_violated": getattr(entry, "violated", False),
-            })
+            span["attributes"].update(
+                {
+                    "agent_os.policy_name": getattr(entry, "policy_name", "unknown"),
+                    "agent_os.policy_violated": getattr(entry, "violated", False),
+                }
+            )
         elif entry_type == "signal":
-            span["attributes"].update({
-                "agent_os.signal_type": getattr(entry, "signal", "unknown"),
-            })
+            span["attributes"].update(
+                {
+                    "agent_os.signal_type": getattr(entry, "signal", "unknown"),
+                }
+            )
 
         return span
 
@@ -88,10 +94,10 @@ class FlightRecorderAdapter:
     def import_to_store(self, store: Any) -> int:
         """
         Import spans to LightningStore.
-        
+
         Args:
             store: LightningStore instance
-        
+
         Returns:
             Number of spans imported
         """
@@ -114,8 +120,7 @@ class FlightRecorderAdapter:
         """Get summary of policy violations."""
         spans = self.get_spans()
         violations = [
-            s for s in spans
-            if s["attributes"].get("agent_os.policy_violated", False)
+            s for s in spans if s["attributes"].get("agent_os.policy_violated", False)
         ]
         return {
             "total_entries": len(spans),

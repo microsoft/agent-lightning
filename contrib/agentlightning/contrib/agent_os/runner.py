@@ -20,6 +20,7 @@ T_task = TypeVar("T_task")
 @dataclass
 class PolicyViolation:
     """Record of a policy violation."""
+
     policy_name: str
     description: str
     severity: str
@@ -46,6 +47,7 @@ class PolicyViolation:
 @dataclass
 class GovernedRollout:
     """Rollout with governance metadata."""
+
     task_input: Any
     task_output: Any
     success: bool
@@ -59,17 +61,17 @@ class GovernedRollout:
 class AgentOSRunner(Generic[T_task]):
     """
     Agent-Lightning runner with Agent-OS kernel safety.
-    
+
     This runner wraps agent execution in an Agent-OS kernel,
     enforcing policies and collecting violation data for RL training.
-    
+
     Example:
         >>> from agent_os import KernelSpace
         >>> from agent_os.policies import SQLPolicy
-        >>> 
+        >>>
         >>> kernel = KernelSpace(policy=SQLPolicy())
         >>> runner = AgentOSRunner(kernel)
-        >>> 
+        >>>
         >>> rollout = await runner.step(task)
         >>> print(f"Violations: {len(rollout.violations)}")
     """
@@ -83,7 +85,7 @@ class AgentOSRunner(Generic[T_task]):
     ):
         """
         Initialize the governed runner.
-        
+
         Args:
             kernel: Agent-OS KernelSpace with loaded policies
             fail_on_violation: Raise exception on violation
@@ -149,12 +151,15 @@ class AgentOSRunner(Generic[T_task]):
         """Emit violation as Agent-Lightning span."""
         try:
             from agentlightning.emitter import emit_annotation
-            emit_annotation({
-                "agent_os.violation": True,
-                "agent_os.policy": violation.policy_name,
-                "agent_os.severity": violation.severity,
-                "agent_os.blocked": violation.blocked,
-            })
+
+            emit_annotation(
+                {
+                    "agent_os.violation": True,
+                    "agent_os.policy": violation.policy_name,
+                    "agent_os.severity": violation.severity,
+                    "agent_os.blocked": violation.blocked,
+                }
+            )
         except ImportError as exc:
             logger.debug(
                 "agentlightning.emitter not available; skipping violation annotation: %s",

@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 class PolicyReward:
     """
     Reward function that penalizes policy violations.
-    
+
     Example:
         >>> from agent_os import KernelSpace
-        >>> 
+        >>>
         >>> kernel = KernelSpace(policy="strict")
         >>> reward_fn = PolicyReward(kernel, base_reward_fn=accuracy)
-        >>> 
+        >>>
         >>> reward = reward_fn(rollout)  # Base reward - violation penalties
     """
 
@@ -39,7 +39,7 @@ class PolicyReward:
     ):
         """
         Initialize policy-aware reward.
-        
+
         Args:
             kernel: Agent-OS KernelSpace
             base_reward_fn: Base reward function
@@ -69,21 +69,18 @@ class PolicyReward:
     def __call__(self, rollout: Any, *, emit: bool = True) -> float:
         """
         Calculate reward with policy penalties.
-        
+
         Args:
             rollout: Rollout with violations attribute
             emit: Emit reward span
-        
+
         Returns:
             Final reward
         """
         base = self.base_reward_fn(rollout)
 
         violations = getattr(rollout, "violations", [])
-        penalty = sum(
-            self.penalties.get(v.severity, -10.0)
-            for v in violations
-        )
+        penalty = sum(self.penalties.get(v.severity, -10.0) for v in violations)
 
         reward = base + penalty
         if not violations:
@@ -107,6 +104,7 @@ class PolicyReward:
         """Emit multi-dimensional reward."""
         try:
             from agentlightning.emitter import emit_reward
+
             emit_reward(
                 {"final": final, "base": base, "policy_penalty": penalty},
                 primary_key="final",
