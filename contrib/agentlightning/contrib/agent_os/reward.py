@@ -1,3 +1,4 @@
+# Copyright (c) Microsoft. All rights reserved.
 """
 PolicyReward - Convert Policy Violations to RL Penalties
 =========================================================

@@ -1,3 +1,4 @@
+# Copyright (c) Microsoft. All rights reserved.
 """
 Agent-OS Integration for Agent-Lightning
 =========================================
