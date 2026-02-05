@@ -99,8 +99,26 @@ class AgentOSRunner(Generic[T_task]):
     
     def _setup_hooks(self) -> None:
         """Set up kernel hooks."""
-        if hasattr(self.kernel, 'on_policy_violation'):
-            self.kernel.on_policy_violation(self._handle_violation)
+        on_violation = getattr(self.kernel, "on_policy_violation", None)
+        if on_violation is None:
+            logger.warning(
+                "Kernel %r does not support policy violation hooks via 'on_policy_violation'.",
+                self.kernel,
+            )
+            return
+        if not callable(on_violation):
+            logger.warning(
+                "Kernel attribute 'on_policy_violation' is not callable: %r",
+                on_violation,
+            )
+            return
+        try:
+            on_violation(self._handle_violation)
+        except TypeError as exc:
+            logger.warning(
+                "Kernel.on_policy_violation has an incompatible signature: %s",
+                exc,
+            )
     
     def _handle_violation(
         self,
