@@ -8,8 +8,8 @@ Adapts Agent-OS Flight Recorder to Agent-Lightning store format.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
 from datetime import datetime
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,7 @@ class FlightRecorderAdapter:
             "span_id": f"{self.trace_id_prefix}-{index}",
             "trace_id": f"{self.trace_id_prefix}-{agent_id}",
             "name": f"agent_os.{entry_type}",
-            "start_time": timestamp.isoformat()
-            if hasattr(timestamp, "isoformat")
-            else str(timestamp),
+            "start_time": timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
             "attributes": {
                 "agent_os.entry_type": entry_type,
                 "agent_os.agent_id": agent_id,
@@ -119,9 +117,7 @@ class FlightRecorderAdapter:
     def get_violation_summary(self) -> Dict[str, Any]:
         """Get summary of policy violations."""
         spans = self.get_spans()
-        violations = [
-            s for s in spans if s["attributes"].get("agent_os.policy_violated", False)
-        ]
+        violations = [s for s in spans if s["attributes"].get("agent_os.policy_violated", False)]
         return {
             "total_entries": len(spans),
             "total_violations": len(violations),

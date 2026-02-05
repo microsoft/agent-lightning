@@ -8,9 +8,9 @@ Wraps agent execution with Agent-OS kernel governance.
 from __future__ import annotations
 
 import logging
-from typing import Any, Generic, Optional, TypeVar
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any, Generic, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -175,9 +175,7 @@ class AgentOSRunner(Generic[T_task]):
             RuntimeError: If the agent has not been initialized via `init`.
         """
         if not hasattr(self, "_agent"):
-            raise RuntimeError(
-                "AgentOSRunner.agent accessed before `init` has been called."
-            )
+            raise RuntimeError("AgentOSRunner.agent accessed before `init` has been called.")
         return self._agent
 
     @agent.setter
@@ -260,11 +258,7 @@ class AgentOSRunner(Generic[T_task]):
         return {
             "total_rollouts": self._total_rollouts,
             "total_violations": self._total_violations,
-            "violation_rate": (
-                self._total_violations / self._total_rollouts
-                if self._total_rollouts > 0
-                else 0.0
-            ),
+            "violation_rate": (self._total_violations / self._total_rollouts if self._total_rollouts > 0 else 0.0),
         }
 
 

@@ -18,9 +18,9 @@ Example:
     >>> reward_fn = PolicyReward(kernel)
 """
 
-from .runner import AgentOSRunner
-from .reward import PolicyReward
 from .adapter import FlightRecorderAdapter
+from .reward import PolicyReward
+from .runner import AgentOSRunner
 
 __all__ = [
     "AgentOSRunner",
