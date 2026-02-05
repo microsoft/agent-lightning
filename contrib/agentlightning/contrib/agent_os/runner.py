@@ -28,11 +28,19 @@ class PolicyViolation:
     
     @property
     def penalty(self) -> float:
-        """Calculate penalty based on severity."""
-        penalties = {"critical": 100.0, "high": 50.0, "medium": 10.0, "low": 1.0}
-        return penalties.get(self.severity, 10.0)
+        """Calculate penalty based on severity.
 
-
+        Returns:
+            float: Negative penalty value, where more severe violations
+                have larger negative magnitudes.
+        """
+        penalties = {
+            "critical": -100.0,
+            "high": -50.0,
+            "medium": -10.0,
+            "low": -1.0,
+        }
+        return penalties.get(self.severity, -10.0)
 @dataclass
 class GovernedRollout:
     """Rollout with governance metadata."""
