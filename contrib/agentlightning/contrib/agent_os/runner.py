@@ -48,7 +48,13 @@ class PolicyViolation:
 
 @dataclass
 class GovernedRollout:
-    """Rollout with governance metadata."""
+    """Rollout with governance metadata.
+    
+    This dataclass wraps execution results with governance information.
+    It is compatible with Agent-Lightning's Rollout interface - the
+    `task_input`, `task_output`, and `success` fields provide the core
+    rollout data, while `violations` adds governance-specific metadata.
+    """
 
     task_input: Any
     task_output: Any
