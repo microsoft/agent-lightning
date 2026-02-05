@@ -13,7 +13,7 @@ variables:
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_grpo_checkpoint/0203/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: /mnt/jeonghyekim/empo2_grpo_checkpoint/0206/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -33,7 +33,8 @@ data:
   train_batch_size: 16
   val_batch_size: 80
   max_prompt_length: 16384
-  max_response_length: 64
+  max_response_length: 32
+  max_total_length: 8192
   truncation: error
   return_raw_chat: true
 

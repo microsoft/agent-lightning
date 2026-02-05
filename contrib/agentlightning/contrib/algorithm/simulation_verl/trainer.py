@@ -274,10 +274,11 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
+                    max_total_length=self.config.data.max_total_length,
                     device=gen_batch.batch["fake_ids"].device,
                     use_final_reward_as_step_reward=self.config.algorithm.use_final_reward_as_step_reward,
                     use_intrinsic_reward=self.config.algorithm.use_intrinsic_reward,
-                    empo2_train_mode=getattr(self, "empo2_train_mode", None)
+                    empo2_train_mode=getattr(self, "empo2_train_mode", None),
                 )
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
