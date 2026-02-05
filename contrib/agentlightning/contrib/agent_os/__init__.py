@@ -12,7 +12,7 @@ Components:
 Example:
     >>> from agentlightning.contrib.agent_os import AgentOSRunner, PolicyReward
     >>> from agent_os import KernelSpace
-    >>> 
+    >>>
     >>> kernel = KernelSpace(policy="safety-critical")
     >>> runner = AgentOSRunner(kernel)
     >>> reward_fn = PolicyReward(kernel)
