@@ -159,6 +159,24 @@ class AgentOSRunner(Generic[T_task]):
                 exc,
             )
     
+    @property
+    def agent(self) -> Any:
+        """
+        Access the underlying agent.
+
+        Raises:
+            RuntimeError: If the agent has not been initialized via `init`.
+        """
+        if not hasattr(self, "_agent"):
+            raise RuntimeError(
+                "AgentOSRunner.agent accessed before `init` has been called."
+            )
+        return self._agent
+
+    @agent.setter
+    def agent(self, value: Any) -> None:
+        """Set the underlying agent instance."""
+        self._agent = value
     def init(self, agent: Any, **kwargs: Any) -> None:
         """Initialize with agent."""
         self.agent = agent
