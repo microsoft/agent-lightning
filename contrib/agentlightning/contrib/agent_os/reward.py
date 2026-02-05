@@ -25,7 +25,7 @@ class PolicyReward:
         >>> 
         >>> reward = reward_fn(rollout)  # Base reward - violation penalties
     """
-    
+
     def __init__(
         self,
         kernel: Any,
@@ -58,14 +58,14 @@ class PolicyReward:
             "low": low_penalty,
         }
         self.clean_bonus = clean_bonus
-        
+
         self._total_rewards = 0
         self._total_penalties = 0.0
-    
+
     def _default_reward(self, rollout: Any) -> float:
         """Default: 1.0 for success, 0.0 for failure."""
-        return 1.0 if getattr(rollout, 'success', False) else 0.0
-    
+        return 1.0 if getattr(rollout, "success", False) else 0.0
+
     def __call__(self, rollout: Any, *, emit: bool = True) -> float:
         """
         Calculate reward with policy penalties.
@@ -78,25 +78,25 @@ class PolicyReward:
             Final reward
         """
         base = self.base_reward_fn(rollout)
-        
-        violations = getattr(rollout, 'violations', [])
+
+        violations = getattr(rollout, "violations", [])
         penalty = sum(
             self.penalties.get(v.severity, -10.0)
             for v in violations
         )
-        
+
         reward = base + penalty
         if not violations:
             reward += self.clean_bonus
-        
+
         self._total_rewards += 1
         self._total_penalties += penalty
-        
+
         if emit:
             self._emit_reward(reward, base, penalty, len(violations))
-        
+
         return reward
-    
+
     def _emit_reward(
         self,
         final: float,
@@ -117,7 +117,7 @@ class PolicyReward:
                 "agentlightning.emitter not available; skipping reward emission.",
                 exc_info=True,
             )
-    
+
     def get_stats(self) -> Dict[str, float]:
         """Get reward statistics."""
         total = self._total_rewards or 1
