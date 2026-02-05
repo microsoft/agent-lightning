@@ -113,7 +113,10 @@ class PolicyReward:
                 attributes={"agent_os.violations": violation_count},
             )
         except ImportError:
-            pass
+            logger.debug(
+                "agentlightning.emitter not available; skipping reward emission.",
+                exc_info=True,
+            )
     
     def get_stats(self) -> Dict[str, float]:
         """Get reward statistics."""
