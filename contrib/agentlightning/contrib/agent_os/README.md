@@ -95,7 +95,7 @@ adapter.import_to_store(lightning_store)
 ## Documentation
 
 - [Agent-OS Documentation](https://imran-siddique.github.io/agent-os-docs/)
-- [Integration Guide](./docs/integration.md)
+- Integration guide: see project README or examples in this directory.
 
 ## License
 
