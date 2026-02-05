@@ -153,8 +153,11 @@ class AgentOSRunner(Generic[T_task]):
                 "agent_os.severity": violation.severity,
                 "agent_os.blocked": violation.blocked,
             })
-        except ImportError:
-            pass
+        except ImportError as exc:
+            logger.debug(
+                "agentlightning.emitter not available; skipping violation annotation: %s",
+                exc,
+            )
     
     def init(self, agent: Any, **kwargs: Any) -> None:
         """Initialize with agent."""
