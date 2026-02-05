@@ -177,11 +177,9 @@ class AgentOSRunner(Generic[T_task]):
             else:
                 result = await self.agent(input)
             success = True
-        except PolicyViolationError:
-            result = None
-            success = False
-        except Exception as e:
-            logger.error(f"Execution failed: {e}")
+        except PolicyViolationError as e:
+            # Record the policy violation and mark rollout as unsuccessful.
+            self._violations.append(e.violation)
             result = None
             success = False
         
