@@ -252,7 +252,11 @@ class AgentOSRunner(Generic[T_task]):
         return {
             "total_rollouts": self._total_rollouts,
             "total_violations": self._total_violations,
-            "violation_rate": self._total_violations / max(self._total_rollouts, 1),
+            "violation_rate": (
+                self._total_violations / self._total_rollouts
+                if self._total_rollouts > 0
+                else 0.0
+            ),
         }
 
 
