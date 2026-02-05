@@ -1,4 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
+
 """
 FlightRecorderAdapter - Import Audit Logs to LightningStore
 =============================================================
