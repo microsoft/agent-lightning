@@ -120,5 +120,5 @@ class FlightRecorderAdapter:
         return {
             "total_entries": len(spans),
             "total_violations": len(violations),
-            "violation_rate": len(violations) / max(len(spans), 1),
+            "violation_rate": len(violations) / len(spans) if len(spans) > 0 else 0.0,
         }
