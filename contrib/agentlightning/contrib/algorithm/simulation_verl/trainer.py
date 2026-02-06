@@ -256,7 +256,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                 num_problems = self.config.data.train_batch_size
                 gen_batch.non_tensor_batch["global_steps"] = [self.global_steps for _ in range(num_problems)]
 
-                if self.config.tips.use_tips:
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
                     touzi = random.random()
                     if touzi < 0.17:
                         self.empo2_train_mode = "off-policy" # Update with Tips and give them to the pure_chats
@@ -321,7 +321,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
 
             # recompute old_log_probs
             with _timer("old_log_prob", timing_raw):
-                if self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
                     old_batch = deepcopy(batch)
                     old_batch.batch['input_ids'] = old_batch.batch['old_input_ids']
                     old_batch.batch['attention_mask'] = old_batch.batch['old_attention_mask']
@@ -528,7 +528,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                 # train step
                 metrics = self._train_step(batch_dict)
 
-                if self.config.tips.use_tips:
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
                     mode_map = {
                         "off-policy": 0,
                         "on-policy-with-tips": 1,
