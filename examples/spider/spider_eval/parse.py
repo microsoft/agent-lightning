@@ -109,8 +109,8 @@ def replace_values(sql: str) -> Tuple[List[str], Set[str]]:
 # extract the non-value tokens and the set of values
 # from a sql query
 def extract_query_values(sql: str) -> Tuple[List[str], Set[str]]:
-    reformated = reformat_query(query=sql)
-    query_value_replaced, values = replace_values(reformated)
+    reformatted = reformat_query(query=sql)
+    query_value_replaced, values = replace_values(reformatted)
     return query_value_replaced, values
 
 
