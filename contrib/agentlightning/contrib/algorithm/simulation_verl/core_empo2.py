@@ -52,7 +52,7 @@ def low_prob_token_masking(batch):
     masked_old_log_prob = old_log_prob.masked_fill(response_mask == 0, 1e9)
     min_values, _ = torch.min(masked_old_log_prob, dim=1)  # [N]
 
-    mask = min_values < -10  # [N]
+    mask = min_values < -5  # [N]
 
     combined_mask = mask.unsqueeze(1) & (response_mask == 1)
 
