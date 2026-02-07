@@ -763,7 +763,7 @@ class SimulationAgentModeDaemon:
                 if empo2_train_mode == "off-policy":
                     old_prompt_ids = copy.deepcopy(prompt_ids)
                     START_PATTERN = self.tokenizer.encode("<tip>")
-                    END_PATTERN = self.tokenizer.encode("</tip>\n")
+                    END_PATTERN = self.tokenizer.encode("</tip>\n\n")
                     if core_empo2.is_sublist(START_PATTERN, prompt_ids):
                         prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN, END_PATTERN)
 
