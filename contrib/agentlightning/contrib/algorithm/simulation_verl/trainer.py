@@ -258,9 +258,9 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
 
                 if hasattr(self.config, 'tips') and self.config.tips.use_tips:
                     touzi = random.random()
-                    if touzi < 0.17:
+                    if touzi < 0.05:
                         self.empo2_train_mode = "off-policy" # Update with Tips and give them to the pure_chats
-                    elif touzi < 0.25:
+                    elif touzi < 0.2:
                         self.empo2_train_mode = "on-policy-with-tips"
                     else:
                         self.empo2_train_mode = "on-policy" # Normal Update, No Tips
