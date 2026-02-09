@@ -6,42 +6,90 @@ def is_sublist(sub, full):
     return any(full[i:i+n] == sub for i in range(m - n + 1))
 
 # Function to remove segments of a list between a start pattern and an end pattern
-def remove_pattern_ranges(seq: List[Any],
-                        start_pat: List[Any],
-                        end_pat: List[Any]) -> List[Any]:
-    """Remove every [start_pat ... end_pat] slice (inclusive) from seq."""
-    
-    out: List[Any] = []
+def remove_pattern_ranges(
+    seq: List[Any],
+    start_pat_1: List[Any],  # encode(".\n\n<tip>")
+    start_pat_2: List[Any],  # encode("<tip>")
+    end_pat: List[Any],       # encode("</tip>\n\n")
+    dot_token: List[Any],     # encode(".")
+) -> List[Any]:
+    """
+    Remove every [start ... end] slice from seq.
+    The last match uses start_pat_2, all others use start_pat_1.
+    For non-last matches, the leading "." is re-inserted after removal
+    since ".\n\n" is a single token that can't be split.
+    """
+
+    # --- Pass 1: Find all (start, end) ranges ---
+    # Try the longer pattern (start_pat_1) first, fall back to start_pat_2
+    ranges: List[tuple] = []
     i = 0
     n = len(seq)
-    ls, le = len(start_pat), len(end_pat)
+    ls1, ls2, le = len(start_pat_1), len(start_pat_2), len(end_pat)
 
     while i < n:
-        # Check if the start pattern matches at the current position
-        if i + ls <= n and seq[i:i+ls] == start_pat:
-            # Look for the first occurrence of the end pattern after the start pattern
-            j = i + ls
-            found_end = -1
+        matched_start = -1
+        matched_ls = 0
+        if i + ls1 <= n and seq[i:i+ls1] == start_pat_1:
+            matched_start = i
+            matched_ls = ls1
+        elif i + ls2 <= n and seq[i:i+ls2] == start_pat_2:
+            matched_start = i
+            matched_ls = ls2
+
+        if matched_start != -1:
+            j = matched_start + matched_ls
             while j + le <= n:
                 if seq[j:j+le] == end_pat:
-                    found_end = j
-                    break  # Stop when the end pattern is found
+                    ranges.append((matched_start, j + le))  # [start, end) exclusive
+                    i = j + le
+                    break
                 j += 1
-
-            # If the end pattern is found, skip the whole segment from start to end
-            if found_end != -1:
-                i = found_end + le  # Move the index past the end pattern
-                continue  # Skip the current iteration and go to the next
             else:
-                # If the end pattern is not found, keep the current element and move one step forward
-                out.append(seq[i])
                 i += 1
         else:
-            # If the start pattern is not found, just append the current element
+            i += 1
+
+    if not ranges:
+        return list(seq)
+
+    # --- Pass 2: Determine final removal ranges and insertions ---
+    # Non-last matches: remove ".\n\n<tip>...</tip>\n\n", re-insert "." token
+    # Last match: preserve ".\n\n", remove only "<tip>...</tip>\n\n"
+    final_ranges: List[tuple] = []
+    insertions: dict = {}  # {range_start: tokens to insert at that position}
+
+    for idx, (s, e) in enumerate(ranges):
+        if idx < len(ranges) - 1:
+            # Non-last match: must begin with start_pat_1 (".\n\n<tip>")
+            if seq[s:s+ls1] == start_pat_1:
+                final_ranges.append((s, e))
+                insertions[s] = dot_token  # Re-insert "." after removal
+            # If it doesn't match start_pat_1, skip (not a valid removal target)
+        else:
+            # Last match: use start_pat_2 ("<tip>") boundary
+            # If it matched start_pat_1, preserve the leading ".\n\n" token(s)
+            if seq[s:s+ls1] == start_pat_1:
+                diff = ls1 - ls2
+                final_ranges.append((s + diff, e))
+            else:
+                final_ranges.append((s, e))
+
+    # --- Pass 3: Rebuild sequence, skipping removal ranges ---
+    out: List[Any] = []
+    i = 0
+    r = 0
+    while i < n:
+        if r < len(final_ranges) and i == final_ranges[r][0]:
+            # Insert replacement tokens (e.g. ".") if any
+            if i in insertions:
+                out.extend(insertions[i])
+            i = final_ranges[r][1]
+            r += 1
+        else:
             out.append(seq[i])
             i += 1
 
-    # Return the filtered list with the start-end pattern segments removed
     return out
 
 def low_prob_token_masking(batch):
