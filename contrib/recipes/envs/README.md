@@ -1,15 +1,12 @@
-
-<img src="./assets/agl_simulation.png" width="120">
-
-# Simulation Example
+# Example of AGL Environments
 
 ## Overview
 
-This example implements agents across various simulation environments within Agent Lightning.
+This example implements agents across various environments within Agent Lightning.
 The example is designed to run on a single node with 8 GPUs, each having at least 40 GB of memory.
 
 This example depends on the simulation environments (e.g., ALFWorld, ScienceWorld) provided in the [agl-envs repository](https://github.com/agent-lightning/agl-envs).
-For more information about the supported simulation environments, please refer to the [simulation README](https://github.com/agent-lightning/agl-envs/simulation/README.md).
+For more information about the supported environments, please refer to the [envs README](https://github.com/agent-lightning/agl-envs/README.md).
 
 ---
 
@@ -23,28 +20,28 @@ For more information about the supported simulation environments, please refer t
 | `config_verl/` | Configuration for RL training with VerL |
 | `add_instruction.py` | Adding instructions to the agent’s input prompt to guide the format of the response |
 | `prompt_builder.py` | Managing conversation history and generating input prompts in multi-turn scenarios |
-| `train_simulation_agent.py` | RL training script |
+| `train_env_agent.py` | RL training script |
 
 ---
 
 &nbsp;
 
-## Install Simulation Environments
+## Install Environments
 
-Run the following script once to install simulation enviornment and related AGL dependency:
+Run the following script once to install the enviornment and related AGL dependency:
 
 ```bash
-cd contrib/recipes/simulation
+cd contrib/recipes/envs
 
 git clone https://github.com/agent-lightning/agl-envs
 mv agl-envs agl_envs
 
 # Install alfworld dependency
-bash agl_envs/simulation/setup/setup_alfworld.sh
+bash agl_envs/setup/setup_alfworld.sh
 conda activate alfworld
 
 # Install scienceworld dependency
-bash agl_envs/simulation/setup/setup_sciworld.sh
+bash agl_envs/setup/setup_sciworld.sh
 conda activate sciworld
 
 # Install AGL dependency
@@ -87,11 +84,11 @@ We follow the single-mode prompt for ALFWorld from [verl-agent](https://github.c
 
 ```bash
 # Run alfworld
-python3 train_simulation_agent.py --algorithm grpo --env alfworld
+python3 train_env_agent.py --algorithm grpo --env alfworld
 
 # Run scienceworld single task task_num 0
-python3 train_simulation_agent.py --algorithm grpo --env scienceworld --task_num 0
+python3 train_env_agent.py --algorithm grpo --env scienceworld --task_num 0
 
 # Run scienceworld multi-task
-python3 train_simulation_agent.py --algorithm grpo --env scienceworld --task_num -1
+python3 train_env_agent.py --algorithm grpo --env scienceworld --task_num -1
 ```

@@ -38,10 +38,10 @@ from agentlightning.adapter import TraceAdapter, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.store.base import LightningStore
 
-from .daemon import SimulationAgentModeDaemon
+from .daemon import EnvAgentModeDaemon
 
 __all__ = [
-    "SimulationAgentLightningTrainer",
+    "EnvAgentLightningTrainer",
 ]
 
 
@@ -156,7 +156,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
     return metrics
 
 
-class SimulationAgentLightningTrainer(RayPPOTrainer):
+class EnvAgentLightningTrainer(RayPPOTrainer):
     """
     Specialized PPO trainer for agent-based reinforcement learning.
 
@@ -178,7 +178,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
         store: LightningStore | None,
         llm_proxy: LLMProxy | None,
         adapter: TraceAdapter | None,
-        daemon_cls: Type[SimulationAgentModeDaemon],
+        daemon_cls: Type[EnvAgentModeDaemon],
         **kwargs,
     ):
         super().__init__(**kwargs)

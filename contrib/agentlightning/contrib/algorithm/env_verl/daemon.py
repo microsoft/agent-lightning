@@ -21,10 +21,9 @@ from verl import DataProto
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
 from agentlightning.adapter.triplet import TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
+from agentlightning.reward import find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
-from agentlightning.reward import find_final_reward
-
 from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
 
 __all__ = [
@@ -124,7 +123,7 @@ def _to_native(obj: Any) -> Any:
     return obj
 
 
-class SimulationAgentModeDaemon:
+class EnvAgentModeDaemon:
     """
     AgentModeDaemon using the AgentLightningServer SDK.
 

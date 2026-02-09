@@ -8,8 +8,8 @@ from omegaconf import OmegaConf
 
 from agentlightning import Trainer
 from agentlightning.algorithm.verl import VERL
-from contrib.agentlightning.contrib.algorithm.simulation_verl.daemon import SimulationAgentModeDaemon
-from contrib.agentlightning.contrib.algorithm.simulation_verl.trainer import SimulationAgentLightningTrainer
+from contrib.agentlightning.contrib.algorithm.env_verl.daemon import EnvAgentModeDaemon
+from contrib.agentlightning.contrib.algorithm.env_verl.trainer import EnvAgentLightningTrainer
 
 
 def run_cmd(cmd):
@@ -87,16 +87,16 @@ if __name__ == "__main__":
     train_dataset, val_dataset = train_val_dataset(rl_training_config)
 
     # Initialize agent
-    from contrib.agentlightning.contrib.agent.simulation_agent import SimulationAgent
+    from contrib.agentlightning.contrib.agent.env_agent import EnvAgent
 
-    agent = SimulationAgent(agent_config)
+    agent = EnvAgent(agent_config)
 
     # Initialize trainer and start training
     trainer = Trainer(
         algorithm=VERL(
             config=rl_training_config,
-            trainer_cls=SimulationAgentLightningTrainer,
-            daemon_cls=SimulationAgentModeDaemon,
+            trainer_cls=EnvAgentLightningTrainer,
+            daemon_cls=EnvAgentModeDaemon,
         ),
         n_workers=args.n_workers,
     )

@@ -8,19 +8,19 @@ from typing import Any, Dict
 
 import numpy as np
 from add_instruction import add_chat_instruction, add_single_instruction
-from agl_envs.simulation import make_env_manager
+from agl_envs import make_env_manager
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes
-from contrib.recipes.simulation.prompt_builder import HistoryPromptBuilder
+from contrib.recipes.envs.prompt_builder import HistoryPromptBuilder
 
 logger = configure_logger(name=__name__, level=logging.ERROR)
 
 
-class SimulationAgent(LitAgent):
+class EnvAgent(LitAgent):
     def __init__(self, config, trained_agents: str | None = None) -> None:
         super().__init__(trained_agents=trained_agents)
         self.config = config
@@ -42,7 +42,7 @@ class SimulationAgent(LitAgent):
         )
 
         return AssistantAgent(
-            name="simulation",
+            name="envs",
             model_client=model_client,
         )
 
@@ -120,7 +120,11 @@ class SimulationAgent(LitAgent):
                     emit_object(env_obs, attributes=make_link_attributes({"step_count": str(step_count)}))
 
                 env_obs, executed_action, is_valid, step_reward, terminated, truncated, info, available_actions_hint = (
-                    self.env.step(output, use_reasoning=self.config.captioner.type == "cot", use_success_rate=self.config.use_success_rate)
+                    self.env.step(
+                        output,
+                        use_reasoning=self.config.captioner.type == "cot",
+                        use_success_rate=self.config.use_success_rate,
+                    )
                 )
 
                 prompt_builder.update_step_count()
