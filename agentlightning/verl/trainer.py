@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import gc
 import random
 from contextlib import contextmanager
 from copy import deepcopy
@@ -272,6 +273,10 @@ class AgentLightningTrainer(RayPPOTrainer):
                 self.agent_mode_daemon.clear_data_and_server()
                 self.async_rollout_manager.sleep()
 
+                # Release the original input batch to free memory now that
+                # training data has been extracted from the daemon.
+                del gen_batch
+
             if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                 with _timer("gen_max", timing_raw):
                     gen_baseline_batch = deepcopy(gen_batch)
@@ -432,6 +437,13 @@ class AgentLightningTrainer(RayPPOTrainer):
         # TODO: implement actual tflpo and theoretical tflpo
         n_gpus = self.resource_pool_manager.get_n_gpus()
         metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
+        # Explicitly release batch tensors and trigger garbage collection to
+        # prevent memory accumulation across training steps.
+        del batch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return metrics
 
