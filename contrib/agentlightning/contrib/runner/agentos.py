@@ -49,7 +49,7 @@ class PolicyViolation:
 @dataclass
 class GovernedRollout:
     """Rollout with governance metadata.
-    
+
     This dataclass wraps execution results with governance information.
     It is compatible with Agent-Lightning's Rollout interface - the
     `task_input`, `task_output`, and `success` fields provide the core
@@ -187,7 +187,9 @@ class AgentOSRunner(Generic[T_task]):
             RuntimeError: If the agent has not been initialized via `init`.
         """
         if not hasattr(self, "_agent"):
-            raise RuntimeError("AgentOSRunner.agent accessed before `init` has been called.")
+            raise RuntimeError(
+                "AgentOSRunner.agent accessed before `init` has been called."
+            )
         return self._agent
 
     @agent.setter
@@ -270,7 +272,11 @@ class AgentOSRunner(Generic[T_task]):
         return {
             "total_rollouts": self._total_rollouts,
             "total_violations": self._total_violations,
-            "violation_rate": (self._total_violations / self._total_rollouts if self._total_rollouts > 0 else 0.0),
+            "violation_rate": (
+                self._total_violations / self._total_rollouts
+                if self._total_rollouts > 0
+                else 0.0
+            ),
         }
 
 

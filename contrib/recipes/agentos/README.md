@@ -7,9 +7,9 @@ Kernel-level safety during AI agent training.
 [Agent-OS](https://github.com/imran-siddique/agent-os) provides deterministic governance
 for AI agents. This integration enables:
 
-- **0% unpenalized policy violations** - All unsafe actions are detected and penalized
-- **Policy violations → RL penalties** - Agents learn to avoid unsafe behavior
-- **Complete audit trail** - From training to production
+- **0% unpenalized policy violations** — All unsafe actions are detected and penalized
+- **Policy violations → RL penalties** — Agents learn to avoid unsafe behavior
+- **Complete audit trail** — From training to production
 
 ## Installation
 
@@ -21,7 +21,8 @@ pip install agentlightning agent-os
 
 ```python
 from agentlightning import Trainer
-from agentlightning.contrib.agent_os import AgentOSRunner, PolicyReward
+from agentlightning.contrib.runner.agentos import AgentOSRunner
+from agentlightning.contrib.reward.agentos import PolicyReward
 from agent_os import KernelSpace
 from agent_os.policies import SQLPolicy
 
@@ -50,7 +51,7 @@ trainer.train()
 Wraps agent execution with kernel-level policy enforcement:
 
 ```python
-from agentlightning.contrib.agent_os import AgentOSRunner
+from agentlightning.contrib.runner.agentos import AgentOSRunner
 
 runner = AgentOSRunner(
     kernel,
@@ -64,7 +65,7 @@ runner = AgentOSRunner(
 Converts policy violations to negative RL rewards:
 
 ```python
-from agentlightning.contrib.agent_os import PolicyReward
+from agentlightning.contrib.reward.agentos import PolicyReward
 
 reward_fn = PolicyReward(
     kernel,
@@ -79,7 +80,7 @@ reward_fn = PolicyReward(
 Imports Agent-OS audit logs to LightningStore:
 
 ```python
-from agentlightning.contrib.agent_os import FlightRecorderAdapter
+from agentlightning.contrib.adapter.agentos import FlightRecorderAdapter
 
 adapter = FlightRecorderAdapter(flight_recorder)
 adapter.import_to_store(lightning_store)
