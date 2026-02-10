@@ -12,7 +12,7 @@ variables:
   TASK_NUM: ${oc.env:TASK_NUM,25}
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: (all-off-policy-final-reward)empo2-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
-  DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
+  DATA_DIR: agl_envs/task_data/scienceworld/single_data/${variables.TASK_NUM}
   OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/0209/${variables.EXPERIMENT_NAME}
 
 # ==========================
@@ -34,7 +34,6 @@ data:
   val_batch_size: 80
   max_prompt_length: 8192
   max_response_length: 32
-  max_total_length: 8192
   truncation: error
   return_raw_chat: true
 

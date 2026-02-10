@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
         agent = EMPO2Agent(agent_config)
     else:
-        from contrib.agentlightning.contrib.agent.simulation_agent import EnvAgent
+        from contrib.agentlightning.contrib.agent.env_agent import EnvAgent
         agent = EnvAgent(agent_config)
 
     # Initialize trainer and start training

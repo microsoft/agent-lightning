@@ -11,7 +11,7 @@ variables:
   PROJECT_NAME: AGL-Simulation-ALFWorld
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-alfworld-${variables.TRIAL}
-  DATA_DIR: agl_envs/simulation/task_data/alfworld
+  DATA_DIR: agl_envs/task_data/alfworld
 
 # ==========================
 # Main Config

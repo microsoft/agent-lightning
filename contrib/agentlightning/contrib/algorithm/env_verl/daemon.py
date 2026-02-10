@@ -20,14 +20,13 @@ from tensordict import TensorDict
 from verl import DataProto
 
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
-from agentlightning.adapter.triplet import TraceToTripletBase
-from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
 from agentlightning.reward import find_final_reward
 
-import contrib.agentlightning.contrib.algorithm.simulation_verl.core_empo2 as core_empo2
+from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
+import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 
 __all__ = [
     "AgentModeDaemon",
@@ -148,7 +147,7 @@ class EnvAgentModeDaemon:
         mode: Literal["v0", "v1"] = "v1",
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
-        adapter: TraceToTripletBase | None = None,
+        adapter: TracerTraceToTripletGroup | None = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -661,7 +660,6 @@ class EnvAgentModeDaemon:
         max_prompt_length: int,
         max_response_length: int,
         device: torch.device,
-        max_total_length: int = -1,
         use_final_reward_as_step_reward: bool = True,
         use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
@@ -749,11 +747,7 @@ class EnvAgentModeDaemon:
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
-
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
-
-                if max_total_length > -1 and len(prompt_ids) + len(response_ids) > max_total_length:
-                    continue
 
                 final_reward_list.append(sample_info["final_reward"])
                 step_reward_list.append(trace["step_reward"])

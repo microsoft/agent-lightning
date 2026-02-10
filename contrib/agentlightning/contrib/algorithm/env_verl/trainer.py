@@ -40,7 +40,7 @@ from agentlightning.store.base import LightningStore
 
 from .daemon import EnvAgentModeDaemon
   
-import contrib.agentlightning.contrib.algorithm.simulation_verl.core_empo2 as core_empo2
+import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 
 __all__ = [
     "EnvAgentLightningTrainer",
@@ -274,7 +274,6 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
-                    max_total_length=self.config.data.max_total_length,
                     device=gen_batch.batch["fake_ids"].device,
                     use_final_reward_as_step_reward=self.config.algorithm.use_final_reward_as_step_reward,
                     use_intrinsic_reward=self.config.algorithm.use_intrinsic_reward,
