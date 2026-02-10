@@ -13,31 +13,19 @@ Model name should follow the standard LiteLLM "provider/model" format.
 
 ## Usage
 ```python
-from agentlightning.utils.multi_provider_ai_client import MultiProviderClient
+from agentlightning.utils.multi_provider_client import MultiProviderClient
 client = MultiProviderClient()
 
-# Use with APO
-algo = agl.APO(
-    client,
-    gradient_model="gemini/gemini-2.0-flash",
-    apply_edit_model="groq/llama-3.3-70b-versatile",
-)
-
+```
 """
 
 from litellm import acompletion
 
 class MultiProviderClient:
-    """Async client that routes to different providers using LiteLLM.
-    Uses standard LiteLLM 'provider/model' format.
-    """
+    """Async client that routes to different providers using LiteLLM."""
     
     def __init__(self, **kwargs):
-        """
-        Initializes the client. LiteLLM automatically picks up API keys 
-        from environment variables (e.g., GOOGLE_API_KEY, GROQ_API_KEY).
-        """
-        pass
+        print("--- Multi Provider Client (LiteLLM) Initialized ---")
 
     @property
     def chat(self):
@@ -56,14 +44,4 @@ class MultiProviderClient:
             self.parent = parent
         
         async def create(self, model: str, **kwargs):
-            """
-            Passes the request directly to LiteLLM for routing.
-            
-            Args:
-            model: String in "provider/model_name" format.
-            **kwargs: Additional arguments for the completion call.
-            """
-            print("--- Multi Provider Client (LiteLLM) ---")
-            print(f"Routing to: {model}")
-
             return await acompletion(model=model, **kwargs)
