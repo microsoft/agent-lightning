@@ -737,9 +737,6 @@ class EnvAgentModeDaemon:
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
-        if empo2_train_mode == "off-policy":
-            old_input_ids_list: List[List[int]] = []
-            old_input_attention_mask_list: List[List[int]] = []
 
         # optional fields
         step_intrinsic_reward_list: List[float] = []
@@ -755,20 +752,11 @@ class EnvAgentModeDaemon:
                 message_list.append(trace["message"])
 
                 if empo2_train_mode == "off-policy":
-                    old_prompt_ids = copy.deepcopy(prompt_ids)
                     START_PATTERN_1 = self.tokenizer.encode(".\n\n<tip>")
                     START_PATTERN_2 = self.tokenizer.encode("<tip>")
                     END_PATTERN = self.tokenizer.encode("</tip>\n\n")
                     DOT_PATTERN = self.tokenizer.encode(".")
                     if core_empo2.is_sublist(START_PATTERN_2, prompt_ids):
-                        # count = sum(
-                        #     1 for i in range(len(prompt_ids) - len(START_PATTERN_2) + 1)
-                        #     if prompt_ids[i:i+len(START_PATTERN_2)] == START_PATTERN_2
-                        # )
-                        # if count >= 3:
-                        #     import pdb; pdb.set_trace()
-                        # self.tokenizer.decode(prompt_ids)
-                        # self.tokenizer.decode(core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN_1, START_PATTERN_2, END_PATTERN, DOT_PATTERN))
                         prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN_1, START_PATTERN_2, END_PATTERN, DOT_PATTERN)
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
@@ -799,14 +787,6 @@ class EnvAgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
-                if empo2_train_mode == "off-policy":
-                    old_prompt_ids = old_prompt_ids[:max_prompt_length]
-                    one_old_input_ids, one_old_input_attention_mask = get_left_padded_ids_and_attention_mask(
-                        old_prompt_ids, max_prompt_length, self.pad_token_id
-                    )
-                    old_input_ids_list.append(one_old_input_ids)
-                    old_input_attention_mask_list.append(one_old_input_attention_mask)
-
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
@@ -817,13 +797,6 @@ class EnvAgentModeDaemon:
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
         position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
-
-        if empo2_train_mode == "off-policy":
-            old_batch_input_ids = torch.LongTensor(old_input_ids_list).to(device)
-            old_batch_seq = torch.cat([old_batch_input_ids, batch_response_ids], dim=-1)
-            old_input_attention_mask = torch.LongTensor(old_input_attention_mask_list).to(device)
-            old_attention_mask = torch.cat([old_input_attention_mask, response_attention_mask], dim=-1)
-            old_position_ids = torch.clamp(torch.cumsum(old_attention_mask, dim=-1) - 1, min=0)
 
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
         if use_final_reward_as_step_reward:
@@ -865,13 +838,6 @@ class EnvAgentModeDaemon:
                 np.array(step_intrinsic_reward_list), dtype=torch.float32
             ).to(device)
             batch_dict["token_level_intrinsic_rewards"] = token_level_intrinsic_rewards.contiguous()
-
-        if empo2_train_mode == "off-policy":
-            batch_dict.update({
-                "old_input_ids": old_batch_seq,
-                "old_attention_mask": old_attention_mask,
-                "old_position_ids": old_position_ids,
-            })
 
         batch = TensorDict(batch_dict, batch_size=n_transition)
         data_proto = DataProto(batch=batch)

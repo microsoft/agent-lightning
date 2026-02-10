@@ -13,7 +13,7 @@ variables:
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: (all-off-policy-final-reward)empo2-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/0209/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/0211/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config

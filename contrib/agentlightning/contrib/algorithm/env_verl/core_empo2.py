@@ -94,10 +94,7 @@ def remove_pattern_ranges(
 
 def low_prob_token_masking(batch):
     response_mask = batch.batch["response_mask"]       # [N, T]
-    if "old_log_prob_off_policy" in batch.batch:
-        old_log_prob = batch.batch["old_log_prob_off_policy"]
-    else:
-        old_log_prob = batch.batch["old_log_probs"]        # [N, T]
+    old_log_prob = batch.batch["old_log_probs"]        # [N, T]
     # advantages = batch.batch["advantages"]             # [N, T]
 
     masked_old_log_prob = old_log_prob.masked_fill(response_mask == 0, 1e9)
