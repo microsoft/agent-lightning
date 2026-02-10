@@ -80,11 +80,11 @@ $VENV_PYTHON --version
 
 # Install WebShop Python dependencies using uv pip (uv doesn't install pip into venv)
 echo "== Installing WebShop server dependencies =="
-uv pip install --no-cache -r examples/vercel_ai_webshop/server/requirements.txt || {
+uv pip install --no-cache -r contrib/recipes/webshop/server/requirements.txt || {
     echo "ERROR: Failed to install server requirements"
     exit 1
 }
-uv pip install --no-cache -r examples/vercel_ai_webshop/agl/requirements.txt || {
+uv pip install --no-cache -r contrib/recipes/webshop/agl/requirements.txt || {
     echo "ERROR: Failed to install agl requirements"
     exit 1
 }
@@ -120,9 +120,9 @@ source .venv/bin/activate
 
 # Install Node.js dependencies for headless runner
 echo "== Installing Node.js dependencies =="
-cd examples/vercel_ai_webshop
+cd contrib/recipes/webshop
 pnpm install --frozen-lockfile || pnpm install
-cd ../..
+cd ../../..
 
 # Start Ray cluster
 echo "== Starting Ray cluster =="
@@ -137,7 +137,7 @@ sleep 5
 
 # Run training
 echo "== Starting WebShop training =="
-cd examples/vercel_ai_webshop
+cd contrib/recipes/webshop
 
 # Debug: list scripts directory
 echo "Contents of scripts/:"

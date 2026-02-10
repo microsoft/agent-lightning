@@ -19,6 +19,7 @@ N ?= 1
 AML_RG ?= <your-resource-group>
 AML_WS ?= <your-workspace>
 
+
 .DEFAULT_GOAL := help
 
 #==============================================================================
@@ -43,7 +44,7 @@ help: ## Show this help message
 	@echo "  make clean       Stop and remove volumes"
 	@echo ""
 	@echo "Azure ML:"
-	@echo "  make aml-train       Submit Qwen training job"
+	@echo "  make aml-train             Submit Qwen training job"
 	@echo "  make aml-compute     Create AML compute cluster"
 	@echo ""
 #==============================================================================

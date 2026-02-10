@@ -3,7 +3,7 @@
 # Azure ML command job for WebShop agent training with Qwen model.
 #
 # Submit from repo root:
-#   az ml job create -f examples/vercel_ai_webshop/aml/jobs/webshop-qwen.yml --stream \
+#   az ml job create -f contrib/recipes/webshop/aml/jobs/webshop-qwen.yml --stream \
 #     --set environment_variables.HF_TOKEN="$HF_TOKEN" \
 #     --set environment_variables.WANDB_API_KEY="$WANDB_API_KEY"
 
@@ -14,10 +14,10 @@ display_name: webshop-qwen
 experiment_name: webshop-training
 
 # Submit full repo so uv.lock and pyproject.toml are available
-code: ../../../..
+code: ../../../../..
 
 command: >-
-  bash examples/vercel_ai_webshop/aml/run_webshop_aml.sh
+  bash contrib/recipes/webshop/aml/run_webshop_aml.sh
   qwen
 
 compute: azureml:gpu-a100-cluster
@@ -39,6 +39,9 @@ environment_variables:
 
   # Enable vLLM V1 mode - build tools are installed at runtime
   VLLM_USE_V1: "1"
+
+  # Logging verbosity (use DEBUG to show span pipeline diagnostics)
+  LOG_LEVEL: INFO
 
   # Number of headless runners
   N_RUNNERS: "2"
