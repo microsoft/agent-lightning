@@ -87,10 +87,7 @@ def build_reward(kernel, base_reward_fn=None):
 
 def accuracy_reward(completions: list[str], references: list[str]) -> list[float]:
     """Simple accuracy reward: 1.0 for exact match, 0.0 otherwise."""
-    return [
-        1.0 if pred.strip().lower() == ref.strip().lower() else 0.0
-        for pred, ref in zip(completions, references)
-    ]
+    return [1.0 if pred.strip().lower() == ref.strip().lower() else 0.0 for pred, ref in zip(completions, references)]
 
 
 def demo_violation_detection(kernel):
@@ -190,10 +187,7 @@ class _StubKernel:
     """Minimal stub for demo when agent-os is not installed."""
 
     def check_action(self, action_type, params):
-        blocked = any(
-            kw in params.get("query", "").upper()
-            for kw in ("DROP", "DELETE", "TRUNCATE", "ALTER")
-        )
+        blocked = any(kw in params.get("query", "").upper() for kw in ("DROP", "DELETE", "TRUNCATE", "ALTER"))
         return type("Result", (), {"allowed": not blocked})()
 
 
