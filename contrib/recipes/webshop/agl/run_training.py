@@ -44,15 +44,14 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import agentlightning as agl
-from agentlightning import LitAgent
-from agentlightning.adapter.triplet import TracerTraceToTriplet
-from agentlightning.types import NamedResources, Rollout, RolloutRawResult
-
 from config import config_fast, config_qwen
 from generate_tasks import generate_tasks, load_human_instructions
 from tasks import load_sample_tasks, load_tasks_from_file
 
+import agentlightning as agl
+from agentlightning import LitAgent
+from agentlightning.adapter.triplet import TracerTraceToTriplet
+from agentlightning.types import NamedResources, Rollout, RolloutRawResult
 
 # Paths where WebShop human instruction data may be found
 WEBSHOP_DATA_PATHS = [
@@ -116,9 +115,7 @@ class ExternalRunnerAgent(LitAgent[Dict[str, Any]]):
     it indicates a configuration error (likely n_runners > 0 when it should be 0).
     """
 
-    def rollout(
-        self, task: Dict[str, Any], resources: NamedResources, rollout: Rollout
-    ) -> RolloutRawResult:
+    def rollout(self, task: Dict[str, Any], resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Raise an error - external runners handle actual execution.
 
         Raises:
@@ -130,13 +127,13 @@ class ExternalRunnerAgent(LitAgent[Dict[str, Any]]):
             "configured with n_runners=0 for external runner workflows."
         )
 
+
 logging.basicConfig(
     level=getattr(logging, os.environ.get("LOG_LEVEL", "DEBUG").upper(), logging.DEBUG),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     force=True,
 )
 logger = logging.getLogger(__name__)
-
 
 
 def train(
@@ -156,9 +153,7 @@ def train(
     # Configure adapter to match span names from telemetry.
     # IMPORTANT: Pass adapter to Trainer, not algorithm.set_adapter() - the Trainer would overwrite it.
     # Match both LiteLLM spans (openai.chat.completion) and Vercel AI SDK spans.
-    adapter = TracerTraceToTriplet(
-        llm_call_match=r"(openai\.chat\.completion|" + VERCEL_AI_SDK_LLM_CALL_PATTERN + r")"
-    )
+    adapter = TracerTraceToTriplet(llm_call_match=r"(openai\.chat\.completion|" + VERCEL_AI_SDK_LLM_CALL_PATTERN + r")")
 
     # n_runners=0 means external runners will execute rollouts.
     # The Store server will be started and accept connections from:
@@ -202,9 +197,7 @@ def train(
 
 def main() -> None:
     """Parse arguments and run training."""
-    parser = argparse.ArgumentParser(
-        description="Train WebShop agent with Agent Lightning (external runner mode)"
-    )
+    parser = argparse.ArgumentParser(description="Train WebShop agent with Agent Lightning (external runner mode)")
 
     parser.add_argument(
         "config",

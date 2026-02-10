@@ -61,10 +61,7 @@ def load_tasks_from_file(path: Path) -> List[Dict[str, Any]]:
             return json.load(f)
     elif path.suffix == ".parquet":
         if pd is None:
-            raise ImportError(
-                "pandas is required to load Parquet files. "
-                "Install with: pip install pandas pyarrow"
-            )
+            raise ImportError("pandas is required to load Parquet files. " "Install with: pip install pandas pyarrow")
         df = pd.read_parquet(path)  # type: ignore[reportUnknownMemberType]
         return df.to_dict(orient="records")  # type: ignore[return-value]
     else:

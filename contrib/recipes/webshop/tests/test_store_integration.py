@@ -108,8 +108,15 @@ async def test_full_flow_rollout_to_triplet(store, integration_adapter):
 
     # 6. Verify triplet has token IDs
     llm_triplet = triplets[0]
-    assert llm_triplet.prompt.get("token_ids") == [1, 2, 3], f"Expected prompt token_ids [1,2,3], got {llm_triplet.prompt.get('token_ids')}"
-    assert llm_triplet.response.get("token_ids") == [4, 5], f"Expected response token_ids [4,5], got {llm_triplet.response.get('token_ids')}"
+    assert llm_triplet.prompt.get("token_ids") == [
+        1,
+        2,
+        3,
+    ], f"Expected prompt token_ids [1,2,3], got {llm_triplet.prompt.get('token_ids')}"
+    assert llm_triplet.response.get("token_ids") == [
+        4,
+        5,
+    ], f"Expected response token_ids [4,5], got {llm_triplet.response.get('token_ids')}"
 
 
 @pytest.mark.asyncio

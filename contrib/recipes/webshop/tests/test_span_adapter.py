@@ -65,9 +65,7 @@ class TestVercelAiSdkSpanMatching:
 class TestTokenIdExtraction:
     """Tests for token ID extraction from span attributes."""
 
-    def test_extracts_token_ids_when_present(
-        self, adapter: TracerTraceToTriplet, make_vercel_ai_span
-    ):
+    def test_extracts_token_ids_when_present(self, adapter: TracerTraceToTriplet, make_vercel_ai_span):
         """Verify token IDs are extracted when present in span attributes."""
         prompt_ids = [1, 2, 3, 4, 5]
         response_ids = [6, 7, 8, 9, 10]
@@ -84,9 +82,7 @@ class TestTokenIdExtraction:
         assert triplets[0].prompt["token_ids"] == prompt_ids
         assert triplets[0].response["token_ids"] == response_ids
 
-    def test_empty_token_ids_when_not_present(
-        self, adapter: TracerTraceToTriplet, make_vercel_ai_span
-    ):
+    def test_empty_token_ids_when_not_present(self, adapter: TracerTraceToTriplet, make_vercel_ai_span):
         """Verify triplets have empty token_ids when not present in spans.
 
         This is the current production behavior - Vercel AI SDK doesn't emit token IDs.
@@ -105,9 +101,7 @@ class TestTokenIdExtraction:
         assert triplets[0].prompt.get("token_ids", []) == []
         assert triplets[0].response.get("token_ids", []) == []
 
-    def test_raw_content_preserved_even_without_token_ids(
-        self, adapter: TracerTraceToTriplet, make_vercel_ai_span
-    ):
+    def test_raw_content_preserved_even_without_token_ids(self, adapter: TracerTraceToTriplet, make_vercel_ai_span):
         """Verify raw content is preserved in triplets even without token IDs."""
         span = make_vercel_ai_span(
             prompt_text="Test prompt content",
@@ -225,9 +219,7 @@ class TestEdgeCases:
 
         assert len(triplets) == 0
 
-    def test_span_with_string_token_ids(
-        self, adapter: TracerTraceToTriplet, make_span
-    ):
+    def test_span_with_string_token_ids(self, adapter: TracerTraceToTriplet, make_span):
         """Verify adapter handles spans with string token ID attributes.
 
         This simulates a common edge case where token IDs might be serialized
