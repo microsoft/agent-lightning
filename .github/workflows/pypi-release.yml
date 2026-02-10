@@ -16,7 +16,7 @@ jobs:
       tag_version: ${{ steps.get_tag.outputs.tag_version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get version from pyproject.toml
         id: get_version
@@ -48,7 +48,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v6

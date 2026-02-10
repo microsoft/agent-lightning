@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import copy
 
 from autogen_core.models import UserMessage
@@ -118,7 +120,6 @@ def add_chat_tips(prompt, tips):
     new_prompt = copy.deepcopy(prompt)
     new_prompt[-1].content += f"\n\n<tip> {tips}\n</tip>\n\n"
     return new_prompt
-
 
 def add_chat_all_tips(prompt, tip_list):
     new_prompt = copy.deepcopy(prompt)

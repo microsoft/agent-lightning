@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from agentlightning.types import Span, Triplet
 from agentlightning.adapter.triplet import TracerTraceToTriplet
+from agentlightning.types import Span, Triplet
+
 
 class TracerTraceToTripletGroup(TracerTraceToTriplet):
     """Convert tracer-emitted spans into triplet trajectories.

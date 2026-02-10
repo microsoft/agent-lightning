@@ -126,7 +126,7 @@ def _to_native(obj: Any) -> Any:
     return obj
 
 
-class SimulationAgentModeDaemon:
+class EnvAgentModeDaemon:
     """
     AgentModeDaemon using the AgentLightningServer SDK.
 
@@ -172,8 +172,8 @@ class SimulationAgentModeDaemon:
                 )
             else:
                 # Reuse the existing LLM proxy (probably configured by user)
-                self.llm_proxy = llm_proxy
-                
+                self.llm_proxy = llm_proxy                
+
             # if adapter is None:
             #     self.adapter = TracerTraceToTripletGroup()
             # else:

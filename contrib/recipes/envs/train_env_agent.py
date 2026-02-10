@@ -1,3 +1,4 @@
+# Copyright (c) Microsoft. All rights reserved.
 import os
 import re
 import time
@@ -8,9 +9,8 @@ from omegaconf import OmegaConf
 
 from agentlightning import Trainer
 from agentlightning.algorithm.verl import VERL
-from contrib.agentlightning.contrib.algorithm.simulation_verl.trainer import SimulationAgentLightningTrainer
-from contrib.agentlightning.contrib.algorithm.simulation_verl.daemon import SimulationAgentModeDaemon
-
+from contrib.agentlightning.contrib.algorithm.env_verl.daemon import EnvAgentModeDaemon
+from contrib.agentlightning.contrib.algorithm.env_verl.trainer import EnvAgentLightningTrainer
 
 def run_cmd(cmd):
     """Execute a shell command and print its output"""
@@ -76,6 +76,7 @@ if __name__ == "__main__":
 
     env_prefix = re.sub(r"\d+$", "", args.env)
     trainer_config_path = f"config_verl/{env_prefix}/{args.algorithm}.yaml"
+    
     if "gigpo" in args.algorithm:
         agent_config.log_env_obs = True
     rl_training_config = get_config(trainer_config_path)
@@ -107,15 +108,15 @@ if __name__ == "__main__":
 
         agent = EMPO2Agent(agent_config)
     else:
-        from contrib.agentlightning.contrib.agent.simulation_agent import SimulationAgent
-        agent = SimulationAgent(agent_config)
+        from contrib.agentlightning.contrib.agent.simulation_agent import EnvAgent
+        agent = EnvAgent(agent_config)
 
     # Initialize trainer and start training
     trainer = Trainer(
         algorithm=VERL(
             config=rl_training_config,
-            trainer_cls=SimulationAgentLightningTrainer,
-            daemon_cls=SimulationAgentModeDaemon,
+            trainer_cls=EnvAgentLightningTrainer,
+            daemon_cls=EnvAgentModeDaemon,
         ),
         n_workers=args.n_workers,
     )

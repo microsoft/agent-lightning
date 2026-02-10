@@ -1,7 +1,5 @@
 # Command Line Interface
 
-<!-- TODO: This document should be auto-generated. -->
-
 !!! warning
 
     This document is a work in progress and might not be updated with the latest changes.
@@ -65,14 +63,39 @@ Agent-lightning's LightningStore CLI. Use it to start an independent LightningSt
 Currently the store data are stored in memory and will be lost when the server is stopped.
 
 ```text
-usage: agl store [-h] [--port PORT]
+usage: agl store [-h] [--host HOST] [--port PORT] [--cors-origin CORS_ORIGINS] [--log-level {DEBUG,INFO,WARNING,ERROR}] [--tracker {prometheus,console} [{prometheus,console} ...]] [--n-workers N_WORKERS] [--backend {memory,mongo}]
+                 [--mongo-uri MONGO_URI]
 
 Run a LightningStore server
 
 options:
-  -h, --help   show this help message and exit
-  --port PORT  Port to run the server on
+  -h, --help            show this help message and exit
+  --host HOST           Host to bind the server to
+  --port PORT           Port to run the server on
+  --cors-origin CORS_ORIGINS
+                        Allowed CORS origin. Repeat for multiple origins. Use '*' to allow all origins.
+  --log-level {DEBUG,INFO,WARNING,ERROR}
+                        Configure the logging level for the store.
+  --tracker {prometheus,console} [{prometheus,console} ...]
+                        Enable metrics tracking. Repeat for multiple trackers.
+  --n-workers N_WORKERS
+                        Number of workers to run in the server. When it's greater than 1, the server will be run using `mp` launch mode. Only applicable for zero-copy stores such as MongoDB backend.
+  --backend {memory,mongo}
+                        Backend to use for the store.
+  --mongo-uri MONGO_URI
+                        MongoDB URI to use for the store. Applicable only if --backend is 'mongo'.
 ```
+
+!!! tip
+
+    After launching the store via CLI, you can tell the [`Trainer`][agentlightning.Trainer] to use the store by passing the store address to the trainer.
+
+    ```python
+    store_client = agl.LightningStoreClient("http://localhost:4747")
+    trainer = agl.Trainer(store=store_client, ...)
+    ```
+
+    See [using external store][debug-with-external-store] for more details.
 
 ## agl prometheus
 
@@ -92,19 +115,4 @@ options:
   --log-level {DEBUG,INFO,WARNING,ERROR}
                         Configure the logging level for the metrics server.
   --access-log          Enable uvicorn access logs. Disabled by default to reduce noise.
-```
-
-## agl agentops
-
-Start a mock AgentOps server to bypass the online service of AgentOps.
-
-```text
-usage: agl agentops [-h] [--daemon] [--port PORT]
-
-Start AgentOps server
-
-options:
-  -h, --help   show this help message and exit
-  --daemon     Run server as a daemon
-  --port PORT  Port to run the server on
 ```

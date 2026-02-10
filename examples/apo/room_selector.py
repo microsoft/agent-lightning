@@ -215,7 +215,7 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
                 )
             )
 
-        # Update the messages for hte next call
+        # Update the messages for the next call
         messages.append(
             ChatCompletionAssistantMessageParam(
                 role="assistant",

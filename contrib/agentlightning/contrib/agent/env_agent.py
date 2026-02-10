@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from __future__ import annotations
 
 import logging
@@ -5,22 +7,20 @@ import os
 from typing import Any, Dict
 
 import numpy as np
+from add_instruction import add_chat_instruction, add_single_instruction
+from agl_envs import make_env_manager
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes
-
-from agl_envs.simulation import make_env_manager
-from contrib.recipes.simulation.prompt_builder import HistoryPromptBuilder
-
-from add_instruction import add_chat_instruction, add_single_instruction
+from contrib.recipes.envs.prompt_builder import HistoryPromptBuilder
 
 logger = configure_logger(name=__name__, level=logging.ERROR)
 
 
-class SimulationAgent(LitAgent):
+class EnvAgent(LitAgent):
     def __init__(self, config, trained_agents: str | None = None) -> None:
         super().__init__(trained_agents=trained_agents)
         self.config = config
@@ -42,7 +42,7 @@ class SimulationAgent(LitAgent):
         )
 
         return AssistantAgent(
-            name="simulation",
+            name="envs",
             model_client=model_client,
         )
 
@@ -86,7 +86,9 @@ class SimulationAgent(LitAgent):
 
         try:
             # Setup environment
-            prompt_builder = HistoryPromptBuilder(max_history=self.config.captioner.max_history, prompt_type=self.config.captioner.prompt_type)
+            prompt_builder = HistoryPromptBuilder(
+                max_history=self.config.captioner.max_history, prompt_type=self.config.captioner.prompt_type
+            )
 
             self.env = make_env_manager(self.config.env_name, task, self.config)
             env_obs, infos, available_actions_hint = self.env.reset()
@@ -117,8 +119,12 @@ class SimulationAgent(LitAgent):
                 if self.config.log_env_obs:
                     emit_object(env_obs, attributes=make_link_attributes({"step_count": str(step_count)}))
 
-                env_obs, executed_action,is_valid, step_reward, terminated, truncated, info, available_actions_hint = self.env.step(
-                    output, use_reasoning=self.config.captioner.type == "cot"
+                env_obs, executed_action, is_valid, step_reward, terminated, truncated, info, available_actions_hint = (
+                    self.env.step(
+                        output,
+                        use_reasoning=self.config.captioner.type == "cot",
+                        use_success_rate=self.config.use_success_rate,
+                    )
                 )
 
                 prompt_builder.update_step_count()

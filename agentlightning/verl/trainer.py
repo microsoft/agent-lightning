@@ -255,9 +255,18 @@ class AgentLightningTrainer(RayPPOTrainer):
                 )
                 self.agent_mode_daemon.run_until_all_finished()
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
-                    max_prompt_length=self.config.data.max_prompt_length,
-                    max_response_length=self.config.data.max_response_length,
+                    max_prompt_length=(
+                        self.config.agentlightning.trace_aggregator.trajectory_max_prompt_length
+                        if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
+                        else self.config.data.max_prompt_length
+                    ),
+                    max_response_length=(
+                        self.config.agentlightning.trace_aggregator.trajectory_max_response_length
+                        if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
+                        else self.config.data.max_response_length
+                    ),
                     device=gen_batch.batch["fake_ids"].device,
+                    global_steps=self.global_steps,
                 )
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
@@ -282,7 +291,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             # uid is used for algorithm like GRPO, should be aligned to data id
             batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
 
-            batch.batch["response_mask"] = compute_response_mask(batch)
+            if "response_mask" not in batch.batch:
+                batch.batch["response_mask"] = compute_response_mask(batch)
 
             # compute global_valid tokens
             batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
@@ -358,7 +368,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
             metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_before_processing"))
 
-            # after advantages are assinged, we begin to drop (1) long prompt (2) floor to ppo minisize
+            # after advantages are assigned, we begin to drop (1) long prompt (2) floor to ppo minisize
             keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
             metrics["training/n_triplets_prompt_too_long"] = (
                 batch.batch["is_drop_mask"].shape[0] - keep_indices.shape[0]
@@ -466,6 +476,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             adapter=self.adapter,
             processor=self.processor,  # For Qwen2-VL mrope position_ids
             image_base_dir=getattr(self.config.data, "image_base_dir", None),
+            trace_aggregator=self.config.agentlightning.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 

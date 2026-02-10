@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from typing import Optional
 
 from autogen_core.models import AssistantMessage, UserMessage
