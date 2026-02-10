@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 /**
  * Sample WebShop Tasks
  *

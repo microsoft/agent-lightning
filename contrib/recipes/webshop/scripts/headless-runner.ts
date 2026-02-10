@@ -1,4 +1,5 @@
-#!/usr/bin/env npx tsx
+// Copyright (c) Microsoft. All rights reserved.
+
 /**
  * Headless WebShop Rollout Runner
  *

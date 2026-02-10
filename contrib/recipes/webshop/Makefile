@@ -95,6 +95,8 @@ aml-compute: ## Create Azure ML compute cluster
 aml-train: ## Submit Qwen training job
 	@echo "Submitting Qwen training job to Azure ML..."
 	@echo "Note: Requires HF_TOKEN and WANDB_API_KEY environment variables"
+	@cp .amlignore ../../../.amlignore && \
+	trap 'rm -f ../../../.amlignore' EXIT && \
 	az ml job create -f aml/jobs/webshop-qwen.yml --stream \
 		--set environment_variables.HF_TOKEN="$$HF_TOKEN" \
 		--set environment_variables.WANDB_API_KEY="$$WANDB_API_KEY" \

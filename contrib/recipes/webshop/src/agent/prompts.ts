@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 /**
  * System prompts for WebShop agents.
  *

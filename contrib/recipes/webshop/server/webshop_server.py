@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 WebShop Flask Server
 
