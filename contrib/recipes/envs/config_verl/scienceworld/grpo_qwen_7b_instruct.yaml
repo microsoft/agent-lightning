@@ -32,8 +32,9 @@ data:
   val_files: ${variables.DATA_DIR}/test.parquet
   train_batch_size: 16
   val_batch_size: 80
-  max_prompt_length: 8192
+  max_prompt_length: 16384
   max_response_length: 32
+  max_train_length: 8192
   truncation: error
   return_raw_chat: true
 

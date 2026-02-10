@@ -660,6 +660,7 @@ class EnvAgentModeDaemon:
         max_prompt_length: int,
         max_response_length: int,
         device: torch.device,
+        max_train_length: int = -1,
         use_final_reward_as_step_reward: bool = True,
         use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
@@ -746,18 +747,19 @@ class EnvAgentModeDaemon:
             for turn_index, trace in enumerate(sample_info["trace_list"]):
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
+                if max_train_length > -1 and len(prompt_ids) + len(response_ids) > max_train_length:
+                    continue
+
                 final_reward_list.append(sample_info["final_reward"])
                 step_reward_list.append(trace["step_reward"])
                 step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
                 message_list.append(trace["message"])
 
                 if empo2_train_mode == "off-policy":
-                    START_PATTERN_1 = self.tokenizer.encode(".\n\n<tip>")
-                    START_PATTERN_2 = self.tokenizer.encode("<tip>")
+                    START_PATTERN = self.tokenizer.encode("<tip>")
                     END_PATTERN = self.tokenizer.encode("</tip>\n\n")
-                    DOT_PATTERN = self.tokenizer.encode(".")
-                    if core_empo2.is_sublist(START_PATTERN_2, prompt_ids):
-                        prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN_1, START_PATTERN_2, END_PATTERN, DOT_PATTERN)
+                    if core_empo2.is_sublist(START_PATTERN, prompt_ids):
+                        prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN, END_PATTERN)
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
                 if len(prompt_ids) > max_prompt_length:
