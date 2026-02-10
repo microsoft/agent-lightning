@@ -15,7 +15,6 @@ import {
   type Tracer,
   type Context,
 } from '@opentelemetry/api';
-import { get_encoding, type Tiktoken } from '@dqbd/tiktoken';
 import { Resource } from '@opentelemetry/resources';
 import {
   BasicTracerProvider,
@@ -111,19 +110,6 @@ export function createRolloutTracer(config: TracerConfig): {
 }
 
 /**
- * Create AI SDK telemetry settings with custom tracer.
- * This object can be passed to AI SDK's experimental_telemetry option.
- */
-export function makeAiSdkTelemetry(tracer: Tracer) {
-  return {
-    isEnabled: true,
-    tracer,
-    recordInputs: true,
-    recordOutputs: true,
-  };
-}
-
-/**
  * Get OTLP endpoint from environment variables.
  * If AGENT_LIGHTNING_OTLP_ENDPOINT is not set, derives it from AGENT_LIGHTNING_STORE_URL.
  */
@@ -148,74 +134,5 @@ export function emitReward(tracer: Tracer, reward: number): void {
   const span = tracer.startSpan('reward', { kind: SpanKind.INTERNAL });
   span.setAttribute('agentlightning.reward.0.name', 'primary');
   span.setAttribute('agentlightning.reward.0.value', reward);
-  span.end();
-}
-
-// Lazy-loaded tokenizer instance
-let _encoder: Tiktoken | null = null;
-
-/**
- * Get or create the tiktoken encoder.
- * Uses cl100k_base encoding (GPT-4/3.5 compatible).
- */
-function getEncoder(): Tiktoken {
-  if (!_encoder) {
-    _encoder = get_encoding('cl100k_base');
-  }
-  return _encoder;
-}
-
-/**
- * Tokenize a text string into token IDs.
- *
- * Uses tiktoken's cl100k_base encoding which is compatible with GPT-4 and GPT-3.5.
- * Note: For Qwen models, the actual tokenizer vocabulary differs, but this
- * provides a reasonable approximation for training flow validation.
- *
- * @param text - The text to tokenize
- * @returns Array of token IDs
- */
-export function tokenize(text: string): number[] {
-  const encoder = getEncoder();
-  return Array.from(encoder.encode(text));
-}
-
-/**
- * Emit an LLM call span with token IDs for training.
- *
- * This creates a span that the TracerTraceToTriplet adapter can convert
- * into a Triplet with proper token IDs for training batches.
- *
- * @param tracer - OpenTelemetry tracer
- * @param promptText - The prompt text sent to the LLM
- * @param responseText - The response text from the LLM
- * @param modelId - Optional model ID
- */
-export function emitLlmCallSpan(
-  tracer: Tracer,
-  promptText: string,
-  responseText: string,
-  modelId?: string
-): void {
-  const span = tracer.startSpan('ai.generateText', { kind: SpanKind.INTERNAL });
-
-  // Tokenize prompt and response
-  const promptTokenIds = tokenize(promptText);
-  const responseTokenIds = tokenize(responseText);
-
-  // Set token ID attributes that TracerTraceToTriplet looks for
-  span.setAttribute('prompt_token_ids', promptTokenIds);
-  span.setAttribute('response_token_ids', responseTokenIds);
-
-  // Also set raw content for reference
-  span.setAttribute('gen_ai.prompt.0.role', 'user');
-  span.setAttribute('gen_ai.prompt.0.content', promptText);
-  span.setAttribute('gen_ai.completion.0.role', 'assistant');
-  span.setAttribute('gen_ai.completion.0.content', responseText);
-
-  if (modelId) {
-    span.setAttribute('gen_ai.request.model', modelId);
-  }
-
   span.end();
 }

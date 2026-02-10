@@ -26,7 +26,6 @@ import {
   createRolloutTracer,
   getOtlpEndpoint,
   emitReward,
-  emitLlmCallSpan,
   getProxyLLMBaseUrl,
   getMainLLM,
   isProxyLLM,
@@ -223,12 +222,6 @@ async function runRollout(
           system: WEBSHOP_SYSTEM_PROMPT,
           prompt: stepPrompt,
         });
-
-        // Emit LLM call span with token IDs for training
-        if (tracer) {
-          const fullPrompt = `${WEBSHOP_SYSTEM_PROMPT}\n\n${stepPrompt}`;
-          emitLlmCallSpan(tracer, fullPrompt, response.text, modelId);
-        }
 
         // Parse action from response
         action = parseAction(response.text);
