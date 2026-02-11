@@ -1,0 +1,49 @@
+# Copyright (c) Microsoft. All rights reserved.
+
+# Azure ML command job for WebShop agent training with Qwen model.
+#
+# Submit from repo root:
+#   az ml job create -f contrib/recipes/webshop/aml/jobs/webshop-qwen.yml --stream \
+#     --set environment_variables.HF_TOKEN="$HF_TOKEN" \
+#     --set environment_variables.WANDB_API_KEY="$WANDB_API_KEY"
+
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+
+display_name: webshop-qwen
+experiment_name: webshop-training
+
+# Submit full repo so uv.lock and pyproject.toml are available
+code: ../../../../..
+
+command: >-
+  bash contrib/recipes/webshop/aml/run_webshop_aml.sh
+  qwen
+
+compute: azureml:gpu-a100-cluster
+
+resources:
+  instance_count: 1
+
+# Image-only environment to avoid conda overlay issues
+environment:
+  image: mcr.microsoft.com/azureml/openmpi5.0-cuda12.6-ubuntu24.04:latest
+
+environment_variables:
+  # Dependency lane: legacy|stable|latest (matches upstream CI concept)
+  SETUP_SCRIPT: stable
+
+  # Debug and performance
+  NCCL_DEBUG: INFO
+  PYTHONUNBUFFERED: "1"
+
+  # Enable vLLM V1 mode - build tools are installed at runtime
+  VLLM_USE_V1: "1"
+
+  # Logging verbosity (use DEBUG to show span pipeline diagnostics)
+  LOG_LEVEL: INFO
+
+  # Number of headless runners
+  N_RUNNERS: "2"
+
+  # HF_TOKEN and WANDB_API_KEY should be passed via --set at submit time
