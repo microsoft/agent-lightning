@@ -85,7 +85,7 @@ We follow the single-mode prompt for ALFWorld from [verl-agent](https://github.c
 ### GRPO
 
 ```bash
-# Run alfworld 
+# Run alfworld
 python3 train_env_agent.py --algorithm grpo_qwen_1.5b_instruct --env alfworld
 
 # Run scienceworld single task task_num 0
@@ -95,9 +95,13 @@ python3 train_env_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworl
 python3 train_env_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num -1
 ```
 
-### EMPO2
+### EMPO² Integration
+
+We integrate **EMPO²** (*Memory-Augmented LLM Agent via Online Self-Distillation*, ICLR 2026) [[paper]](https://openreview.net/forum?id=UOzxviKVFO) into our framework. EMPO² leverages a memory-augmented mechanism combined with online self-distillation to enhance LLM agent performance. In our experiments, EMPO² consistently outperforms GRPO, demonstrating stronger learning efficiency.
 
 ```bash
 # Run scienceworld single task task_num 25
 python3 train_env_agent.py --algorithm empo2_qwen_7b_instruct --env scienceworld2 --task_num 25
 ```
+
+![agl_empo2_25](./assets/agl_empo2_25.png)
