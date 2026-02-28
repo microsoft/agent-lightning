@@ -46,7 +46,7 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         return cls()
 
     def server_info(self) -> ServerInfoRes:
-        return ServerInfoRes(min_required_weave_python_version="0.52.22")
+        return ServerInfoRes(min_required_weave_python_version="0.52.29")
 
     def ensure_project_exists(self, entity: str, project: str) -> tsi.EnsureProjectExistsRes:
         return tsi.EnsureProjectExistsRes(project_name=project)
@@ -303,8 +303,8 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
     # --- OTEL API ---
 
-    def otel_export(self, req: tsi.OtelExportReq) -> tsi.OtelExportRes:
-        return tsi.OtelExportRes()
+    def otel_export(self, req: tsi.OTelExportReq) -> tsi.OTelExportRes:
+        return tsi.OTelExportRes()
 
     # ==========================================
     # Object Interface (V2 APIs)
@@ -363,6 +363,9 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
     def evaluation_delete(self, req: tsi.EvaluationDeleteReq) -> tsi.EvaluationDeleteRes:
         return tsi.EvaluationDeleteRes(num_deleted=0)
+
+    def eval_results_query(self, req: tsi.EvalResultsQueryReq) -> tsi.EvalResultsQueryRes:
+        return tsi.EvalResultsQueryRes(rows=[], total_rows=0)
 
     # --- Models ---
     def model_create(self, req: tsi.ModelCreateReq) -> tsi.ModelCreateRes:
@@ -433,6 +436,12 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         raise NotImplementedError()
 
     def annotation_queue_read(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_delete(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_update(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError()
 
     def annotation_queue_add_calls(self, *args: Any, **kwargs: Any) -> Any:
