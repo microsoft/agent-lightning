@@ -6,6 +6,10 @@ meta-llama/**
 requirements-freeze*.txt
 /playground
 
+# Local caches
+.cache_uv/
+.cache_xdg/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
