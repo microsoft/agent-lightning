@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import os
 import re
 from datetime import datetime, timedelta
