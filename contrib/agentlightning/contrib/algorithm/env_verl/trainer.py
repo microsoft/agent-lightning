@@ -105,44 +105,35 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
     valid_adv = torch.masked_select(advantages, response_mask)
     valid_returns = torch.masked_select(returns, response_mask)
 
-    def _safe_mean(t: torch.Tensor) -> float:
-        return torch.mean(t).detach().item() if t.numel() > 0 else float("nan")
-
-    def _safe_max(t: torch.Tensor) -> float:
-        return torch.max(t).detach().item() if t.numel() > 0 else float("nan")
-
-    def _safe_min(t: torch.Tensor) -> float:
-        return torch.min(t).detach().item() if t.numel() > 0 else float("nan")
-
     if use_critic:
         values = batch.batch["values"]
         valid_values = torch.masked_select(values, response_mask)
-        return_diff_var = torch.var(valid_returns - valid_values) if valid_returns.numel() > 0 else torch.tensor(0.0)
-        return_var = torch.var(valid_returns) if valid_returns.numel() > 0 else torch.tensor(0.0)
+        return_diff_var = torch.var(valid_returns - valid_values)
+        return_var = torch.var(valid_returns)
 
     metrics = {
         # score
-        "critic/score/mean" + suffix: _safe_mean(sequence_score),
-        "critic/score/max" + suffix: _safe_max(sequence_score),
-        "critic/score/min" + suffix: _safe_min(sequence_score),
+        "critic/score/mean" + suffix: torch.mean(sequence_score).detach().item(),
+        "critic/score/max" + suffix: torch.max(sequence_score).detach().item(),
+        "critic/score/min" + suffix: torch.min(sequence_score).detach().item(),
         # reward
-        "critic/rewards/mean" + suffix: _safe_mean(sequence_reward),
-        "critic/rewards/max" + suffix: _safe_max(sequence_reward),
-        "critic/rewards/min" + suffix: _safe_min(sequence_reward),
+        "critic/rewards/mean" + suffix: torch.mean(sequence_reward).detach().item(),
+        "critic/rewards/max" + suffix: torch.max(sequence_reward).detach().item(),
+        "critic/rewards/min" + suffix: torch.min(sequence_reward).detach().item(),
         # adv
-        "critic/advantages/mean" + suffix: _safe_mean(valid_adv),
-        "critic/advantages/max" + suffix: _safe_max(valid_adv),
-        "critic/advantages/min" + suffix: _safe_min(valid_adv),
+        "critic/advantages/mean" + suffix: torch.mean(valid_adv).detach().item(),
+        "critic/advantages/max" + suffix: torch.max(valid_adv).detach().item(),
+        "critic/advantages/min" + suffix: torch.min(valid_adv).detach().item(),
         # returns
-        "critic/returns/mean" + suffix: _safe_mean(valid_returns),
-        "critic/returns/max" + suffix: _safe_max(valid_returns),
-        "critic/returns/min" + suffix: _safe_min(valid_returns),
+        "critic/returns/mean" + suffix: torch.mean(valid_returns).detach().item(),
+        "critic/returns/max" + suffix: torch.max(valid_returns).detach().item(),
+        "critic/returns/min" + suffix: torch.min(valid_returns).detach().item(),
         **(
             {
                 # values
-                "critic/values/mean" + suffix: _safe_mean(valid_values),
-                "critic/values/max" + suffix: _safe_max(valid_values),
-                "critic/values/min" + suffix: _safe_min(valid_values),
+                "critic/values/mean" + suffix: torch.mean(valid_values).detach().item(),
+                "critic/values/max" + suffix: torch.max(valid_values).detach().item(),
+                "critic/values/min" + suffix: torch.min(valid_values).detach().item(),
                 # vf explained var
                 "critic/vf_explained_var" + suffix: (1.0 - return_diff_var / (return_var + 1e-5)).detach().item(),
             }
@@ -150,17 +141,17 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
             else {}
         ),
         # response length
-        "response_length/mean" + suffix: _safe_mean(response_length),
-        "response_length/max" + suffix: _safe_max(response_length),
-        "response_length/min" + suffix: _safe_min(response_length),
+        "response_length/mean" + suffix: torch.mean(response_length).detach().item(),
+        "response_length/max" + suffix: torch.max(response_length).detach().item(),
+        "response_length/min" + suffix: torch.min(response_length).detach().item(),
         "response_length/clip_ratio"
-        + suffix: _safe_mean(torch.eq(response_length, max_response_length).float()),
+        + suffix: torch.mean(torch.eq(response_length, max_response_length).float()).detach().item(),
         # prompt length
-        "prompt_length/mean" + suffix: _safe_mean(prompt_length),
-        "prompt_length/max" + suffix: _safe_max(prompt_length),
-        "prompt_length/min" + suffix: _safe_min(prompt_length),
+        "prompt_length/mean" + suffix: torch.mean(prompt_length).detach().item(),
+        "prompt_length/max" + suffix: torch.max(prompt_length).detach().item(),
+        "prompt_length/min" + suffix: torch.min(prompt_length).detach().item(),
         "prompt_length/clip_ratio"
-        + suffix: _safe_mean(torch.eq(prompt_length, max_prompt_length).float()),
+        + suffix: torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
     }
     return metrics
 
