@@ -1,0 +1,43 @@
+Metadata-Version: 2.4
+Name: hatch-fancy-pypi-readme
+Version: 25.1.0
+Summary: Fancy PyPI READMEs with Hatch
+Project-URL: Documentation, https://github.com/hynek/hatch-fancy-pypi-readme#readme
+Project-URL: Changelog, https://github.com/hynek/hatch-fancy-pypi-readme/blob/main/CHANGELOG.md
+Project-URL: Source Code, https://github.com/hynek/hatch-fancy-pypi-readme
+Project-URL: Funding, https://github.com/sponsors/hynek
+Author-email: Hynek Schlawack <hs@ox.cx>
+License-Expression: MIT
+License-File: LICENSE.txt
+Keywords: documentation,hatch,pypi,readme
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Framework :: Hatch
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Build Tools
+Requires-Python: >=3.8
+Requires-Dist: hatchling
+Requires-Dist: tomli; python_version < '3.11'
+Provides-Extra: dev
+Requires-Dist: build; extra == 'dev'
+Requires-Dist: mypy; extra == 'dev'
+Requires-Dist: pytest; extra == 'dev'
+Requires-Dist: wheel; extra == 'dev'
+Provides-Extra: tests
+Requires-Dist: build; extra == 'tests'
+Requires-Dist: pytest; extra == 'tests'
+Requires-Dist: wheel; extra == 'tests'
+Description-Content-Type: text/markdown
+
+# Your ✨Fancy✨ Project Deserves a ✨Fancy✨ PyPI Readme!
+
+*hatch-fancy-pypi-readme* is an MIT-licensed metadata plugin for [Hatch](https://hatch.pypa.io/) by [Hynek Schlawack](https://hynek.me/).
+
+Its purpose is to help you to have fancy PyPI readmes – unlike *this* one you’re looking at right now.
+
+Please check out the [documentation](https://github.com/hynek/hatch-fancy-pypi-readme#readme) to see what *hatch-fancy-pypi-readme* can do for you and your projects!

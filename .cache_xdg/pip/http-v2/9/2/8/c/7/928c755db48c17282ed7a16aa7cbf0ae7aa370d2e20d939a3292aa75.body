@@ -1,0 +1,79 @@
+Metadata-Version: 2.4
+Name: hatchling
+Version: 1.29.0
+Summary: Modern, extensible Python build backend
+Project-URL: Homepage, https://hatch.pypa.io/latest/
+Project-URL: Sponsor, https://github.com/sponsors/ofek
+Project-URL: History, https://hatch.pypa.io/dev/history/hatchling/
+Project-URL: Tracker, https://github.com/pypa/hatch/issues
+Project-URL: Source, https://github.com/pypa/hatch/tree/master/backend
+Author-email: Ofek Lev <oss@ofek.dev>
+License-Expression: MIT
+License-File: LICENSE.txt
+Keywords: build,hatch,packaging
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Natural Language :: English
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.10
+Requires-Dist: packaging>=24.2
+Requires-Dist: pathspec>=0.10.1
+Requires-Dist: pluggy>=1.0.0
+Requires-Dist: tomli>=1.2.2; python_version < '3.11'
+Requires-Dist: trove-classifiers
+Description-Content-Type: text/markdown
+
+# Hatchling
+
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/pypa/hatch/master/docs/assets/images/logo.svg" alt="Hatch logo" width="500" role="img">
+
+| | |
+| --- | --- |
+| Package | [![PyPI - Version](https://img.shields.io/pypi/v/hatchling.svg?logo=pypi&label=PyPI&logoColor=gold)](https://pypi.org/project/hatchling/) [![PyPI - Downloads](https://img.shields.io/pypi/dm/hatchling.svg?color=blue&label=Downloads&logo=pypi&logoColor=gold)](https://pypi.org/project/hatchling/) [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/hatchling.svg?logo=python&label=Python&logoColor=gold)](https://pypi.org/project/hatchling/) |
+| Meta | [![Hatch project](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/pypa/hatch/master/docs/assets/badge/v0.json)](https://github.com/pypa/hatch) [![linting - Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff) [![code style - Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black) [![types - Mypy](https://img.shields.io/badge/types-Mypy-blue.svg)](https://github.com/python/mypy) [![License - MIT](https://img.shields.io/badge/license-MIT-9400d3.svg)](https://spdx.org/licenses/) [![GitHub Sponsors](https://img.shields.io/github/sponsors/ofek?logo=GitHub%20Sponsors&style=social)](https://github.com/sponsors/ofek) |
+
+</div>
+
+-----
+
+This is the extensible, standards compliant build backend used by [Hatch](https://github.com/pypa/hatch).
+
+## Usage
+
+The following snippet must be present in your project's `pyproject.toml` file in order to use Hatchling as your build backend:
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+```
+
+Then a build frontend like [pip](https://github.com/pypa/pip), [build](https://github.com/pypa/build), or Hatch itself can build or install your project automatically:
+
+```console
+# install using pip
+pip install /path/to/project
+
+# build
+python -m build /path/to/project
+
+# build with Hatch
+hatch build /path/to/project
+```
+
+## Documentation
+
+- [Project metadata](https://hatch.pypa.io/latest/config/metadata/)
+- [Dependencies](https://hatch.pypa.io/latest/config/dependency/)
+- [Packaging](https://hatch.pypa.io/latest/config/build/)
