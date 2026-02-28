@@ -6,7 +6,7 @@ import logging
 import threading
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterator, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List
 
 import weave.trace.weave_init
 from pydantic import validate_call
@@ -16,6 +16,12 @@ from weave.trace_server_bindings.client_interface import TraceServerClientInterf
 from weave.trace_server_bindings.models import ServerInfoRes
 
 logger = logging.getLogger(__name__)
+
+# Backward compat: OtelExportReq/Res was renamed to OTelExportReq/Res in weave 0.52.27
+if not TYPE_CHECKING:
+    if not hasattr(tsi, "OTelExportReq"):
+        tsi.OTelExportReq = tsi.OtelExportReq
+        tsi.OTelExportRes = tsi.OtelExportRes
 
 __all__ = [
     "instrument_weave",
@@ -46,7 +52,7 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         return cls()
 
     def server_info(self) -> ServerInfoRes:
-        return ServerInfoRes(min_required_weave_python_version="0.52.29")
+        return ServerInfoRes(min_required_weave_python_version="0.52.22")
 
     def ensure_project_exists(self, entity: str, project: str) -> tsi.EnsureProjectExistsRes:
         return tsi.EnsureProjectExistsRes(project_name=project)
