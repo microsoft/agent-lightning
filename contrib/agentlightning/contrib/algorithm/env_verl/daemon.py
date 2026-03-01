@@ -1,13 +1,13 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import copy
 import json
 import random
 import socket
 import threading
 import time
 import uuid
-import copy
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
@@ -19,14 +19,13 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
+import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
+from agentlightning.reward import find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
-from agentlightning.reward import find_final_reward
-
 from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
-import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 
 __all__ = [
     "AgentModeDaemon",
@@ -171,7 +170,7 @@ class EnvAgentModeDaemon:
                 )
             else:
                 # Reuse the existing LLM proxy (probably configured by user)
-                self.llm_proxy = llm_proxy                
+                self.llm_proxy = llm_proxy
 
             # if adapter is None:
             #     self.adapter = TracerTraceToTripletGroup()
@@ -664,7 +663,7 @@ class EnvAgentModeDaemon:
         use_final_reward_as_step_reward: bool = True,
         use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
-        empo2_train_mode: bool = False
+        empo2_train_mode: bool = False,
     ):
         """
         Processes completed rollouts to generate a training data batch.
@@ -704,7 +703,7 @@ class EnvAgentModeDaemon:
                     "response_ids": t.response.get("token_ids", []),
                     "step_reward": t.reward,
                     "step_intrinsic_reward": t.metadata.get("intrinsic_reward", 0.0),
-                    "message": t.metadata.get("message", "")
+                    "message": t.metadata.get("message", ""),
                 }
 
                 trace_list.append(trace_dict)

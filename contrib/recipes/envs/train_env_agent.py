@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
+import argparse
 import os
 import re
-import time
-import argparse
 import subprocess
+import time
 
 from omegaconf import OmegaConf
 
@@ -11,6 +11,7 @@ from agentlightning import Trainer
 from agentlightning.algorithm.verl import VERL
 from contrib.agentlightning.contrib.algorithm.env_verl.daemon import EnvAgentModeDaemon
 from contrib.agentlightning.contrib.algorithm.env_verl.trainer import EnvAgentLightningTrainer
+
 
 def run_cmd(cmd):
     """Execute a shell command and print its output"""
@@ -76,7 +77,7 @@ if __name__ == "__main__":
 
     env_prefix = re.sub(r"\d+$", "", args.env)
     trainer_config_path = f"config_verl/{env_prefix}/{args.algorithm}.yaml"
-    
+
     if "gigpo" in args.algorithm:
         agent_config.log_env_obs = True
     rl_training_config = get_config(trainer_config_path)
@@ -93,14 +94,8 @@ if __name__ == "__main__":
 
         os.makedirs("logs", exist_ok=True)
 
-        subprocess.Popen(
-            f"nohup python empo2_server/server_bert.py > logs/bert_{args.task_num}.log 2>&1 &",
-            shell=True
-        )
-        subprocess.Popen(
-            f"nohup python empo2_server/server_mem.py > logs/mem_{args.task_num}.log 2>&1 &",
-            shell=True
-        )
+        subprocess.Popen(f"nohup python empo2_server/server_bert.py > logs/bert_{args.task_num}.log 2>&1 &", shell=True)
+        subprocess.Popen(f"nohup python empo2_server/server_mem.py > logs/mem_{args.task_num}.log 2>&1 &", shell=True)
 
         NUM_MEMORY = 5
         time.sleep(1)
@@ -109,6 +104,7 @@ if __name__ == "__main__":
         agent = EMPO2Agent(agent_config)
     else:
         from contrib.agentlightning.contrib.agent.env_agent import EnvAgent
+
         agent = EnvAgent(agent_config)
 
     # Initialize trainer and start training

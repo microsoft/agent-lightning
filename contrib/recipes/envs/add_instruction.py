@@ -30,6 +30,7 @@ INSTRUCTION_MAP = {
     "tip": TIP_INSTRUCTION,
 }
 
+
 def _get_instruction(type: str, env_name: str = None):
     """
     Retrieve an instruction string from INSTRUCTION_MAP based on the given type.
@@ -116,10 +117,12 @@ def add_single_instruction(prompt, type: str, sep: str = "\n\n", env_name: str =
     else:
         raise TypeError("Prompt must be a string or a list of strings")
 
+
 def add_chat_tips(prompt, tips):
     new_prompt = copy.deepcopy(prompt)
     new_prompt[-1].content += f"\n\n<tip> {tips}\n</tip>\n\n"
     return new_prompt
+
 
 def add_chat_all_tips(prompt, tip_list):
     new_prompt = copy.deepcopy(prompt)

@@ -97,7 +97,7 @@ python3 train_env_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworl
 
 ### EMPO² Integration
 
-We integrate **EMPO²** (*Memory-Augmented LLM Agent via Online Self-Distillation*, ICLR 2026) [[paper]](https://openreview.net/forum?id=UOzxviKVFO) into our framework. EMPO² leverages a memory-augmented mechanism combined with online self-distillation to enhance LLM agent performance. In our experiments, EMPO² consistently outperforms GRPO, demonstrating stronger learning efficiency.
+We integrate **EMPO²** (*Memory-Augmented LLM Agent via Online Self-Distillation*, ICLR 2026) [[paper]](https://arxiv.org/abs/2602.23008) into AGL. EMPO² leverages a memory-augmented mechanism combined with online self-distillation to enhance LLM agent performance. In our experiments, EMPO² consistently outperforms GRPO, demonstrating stronger learning efficiency.
 
 ```bash
 # Run scienceworld single task task_num 25

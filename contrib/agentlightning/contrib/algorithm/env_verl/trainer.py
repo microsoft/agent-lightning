@@ -34,13 +34,12 @@ from verl.trainer.ppo.ray_trainer import (
 from verl.utils.metric import reduce_metrics
 from verl.utils.tracking import Tracking
 
+import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 from agentlightning.adapter import TraceAdapter, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.store.base import LightningStore
 
 from .daemon import EnvAgentModeDaemon
-  
-import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 
 __all__ = [
     "EnvAgentLightningTrainer",
@@ -256,14 +255,14 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                 num_problems = self.config.data.train_batch_size
                 gen_batch.non_tensor_batch["global_steps"] = [self.global_steps for _ in range(num_problems)]
 
-                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
+                if hasattr(self.config, "tips") and self.config.tips.use_tips:
                     touzi = random.random()
                     if touzi < 0.17:
-                        self.empo2_train_mode = "off-policy" # Update with Tips and give them to the pure_chats
+                        self.empo2_train_mode = "off-policy"  # Update with Tips and give them to the pure_chats
                     elif touzi < 0.25:
                         self.empo2_train_mode = "on-policy-with-tips"
                     else:
-                        self.empo2_train_mode = "on-policy" # Normal Update, No Tips
+                        self.empo2_train_mode = "on-policy"  # Normal Update, No Tips
 
                     gen_batch.non_tensor_batch["train_mode"] = [self.empo2_train_mode for _ in range(num_problems)]
 
@@ -274,7 +273,7 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
-                    max_train_length=getattr(self.config.data, 'max_train_length', -1),
+                    max_train_length=getattr(self.config.data, "max_train_length", -1),
                     device=gen_batch.batch["fake_ids"].device,
                     use_final_reward_as_step_reward=self.config.algorithm.use_final_reward_as_step_reward,
                     use_intrinsic_reward=self.config.algorithm.use_intrinsic_reward,
@@ -359,7 +358,9 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                     metrics.update(kl_metrics)
                 else:
                     if self.config.algorithm.use_intrinsic_reward:
-                        batch.batch["token_level_rewards"] = batch.batch["token_level_scores"] + batch.batch["token_level_intrinsic_rewards"]  # (bs, seq_len)
+                        batch.batch["token_level_rewards"] = (
+                            batch.batch["token_level_scores"] + batch.batch["token_level_intrinsic_rewards"]
+                        )  # (bs, seq_len)
                     else:
                         batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
@@ -379,7 +380,7 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                     config=self.config.algorithm,
                 )
 
-                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
+                if hasattr(self.config, "tips") and self.config.tips.use_tips:
                     batch = core_empo2.low_prob_token_masking(batch)
 
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
@@ -520,7 +521,7 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                 # train step
                 metrics = self._train_step(batch_dict)
 
-                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
+                if hasattr(self.config, "tips") and self.config.tips.use_tips:
                     mode_map = {
                         "off-policy": 0,
                         "on-policy-with-tips": 1,
