@@ -1,5 +1,5 @@
 """
-This sample code demonstrates how to use the MultiProviderClient with the APO algorithm 
+This sample code demonstrates how to use APO's built-in LiteLLM mode
 to tune mathematical reasoning prompts using a hybrid model setup.
 """
 
@@ -7,7 +7,7 @@ import logging
 import re
 import asyncio
 import multiprocessing
-from typing import Tuple, cast, Dict, Any, List
+from typing import Tuple, cast, Dict, Any, List, Callable
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -16,8 +16,9 @@ from agentlightning import Trainer, setup_logging, PromptTemplate
 from agentlightning.adapter import TraceToMessages
 from agentlightning.algorithm.apo import APO
 from agentlightning.types import Dataset
-from litellm import completion
-from agentlightning.utils.multi_provider_client import MultiProviderClient
+import litellm
+
+completion: Callable[..., Any] = cast(Callable[..., Any], getattr(litellm, "completion"))
 
 
 # --- 1. Dataset Logic ---
@@ -39,7 +40,7 @@ def load_train_val_dataset() -> Tuple[Dataset[Dict[str, str]], Dataset[Dict[str,
     return dataset_train, dataset_val
 
 # --- 2. Agent Logic ---
-class MathAgent(agl.LitAgent):
+class MathAgent(agl.LitAgent[Dict[str, str]]):
     def __init__(self):
         super().__init__()
 
@@ -57,7 +58,9 @@ class MathAgent(agl.LitAgent):
             model="gemini/gemini-2.0-flash",
             messages=[{"role": "user", "content": prompt}]
         )
-        answer = str(response.choices[0].message.content)
+        response_obj = response
+        content = response_obj.choices[0].message.content
+        answer = content if isinstance(content, str) else ""
         
         # Reward: Numerical exact match check
         pred_nums = re.findall(r"[-+]?\d*\.\d+|\d+", answer.split("Answer:")[-1])
@@ -78,12 +81,10 @@ def main() -> None:
     setup_logging()
     setup_apo_logger()
 
-    multi_client = MultiProviderClient()
-
     initial_prompt_str = "Solve: {question}"
 
     algo = APO[Dict[str, str]](
-        multi_client,
+        use_litellm=True,
         gradient_model="gemini/gemini-2.0-flash",
         apply_edit_model="groq/llama-3.3-70b-versatile",
         val_batch_size=2,

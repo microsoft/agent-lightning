@@ -312,6 +312,26 @@ async def test_compute_textual_gradient_uses_all_rollouts_when_insufficient(monk
 
 
 @pytest.mark.asyncio
+async def test_compute_textual_gradient_uses_litellm_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    litellm_mock = AsyncMock(return_value=make_completion("critique"))
+    monkeypatch.setattr(apo_module, "litellm_acompletion", litellm_mock)
+    monkeypatch.setattr(apo_module.random, "choice", lambda seq: seq[0])  # type: ignore
+
+    apo = APO[Any](use_litellm=True, gradient_model="test-gradient-model", gradient_batch_size=1)
+    versioned_prompt = apo._create_versioned_prompt(PromptTemplate(template="prompt", engine="f-string"))
+    rollouts: List[RolloutResultForAPO] = [
+        RolloutResultForAPO(status="succeeded", final_reward=1.0, spans=[], messages=[])
+    ]
+
+    result = await apo.compute_textual_gradient(versioned_prompt, rollouts)
+
+    assert result == "critique"
+    litellm_mock.assert_awaited_once()
+    call_kwargs = litellm_mock.await_args.kwargs  # type: ignore
+    assert call_kwargs["model"] == "test-gradient-model"
+
+
+@pytest.mark.asyncio
 async def test_textual_gradient_and_apply_edit_returns_new_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     # Use two separate mocks for gradient and edit calls
     gradient_mock = AsyncMock(return_value=make_completion("critique text"))
