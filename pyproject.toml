@@ -38,6 +38,9 @@ verl = [
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
 
+gepa = [
+  "gepa",
+]
 weave = [
   "weave>=0.52.22",
 ]
@@ -361,6 +364,7 @@ markers = [
   "prometheus: tests that require Prometheus",
   "utils: tests for utility functions",
   "langchain: tests that require LangChain",
+  "gepa: tests that require GEPA",
 ]
 
 [tool.black]
