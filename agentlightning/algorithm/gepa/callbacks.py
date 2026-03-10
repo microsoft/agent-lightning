@@ -107,7 +107,7 @@ class LightningGEPACallback:
         iteration, not only when a new candidate is accepted.
         """
         try:
-            import wandb  # type: ignore[reportMissingImports]
+            import wandb
 
             if wandb.run is None:
                 return
