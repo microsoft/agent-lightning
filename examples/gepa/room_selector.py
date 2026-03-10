@@ -1,23 +1,31 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Room-booking agent that uses Azure OpenAI with Entra ID authentication.
+"""Room-booking agent with multi-backend LLM support.
+
+Supports Azure OpenAI (Entra ID or API key) and plain OpenAI. The backend is
+selected via the ``LLM_PROVIDER`` env var — see ``llm_backend.py`` for details.
 
 Usage::
 
-    # Set environment variables (see .env.example) and authenticate:
+    # Azure Entra ID (default):
     az login
     python room_selector.py
+
+    # Azure API key:
+    LLM_PROVIDER=azure_key python room_selector.py
+
+    # OpenAI:
+    LLM_PROVIDER=openai python room_selector.py
 """
 
 import asyncio
 import json
-import os
 import traceback
 from pathlib import Path
 from typing import List, Optional, Tuple, TypedDict, cast
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from openai import AzureOpenAI
+from llm_backend import get_model_names, get_provider, make_client
+from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageFunctionToolCallParam,
@@ -38,8 +46,8 @@ from agentlightning.types import Dataset, PromptTemplate
 
 console = Console()
 
-DEPLOYMENT_NAME = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-nano")
-GRADER_DEPLOYMENT_NAME = os.environ.get("AZURE_OPENAI_GRADER_DEPLOYMENT", "gpt-4.1-mini")
+_PROVIDER = get_provider()
+DEPLOYMENT_NAME, GRADER_DEPLOYMENT_NAME = get_model_names(_PROVIDER)
 
 
 class JudgeResponse(BaseModel):
@@ -106,17 +114,7 @@ def prompt_template_baseline() -> PromptTemplate:
     )
 
 
-def _make_azure_client() -> AzureOpenAI:
-    """Create an Azure OpenAI client authenticated via Entra ID (``DefaultAzureCredential``)."""
-    token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
-    return AzureOpenAI(
-        azure_ad_token_provider=token_provider,
-        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-        api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2025-04-01-preview"),
-    )
-
-
-def room_selection_grader(client: AzureOpenAI, final_message: Optional[str], expected_choice: str) -> float:
+def room_selection_grader(client: OpenAI, final_message: Optional[str], expected_choice: str) -> float:
     judge_prompt = (
         f"You are a strict grader of exact room choice."
         f"Task output:\n{final_message}\n\n"
@@ -151,7 +149,7 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     The prompt template is optimized by Agent-lightning's GEPA algorithm.
     """
 
-    client = _make_azure_client()
+    client = make_client(_PROVIDER)
     model = DEPLOYMENT_NAME
 
     user_message = prompt_template.format(**task["task_input"])

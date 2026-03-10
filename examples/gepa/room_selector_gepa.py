@@ -1,21 +1,33 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""GEPA prompt optimization for the room-booking agent with Azure OpenAI.
+"""GEPA prompt optimization for the room-booking agent.
+
+Supports Azure OpenAI (Entra ID or API key) and plain OpenAI. The backend is
+selected via ``--provider`` or the ``LLM_PROVIDER`` env var — see
+``llm_backend.py`` for details.
 
 Usage::
 
-    # Set environment variables (see .env.example) and authenticate:
+    # Azure Entra ID (default):
     az login
     python room_selector_gepa.py
+
+    # Azure API key:
+    python room_selector_gepa.py --provider azure_key
+
+    # OpenAI:
+    python room_selector_gepa.py --provider openai
+
+    # With W&B experiment tracking:
+    python room_selector_gepa.py --wandb --wandb-project gepa-room-selector
 """
 
+import argparse
 import logging
-import os
 from typing import Tuple, cast
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from llm_backend import VALID_PROVIDERS, build_reflection_config, get_provider
 from room_selector import (
-    GRADER_DEPLOYMENT_NAME,
     RoomSelectionTask,
     load_room_tasks,
     prompt_template_baseline,
@@ -48,28 +60,41 @@ def setup_gepa_logger(file_path: str = "gepa.log") -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="GEPA prompt optimization for the room-booking agent")
+    parser.add_argument(
+        "--provider",
+        type=str,
+        choices=VALID_PROVIDERS,
+        default=None,
+        help="LLM backend (default: LLM_PROVIDER env var or azure_entra)",
+    )
+    parser.add_argument("--wandb", action="store_true", help="Enable W&B experiment tracking")
+    parser.add_argument("--wandb-project", type=str, default="gepa-room-selector", help="W&B project name")
+    parser.add_argument("--wandb-name", type=str, default=None, help="W&B run name")
+    args = parser.parse_args()
+
     setup_logging()
     setup_gepa_logger()
 
-    # Build the reflection model identifier in litellm's Azure format.
-    # LiteLLM reads AZURE_API_BASE and AZURE_API_VERSION from the environment
-    # for Azure-prefixed model strings.
-    reflection_model = f"azure/{os.environ.get('AZURE_OPENAI_GRADER_DEPLOYMENT', GRADER_DEPLOYMENT_NAME)}"
+    provider = get_provider(args.provider)
+    reflection_model, reflection_model_kwargs = build_reflection_config(provider)
+    logger.info("Using LLM provider: %s (reflection model: %s)", provider, reflection_model)
 
-    # Provide an Entra ID token provider so litellm can authenticate to Azure.
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-    )
+    wandb_init_kwargs = {"project": args.wandb_project}
+    if args.wandb_name:
+        wandb_init_kwargs["name"] = args.wandb_name
 
     algo = GEPA(
         config=GEPAConfig(
-            max_metric_calls=200,
+            max_metric_calls=250,
             reflection_minibatch_size=8,
             candidate_selection_strategy="pareto",
             reflection_model=reflection_model,
-            reflection_model_kwargs={"azure_ad_token_provider": token_provider},
+            reflection_model_kwargs=reflection_model_kwargs,
             seed=42,
             display_progress_bar=True,
+            use_wandb=args.wandb,
+            wandb_init_kwargs=wandb_init_kwargs,
         ),
     )
     trainer = Trainer(
