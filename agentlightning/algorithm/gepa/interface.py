@@ -148,7 +148,7 @@ class GEPA(Algorithm):
         reflection_lm = self._build_reflection_lm()
 
         # Prepare callback
-        callback = LightningGEPACallback()
+        callback = LightningGEPACallback(use_wandb=self._config.use_wandb)
 
         # Build kwargs for gepa.optimize
         optimize_kwargs: Dict[str, Any] = {
@@ -175,6 +175,12 @@ class GEPA(Algorithm):
             optimize_kwargs["reflection_minibatch_size"] = self._config.reflection_minibatch_size
         if reflection_lm is not None:
             optimize_kwargs["reflection_lm"] = reflection_lm
+        if self._config.use_wandb:
+            optimize_kwargs["use_wandb"] = True
+            if self._config.wandb_api_key is not None:
+                optimize_kwargs["wandb_api_key"] = self._config.wandb_api_key
+            if self._config.wandb_init_kwargs:
+                optimize_kwargs["wandb_init_kwargs"] = self._config.wandb_init_kwargs
 
         # Merge any extra kwargs
         optimize_kwargs.update(self._config.extra_kwargs)

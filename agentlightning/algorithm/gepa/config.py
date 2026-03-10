@@ -65,10 +65,20 @@ class GEPAConfig:
 
     # Reflection LLM configuration
     reflection_model: Optional[str] = None
-    reflection_model_kwargs: Dict[str, Any] = field(default_factory=lambda: {})  # pyright: ignore[reportUnknownVariableType]
+    reflection_model_kwargs: Dict[str, Any] = field(
+        default_factory=lambda: {}
+    )  # pyright: ignore[reportUnknownVariableType]
     """Extra keyword arguments forwarded to ``litellm.completion`` for reflection
     calls. Useful for passing authentication parameters such as
     ``azure_ad_token_provider`` for Azure Entra ID."""
+
+    # Experiment tracking
+    use_wandb: bool = False
+    """Enable Weights & Biases experiment tracking during optimization."""
+    wandb_api_key: Optional[str] = None
+    """W&B API key. When ``None``, relies on ``WANDB_API_KEY`` env var or prior ``wandb login``."""
+    wandb_init_kwargs: Dict[str, Any] = field(default_factory=lambda: {})  # pyright: ignore[reportUnknownVariableType]
+    """Extra keyword arguments forwarded to ``wandb.init()`` (e.g. ``project``, ``name``, ``tags``)."""
 
     # Extra kwargs forwarded to gepa.optimize()
     extra_kwargs: Dict[str, Any] = field(default_factory=lambda: {})  # pyright: ignore[reportUnknownVariableType]
