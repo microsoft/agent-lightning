@@ -406,6 +406,7 @@ class Store:
     
     # Model server management
     async def register_model(endpoint, version) -> ModelServer
+    async def register_models(models: List) -> List[ModelServer]
     async def list_models() -> List[ModelServer]
     async def remove_model(model_id) -> None
     async def remove_all_models() -> None
@@ -487,7 +488,7 @@ class ModelServer:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/models` | Register a model server. Body: `{endpoint, version}`. Returns `ModelServer`. Gateway immediately starts routing to it. |
+| `POST` | `/api/models` | Register model server(s). Body: single `{endpoint, version}` or array `[{endpoint, version}, ...]`. Returns `ModelServer` or `List[ModelServer]`. Gateway immediately starts routing to them. |
 | `GET` | `/api/models` | List all registered model servers. |
 | `DELETE` | `/api/models/{model_id}` | Remove a single server. In-flight requests to it complete normally; no new requests routed to it. |
 | `DELETE` | `/api/models` | Remove **all** servers. Gateway enters unavailable state — returns 503 to all new LLM requests until a server is registered. |
@@ -888,7 +889,7 @@ A single HTTP service with **~19 endpoints** across 5 domains:
 
 | Endpoint | Replaces |
 |----------|----------|
-| `POST /api/models` | *New.* Register versioned inference server. Original stored model endpoints as generic resources. |
+| `POST /api/models` | *New.* Register versioned inference server(s) — single or batch. Original stored model endpoints as generic resources. |
 | `GET /api/models` | *New.* List registered servers. |
 | `DELETE /api/models/{model_id}` | *New.* Remove one server from routing. |
 | `DELETE /api/models` | *New.* Remove all servers (weight update window). Gateway returns 503 until new servers registered. |
