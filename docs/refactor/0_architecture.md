@@ -96,7 +96,7 @@ The VERL algorithm:
 |---|----------|---------------------|-----------|
 | 1 | **LiteLLM** proxy for LLM routing | **Self-owned request gateway** | Remove heavy dependency; simpler proxy that records traffic |
 | 2 | **OpenTelemetry** stack (spans, tracers, exporters, instrumentation) | **Gateway records request-response pairs** during transfer | Eliminate OTEL complexity; the gateway *is* the instrumentation |
-| 3 | **Span-based** trajectory format | **Sequence of requests (with responses)** | Much simpler data model; no span trees, no sequence_id allocation |
+| 3 | **Span-based** trajectory format | **Sequence of events** (`model_request`, `reward`, + open user-defined types) | Much simpler data model; no span trees, no sequence_id allocation. Only two reserved types; everything else is opaque pass-through. |
 | 4 | **In-process** execution strategies + watchdog retry | **Kubernetes** as default runner (`minikube` for single machine) | Offload scheduling, retry, timeout to K8s controller; deployment topology is flexible |
 
 ### 2.2 What Stays (Conceptually)
@@ -106,9 +106,9 @@ The VERL algorithm:
 | Algorithm ↔ Store ↔ Runner loop | Same decoupled architecture |
 | Rollout / Attempt lifecycle | Simplified states (K8s manages retry/timeout) |
 | Resource versioning | Same concept (prompt templates, model endpoints) |
-| Adapter pattern | Simplified — transforms request-response sequences instead of OTEL spans |
+| Adapter pattern | Simplified — filters events by type (`model_request`, `reward`) instead of parsing OTEL spans |
 | Agent abstraction | Language-agnostic: any program that consumes Gateway endpoint via environment variables (OAI-compatible `base_url`) |
-| Store API | Simplified subset (no span sequence_id, no watchdog, no OTEL conversion) |
+| Store API | Simplified subset (event-based, no span sequence_id, no watchdog, no OTEL conversion) |
 
 ### 2.3 What Gets Removed
 
@@ -209,36 +209,91 @@ Even in rare node-partition scenarios (two pods briefly running for the same rol
 
 The Algorithm queries the successful attempt's records for training. Failed attempt data remains available for debugging and observability.
 
-#### Trajectory (replaces Span tree)
+#### Event-based Trajectory
+
+agl-lite is a **data pipe**, not a schema enforcer. The trajectory is a sequence of **events**. Only two event types have well-known structure — `model_request` (which the Gateway must create) and `reward` (which the Algorithm must consume for training). Everything else is opaque pass-through: a dict with a `type` field, stored and delivered as-is. Users define their own event types and consume them in their own algorithms.
 
 ```python
-class RequestRecord:
-    """Single LLM request-response pair captured by the Gateway."""
-    request_id: str
+class Event:
+    """Single event in a trajectory. The universal unit of data in agl-lite."""
+    event_id: str
+    event_type: str             # "model_request", "reward", or any user-defined string
     rollout_id: str
-    attempt_id: str         # = K8s pod UID, used as data partitioning tag
-    sequence: int           # auto-incrementing within the attempt (assigned by Gateway)
+    attempt_id: str             # = K8s pod UID
+    sequence: int               # global ordering within the attempt
     timestamp: float
-    
-    # Request
-    model: str
-    messages: List[Dict]    # OpenAI chat format
-    parameters: Dict        # temperature, max_tokens, etc.
-    
-    # Response
-    response: Dict          # full OpenAI-format response
-    usage: Dict             # token counts
-    latency_ms: float
-    
-    metadata: Dict          # extra headers, annotations
-
-class Trajectory:
-    """Complete trajectory for one rollout attempt."""
-    rollout_id: str
-    attempt_id: str         # = K8s pod UID
-    records: List[RequestRecord]  # ordered by sequence
-    reward: Optional[float]
+    data: Dict                  # event-type-specific payload (see below)
 ```
+
+**Reserved event types** (agl-lite understands these):
+
+```python
+# event_type = "model_request"
+# Created automatically by the Gateway on every LLM call.
+{
+    "model": "gpt-4",
+    "request": {
+        "messages": [...],          # OpenAI chat format
+        "temperature": 0.7,
+        # ... other parameters
+    },
+    "response": {                   # full OpenAI-format response
+        "choices": [...],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50, ...},
+    },
+    "latency_ms": 1234.5,
+}
+
+# event_type = "reward"
+# Reported by the environment, evaluator, or runner.
+{
+    "value": 0.85,                  # scalar reward (required)
+    "message": "all tests passed",  # optional human-readable explanation
+}
+```
+
+**User-defined event types** (agl-lite stores and delivers, but does not interpret):
+
+```python
+# event_type = "tool_result" (user-defined example)
+{"tool_name": "execute_code", "output": "hello\n", "exit_code": 0}
+
+# event_type = "observation" (user-defined example)
+{"content": "Task: Write a function that...", "source": "environment"}
+
+# event_type = "my_custom_metric" (user-defined example)
+{"score": 42, "details": {...}}
+```
+
+The Store stores all events identically — it does not validate `data` payloads beyond the common fields (`event_id`, `event_type`, `rollout_id`, `attempt_id`, `sequence`, `timestamp`, `data`).
+
+#### Trajectory
+
+```python
+class Trajectory:
+    """Complete trajectory for one rollout attempt — a sequence of events."""
+    rollout_id: str
+    attempt_id: str             # = K8s pod UID
+    events: List[Event]         # ordered by sequence, mixed event types
+```
+
+All event types share a single monotonically increasing `sequence` counter per `(rollout_id, attempt_id)`, preserving true temporal ordering:
+
+```
+seq=1  model_request   (agent calls LLM)
+seq=2  tool_result     (runner reports tool output)     ← user-defined type
+seq=3  model_request   (agent sends tool result to LLM)
+seq=4  action          (agent submits answer)           ← user-defined type
+seq=5  reward          (environment scores: 0.85)
+```
+
+#### How events are produced
+
+| Source | Event types | Mechanism |
+|--------|------------|-----------|
+| **Gateway** | `model_request` | Auto-captured on every proxied LLM call. Agent is unaware. |
+| **Runner / Environment** | `reward`, plus any user-defined types | Explicit HTTP POST to Gateway event endpoint (see Section 3.4). These are agl-lite-aware components. |
+| **Agent** (optional) | Any user-defined types | If the agent *chooses* to report events, it can POST to an optional event URL (`AGL_EVENT_URL` env var). But this is never required. |
 
 #### Simplified Rollout States
 
@@ -268,17 +323,20 @@ class Store:
     async def query_rollouts(status_in, ...) -> List[Rollout]
     async def wait_for_rollouts(rollout_ids, timeout) -> List[Rollout]
     
-    # Trajectory storage (replaces span APIs)
-    async def add_request_record(record: RequestRecord) -> RequestRecord
+    # Event storage
+    async def add_event(event: Event) -> Event
+    async def add_events(events: List[Event]) -> List[Event]
     async def query_trajectory(rollout_id, attempt_id) -> Trajectory
-    async def list_attempts(rollout_id) -> List[str]  # list attempt_ids for a rollout
+    async def query_events(rollout_id, attempt_id,
+                           event_type: Optional[str] = None) -> List[Event]
+    async def list_attempts(rollout_id) -> List[str]
     
     # Resource management
     async def add_resources(resources) -> ResourcesUpdate
     async def get_latest_resources() -> Optional[ResourcesUpdate]
     
     # No attempt lifecycle management (K8s owns pod lifecycle)
-    # No span sequence_id allocation (Gateway auto-increments per attempt)
+    # No span sequence_id allocation (Gateway/Store auto-increments per attempt)
     # No watchdog (K8s probes handle liveness on the runner side)
     # No worker telemetry (K8s pod status on the runner side)
 ```
@@ -298,7 +356,7 @@ Agent (any language) ──▶ Gateway ──▶ LLM Backend
 
 The agent connects to the Gateway the same way it would connect to any OpenAI-compatible endpoint — via `OPENAI_BASE_URL` (or similar) environment variable. The agent does not need to know about agl-lite at all.
 
-#### Request flow
+#### Request flow (model_request — auto-captured)
 
 ```
 1. Agent sends (using OPENAI_BASE_URL):
@@ -313,7 +371,27 @@ The agent connects to the Gateway the same way it would connect to any OpenAI-co
    POST http://vllm:8000/v1/chat/completions
 
 4. Gateway captures response, writes to Store:
-   RequestRecord(rollout_id="R1", attempt_id="a1b2c3d4", sequence=<auto>, ...)
+   Event(event_type="model_request", rollout_id="R1", attempt_id="a1b2c3d4",
+         sequence=<next>, data={request, response, latency_ms, ...})
+```
+
+#### Event reporting (reward + user-defined events — explicit)
+
+The Gateway also exposes an event endpoint on the same path prefix:
+
+```
+POST http://gateway:8080/rollout/R1/attempt/a1b2c3d4/events
+Content-Type: application/json
+
+{"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
+```
+
+The Gateway assigns `rollout_id`, `attempt_id` (from path), `sequence` (next in order), `timestamp`, and `event_id`, then writes the event to the Store. This endpoint is used by runners, environments, and evaluators — agl-lite-aware components.
+
+Optionally exposed to the agent container as:
+```yaml
+- name: AGL_EVENT_URL   # optional, agent can ignore
+  value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
 The `rollout_id` and `attempt_id` are embedded in the URL path by the K8s Job template (see Section 3.3). The Gateway extracts them purely from the path prefix — no special headers or agent-side logic needed.
@@ -322,8 +400,9 @@ The `rollout_id` and `attempt_id` are embedded in the URL path by the K8s Job te
 
 1. **Reverse proxy**: Forward OpenAI-compatible requests to LLM backends
 2. **Path parsing**: Extract `rollout_id` and `attempt_id` from the URL prefix, strip it, forward the rest
-3. **Recording**: Capture every request-response pair as a `RequestRecord`, auto-incrementing `sequence` per `(rollout_id, attempt_id)`
-4. **Resource awareness**: Read current model endpoint from Store resources
+3. **Auto-recording**: Capture every proxied request-response pair as a `model_request` event, auto-incrementing `sequence` per `(rollout_id, attempt_id)`
+4. **Event ingestion**: Accept explicit event POSTs (reward, user-defined types) on the `/events` endpoint, assign sequence and timestamp, write to Store
+5. **Resource awareness**: Read current model endpoint from Store resources
 
 The gateway is a simple Python HTTP server (e.g., `aiohttp` or `fastapi`) — no LiteLLM dependency.
 
@@ -364,6 +443,8 @@ spec:
                   fieldPath: metadata.uid   # unique per pod, changes on retry
             - name: OPENAI_BASE_URL
               value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+            - name: AGL_EVENT_URL       # optional, for agents that want to report events
+              value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
 On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` automatically points to a fresh attempt partition in the Gateway.
@@ -378,19 +459,21 @@ On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_
 
 ```python
 class TrajectoryAdapter:
-    """Convert trajectory records into algorithm-consumable format."""
+    """Convert trajectory events into algorithm-consumable format."""
     
     def adapt(self, trajectory: Trajectory) -> List[Triplet]:
         """Extract (prompt, response, reward) triplets from a trajectory."""
-        triplets = []
-        for record in trajectory.records:
-            triplets.append(Triplet(
-                prompt=record.messages,
-                response=record.response,
-                reward=trajectory.reward,  # or per-step reward if available
-                metadata=record.metadata,
-            ))
-        return triplets
+        model_events = [e for e in trajectory.events if e.event_type == "model_request"]
+        reward_events = [e for e in trajectory.events if e.event_type == "reward"]
+        total_reward = sum(r.data["value"] for r in reward_events) if reward_events else None
+        
+        return [Triplet(
+            prompt=e.data["request"]["messages"],
+            response=e.data["response"],
+            reward=total_reward,
+        ) for e in model_events]
 ```
+
+The adapter only needs to understand `model_request` and `reward` — the two reserved types. User-defined event types (tool results, observations, custom metrics, etc.) are consumed by user-defined algorithm code, not the adapter.
 
 No OTEL span parsing, no parent-child tree reconstruction, no attribute unflattening.
