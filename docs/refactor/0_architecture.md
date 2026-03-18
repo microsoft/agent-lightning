@@ -221,10 +221,16 @@ class Event:
     event_type: str             # "model_request", "reward", or any user-defined string
     rollout_id: str
     attempt_id: str             # = K8s pod UID
-    sequence: int               # global ordering within the attempt
     timestamp: float
     data: Dict                  # event-type-specific payload (see below)
 ```
+
+Events are stored in insertion order. No explicit `sequence` field — ordering is an emergent property of the storage backend:
+- **In-memory**: list index (single-threaded asyncio guarantees temporal insertion order)
+- **SQLite**: ROWID auto-increment (single writer, WAL mode)
+- **PostgreSQL**: SERIAL/IDENTITY primary key
+
+The API returns events in insertion order. Consumers use array position if they need an index.
 
 **Reserved event types** (agl-lite understands these):
 
@@ -279,18 +285,18 @@ class Trajectory:
     events: List[Event]         # ordered by sequence, mixed event types
 ```
 
-All event types share a single monotonically increasing `sequence` counter per `(rollout_id, attempt_id)`, preserving temporal ordering:
+All event types are stored in a single ordered list per `(rollout_id, attempt_id)`, preserving temporal ordering:
 
 ```
-seq=1  model_request   (agent calls LLM)
-seq=2  tool_result     (runner reports tool output)     ← user-defined type
-seq=3  model_request   (agent sends tool result to LLM)
-seq=4  action          (agent submits answer)           ← user-defined type
-seq=5  reward          (environment scores: 0.85)
+[0]  model_request   (agent calls LLM)
+[1]  tool_result     (runner reports tool output)     ← user-defined type
+[2]  model_request   (agent sends tool result to LLM)
+[3]  action          (agent submits answer)           ← user-defined type
+[4]  reward          (environment scores: 0.85)
 ```
 
 <a name="concurrent-requests"></a>
-**Note on concurrent requests**: Tool-use agents may fire multiple LLM calls in parallel. Each concurrent request is an independent stream through the gateway. `sequence` numbers are assigned at event write time (stream completion for streaming requests), so concurrent requests get sequences in completion order — which is arbitrary. `sequence` is a **storage ordering** for pagination and replay, not a causal ordering. Use `timestamp` for approximate causal information when needed.
+**Note on concurrent requests**: Tool-use agents may fire multiple LLM calls in parallel. Each concurrent request is an independent stream through the gateway. Insertion order for concurrent completions is arbitrary (whichever coroutine resumes first in the event loop). This is a **storage ordering** for pagination and replay, not a causal ordering. Use `timestamp` for approximate causal information when needed.
 
 #### How events are produced
 
@@ -388,14 +394,15 @@ class Store:
         # Long-polls until all specified rollouts reach a terminal state,
         # or timeout expires. Returns current state of all requested rollouts.
     
-    # Event storage
+    # Event storage (insertion order = temporal order, no explicit sequence)
     async def add_event(event: Event) -> Event
     async def add_events(events: List[Event]) -> List[Event]
     async def query_events(rollout_id, attempt_id=None,
                            event_type=None, limit=None, offset=None) -> List[Event]
+        # Returns events in insertion order.
         # attempt_id resolution when omitted:
         #   1. If rollout.succeeded_attempt_id is set → use it
-        #   2. Otherwise → attempt with latest MIN(timestamp) from events table
+        #   2. Otherwise → attempt with latest MIN(timestamp) from events
         #   3. No events exist → return []
     async def list_attempts(rollout_id) -> List[AttemptInfo]
         # Derived from events table, no separate attempt storage:
@@ -469,7 +476,7 @@ Agent ◄──chunk──chunk──chunk──[DONE]──◄ Gateway ◄─�
 **Edge cases in streaming:**
 - **Client disconnect mid-stream**: Gateway continues reading from backend to capture complete data. Event written with `"status": "client_disconnected"`.
 - **Backend error mid-stream**: Event written with partial response and `"status": "stream_error"`.
-- **Sequence assignment**: Assigned at stream completion, not start. Concurrent streams get sequences in completion order. This is consistent with `sequence` being storage order (see [note on concurrency](#concurrent-requests)).
+- **Sequence assignment**: Event appended to store at stream completion. Single-threaded asyncio guarantees temporal insertion order. Concurrent streams get ordered by whichever completes first.
 
 **Memory**: Each concurrent stream buffers one response. A 128K-context response ≈ 500KB. 100 concurrent streams ≈ 50MB. Bounded and manageable.
 
@@ -483,7 +490,36 @@ Accepts explicit events (reward, user-defined types). Body:
 ```json
 {"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
 ```
-The service assigns `event_id`, `sequence`, `timestamp` and stores the event. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
+The service assigns `event_id` and `timestamp`, appends to the event store in insertion order. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
+
+#### Concurrency and scaling
+
+The gateway is a single Python async process. The concurrency profile is excellent because the hot path (LLM proxy) is I/O-bound — each request waits seconds for LLM inference while the event loop serves other requests.
+
+**Contention analysis:**
+
+| Resource | Access pattern | Contention |
+|----------|---------------|------------|
+| Model server registry | Read every request, write once per weight update | Near zero (read-heavy, write-rare) |
+| Event store per `(rid, aid)` | Append per event, naturally partitioned by pod | Near zero (different agents never touch the same partition) |
+| Rollout records | Controller updates status, Algorithm enqueues | Low (not on hot path, optimistic locking) |
+
+No locks needed on the hot path. Single-threaded asyncio serializes all writes naturally. The partition key `(rollout_id, attempt_id)` eliminates cross-agent contention entirely.
+
+**Concurrency estimates (single instance):**
+
+| Scale | Concurrent agents | Concurrent connections | Events/sec | Feasibility |
+|-------|-------------------|----------------------|------------|-------------|
+| Small | 50–100 | ~100 | ~5–10 | Trivial |
+| Medium | 500–1,000 | ~1,000 | ~50–100 | Comfortable |
+| Large | 2,000–5,000 | ~5,000 | ~200–500 | Fine with tuning (ulimit, memory) |
+| Very large | 10,000+ | ~10,000+ | ~1,000+ | Approaching single-instance limit |
+
+Assumptions: each agent makes sequential LLM calls averaging 5–20s, ~100KB memory per concurrent connection.
+
+**Bottleneck is never the gateway** — it's the LLM inference servers. A single async Python process comfortably handles 5,000+ concurrent proxy connections. Most RL training runs use 64–512 concurrent agents, well within the comfortable range.
+
+**Scaling beyond single instance** (future): stateless gateway instances behind a load balancer, with event ordering delegated to the DB backend (PostgreSQL SERIAL). See issue #005.
 
 #### Store paths (management API)
 
@@ -502,7 +538,7 @@ The service assigns `event_id`, `sequence`, `timestamp` and stores the event. Us
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Ordered by sequence. When `attempt_id` is omitted: uses `succeeded_attempt_id` if rollout succeeded, otherwise the most recently created attempt (derived from events). |
+| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Returned in insertion order (temporal). When `attempt_id` is omitted: uses `succeeded_attempt_id` if rollout succeeded, otherwise the most recently created attempt (derived from events). |
 | `GET` | `/api/attempts/{rollout_id}` | List attempts with timing. Derived from events table: `[{attempt_id, first_seen, last_seen, event_count}]` ordered by `first_seen`. No separate attempt storage. |
 
 **Model server management:**
@@ -550,13 +586,13 @@ The model server API enables clean weight updates for both synchronous and async
 **Async RL implications**: In turn-level async RL, a single trajectory may span multiple weight updates. The gateway records `model_version` on every `model_request` event, so the algorithm knows which policy generated each response:
 
 ```
-seq=1  model_request  {model_version: 42, ...}   ← turn 1, policy v42
-seq=2  tool_result    {...}
-seq=3  model_request  {model_version: 42, ...}   ← turn 2, policy v42
-seq=4  tool_result    {...}
-       ── weight update: v42 → v43 ──
-seq=5  model_request  {model_version: 43, ...}   ← turn 3, policy v43
-seq=6  reward         {value: 0.85}
+[0]  model_request  {model_version: 42, ...}   ← turn 1, policy v42
+[1]  tool_result    {...}
+[2]  model_request  {model_version: 42, ...}   ← turn 2, policy v42
+[3]  tool_result    {...}
+     ── weight update: v42 → v43 ──
+[4]  model_request  {model_version: 43, ...}   ← turn 3, policy v43
+[5]  reward         {value: 0.85}
 ```
 
 This per-request version tracking is essential for:
@@ -948,7 +984,7 @@ A single HTTP service with **~19 endpoints** across 5 domains:
 | `dequeue_rollout`, `dequeue_many_rollouts` | No work queue pull. K8s controller polls Store for `queuing` rollouts and creates Jobs. |
 | `start_attempt`, `update_attempt`, `query_attempts` (as entity), `get_latest_attempt` | Attempt is a data tag (pod UID), not a managed entity. No attempt status machine. |
 | `add_span`, `add_many_spans`, `add_otel_span` | Replaced by `model_request` events (auto-captured) and `/events` endpoint. |
-| `get_next_span_sequence_id`, `get_many_span_sequence_ids` | Sequence auto-assigned by the service per `(rollout_id, attempt_id)`. No client-side allocation. |
+| `get_next_span_sequence_id`, `get_many_span_sequence_ids` | No explicit sequence. Insertion order provides temporal ordering — guaranteed by single-threaded asyncio event loop + storage backend (list index / ROWID / SERIAL). |
 | `query_workers`, `get_worker_by_id`, `update_worker` | K8s manages pod/worker lifecycle. No worker telemetry in agl-lite. |
 | `update_resources` (in-place mutation) | Resources are immutable snapshots. Post a new one instead. |
 | `query_resources` (paginated search) | Simplified to `get latest` and `get by ID`. |
