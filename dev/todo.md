@@ -55,19 +55,20 @@ Build the self-owned request gateway replacing LiteLLM proxy and OTEL tracer.
 
 ## Phase 3: Runner [backlog]
 
-Define the agent abstraction and runner loop.
+Define the runner that manages agent containers.
 
 **Tasks:**
-- `Agent` base class with `rollout()` method
-- Runner loop: dequeue → execute → update status
-- Dockerfile for containerized runner
+- Runner loop: dequeue rollout → launch agent container → inject Gateway endpoint env vars → update status
+- Agent contract: any container that reads `OPENAI_BASE_URL` (or similar) from environment
+- Example agent containers (Python, Node.js, etc.) as reference
+- Dockerfile for runner itself
 
 **Files to create:**
-- `agl_lite/agent.py`
 - `agl_lite/runner/__init__.py`
 - `agl_lite/runner/base.py`
 - `agl_lite/runner/loop.py`
 - `docker/runner/Dockerfile`
+- `examples/agents/` (example agent containers in various languages)
 
 ## Phase 4: Algorithm Framework [backlog]
 
