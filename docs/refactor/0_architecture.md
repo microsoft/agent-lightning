@@ -295,33 +295,93 @@ seq=5  reward          (environment scores: 0.85)
 | **Runner / Environment** | `reward`, plus any user-defined types | Explicit HTTP POST to Gateway event endpoint (see Section 3.4). These are agl-lite-aware components. |
 | **Agent** (optional) | Any user-defined types | If the agent *chooses* to report events, it can POST to an optional event URL (`AGL_EVENT_URL` env var). But this is never required. |
 
-#### Simplified Rollout States
+#### Rollout Record
+
+```python
+class RolloutStatus(str, Enum):
+    QUEUING = "queuing"                 # in Store queue, no Job yet
+    RUNNING = "running"                 # Job exists, execution in progress (including between retries)
+    SUCCEEDED = "succeeded"             # terminal — one attempt completed successfully
+    TERMINAL_FAILED = "terminal_failed" # terminal — all retries exhausted or deadline exceeded
+    CANCELLED = "cancelled"             # terminal — user requested cancellation
+
+class Rollout:
+    rollout_id: str
+    status: RolloutStatus
+    cancel_requested: bool              # flag set by user, read by controller
+    
+    input: Dict                         # task description
+    resources_id: Optional[str]         # resource version to use
+    config: Dict                        # backoff limit, timeout, etc.
+    
+    # Set by controller during lifecycle
+    job_name: Optional[str]             # K8s Job name (set on Job creation)
+    succeeded_attempt_id: Optional[str] # pod UID of successful attempt (set on success)
+    error_message: Optional[str]        # error info (set on terminal_failed)
+    
+    # Concurrency control
+    version: int                        # optimistic locking — incremented on every update
+    
+    created_at: float
+    updated_at: float
+```
+
+`cancel_requested` is a separate flag rather than a status because:
+- User expresses **intent** (set flag) without knowing the current execution state
+- Controller **executes** (deletes Job, updates status) in its own reconciliation loop
+- No invalid status transition — the flag can be set whenever status is non-terminal
+
+#### Rollout State Machine
 
 ```
-              K8s creates pod
-queuing ─────────────────────▶ running ──────▶ succeeded
-                                  │               
-                                  ├──────▶ failed ──▶ (K8s retry or) terminal_failed
-                                  │               
-                                  └──────▶ timeout (K8s activeDeadlineSeconds)
-                                                └──▶ (K8s retry or) terminal_failed
+queuing ──[controller creates Job]──────────→ running
+   │                                            │  │
+   │                                            │  ├──[Job Complete]──→ succeeded
+   │                                            │  │                    (final)
+   ├──[Job creation failed]──→ terminal_failed  │  │
+   │                           (final)          │  ├──[Job Failed]───→ terminal_failed
+   │                                            │  │                    (final)
+   │                                            │  │
+   ├──[cancel + no Job]─────→ cancelled         │  └──[cancel]───────→ cancelled
+   │                          (final)           │                       (final)
+   │                                            │
+   └────────────────────────────────────────────┘
+          (cancel_requested can be set while queuing or running)
 ```
 
-- **No `preparing` state** — pod creation is atomic from the rollout's perspective
-- **No `unresponsive` state** — K8s liveness probes handle this
-- **No `requeuing` state** — K8s Job `backoffLimit` handles retries
-- **No `cancelled`** — delete the K8s Job
+**Valid transitions (Store-enforced):**
 
-#### Simplified Store API
+| From | To | Trigger |
+|------|----|---------|
+| `queuing` | `running` | Controller: Job created successfully |
+| `queuing` | `terminal_failed` | Controller: Job creation failed (quota, invalid image, etc.) |
+| `queuing` | `cancelled` | Controller: `cancel_requested` is true, no Job exists |
+| `running` | `succeeded` | Controller: Job has `Complete` condition |
+| `running` | `terminal_failed` | Controller: Job has `Failed` condition (BackoffLimitExceeded, DeadlineExceeded) |
+| `running` | `cancelled` | Controller: `cancel_requested` is true, Job deleted |
+
+**Store-enforced invariants:**
+- `succeeded`, `terminal_failed`, `cancelled` are **final** — no transitions out, Store rejects any attempt
+- `running → queuing` is **rejected** — no going backwards
+- `cancel_requested` can only be set to `true` when status is `queuing` or `running`; setting it on a terminal rollout returns an error
+
+#### Store API
 
 ```python
 class Store:
     # Rollout management
-    async def enqueue_rollout(input, mode, resources_id, config) -> Rollout
-    async def dequeue_rollout(worker_id) -> Optional[Rollout]
-    async def update_rollout(rollout_id, status, ...) -> Rollout
-    async def query_rollouts(status_in, ...) -> List[Rollout]
+    async def enqueue_rollout(input, resources_id, config) -> Rollout
+    async def update_rollout(rollout_id, status, expected_version,
+                             job_name=None, succeeded_attempt_id=None,
+                             error_message=None) -> Rollout
+        # Enforces: valid transition + optimistic locking (version check)
+        # Raises: ConflictError (version mismatch), InvalidTransitionError
+    async def cancel_rollout(rollout_id) -> Rollout
+        # Sets cancel_requested=True. Rejects if already terminal.
+    async def query_rollouts(status_in=None, cancel_requested=None) -> List[Rollout]
     async def wait_for_rollouts(rollout_ids, timeout) -> List[Rollout]
+        # Long-polls until all specified rollouts reach a terminal state,
+        # or timeout expires. Returns current state of all requested rollouts.
     
     # Event storage
     async def add_event(event: Event) -> Event
@@ -334,11 +394,6 @@ class Store:
     # Resource management
     async def add_resources(resources) -> ResourcesUpdate
     async def get_latest_resources() -> Optional[ResourcesUpdate]
-    
-    # No attempt lifecycle management (K8s owns pod lifecycle)
-    # No span sequence_id allocation (Gateway/Store auto-increments per attempt)
-    # No watchdog (K8s probes handle liveness on the runner side)
-    # No worker telemetry (K8s pod status on the runner side)
 ```
 
 > **Deployment note**: The Store is a standalone HTTP service. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from both the Agent Runner (for rollout queue + trajectory writes) and the Algorithm / Compute Backend (for trajectory reads + resource updates).
@@ -406,9 +461,11 @@ The `rollout_id` and `attempt_id` are embedded in the URL path by the K8s Job te
 
 The gateway is a simple Python HTTP server (e.g., `aiohttp` or `fastapi`) — no LiteLLM dependency.
 
-### 3.5 K8s Integration (Agent Runner Side)
+### 3.5 K8s Controller
 
-The K8s resources below describe the **Agent Runner** cluster. The Store and Gateway may or may not live here — they only need to be reachable via network.
+The K8s controller bridges the Store and K8s. It watches K8s Job status, creates Jobs for queued rollouts, handles cancellation, and syncs terminal status back to the Store. It is the **only component that writes rollout status transitions** (aside from `enqueue_rollout` which creates the initial `queuing` state and `cancel_rollout` which sets the `cancel_requested` flag).
+
+#### K8s resources
 
 | K8s Resource | agl-lite Role |
 |-------------|---------------|
@@ -416,44 +473,254 @@ The K8s resources below describe the **Agent Runner** cluster. The Store and Gat
 | **Job** | Individual rollout execution (one pod per rollout, or batched) |
 | **Service** | Expose Store API and Gateway to pods (or ExternalName/Ingress if Store/Gateway are remote) |
 | **ConfigMap/Secret** | Endpoint URLs (Store, Gateway), algorithm resources (prompts, model endpoints) |
-| **CRD + Controller** (optional) | `RolloutBatch` custom resource for advanced lifecycle management |
 
-#### Job template example
+#### Job naming and labeling
+
+Jobs use deterministic names to prevent duplicates and enable crash recovery:
+
+```yaml
+metadata:
+  name: agl-rollout-{rollout_id}       # deterministic — K8s rejects duplicates
+  labels:
+    agl-lite/rollout-id: {rollout_id}   # for label-based lookups
+```
+
+On creation failure due to `AlreadyExists`, the controller fetches the existing Job and proceeds.
+
+#### Job template
 
 ```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: rollout-R1
+  name: agl-rollout-R1
+  labels:
+    agl-lite/rollout-id: R1
 spec:
   backoffLimit: 3                    # K8s retries up to 3 times
   activeDeadlineSeconds: 600         # timeout after 10 minutes
+  ttlSecondsAfterFinished: 3600     # auto-cleanup 1h after completion (for debugging)
   template:
     spec:
       restartPolicy: Never
       containers:
         - name: agent
-          image: user/my-agent:latest   # any language, any framework
+          image: user/my-agent:latest
           env:
             - name: ROLLOUT_ID
-              value: "R1"               # set by controller from Store
+              value: "R1"
             - name: POD_UID
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.uid   # unique per pod, changes on retry
+                  fieldPath: metadata.uid
             - name: OPENAI_BASE_URL
               value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
-            - name: AGL_EVENT_URL       # optional, for agents that want to report events
+            - name: AGL_EVENT_URL
               value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
 On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` automatically points to a fresh attempt partition in the Gateway.
 
-#### Retry control
+#### Controller main loop
 
-- `Job.spec.backoffLimit` for retry count
-- `Job.spec.activeDeadlineSeconds` for timeout
-- K8s controller watches Job status and updates Store rollout status accordingly
+The controller uses the standard K8s controller pattern — **watch + periodic reconciliation**:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Controller Main Loop                               │
+│                                                                       │
+│  1. WATCH: K8s Job events (label: agl-lite/rollout-id)               │
+│     → on any Job status change, reconcile that rollout                │
+│                                                                       │
+│  2. POLL Store: query rollouts in "queuing" or with cancel_requested  │
+│     → create Jobs for new queuing rollouts                            │
+│     → process cancellations                                           │
+│                                                                       │
+│  3. PERIODIC FULL RECONCILE (every N seconds):                        │
+│     → for each "queuing" rollout: ensure Job exists or create it      │
+│     → for each "running" rollout: check Job status, sync if needed    │
+│     → catches anything missed by watch/poll (crash recovery)          │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+#### Reconcile logic (per rollout)
+
+```python
+def reconcile(rollout: Rollout):
+    if rollout.status in (SUCCEEDED, TERMINAL_FAILED, CANCELLED):
+        # Final state. Ensure K8s Job is cleaned up (idempotent).
+        if rollout.job_name:
+            k8s.delete_job_if_exists(rollout.job_name)
+        return
+    
+    # ── Handle cancel first (takes priority) ──
+    if rollout.cancel_requested:
+        handle_cancel(rollout)
+        return
+    
+    # ── Normal lifecycle ──
+    if rollout.status == QUEUING:
+        handle_queuing(rollout)
+    elif rollout.status == RUNNING:
+        handle_running(rollout)
+
+
+def handle_cancel(rollout):
+    """Process cancel_requested flag."""
+    if rollout.status == QUEUING and rollout.job_name is None:
+        # No Job exists. Straight to cancelled.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED,
+            expected_version=rollout.version)
+        return
+    
+    if rollout.job_name is None:
+        # Running but no job_name? Shouldn't happen, but be safe.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED,
+            expected_version=rollout.version)
+        return
+    
+    job = k8s.get_job(rollout.job_name)
+    
+    if job is None:
+        # Job already gone. Mark cancelled.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED,
+            expected_version=rollout.version)
+        return
+    
+    # Job exists. Check if it already succeeded before we delete.
+    if job_has_condition(job, "Complete"):
+        # Success already happened. Honor success over cancel.
+        succeeded_pod_uid = find_succeeded_pod_uid(job)
+        store.update_rollout(rollout.rollout_id,
+            status=SUCCEEDED,
+            succeeded_attempt_id=succeeded_pod_uid,
+            expected_version=rollout.version)
+        k8s.delete_job(rollout.job_name)
+        return
+    
+    if job_has_condition(job, "Failed"):
+        # Job already failed on its own. User wanted cancel — mark cancelled,
+        # not terminal_failed. The intent was cancellation.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED,
+            expected_version=rollout.version)
+        k8s.delete_job(rollout.job_name)
+        return
+    
+    # Job is still active. Delete it.
+    # Foreground propagation: K8s deletes pods first, then Job.
+    k8s.delete_job(rollout.job_name, propagation="Foreground")
+    # Don't mark cancelled yet — Job is still terminating.
+    # On next reconciliation, get_job returns None → mark cancelled.
+    # This prevents a window where Store says "cancelled" but pods are
+    # still running and writing events.
+
+
+def handle_queuing(rollout):
+    """Create K8s Job for a queuing rollout."""
+    if rollout.job_name is not None:
+        # Job was already created (controller crashed after creation
+        # but before status update). Check its status.
+        job = k8s.get_job(rollout.job_name)
+        if job is not None:
+            store.update_rollout(rollout.rollout_id,
+                status=RUNNING, job_name=rollout.job_name,
+                expected_version=rollout.version)
+            return
+        # Job name set but Job gone? Something went wrong.
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message="Job not found during recovery",
+            expected_version=rollout.version)
+        return
+    
+    job_name = f"agl-rollout-{rollout.rollout_id}"
+    try:
+        k8s.create_job(make_job_spec(rollout, job_name))
+        store.update_rollout(rollout.rollout_id,
+            status=RUNNING, job_name=job_name,
+            expected_version=rollout.version)
+    except K8sAlreadyExistsError:
+        # Job exists (duplicate from previous attempt). Fetch and proceed.
+        store.update_rollout(rollout.rollout_id,
+            status=RUNNING, job_name=job_name,
+            expected_version=rollout.version)
+    except K8sError as e:
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message=f"Job creation failed: {e}",
+            expected_version=rollout.version)
+
+
+def handle_running(rollout):
+    """Sync K8s Job status to Store for a running rollout."""
+    job = k8s.get_job(rollout.job_name)
+    
+    if job is None:
+        # Job disappeared (manually deleted, namespace cleanup).
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message="K8s Job not found",
+            expected_version=rollout.version)
+        return
+    
+    conditions = {c.type: c for c in (job.status.conditions or [])}
+    
+    if "Complete" in conditions:
+        succeeded_pod_uid = find_succeeded_pod_uid(job)
+        store.update_rollout(rollout.rollout_id,
+            status=SUCCEEDED,
+            succeeded_attempt_id=succeeded_pod_uid,
+            expected_version=rollout.version)
+    elif "Failed" in conditions:
+        reason = conditions["Failed"].reason     # BackoffLimitExceeded, DeadlineExceeded
+        message = conditions["Failed"].message
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message=f"{reason}: {message}",
+            expected_version=rollout.version)
+    # else: Job still active (running or between retries). No update needed.
+```
+
+All `update_rollout` calls use optimistic locking (`expected_version`). On `ConflictError`, the controller re-fetches the rollout and re-evaluates — another instance may have already handled it.
+
+#### Edge cases
+
+**Controller crash and recovery:**
+On restart, periodic full reconciliation scans all non-terminal rollouts and syncs them with K8s Job status. This is idempotent — if a Job exists, its status is checked; if it's gone, the rollout is marked `terminal_failed`. The deterministic Job name (`agl-rollout-{rollout_id}`) ensures the controller can always find the Job for a rollout.
+
+**Two controller instances (leader election gap):**
+Both read `version=N`, both try to update the same rollout. One succeeds (`version→N+1`), the other gets `ConflictError`, re-fetches, sees the update was already done. Optimistic locking is the single serialization point.
+
+**Store unavailable:**
+The K8s controller pattern naturally handles this: if `update_rollout` fails due to Store being unreachable, the event is requeued with exponential backoff. The Job keeps running regardless of Store availability. When the Store comes back, the controller retries. No data loss — K8s Job status is the durable record.
+
+**Job creation race (controller crash mid-creation):**
+Controller creates Job, crashes before calling `update_rollout`. On restart, it finds a `queuing` rollout. It tries to create `agl-rollout-{rollout_id}` — K8s returns `AlreadyExists`. Controller catches this, sets status to `running`. Idempotent.
+
+**Job deleted externally (`kubectl delete job`):**
+Periodic reconciliation finds a `running` rollout whose Job no longer exists. Marks `terminal_failed` with error "K8s Job not found".
+
+**Cancel + success race:**
+User sets `cancel_requested=true`. Controller reconciles and checks Job status before deleting. If Job already has `Complete` condition, **success wins** — the work was done and trajectory data is captured. Controller marks `succeeded` and cleans up the Job. Cancel is effectively a no-op in this case.
+
+**Cancel + failure race:**
+If `cancel_requested=true` and Job has `Failed` condition, controller marks `cancelled` (not `terminal_failed`) — user's intent was to cancel, and the failure is consistent with that intent.
+
+**Cancel during Job termination:**
+After the controller calls `k8s.delete_job(propagation="Foreground")`, the Job enters a terminating state. Pods receive SIGTERM, then SIGKILL after grace period (default 30s). The controller does **not** mark `cancelled` until the Job is fully gone (`get_job` returns None). This prevents a window where the Store says `cancelled` but pods are still running and writing events to the Gateway.
+
+**Node partition (two pods running):**
+Data stays clean — each pod writes to its own `attempt_id` partition (see Section 3.3). The Job stays `active` throughout, so rollout remains `running`. Only when the Job reaches a terminal condition does the controller update the Store. If both pods succeed, K8s Job (`completions=1`) terminates after the first; `succeeded_attempt_id` records whichever pod K8s considers the completion.
+
+**Algorithm queries stale status:**
+Inherent in async systems. The controller syncs within seconds in normal operation. `wait_for_rollouts(ids, timeout)` long-polls the Store, returning when status changes or timeout fires.
+
+**Rollout enqueued but controller is down:**
+Rollouts stay `queuing`. When the controller comes back, periodic reconciliation picks them up and creates Jobs. No data loss, just delay.
 
 ### 3.6 Adapter Simplification
 
