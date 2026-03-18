@@ -105,7 +105,7 @@ The VERL algorithm:
 |---------|---------------|
 | Algorithm ↔ Store ↔ Runner loop | Same decoupled architecture |
 | Rollout / Attempt lifecycle | Simplified states (K8s manages retry/timeout) |
-| Resource versioning | Same concept (prompt templates, model endpoints) |
+| Resource versioning | Same concept for prompts and config. Model endpoints moved to dedicated model server registry with version tracking. |
 | Adapter pattern | Simplified — filters events by type (`model_request`, `reward`) instead of parsing OTEL spans |
 | Agent abstraction | Language-agnostic: any program that consumes Gateway endpoint via environment variables (OAI-compatible `base_url`) |
 | Store API | Simplified subset (event-based, no span sequence_id, no watchdog, no OTEL conversion) |
@@ -147,7 +147,7 @@ The architecture is organized into three logical groups. **No strong assumption 
 
 | agl-lite Component | Responsibility |
 |--------------------|----------------|
-| **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy, event auto-capture) and Store (rollout queue, event storage, resource versioning). One deployment, one endpoint. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
+| **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). One deployment, one endpoint. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
 | **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
 | **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
 | **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is that it reads the Gateway endpoint from environment variables (e.g., `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`) and makes standard API calls. Packaged into a container image. No base class or SDK required. |
@@ -233,6 +233,7 @@ class Event:
 # Created automatically by the Gateway on every LLM call.
 {
     "model": "gpt-4",
+    "model_version": 42,            # training step of the serving model (from ModelServer registry)
     "request": {
         "messages": [...],          # OpenAI chat format
         "temperature": 0.7,
@@ -399,9 +400,15 @@ class Store:
         #   FROM events WHERE rollout_id = ?
         #   GROUP BY attempt_id ORDER BY first_seen
 
-    # Resource management
+    # Resource management (prompts, config — not model endpoints)
     async def add_resources(resources) -> ResourcesUpdate
     async def get_latest_resources() -> Optional[ResourcesUpdate]
+    
+    # Model server management
+    async def register_model(endpoint, version) -> ModelServer
+    async def list_models() -> List[ModelServer]
+    async def remove_model(model_id) -> None
+    async def remove_all_models() -> None
 ```
 
 > **Deployment note**: The agl-lite Service is a single HTTP server. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from the Agent Runner, the K8s Controller, and the Algorithm.
@@ -414,15 +421,16 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 | Path pattern | Function | Consumer |
 |---|---|---|
-| `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to LLM backend, auto-captures `model_request` events | Agent pods |
+| `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events | Agent pods |
 | `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
 | `/api/rollouts` | **Rollout management** — enqueue, query, cancel, wait | Algorithm, K8s controller |
 | `/api/rollouts/{rid}` | **Single rollout** — get, update | K8s controller |
 | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
 | `/api/rollouts/wait` | **Wait for completion** — long-poll until terminal | Algorithm |
+| `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
 | `/api/events` | **Event query** — query events by rollout/attempt/type, with smart attempt_id default | Algorithm |
 | `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
-| `/api/resources` | **Resource management** — add, get latest | Algorithm |
+| `/api/resources` | **Resource management** — add, get latest (prompts, config — not model endpoints) | Algorithm |
 
 #### LLM proxy paths (agent-facing, transparent)
 
@@ -430,9 +438,12 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 The agent calls this as a normal OpenAI endpoint (via `OPENAI_BASE_URL`). The service:
 1. Parses `rollout_id` and `attempt_id` from the path prefix
-2. Strips the prefix, forwards `POST /v1/chat/completions` to the LLM backend
-3. Captures request + response as a `model_request` event (auto-assigned `sequence`, `timestamp`)
-4. Returns the LLM response to the agent
+2. Selects a model server from the registry (round-robin or least-connections)
+3. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
+4. Captures request + response as a `model_request` event, including the server's `model_version`
+5. Returns the LLM response to the agent
+
+**When no model servers are registered** (weight update in progress): returns **503 Service Unavailable** with `Retry-After` header. Standard OpenAI SDKs auto-retry on 503 with exponential backoff. The agent pod does not crash, so K8s Job retry count is unaffected. See [Model Server Management](#model-server-management) for the full weight update protocol.
 
 Any path under `/rollout/{rid}/attempt/{aid}/v1/...` is proxied. The agent is unaware of agl-lite.
 
@@ -464,11 +475,71 @@ The service assigns `event_id`, `sequence`, `timestamp` and stores the event. Us
 | `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Ordered by sequence. When `attempt_id` is omitted: uses `succeeded_attempt_id` if rollout succeeded, otherwise the most recently created attempt (derived from events). |
 | `GET` | `/api/attempts/{rollout_id}` | List attempts with timing. Derived from events table: `[{attempt_id, first_seen, last_seen, event_count}]` ordered by `first_seen`. No separate attempt storage. |
 
-**Resource management:**
+**Model server management:**
+
+```python
+class ModelServer:
+    model_id: str           # auto-generated UUID
+    endpoint: str           # e.g., "http://vllm-0:8000/v1"
+    version: int            # training step (monotonically increasing)
+    created_at: float
+```
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. |
+| `POST` | `/api/models` | Register a model server. Body: `{endpoint, version}`. Returns `ModelServer`. Gateway immediately starts routing to it. |
+| `GET` | `/api/models` | List all registered model servers. |
+| `DELETE` | `/api/models/{model_id}` | Remove a single server. In-flight requests to it complete normally; no new requests routed to it. |
+| `DELETE` | `/api/models` | Remove **all** servers. Gateway enters unavailable state — returns 503 to all new LLM requests until a server is registered. |
+
+#### Weight update protocol
+
+The model server API enables clean weight updates for both synchronous and asynchronous RL:
+
+```
+                    Algorithm / Compute Backend                    agl-lite Gateway
+                    ───────────────────────────                    ────────────────
+ 1. Training step complete.
+ 2. DELETE /api/models                        ──→   Routing table empty.
+                                                    New LLM requests → 503 + Retry-After.
+                                                    In-flight requests complete normally.
+ 3. Kill old inference servers.
+ 4. Launch new servers with updated weights.
+ 5. Wait for servers to be ready.
+ 6. POST /api/models                          ──→   Server registered with new version.
+    {endpoint: "http://vllm:8000/v1",               Routing resumes.
+     version: 43}                                   Retrying agents succeed on next attempt.
+```
+
+**During the unavailable window** (steps 2–6):
+- Gateway returns `503 Service Unavailable` with `Retry-After: N` header (configurable, default 5s)
+- OpenAI-compatible SDKs (Python, JS, etc.) auto-retry on 503 with exponential backoff
+- The agent pod stays alive — no crash, no K8s Job retry consumed
+- When routing resumes, the next SDK retry succeeds transparently
+
+**Async RL implications**: In turn-level async RL, a single trajectory may span multiple weight updates. The gateway records `model_version` on every `model_request` event, so the algorithm knows which policy generated each response:
+
+```
+seq=1  model_request  {model_version: 42, ...}   ← turn 1, policy v42
+seq=2  tool_result    {...}
+seq=3  model_request  {model_version: 42, ...}   ← turn 2, policy v42
+seq=4  tool_result    {...}
+       ── weight update: v42 → v43 ──
+seq=5  model_request  {model_version: 43, ...}   ← turn 3, policy v43
+seq=6  reward         {value: 0.85}
+```
+
+This per-request version tracking is essential for:
+- **Importance sampling**: correct policy gradient when training data comes from multiple policy versions
+- **Off-policy correction**: adjusting gradients for stale data
+- **Training data filtering**: discarding or down-weighting data from very old versions
+- **Metrics**: tracking performance evolution across training steps
+
+**Resource management** (prompts, config — not model endpoints):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. For prompt templates, evaluation configs, etc. |
 | `GET` | `/api/resources/latest` | Get the latest resource snapshot. |
 | `GET` | `/api/resources/{resources_id}` | Get a specific resource snapshot by ID. |
 
@@ -793,13 +864,13 @@ The original `LightningStore` has **25+ methods** across 6 domains:
 
 ### 4.2 agl-lite API Surface
 
-A single HTTP service with **~15 endpoints** across 4 domains:
+A single HTTP service with **~19 endpoints** across 5 domains:
 
 **LLM proxy (2 paths, agent-facing):**
 
 | Path | Replaces |
 |------|----------|
-| `POST /rollout/{rid}/attempt/{aid}/v1/...` | `RolloutAttemptMiddleware` + `StreamConversionMiddleware` + `LightningSpanExporter` + LiteLLM proxy. One path does it all: proxy + auto-capture as event. |
+| `POST /rollout/{rid}/attempt/{aid}/v1/...` | `RolloutAttemptMiddleware` + `StreamConversionMiddleware` + `LightningSpanExporter` + LiteLLM proxy. One path does it all: proxy + auto-capture as event. Returns 503 during weight updates. |
 | `POST /rollout/{rid}/attempt/{aid}/events` | *New.* Explicit event reporting (reward, user-defined). No original equivalent — rewards were extracted from OTEL spans. |
 
 **Rollout management (6 endpoints):**
@@ -813,6 +884,15 @@ A single HTTP service with **~15 endpoints** across 4 domains:
 | `POST /api/rollouts/{rid}/cancel` | *New.* Sets `cancel_requested` flag. Original used `update_rollout(status="cancelled")`. |
 | `POST /api/rollouts/wait` | `wait_for_rollouts` |
 
+**Model server management (4 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/models` | *New.* Register versioned inference server. Original stored model endpoints as generic resources. |
+| `GET /api/models` | *New.* List registered servers. |
+| `DELETE /api/models/{model_id}` | *New.* Remove one server from routing. |
+| `DELETE /api/models` | *New.* Remove all servers (weight update window). Gateway returns 503 until new servers registered. |
+
 **Event / trajectory (2 endpoints):**
 
 | Endpoint | Replaces |
@@ -824,7 +904,7 @@ A single HTTP service with **~15 endpoints** across 4 domains:
 
 | Endpoint | Replaces |
 |----------|----------|
-| `POST /api/resources` | `add_resources` |
+| `POST /api/resources` | `add_resources` (prompts, config — model endpoints moved to `/api/models`) |
 | `GET /api/resources/latest` | `get_latest_resources` |
 | `GET /api/resources/{id}` | `get_resources_by_id` |
 
@@ -850,6 +930,9 @@ A single HTTP service with **~15 endpoints** across 4 domains:
 
 | New | Reason |
 |-----|--------|
+| **Model server registry** (`/api/models`) | First-class inference server management with version tracking. Original stored model endpoints as opaque resource blobs. Enables training-aware routing, weight update coordination, and async RL. |
+| **Weight update protocol** (DELETE all → 503 → POST new) | Clean coordination between training and inference. Gateway returns 503 during weight updates; SDKs auto-retry. No agent crashes, no K8s retry consumed. Emergent from CRUD — no special "update mode" API. |
+| **`model_version` in `model_request` events** | Per-request policy version tracking. Essential for importance sampling, off-policy correction, and training data filtering in async RL. |
 | `POST /rollout/{rid}/attempt/{aid}/events` | Explicit event ingestion (reward, user-defined types). Original had no direct event API — everything went through OTEL spans. |
 | `POST /api/rollouts/{rid}/cancel` | Explicit cancel with `cancel_requested` flag. Cleaner than overloading `update_rollout(status="cancelled")`. |
 | `cancel_requested` flag on Rollout | Separate intent from execution. Original used status directly. |
