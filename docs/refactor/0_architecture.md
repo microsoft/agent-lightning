@@ -134,26 +134,13 @@ The VERL algorithm:
 
 ### 3.1 High-Level Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Kubernetes Cluster                    │
-│                                                              │
-│  ┌──────────┐     ┌──────────────┐     ┌─────────────────┐  │
-│  │Algorithm │────▶│    Store     │◀────│  Runner Pods    │  │
-│  │  (Pod)   │     │   (Service)  │     │  (Job/Depl.)    │  │
-│  └──────────┘     └──────┬───────┘     └────────┬────────┘  │
-│                          │                      │            │
-│                   ┌──────▼───────┐              │            │
-│                   │   Gateway    │◀─────────────┘            │
-│                   │  (Service)   │                           │
-│                   └──────┬───────┘                           │
-│                          │                                   │
-│                   ┌──────▼───────┐                           │
-│                   │  LLM Backend │                           │
-│                   │  (vLLM etc.) │                           │
-│                   └──────────────┘                           │
-└─────────────────────────────────────────────────────────────┘
-```
+![agl-lite Target Architecture](../images/lite_arch.excalidraw.svg)
+
+The architecture is organized into three columns:
+
+- **Compute Backend** (green) — Inference Servers (vLLMs) and Training Engine (Megatron/PyTorch). Training engine pushes updated weights to inference servers.
+- **AGL-Lite** (blue) — The Gateway (agl-router) sits between inference servers and agent runners, recording all request-response traffic into the Data Store. The Data Store feeds trajectory data back to the training engine.
+- **Agent Runner** (red) — Kubernetes-based. A K8S Controller manages agent Pods. Pods make LLM calls through the Gateway.
 
 ### 3.2 Component Mapping
 
