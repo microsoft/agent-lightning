@@ -140,19 +140,18 @@ The VERL algorithm:
 The architecture is organized into three logical groups. **No strong assumption is made about their co-location** — they communicate only through well-defined APIs (HTTP/gRPC), so each group can live in the same K8s cluster, in separate clusters, or even across cloud boundaries.
 
 - **Compute Backend** (green) — Inference Servers (vLLMs) and Training Engine (Megatron/PyTorch). This is a **prerequisite managed by the user**; agl-lite does not own or deploy it. The compute backend may be in the same K8s cluster as agent runner, in a separate but network-accessible cluster, or provided by a remote fine-tuning service. Training engine pushes updated weights to inference servers.
-- **AGL-Lite** (blue) — The Gateway (agl-router) sits between inference servers and agent runners, recording all request-response traffic into the Data Store. The Data Store feeds trajectory data back to the training engine. AGL-Lite can be deployed in the same K8s cluster as the Agent Runner, or co-located with the Compute Backend — in either case it only needs to **expose its API** (Store + Gateway endpoints) to the Agent Runner.
-- **Agent Runner** (red) — Kubernetes-based. A K8S Controller manages agent Pods. Pods make LLM calls through the Gateway. The runner only needs network access to the AGL-Lite API (Gateway + Store endpoints); it does not need direct access to the Compute Backend.
+- **AGL-Lite** (blue) — A single service combining the Gateway (agl-router) and the Data Store. The Gateway sits between inference servers and agent runners, recording all request-response traffic into the Store. The Store feeds trajectory data back to the training engine. One endpoint, one deployment. AGL-Lite can be deployed in the same K8s cluster as the Agent Runner, or co-located with the Compute Backend — in either case it only needs to **expose its API** to the Agent Runner.
+- **Agent Runner** (red) — Kubernetes-based. A K8S Controller manages agent Pods. Pods make LLM calls through the agl-lite Gateway. The runner only needs network access to the agl-lite Service endpoint; it does not need direct access to the Compute Backend.
 
 ### 3.2 Component Mapping
 
 | agl-lite Component | Responsibility |
 |--------------------|----------------|
-| **Store** | Rollout queue, attempt tracking, resource versioning, trajectory storage. Exposed as an HTTP API. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
-| **Gateway** | Reverse proxy between agents and LLM backends. Records every request-response pair as trajectory data and writes to Store. Replaces both LLM Proxy and Tracer. Typically co-located with or near the inference servers for low latency. |
-| **Runner** | K8s Job or Deployment. Each pod runs one agent container. Dequeues rollouts from Store, launches the agent process, sends LLM calls through Gateway. Only requires network access to Store and Gateway endpoints. |
-| **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories from Store, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). |
+| **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy, event auto-capture) and Store (rollout queue, event storage, resource versioning). One deployment, one endpoint. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
+| **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
+| **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
 | **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is that it reads the Gateway endpoint from environment variables (e.g., `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`) and makes standard API calls. Packaged into a container image. No base class or SDK required. |
-| **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. |
+| **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. Talks to the agl-lite Service API. |
 
 ### 3.3 Simplified Data Model
 
@@ -174,13 +173,15 @@ env:
     valueFrom:
       fieldRef:
         fieldPath: metadata.uid      # K8s generates a unique UID per pod
+  - name: AGL_LITE_URL
+    value: "http://agl-lite:8080"    # single service endpoint
   - name: OPENAI_BASE_URL
-    value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
 ```
 
 The agent sees a normal OpenAI-compatible base URL and has **zero awareness of agl-lite**:
 ```
-OPENAI_BASE_URL=http://gateway:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
+OPENAI_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
 ```
 
 #### Attempt as a data tag, not an entity
@@ -396,70 +397,75 @@ class Store:
     async def get_latest_resources() -> Optional[ResourcesUpdate]
 ```
 
-> **Deployment note**: The Store is a standalone HTTP service. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from both the Agent Runner (for rollout queue + trajectory writes) and the Algorithm / Compute Backend (for trajectory reads + resource updates).
+> **Deployment note**: The agl-lite Service is a single HTTP server. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from the Agent Runner, the K8s Controller, and the Algorithm.
 
-### 3.4 Gateway Design
+### 3.4 Unified API Spec
 
-The Gateway is the central innovation replacing both LiteLLM Proxy and OTEL Tracer:
+The Gateway (LLM proxy) and Store (data management) are combined into a **single HTTP service**. All paths are served by one endpoint. This eliminates the network hop between Gateway and Store on the hot path (every LLM request), and simplifies deployment to one service.
 
-```
-Agent (any language) ──▶ Gateway ──▶ LLM Backend
-                            │
-                            ▼
-                         Store (trajectory records)
-```
+#### Path layout
 
-The agent connects to the Gateway the same way it would connect to any OpenAI-compatible endpoint — via `OPENAI_BASE_URL` (or similar) environment variable. The agent does not need to know about agl-lite at all.
+| Path pattern | Function | Consumer |
+|---|---|---|
+| `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to LLM backend, auto-captures `model_request` events | Agent pods |
+| `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
+| `/api/rollouts` | **Rollout management** — enqueue, query, cancel, wait | Algorithm, K8s controller |
+| `/api/rollouts/{rid}` | **Single rollout** — get, update | K8s controller |
+| `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
+| `/api/rollouts/wait` | **Wait for completion** — long-poll until terminal | Algorithm |
+| `/api/events` | **Event query** — query events by rollout/attempt/type | Algorithm |
+| `/api/trajectories/{rid}/{aid}` | **Trajectory query** — full event sequence for an attempt | Algorithm |
+| `/api/attempts/{rid}` | **List attempts** — list attempt_ids for a rollout | Algorithm |
+| `/api/resources` | **Resource management** — add, get latest | Algorithm |
 
-#### Request flow (model_request — auto-captured)
+#### LLM proxy paths (agent-facing, transparent)
 
-```
-1. Agent sends (using OPENAI_BASE_URL):
-   POST http://gateway:8080/rollout/R1/attempt/a1b2c3d4/v1/chat/completions
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/v1/chat/completions`**
 
-2. Gateway parses path:
-   → rollout_id = "R1"
-   → attempt_id = "a1b2c3d4"
-   → downstream path = /v1/chat/completions
+The agent calls this as a normal OpenAI endpoint (via `OPENAI_BASE_URL`). The service:
+1. Parses `rollout_id` and `attempt_id` from the path prefix
+2. Strips the prefix, forwards `POST /v1/chat/completions` to the LLM backend
+3. Captures request + response as a `model_request` event (auto-assigned `sequence`, `timestamp`)
+4. Returns the LLM response to the agent
 
-3. Gateway forwards to LLM backend:
-   POST http://vllm:8000/v1/chat/completions
+Any path under `/rollout/{rid}/attempt/{aid}/v1/...` is proxied. The agent is unaware of agl-lite.
 
-4. Gateway captures response, writes to Store:
-   Event(event_type="model_request", rollout_id="R1", attempt_id="a1b2c3d4",
-         sequence=<next>, data={request, response, latency_ms, ...})
-```
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/events`**
 
-#### Event reporting (reward + user-defined events — explicit)
-
-The Gateway also exposes an event endpoint on the same path prefix:
-
-```
-POST http://gateway:8080/rollout/R1/attempt/a1b2c3d4/events
-Content-Type: application/json
-
+Accepts explicit events (reward, user-defined types). Body:
+```json
 {"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
 ```
+The service assigns `event_id`, `sequence`, `timestamp` and stores the event. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
 
-The Gateway assigns `rollout_id`, `attempt_id` (from path), `sequence` (next in order), `timestamp`, and `event_id`, then writes the event to the Store. This endpoint is used by runners, environments, and evaluators — agl-lite-aware components.
+#### Store paths (management API)
 
-Optionally exposed to the agent container as:
-```yaml
-- name: AGL_EVENT_URL   # optional, agent can ignore
-  value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
-```
+**Rollout management:**
 
-The `rollout_id` and `attempt_id` are embedded in the URL path by the K8s Job template (see Section 3.3). The Gateway extracts them purely from the path prefix — no special headers or agent-side logic needed.
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/rollouts` | Enqueue a new rollout. Body: `{input, resources_id?, config?}`. Returns `Rollout` with status `queuing`. |
+| `GET` | `/api/rollouts` | Query rollouts. Params: `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
+| `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
+| `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
+| `POST` | `/api/rollouts/{rollout_id}/cancel` | Set `cancel_requested=true`. Rejects if already terminal. Used by Algorithm or user. |
+| `POST` | `/api/rollouts/wait` | Long-poll until rollouts complete. Body: `{rollout_ids, timeout?}`. Returns when all reach terminal state or timeout. |
 
-#### Key responsibilities
+**Event / trajectory access:**
 
-1. **Reverse proxy**: Forward OpenAI-compatible requests to LLM backends
-2. **Path parsing**: Extract `rollout_id` and `attempt_id` from the URL prefix, strip it, forward the rest
-3. **Auto-recording**: Capture every proxied request-response pair as a `model_request` event, auto-incrementing `sequence` per `(rollout_id, attempt_id)`
-4. **Event ingestion**: Accept explicit event POSTs (reward, user-defined types) on the `/events` endpoint, assign sequence and timestamp, write to Store
-5. **Resource awareness**: Read current model endpoint from Store resources
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit`, `offset`. |
+| `GET` | `/api/trajectories/{rollout_id}/{attempt_id}` | Full trajectory (all events for one attempt, ordered by sequence). |
+| `GET` | `/api/attempts/{rollout_id}` | List all attempt_ids for a rollout. |
 
-The gateway is a simple Python HTTP server (e.g., `aiohttp` or `fastapi`) — no LiteLLM dependency.
+**Resource management:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. |
+| `GET` | `/api/resources/latest` | Get the latest resource snapshot. |
+| `GET` | `/api/resources/{resources_id}` | Get a specific resource snapshot by ID. |
 
 ### 3.5 K8s Controller
 
@@ -469,10 +475,10 @@ The K8s controller bridges the Store and K8s. It watches K8s Job status, creates
 
 | K8s Resource | agl-lite Role |
 |-------------|---------------|
-| **Deployment** | (Optional) Store service, Gateway service — if co-located with runner |
+| **Deployment** | (Optional) agl-lite Service — if co-located with runner |
 | **Job** | Individual rollout execution (one pod per rollout, or batched) |
-| **Service** | Expose Store API and Gateway to pods (or ExternalName/Ingress if Store/Gateway are remote) |
-| **ConfigMap/Secret** | Endpoint URLs (Store, Gateway), algorithm resources (prompts, model endpoints) |
+| **Service** | Expose agl-lite Service to pods (or ExternalName/Ingress if remote) |
+| **ConfigMap/Secret** | agl-lite Service endpoint URL, algorithm resources (prompts, model endpoints) |
 
 #### Job naming and labeling
 
@@ -513,10 +519,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            - name: AGL_LITE_URL                 # single endpoint for everything
+              value: "http://agl-lite:8080"
             - name: OPENAI_BASE_URL
-              value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
             - name: AGL_EVENT_URL
-              value: "http://gateway:8080/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
+              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
 On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` automatically points to a fresh attempt partition in the Gateway.
@@ -744,3 +752,104 @@ class TrajectoryAdapter:
 The adapter only needs to understand `model_request` and `reward` — the two reserved types. User-defined event types (tool results, observations, custom metrics, etc.) are consumed by user-defined algorithm code, not the adapter.
 
 No OTEL span parsing, no parent-child tree reconstruction, no attribute unflattening.
+
+---
+
+## 4. API Change Summary: Agent Lightning → agl-lite
+
+### 4.1 Original Agent Lightning API Surface
+
+The original `LightningStore` has **25+ methods** across 6 domains:
+
+**Rollout management (8 methods):**
+`start_rollout`, `enqueue_rollout`, `enqueue_many_rollouts`, `dequeue_rollout`, `dequeue_many_rollouts`, `update_rollout`, `query_rollouts`, `get_rollout_by_id`, `wait_for_rollouts`
+
+**Attempt management (4 methods):**
+`start_attempt`, `update_attempt`, `query_attempts`, `get_latest_attempt`
+
+**Span management (5 methods):**
+`add_span`, `add_many_spans`, `add_otel_span`, `query_spans`, `get_next_span_sequence_id`, `get_many_span_sequence_ids`
+
+**Resource management (4 methods):**
+`add_resources`, `update_resources`, `query_resources`, `get_resources_by_id`, `get_latest_resources`
+
+**Worker management (3 methods):**
+`query_workers`, `get_worker_by_id`, `update_worker`
+
+**Meta (3):**
+`capabilities`, `statistics`, `otlp_traces_endpoint`
+
+**LLM Proxy** is a separate FastAPI server with:
+- `RolloutAttemptMiddleware` (URL rewriting `/rollout/{rid}/attempt/{aid}/v1/...` → `/v1/...` + header injection)
+- `StreamConversionMiddleware` (stream → non-stream for OTEL capture)
+- `MessageInspectionMiddleware`
+- `LightningSpanExporter` (OTEL span batching + flush to Store)
+- `LightningOpenTelemetry` (LiteLLM callback wiring)
+
+### 4.2 agl-lite API Surface
+
+A single HTTP service with **~15 endpoints** across 4 domains:
+
+**LLM proxy (2 paths, agent-facing):**
+
+| Path | Replaces |
+|------|----------|
+| `POST /rollout/{rid}/attempt/{aid}/v1/...` | `RolloutAttemptMiddleware` + `StreamConversionMiddleware` + `LightningSpanExporter` + LiteLLM proxy. One path does it all: proxy + auto-capture as event. |
+| `POST /rollout/{rid}/attempt/{aid}/events` | *New.* Explicit event reporting (reward, user-defined). No original equivalent — rewards were extracted from OTEL spans. |
+
+**Rollout management (6 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/rollouts` | `enqueue_rollout`, `enqueue_many_rollouts` (batch via JSON array body) |
+| `GET /api/rollouts` | `query_rollouts` (simplified params: `status_in`, `cancel_requested`, `limit`, `offset`) |
+| `GET /api/rollouts/{rid}` | `get_rollout_by_id` |
+| `PATCH /api/rollouts/{rid}` | `update_rollout` (with optimistic locking via `expected_version`) |
+| `POST /api/rollouts/{rid}/cancel` | *New.* Sets `cancel_requested` flag. Original used `update_rollout(status="cancelled")`. |
+| `POST /api/rollouts/wait` | `wait_for_rollouts` |
+
+**Event / trajectory (3 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`) |
+| `GET /api/trajectories/{rid}/{aid}` | `query_spans(rollout_id, attempt_id)` (returns full ordered event sequence) |
+| `GET /api/attempts/{rid}` | `query_attempts` (returns only attempt IDs, not full Attempt objects) |
+
+**Resource management (3 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/resources` | `add_resources` |
+| `GET /api/resources/latest` | `get_latest_resources` |
+| `GET /api/resources/{id}` | `get_resources_by_id` |
+
+### 4.3 What's Removed and Why
+
+| Removed | Reason |
+|---------|--------|
+| `start_rollout` | No "start + first attempt" combo. K8s controller creates Jobs, pod UIDs are attempts. |
+| `dequeue_rollout`, `dequeue_many_rollouts` | No work queue pull. K8s controller polls Store for `queuing` rollouts and creates Jobs. |
+| `start_attempt`, `update_attempt`, `query_attempts` (as entity), `get_latest_attempt` | Attempt is a data tag (pod UID), not a managed entity. No attempt status machine. |
+| `add_span`, `add_many_spans`, `add_otel_span` | Replaced by `model_request` events (auto-captured) and `/events` endpoint. |
+| `get_next_span_sequence_id`, `get_many_span_sequence_ids` | Sequence auto-assigned by the service per `(rollout_id, attempt_id)`. No client-side allocation. |
+| `query_workers`, `get_worker_by_id`, `update_worker` | K8s manages pod/worker lifecycle. No worker telemetry in agl-lite. |
+| `update_resources` (in-place mutation) | Resources are immutable snapshots. Post a new one instead. |
+| `query_resources` (paginated search) | Simplified to `get latest` and `get by ID`. |
+| `capabilities`, `statistics`, `otlp_traces_endpoint` | No OTEL, no capability negotiation. Stats can be added later if needed. |
+| `RolloutAttemptMiddleware` | Path parsing is built into the unified service. |
+| `StreamConversionMiddleware` | No stream→non-stream conversion needed. Events capture the final response. |
+| `LightningSpanExporter` | No OTEL span batching. Events written directly to in-process Store. |
+| `LightningOpenTelemetry` callback | No LiteLLM, no OTEL callbacks. |
+
+### 4.4 What's New
+
+| New | Reason |
+|-----|--------|
+| `POST /rollout/{rid}/attempt/{aid}/events` | Explicit event ingestion (reward, user-defined types). Original had no direct event API — everything went through OTEL spans. |
+| `POST /api/rollouts/{rid}/cancel` | Explicit cancel with `cancel_requested` flag. Cleaner than overloading `update_rollout(status="cancelled")`. |
+| `cancel_requested` flag on Rollout | Separate intent from execution. Original used status directly. |
+| `expected_version` on `PATCH /api/rollouts/{rid}` | Optimistic locking for safe concurrent updates. Original relied on in-process thread locks or single-writer patterns. |
+| `succeeded_attempt_id` on Rollout | Directly links successful rollout to its trajectory data. Original required querying attempts to find the successful one. |
+| Open event types (`event_type: str`) | Extensible without schema changes. Original was locked to OTEL span format. |
+| Unified service (proxy + store) | Single deployment, in-process event capture on hot path. Original had separate LLM Proxy and Store Server. |
