@@ -97,7 +97,7 @@ The VERL algorithm:
 | 1 | **LiteLLM** proxy for LLM routing | **Self-owned request gateway** | Remove heavy dependency; simpler proxy that records traffic |
 | 2 | **OpenTelemetry** stack (spans, tracers, exporters, instrumentation) | **Gateway records request-response pairs** during transfer | Eliminate OTEL complexity; the gateway *is* the instrumentation |
 | 3 | **Span-based** trajectory format | **Sequence of requests (with responses)** | Much simpler data model; no span trees, no sequence_id allocation |
-| 4 | **In-process** execution strategies + watchdog retry | **Kubernetes** as default runner (`minikube` for single machine) | Offload scheduling, retry, timeout to K8s controller |
+| 4 | **In-process** execution strategies + watchdog retry | **Kubernetes** as default runner (`minikube` for single machine) | Offload scheduling, retry, timeout to K8s controller; deployment topology is flexible |
 
 ### 2.2 What Stays (Conceptually)
 
@@ -136,22 +136,22 @@ The VERL algorithm:
 
 ![agl-lite Target Architecture](../images/lite_arch.excalidraw.svg)
 
-The architecture is organized into three columns:
+The architecture is organized into three logical groups. **No strong assumption is made about their co-location** — they communicate only through well-defined APIs (HTTP/gRPC), so each group can live in the same K8s cluster, in separate clusters, or even across cloud boundaries.
 
-- **Compute Backend** (green) — Inference Servers (vLLMs) and Training Engine (Megatron/PyTorch). Training engine pushes updated weights to inference servers.
-- **AGL-Lite** (blue) — The Gateway (agl-router) sits between inference servers and agent runners, recording all request-response traffic into the Data Store. The Data Store feeds trajectory data back to the training engine.
-- **Agent Runner** (red) — Kubernetes-based. A K8S Controller manages agent Pods. Pods make LLM calls through the Gateway.
+- **Compute Backend** (green) — Inference Servers (vLLMs) and Training Engine (Megatron/PyTorch). This is a **prerequisite managed by the user**; agl-lite does not own or deploy it. The compute backend may be in the same K8s cluster as agl-lite, in a separate but network-accessible cluster, or provided by a remote fine-tuning service. Training engine pushes updated weights to inference servers.
+- **AGL-Lite** (blue) — The Gateway (agl-router) sits between inference servers and agent runners, recording all request-response traffic into the Data Store. The Data Store feeds trajectory data back to the training engine. AGL-Lite can be deployed in the same K8s cluster as the Agent Runner, or co-located with the Compute Backend — in either case it only needs to **expose its API** (Store + Gateway endpoints) to the Agent Runner.
+- **Agent Runner** (red) — Kubernetes-based. A K8S Controller manages agent Pods. Pods make LLM calls through the Gateway. The runner only needs network access to the AGL-Lite API (Gateway + Store endpoints); it does not need direct access to the Compute Backend.
 
 ### 3.2 Component Mapping
 
 | agl-lite Component | Responsibility |
 |--------------------|----------------|
-| **Store** | Rollout queue, attempt tracking, resource versioning, trajectory storage. Exposed as a K8s Service (HTTP API). |
-| **Gateway** | Reverse proxy between agents and LLM backends. Records every request-response pair as trajectory data and writes to Store. Replaces both LLM Proxy and Tracer. |
-| **Runner** | K8s Job or Deployment. Each pod runs one agent. Dequeues rollouts from Store, executes agent, sends LLM calls through Gateway. |
-| **Algorithm** | K8s Pod. Enqueues rollouts, queries trajectories from Store, runs learning (RL, prompt tuning, etc.), updates resources. |
+| **Store** | Rollout queue, attempt tracking, resource versioning, trajectory storage. Exposed as an HTTP API. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
+| **Gateway** | Reverse proxy between agents and LLM backends. Records every request-response pair as trajectory data and writes to Store. Replaces both LLM Proxy and Tracer. Typically co-located with or near the inference servers for low latency. |
+| **Runner** | K8s Job or Deployment. Each pod runs one agent. Dequeues rollouts from Store, executes agent, sends LLM calls through Gateway. Only requires network access to Store and Gateway endpoints. |
+| **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories from Store, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). |
 | **Agent** | User-defined Python class with `rollout()` method. Packaged into a container image. |
-| **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. |
+| **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. |
 
 ### 3.3 Simplified Data Model
 
@@ -222,11 +222,13 @@ class Store:
     async def add_resources(resources) -> ResourcesUpdate
     async def get_latest_resources() -> Optional[ResourcesUpdate]
     
-    # No attempt management (K8s handles this)
+    # No attempt management (K8s handles this via Job retries)
     # No span sequence_id allocation (gateway auto-increments)
-    # No watchdog (K8s probes)
-    # No worker telemetry (K8s pod status)
+    # No watchdog (K8s probes handle liveness on the runner side)
+    # No worker telemetry (K8s pod status on the runner side)
 ```
+
+> **Deployment note**: The Store is a standalone HTTP service. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from both the Agent Runner (for rollout queue + trajectory writes) and the Algorithm / Compute Backend (for trajectory reads + resource updates).
 
 ### 3.4 Gateway Design
 
@@ -251,14 +253,16 @@ Routing options (choose one):
 
 The gateway is a simple Python HTTP server (e.g., `aiohttp` or `fastapi`) — no LiteLLM dependency.
 
-### 3.5 K8s Integration
+### 3.5 K8s Integration (Agent Runner Side)
+
+The K8s resources below describe the **Agent Runner** cluster. The Store and Gateway may or may not live here — they only need to be reachable via network.
 
 | K8s Resource | agl-lite Role |
 |-------------|---------------|
-| **Deployment** | Store service, Gateway service |
+| **Deployment** | (Optional) Store service, Gateway service — if co-located with runner |
 | **Job** | Individual rollout execution (one pod per rollout, or batched) |
-| **Service** | Expose Store API and Gateway to pods |
-| **ConfigMap/Secret** | Algorithm resources (prompts, model endpoints) |
+| **Service** | Expose Store API and Gateway to pods (or ExternalName/Ingress if Store/Gateway are remote) |
+| **ConfigMap/Secret** | Endpoint URLs (Store, Gateway), algorithm resources (prompts, model endpoints) |
 | **CRD + Controller** (optional) | `RolloutBatch` custom resource for advanced lifecycle management |
 
 Retry control:
@@ -317,10 +321,11 @@ No OTEL span parsing, no parent-child tree reconstruction, no attribute unflatte
 - [ ] Wire algorithm loop: enqueue rollouts → wait → query trajectories → learn
 
 ### Phase 5: Kubernetes Integration
-- [ ] K8s manifests for Store, Gateway as Services
-- [ ] Runner as K8s Job template
+- [ ] K8s manifests for Runner as K8s Job template
 - [ ] K8s controller or simple watcher for rollout lifecycle
-- [ ] Minikube dev setup instructions
+- [ ] (Optional) K8s manifests for Store, Gateway as in-cluster Services
+- [ ] Support for remote Store/Gateway endpoints (ExternalName Service or config)
+- [ ] Minikube dev setup instructions (all-in-one-cluster for development)
 
 ### Phase 6: VERL Integration
 - [ ] Port the VERL algorithm to work with simplified trajectory format

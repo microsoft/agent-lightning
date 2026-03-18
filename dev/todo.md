@@ -29,7 +29,7 @@ Implement the in-memory store and HTTP API.
 
 **Tasks:**
 - `InMemoryStore` implementing the base `Store` interface
-- Store HTTP API (FastAPI) for K8s service exposure
+- Store HTTP API (FastAPI) — standalone service, reachable from runner and compute backend
 - Store client library for runner/algorithm pods
 
 **Files to create:**
@@ -87,18 +87,21 @@ Define the algorithm abstraction and trajectory adapter.
 
 ## Phase 5: Kubernetes Integration [backlog]
 
-K8s manifests and controller for rollout lifecycle.
+K8s manifests and controller for the Agent Runner side. Store and Gateway
+may run in the same cluster or be accessed remotely — no strong co-location
+assumption.
 
 **Tasks:**
-- Store + Gateway as K8s Deployments + Services
 - Runner as K8s Job template
 - K8s controller/watcher syncing Job status → Store rollout status
-- Minikube dev setup instructions
+- (Optional) Store + Gateway as in-cluster K8s Deployments + Services
+- Support for remote Store/Gateway endpoints (ExternalName Service or env config)
+- Minikube dev setup instructions (all-in-one for development)
 
 **Files to create:**
-- `k8s/store.yaml`
-- `k8s/gateway.yaml`
 - `k8s/runner-job-template.yaml`
+- `k8s/store.yaml` (optional, for in-cluster deployment)
+- `k8s/gateway.yaml` (optional, for in-cluster deployment)
 - `k8s/controller/` (TBD)
 - `docs/setup/minikube.md`
 
