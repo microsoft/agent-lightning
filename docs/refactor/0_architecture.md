@@ -279,7 +279,7 @@ class Trajectory:
     events: List[Event]         # ordered by sequence, mixed event types
 ```
 
-All event types share a single monotonically increasing `sequence` counter per `(rollout_id, attempt_id)`, preserving true temporal ordering:
+All event types share a single monotonically increasing `sequence` counter per `(rollout_id, attempt_id)`, preserving temporal ordering:
 
 ```
 seq=1  model_request   (agent calls LLM)
@@ -288,6 +288,9 @@ seq=3  model_request   (agent sends tool result to LLM)
 seq=4  action          (agent submits answer)           ← user-defined type
 seq=5  reward          (environment scores: 0.85)
 ```
+
+<a name="concurrent-requests"></a>
+**Note on concurrent requests**: Tool-use agents may fire multiple LLM calls in parallel. Each concurrent request is an independent stream through the gateway. `sequence` numbers are assigned at event write time (stream completion for streaming requests), so concurrent requests get sequences in completion order — which is arbitrary. `sequence` is a **storage ordering** for pagination and replay, not a causal ordering. Use `timestamp` for approximate causal information when needed.
 
 #### How events are produced
 
@@ -441,8 +444,34 @@ The agent calls this as a normal OpenAI endpoint (via `OPENAI_BASE_URL`). The se
 1. Parses `rollout_id` and `attempt_id` from the path prefix
 2. Selects a model server from the registry (round-robin or least-connections)
 3. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
-4. Captures request + response as a `model_request` event, including the server's `model_version`
+4. Captures the complete request + response as a `model_request` event, including the server's `model_version`
 5. Returns the LLM response to the agent
+
+The gateway handles both **non-streaming and streaming** requests transparently:
+
+**Non-streaming** (`stream: false` or absent): Gateway forwards the request, receives the full JSON response, writes one `model_request` event, and returns the response to the agent.
+
+**Streaming** (`stream: true`): Gateway tees the SSE stream — each chunk is forwarded to the agent immediately (preserving low-latency token delivery) while simultaneously buffered in memory. When the stream completes (`data: [DONE]`), the gateway assembles the full response from buffered chunks and writes one `model_request` event.
+
+```
+Agent ◄──chunk──chunk──chunk──[DONE]──◄ Gateway ◄──chunk──chunk──chunk──[DONE]──◄ Model Server
+                                          │
+                                     (buffer chunks)
+                                          │
+                                     stream complete
+                                          │
+                                          ▼
+                                    write model_request event
+                                    (full assembled response,
+                                     model_version, latency)
+```
+
+**Edge cases in streaming:**
+- **Client disconnect mid-stream**: Gateway continues reading from backend to capture complete data. Event written with `"status": "client_disconnected"`.
+- **Backend error mid-stream**: Event written with partial response and `"status": "stream_error"`.
+- **Sequence assignment**: Assigned at stream completion, not start. Concurrent streams get sequences in completion order. This is consistent with `sequence` being storage order (see [note on concurrency](#concurrent-requests)).
+
+**Memory**: Each concurrent stream buffers one response. A 128K-context response ≈ 500KB. 100 concurrent streams ≈ 50MB. Bounded and manageable.
 
 **When no model servers are registered** (weight update in progress): returns **503 Service Unavailable** with `Retry-After` header. Standard OpenAI SDKs auto-retry on 503 with exponential backoff. The agent pod does not crash, so K8s Job retry count is unaffected. See [Model Server Management](#model-server-management) for the full weight update protocol.
 
@@ -807,7 +836,7 @@ Inherent in async systems. The controller syncs within seconds in normal operati
 **Rollout enqueued but controller is down:**
 Rollouts stay `queuing`. When the controller comes back, periodic reconciliation picks them up and creates Jobs. No data loss, just delay.
 
-### 3.6 Adapter Simplification
+### 3.6 Adapter Simplification (Example)
 
 ```python
 class TrajectoryAdapter:
@@ -827,6 +856,8 @@ class TrajectoryAdapter:
 ```
 
 The adapter only needs to understand `model_request` and `reward` — the two reserved types. User-defined event types (tool results, observations, custom metrics, etc.) are consumed by user-defined algorithm code, not the adapter.
+
+> **This is an example adapter** using episode-level reward (total reward assigned to every step). Real RL algorithms use different reward assignment strategies: per-step rewards, discounted rewards, advantage-based, token-level, etc. Users should implement their own adapter for their algorithm's needs.
 
 No OTEL span parsing, no parent-child tree reconstruction, no attribute unflattening.
 
@@ -923,7 +954,7 @@ A single HTTP service with **~19 endpoints** across 5 domains:
 | `query_resources` (paginated search) | Simplified to `get latest` and `get by ID`. |
 | `capabilities`, `statistics`, `otlp_traces_endpoint` | No OTEL, no capability negotiation. Stats can be added later if needed. |
 | `RolloutAttemptMiddleware` | Path parsing is built into the unified service. |
-| `StreamConversionMiddleware` | No stream→non-stream conversion needed. Events capture the final response. |
+| `StreamConversionMiddleware` | Original forced `stream=false` to backend and re-streamed as fake SSE (OTEL couldn't handle real streams). agl-lite tees real streams — chunks forwarded to agent immediately, buffered for event capture. No latency penalty. |
 | `LightningSpanExporter` | No OTEL span batching. Events written directly to in-process Store. |
 | `LightningOpenTelemetry` callback | No LiteLLM, no OTEL callbacks. |
 
