@@ -387,9 +387,8 @@ class Store:
     # Event storage
     async def add_event(event: Event) -> Event
     async def add_events(events: List[Event]) -> List[Event]
-    async def query_trajectory(rollout_id, attempt_id) -> Trajectory
-    async def query_events(rollout_id, attempt_id,
-                           event_type: Optional[str] = None) -> List[Event]
+    async def query_events(rollout_id, attempt_id=None,
+                           event_type=None, limit=None, offset=None) -> List[Event]
     async def list_attempts(rollout_id) -> List[str]
     
     # Resource management
@@ -414,7 +413,6 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
 | `/api/rollouts/wait` | **Wait for completion** — long-poll until terminal | Algorithm |
 | `/api/events` | **Event query** — query events by rollout/attempt/type | Algorithm |
-| `/api/trajectories/{rid}/{aid}` | **Trajectory query** — full event sequence for an attempt | Algorithm |
 | `/api/attempts/{rid}` | **List attempts** — list attempt_ids for a rollout | Algorithm |
 | `/api/resources` | **Resource management** — add, get latest | Algorithm |
 
@@ -455,8 +453,7 @@ The service assigns `event_id`, `sequence`, `timestamp` and stores the event. Us
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit`, `offset`. |
-| `GET` | `/api/trajectories/{rollout_id}/{attempt_id}` | Full trajectory (all events for one attempt, ordered by sequence). |
+| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Default order: by sequence. A full trajectory is just `GET /api/events?rollout_id={rid}&attempt_id={aid}`. |
 | `GET` | `/api/attempts/{rollout_id}` | List all attempt_ids for a rollout. |
 
 **Resource management:**
@@ -808,12 +805,11 @@ A single HTTP service with **~15 endpoints** across 4 domains:
 | `POST /api/rollouts/{rid}/cancel` | *New.* Sets `cancel_requested` flag. Original used `update_rollout(status="cancelled")`. |
 | `POST /api/rollouts/wait` | `wait_for_rollouts` |
 
-**Event / trajectory (3 endpoints):**
+**Event / trajectory (2 endpoints):**
 
 | Endpoint | Replaces |
 |----------|----------|
-| `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`) |
-| `GET /api/trajectories/{rid}/{aid}` | `query_spans(rollout_id, attempt_id)` (returns full ordered event sequence) |
+| `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`, `attempt_id`). A trajectory is `GET /api/events?rollout_id={rid}&attempt_id={aid}`. |
 | `GET /api/attempts/{rid}` | `query_attempts` (returns only attempt IDs, not full Attempt objects) |
 
 **Resource management (3 endpoints):**
