@@ -19,3 +19,4 @@ Severity: 🔴 architectural gap, 🟡 important design issue, 🟢 minor/deferr
 | 008 | 🟡 | [Data retention and eviction](008_data_retention.md) | open |
 | 009 | 🟢 | [Event ingestion validation](009_event_validation.md) | open |
 | 010 | 🟢 | [find_succeeded_pod_uid implementation](010_find_succeeded_pod_uid.md) | open |
+| 011 | 🟡 | [Cross-boundary authentication and transport security](011_cross_boundary_security.md) | open |
