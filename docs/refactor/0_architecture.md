@@ -389,8 +389,16 @@ class Store:
     async def add_events(events: List[Event]) -> List[Event]
     async def query_events(rollout_id, attempt_id=None,
                            event_type=None, limit=None, offset=None) -> List[Event]
-    async def list_attempts(rollout_id) -> List[str]
-    
+        # attempt_id resolution when omitted:
+        #   1. If rollout.succeeded_attempt_id is set → use it
+        #   2. Otherwise → attempt with latest MIN(timestamp) from events table
+        #   3. No events exist → return []
+    async def list_attempts(rollout_id) -> List[AttemptInfo]
+        # Derived from events table, no separate attempt storage:
+        #   SELECT DISTINCT attempt_id, MIN(timestamp) AS first_seen
+        #   FROM events WHERE rollout_id = ?
+        #   GROUP BY attempt_id ORDER BY first_seen
+
     # Resource management
     async def add_resources(resources) -> ResourcesUpdate
     async def get_latest_resources() -> Optional[ResourcesUpdate]
@@ -412,8 +420,8 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 | `/api/rollouts/{rid}` | **Single rollout** — get, update | K8s controller |
 | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
 | `/api/rollouts/wait` | **Wait for completion** — long-poll until terminal | Algorithm |
-| `/api/events` | **Event query** — query events by rollout/attempt/type | Algorithm |
-| `/api/attempts/{rid}` | **List attempts** — list attempt_ids for a rollout | Algorithm |
+| `/api/events` | **Event query** — query events by rollout/attempt/type, with smart attempt_id default | Algorithm |
+| `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
 | `/api/resources` | **Resource management** — add, get latest | Algorithm |
 
 #### LLM proxy paths (agent-facing, transparent)
@@ -453,8 +461,8 @@ The service assigns `event_id`, `sequence`, `timestamp` and stores the event. Us
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Default order: by sequence. A full trajectory is just `GET /api/events?rollout_id={rid}&attempt_id={aid}`. |
-| `GET` | `/api/attempts/{rollout_id}` | List all attempt_ids for a rollout. |
+| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Ordered by sequence. When `attempt_id` is omitted: uses `succeeded_attempt_id` if rollout succeeded, otherwise the most recently created attempt (derived from events). |
+| `GET` | `/api/attempts/{rollout_id}` | List attempts with timing. Derived from events table: `[{attempt_id, first_seen, last_seen, event_count}]` ordered by `first_seen`. No separate attempt storage. |
 
 **Resource management:**
 
@@ -809,8 +817,8 @@ A single HTTP service with **~15 endpoints** across 4 domains:
 
 | Endpoint | Replaces |
 |----------|----------|
-| `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`, `attempt_id`). A trajectory is `GET /api/events?rollout_id={rid}&attempt_id={aid}`. |
-| `GET /api/attempts/{rid}` | `query_attempts` (returns only attempt IDs, not full Attempt objects) |
+| `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`, `attempt_id`). When `attempt_id` omitted, defaults to succeeded attempt or latest. |
+| `GET /api/attempts/{rid}` | `query_attempts` (derived from events table — no separate attempt storage) |
 
 **Resource management (3 endpoints):**
 
