@@ -334,7 +334,7 @@ class Rollout:
     
     input: Dict                         # task description (delivered as AGL_TASK_INPUT env var)
     config: RolloutConfig               # algorithm-facing Job config (see below)
-    resource_id: Optional[str] = None   # links to immutable resource snapshot (job_defaults, prompts, etc.)
+    resources_id: Optional[str] = None   # links to immutable resource snapshot (job_defaults, prompts, etc.)
     
     # Set by controller during lifecycle
     job_name: Optional[str]             # K8s Job name (set on Job creation)
@@ -422,7 +422,7 @@ queuing ──[controller creates Job]──────────→ running
 ```python
 class Store:
     # Rollout management
-    async def enqueue_rollout(input, config, resource_id=None) -> Rollout
+    async def enqueue_rollout(input, config, resources_id=None) -> Rollout
     async def update_rollout(rollout_id, status, expected_version,
                              job_name=None, succeeded_attempt_id=None,
                              error_message=None) -> Rollout
@@ -633,7 +633,7 @@ The archive feature thus serves dual purpose: **data lifecycle** (purge hot stor
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resource_id?}` or batch `{config, resource_id?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resource_id` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
+| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resources_id?}` or batch `{config, resources_id?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resources_id` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
 | `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
 | `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
 | `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
@@ -712,7 +712,7 @@ This per-request version tracking is essential for:
 |--------|------|-------------|
 | `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. For prompt templates, evaluation configs, etc. |
 | `GET` | `/api/resources/latest` | Get the latest resource snapshot. |
-| `GET` | `/api/resources/{resource_id}` | Get a specific resource snapshot by ID. |
+| `GET` | `/api/resources/{resources_id}` | Get a specific resource snapshot by ID. |
 
 **Data lifecycle (archive and purge):**
 
@@ -800,10 +800,10 @@ On creation failure due to `AlreadyExists`, the controller fetches the existing 
 #### Job template
 
 The controller builds each Job spec by merging two layers:
-1. **`job_defaults`** from the rollout's resource snapshot (`resource_id` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
+1. **`job_defaults`** from the rollout's resource snapshot (`resources_id` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
 2. **`rollout.config`** — algorithm-level overrides from the rollout record
 
-Resource snapshots are immutable — each POST creates a new snapshot with a new ID. A rollout references one `resource_id` that bundles everything it needs (job_defaults, prompts, eval config — all in one Dict). The controller deduplicates fetches within a reconcile cycle (a batch of 500 rollouts shares the same `resource_id` → fetched once). No invalidation logic needed — IDs never change.
+Resource snapshots are immutable — each POST creates a new snapshot with a new ID. A rollout references one `resources_id` that bundles everything it needs (job_defaults, prompts, eval config — all in one Dict). The controller deduplicates fetches within a reconcile cycle (a batch of 500 rollouts shares the same `resources_id` → fetched once). No invalidation logic needed — IDs never change.
 
 ```
 resources[id].job_defaults (infra)   rollout.config (algorithm)
