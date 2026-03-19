@@ -1,7 +1,7 @@
 # agl-lite Implementation Plan
 
-> This replaces the old phase-based TODO. Aligned with the final architecture
-> in `docs/design/0_architecture.md` and reviewed architecture decisions.
+> Aligned with the final architecture in `docs/design/0_architecture.md`
+> and reviewed architecture decisions.
 
 ## Guiding Principles
 
@@ -13,72 +13,16 @@
 
 ---
 
-## Phase 0: Schemas and Project Skeleton ✅
+## Completed
 
-**Goal**: Frozen data models, project structure, dev tooling.
-
-- [x] Project setup: `pyproject.toml`, package layout, dev tooling (ruff, pytest, uv)
-- [x] Frozen schemas: `rollout.py`, `event.py`, `resources.py`, `model_server.py`, `errors.py`, `api.py`
-- [x] `JobDefaults` schema with typed fields + `overrides` escape hatch
-- [x] 36 schema tests passing, ruff clean
-
-### 0.4 State transition rules (enforce in Store, test exhaustively)
-- [ ] Valid transitions table (from architecture doc §3.3)
-- [ ] `cancel_requested` rules
-- [ ] Optimistic locking semantics
-- [ ] Unit tests for every valid and invalid transition
-
-### 0.5 Auth matrix
-| Role | Key env var | Allowed |
-|------|-------------|---------|
-| agent | `AGL_AGENT_KEY` | `/rollout/...` paths only |
-| controller | `AGL_CONTROLLER_KEY` | `GET /api/rollouts`, `PATCH /api/rollouts/{rid}`, `GET /api/resources/{id}` |
-| algorithm | `AGL_ALGORITHM_KEY` | all endpoints |
-| (none) | — | `GET /healthz` only |
-
-**Deliverables**: schemas module with full test coverage, project builds and lints clean.
-
----
-
-## Phase 1: In-Memory Store
-
-**Goal**: Complete store implementation with all operations, tested without HTTP.
-
-### 1.1 Store implementation (`agl_lite/store/memory.py`)
-- [ ] `InMemoryStore` class — all methods from architecture §3.3 Store API
-- [ ] Data structures:
-  ```python
-  rollouts: Dict[str, Rollout]
-  events: Dict[str, Dict[str, List[Event]]]  # nested: rid → aid → events
-  resources: Dict[str, ResourcesUpdate]       # keyed by resources_id
-  latest_resources_id: Optional[str]
-  models: Dict[str, ModelServer]              # keyed by endpoint
-  ```
-- [ ] Rollout operations: enqueue, update (with transition + version check), cancel, query
-- [ ] Event operations: add, query (with smart attempt_id resolution), list_attempts (returns attempt IDs from nested dict keys)
-- [ ] Resource operations: add, get_by_id, get_latest
-- [ ] Model operations: register, list, remove, remove_all
-- [ ] Archive operation: validate terminal, optionally write JSONL (append if exists, create if not), purge from memory
-
-### 1.2 Event ordering
-- [ ] Events stored in append-only per-(rollout, attempt) lists — insertion order is canonical
-- [ ] No `event_id` — events identified by position in list
-- [ ] `timestamp` = time.time() (assigned by store, not client)
-- [ ] Query returns events in list order (not sorted by timestamp)
-
-### 1.3 Smart attempt_id resolution
-- [ ] If `attempt_id` provided → filter directly
-- [ ] If omitted and rollout.succeeded_attempt_id exists → use it
-- [ ] If omitted and no succeeded → latest attempt (max min-timestamp from events)
-- [ ] If no events → return []
-
-### 1.4 Archive format
-- [ ] Single JSONL file per archive call
-- [ ] Each line: `{"record_type": "rollout"|"event"|"resources", ...}`
-- [ ] Archive includes: rollout record + all events + referenced resources snapshot
-- [ ] File path from backend config or default to local directory
-
-**Deliverables**: Store with 100% branch coverage on state transitions, event ordering, archive.
+- [x] **Phase 0: Schemas and Project Skeleton** — frozen data models, project structure, dev tooling, 36 schema tests
+- [x] **Phase 0.4: State transition rules** — valid transitions table, cancel_requested rules, optimistic locking, exhaustive tests
+- [x] **Phase 1: In-Memory Store** — `InMemoryStore` with all operations, 74 store tests (110 total)
+  - Rollout: enqueue, update (transition + version check), cancel, query
+  - Events: add, query (smart attempt_id resolution), list_attempts
+  - Resources: add, get_by_id, get_latest
+  - Models: register (upsert by endpoint), list, remove by endpoint, remove_all
+  - Archive: validate terminal, write JSONL (append), purge
 
 ---
 
@@ -94,7 +38,7 @@
 ### 2.2 Auth middleware (`agl_lite/server/auth.py`)
 - [ ] Extract `Authorization: Bearer <key>` from request
 - [ ] Map key → role (agent, controller, algorithm)
-- [ ] Check role against path pattern (auth matrix from Phase 0.5)
+- [ ] Check role against path pattern (auth matrix in frozen decisions table)
 - [ ] 401 for missing/invalid key, 403 for wrong role
 - [ ] `/healthz` exempt
 
