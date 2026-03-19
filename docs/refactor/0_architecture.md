@@ -567,10 +567,10 @@ The algorithm fetches trajectories for entire training batches (256–4096 rollo
 | Medium (32K) | ~50KB | 10 | 500KB | 250MB |
 | Long (128K) | ~500KB | 10 | 5MB | 2.5GB |
 
-**Case A — agl-lite colocated with Algorithm** (both in compute backend):
+**Case A — agl-lite colocated with Algorithm** (both in compute backend) — **MVP deployment**:
 Transfer is loopback. Even 2.5GB is ~2s. The only overhead is JSON serialization (~100MB/s in Python). **Not a bottleneck.** If serialization ever matters, switch to msgpack/protobuf (5–10x faster) — no architecture change needed. Shared memory is unnecessary: it would couple algorithm to the gateway process and break the API boundary for marginal gain.
 
-**Case B — agl-lite with K8s runner, Algorithm remote** (cross-cluster/region):
+**Case B — agl-lite with K8s runner, Algorithm remote** (cross-cluster/region) — **future**:
 Raw transfer at 1 Gbps: 2.5GB = 20s per iteration. Two mitigations:
 
 1. **HTTP gzip compression** (always-on): LLM text/JSON compresses 5–10x. 2.5GB → 250–500MB → 2–4s. One line of FastAPI middleware.
