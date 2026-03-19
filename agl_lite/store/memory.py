@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from agl_lite.schemas.api import ArchiveBackend, ArchiveResult
+from agl_lite.schemas.api import ArchiveBackend, ArchiveResult, EnqueueRolloutRequest, UpdateRolloutRequest
 from agl_lite.schemas.errors import ConflictError, InvalidTransitionError, NotFoundError
 from agl_lite.schemas.event import Event
 from agl_lite.schemas.model_server import ModelServer
@@ -45,20 +45,15 @@ class InMemoryStore:
 
     # ── Rollout management ───────────────────────────────────────────
 
-    def enqueue_rollout(
-        self,
-        input: dict[str, Any],
-        config: RolloutConfig,
-        resources_id: str | None = None,
-    ) -> Rollout:
+    def enqueue_rollout(self, req: EnqueueRolloutRequest) -> Rollout:
         """Create a new rollout in QUEUING status."""
         now = time.time()
         rollout_id = uuid.uuid4().hex
         rollout = Rollout(
             rollout_id=rollout_id,
-            input=input,
-            config=config,
-            resources_id=resources_id,
+            input=req.input,
+            config=req.config or RolloutConfig(image=""),
+            resources_id=req.resources_id,
             created_at=now,
             updated_at=now,
         )
@@ -77,16 +72,7 @@ class InMemoryStore:
         """Check if a rollout exists. Used by gateway for fast validation (~100ns)."""
         return rollout_id in self._rollouts
 
-    def update_rollout(
-        self,
-        rollout_id: str,
-        status: RolloutStatus,
-        expected_version: int,
-        *,
-        job_name: str | None = None,
-        succeeded_attempt_id: str | None = None,
-        error_message: str | None = None,
-    ) -> Rollout:
+    def update_rollout(self, rollout_id: str, req: UpdateRolloutRequest) -> Rollout:
         """Update rollout status with optimistic locking and transition validation.
 
         Raises:
@@ -97,10 +83,11 @@ class InMemoryStore:
         rollout = self.get_rollout(rollout_id)
 
         # Optimistic locking.
-        if rollout.version != expected_version:
-            raise ConflictError("Rollout", rollout_id, expected_version, rollout.version)
+        if rollout.version != req.expected_version:
+            raise ConflictError("Rollout", rollout_id, req.expected_version, rollout.version)
 
         # State transition validation.
+        status = RolloutStatus(req.status)
         if status not in VALID_TRANSITIONS[rollout.status]:
             raise InvalidTransitionError(rollout_id, rollout.status, status)
 
@@ -111,9 +98,9 @@ class InMemoryStore:
                 "status": status,
                 "version": rollout.version + 1,
                 "updated_at": now,
-                **({"job_name": job_name} if job_name is not None else {}),
-                **({"succeeded_attempt_id": succeeded_attempt_id} if succeeded_attempt_id is not None else {}),
-                **({"error_message": error_message} if error_message is not None else {}),
+                **({"job_name": req.job_name} if req.job_name is not None else {}),
+                **({"succeeded_attempt_id": req.succeeded_attempt_id} if req.succeeded_attempt_id is not None else {}),
+                **({"error_message": req.error_message} if req.error_message is not None else {}),
             }
         )
         self._rollouts[rollout_id] = updated
