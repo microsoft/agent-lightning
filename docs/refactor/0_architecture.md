@@ -419,6 +419,12 @@ class Store:
     async def add_resources(resources) -> ResourcesUpdate
     async def get_latest_resources() -> Optional[ResourcesUpdate]
     
+    # Data lifecycle
+    async def archive_rollouts(rollout_ids, backend=None) -> ArchiveResult
+        # 1. Reject if any rollout is non-terminal (400)
+        # 2. If backend specified: persist rollout + events to backend
+        # 3. Purge rollout records and all events from hot store
+    
     # Model server management
     async def register_model(endpoint, version) -> ModelServer
     async def register_models(models: List) -> List[ModelServer]
@@ -446,6 +452,7 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 | `/api/events` | **Event query** — query events by rollout/attempt/type, with smart attempt_id default | Algorithm |
 | `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
 | `/api/resources` | **Resource management** — add, get latest (prompts, config — not model endpoints) | Algorithm |
+| `/api/rollouts/archive` | **Data lifecycle** — archive and purge consumed rollouts (optional persistence to JSONL, etc.) | Algorithm |
 
 #### LLM proxy paths (agent-facing, transparent)
 
@@ -632,6 +639,63 @@ This per-request version tracking is essential for:
 | `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. For prompt templates, evaluation configs, etc. |
 | `GET` | `/api/resources/latest` | Get the latest resource snapshot. |
 | `GET` | `/api/resources/{resources_id}` | Get a specific resource snapshot by ID. |
+
+**Data lifecycle (archive and purge):**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/rollouts/archive` | Archive and purge rollouts from hot store. Body: `{rollout_ids: [...], backend?: {type, ...}}`. See below. |
+
+The algorithm decides when data is no longer needed in hot storage. After consuming a batch of trajectories for training, it calls `archive` to free memory:
+
+```
+Algorithm                              agl-lite Store
+   │                                      │
+   │  GET /api/events (batch queries)     │
+   │◄─────────────────────────────────────│
+   │  [compute gradients, update model]   │
+   │                                      │
+   │  POST /api/rollouts/archive          │
+   │  {rollout_ids: [R1..R500],           │
+   │   backend: {type:"jsonl",            │
+   │             path:"/data/batch42.jsonl"}} │
+   │─────────────────────────────────────►│  persist to file, then purge from store
+   │  200 OK {archived: 500, purged: 500} │
+   │◄─────────────────────────────────────│
+```
+
+**Request body:**
+```json
+{
+    "rollout_ids": ["r1", "r2", "r3"],
+    "backend": {                          // optional — omit to just discard
+        "type": "jsonl",
+        "path": "/data/trajectories/batch_042.jsonl"
+    }
+}
+```
+
+**What gets archived** (one JSONL line per rollout — self-contained, replayable):
+```jsonl
+{"rollout": {"rollout_id":"r1","status":"succeeded",...}, "events": [{...},{...},...]}
+{"rollout": {"rollout_id":"r2","status":"succeeded",...}, "events": [{...},{...},...]}
+```
+
+**Backend options:**
+
+| Type | Description |
+|------|-------------|
+| *(omitted)* | Discard — delete from store, data is gone |
+| `jsonl` | Append rollouts + events to a local JSONL file (or mounted volume) |
+
+Future backends (pluggable via `ArchiveBackend` interface): S3, remote database, etc.
+
+**What gets purged from hot store:** all events for the specified rollouts (all attempts) and the rollout records themselves. Non-terminal rollouts in the list are rejected (400) — you cannot archive a running rollout.
+
+**Storage growth estimate:**
+- 1,000 rollouts × 10 events × 5KB/event = 50MB per training iteration
+- With 128K contexts: individual events up to 500KB → plan accordingly
+- Archive after each iteration to keep hot store bounded
 
 ### 3.5 K8s Controller
 
@@ -956,7 +1020,7 @@ The original `LightningStore` has **25+ methods** across 6 domains:
 
 ### 4.2 agl-lite API Surface
 
-A single HTTP service with **~18 endpoints** across 5 domains:
+A single HTTP service with **~19 endpoints** across 6 domains:
 
 **LLM proxy (2 paths, agent-facing):**
 
@@ -999,6 +1063,12 @@ A single HTTP service with **~18 endpoints** across 5 domains:
 | `GET /api/resources/latest` | `get_latest_resources` |
 | `GET /api/resources/{id}` | `get_resources_by_id` |
 
+**Data lifecycle (1 endpoint):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/rollouts/archive` | *New.* Algorithm-driven archive + purge. Replaces original's `eviction_threshold_bytes` / `safe_threshold_bytes` automatic eviction. Optional persistence to JSONL backend. |
+
 ### 4.3 What's Removed and Why
 
 | Removed | Reason |
@@ -1023,6 +1093,7 @@ A single HTTP service with **~18 endpoints** across 5 domains:
 | New | Reason |
 |-----|--------|
 | **Model server registry** (`/api/models`) | First-class inference server management with version tracking. Original stored model endpoints as opaque resource blobs. Enables training-aware routing, weight update coordination, and async RL. |
+| **Algorithm-driven archive** (`/api/rollouts/archive`) | Explicit data lifecycle control. Algorithm archives consumed batches with optional persistence (JSONL, etc.). Replaces original's automatic byte-threshold eviction which risked deleting unconsumed data. |
 | **Parameter adjustment** (`add_params`, `drop_params`) | Static gateway config to normalize requests for backends (vLLM, TGI). Original relied on LiteLLM's `litellm_params` per model. Gateway records both original and adjusted params in events. |
 | **Weight update protocol** (DELETE all → 503 → POST new) | Clean coordination between training and inference. Gateway returns 503 during weight updates; SDKs auto-retry. No agent crashes, no K8s retry consumed. Emergent from CRUD — no special "update mode" API. |
 | **`model_version` in `model_request` events** | Per-request policy version tracking. Essential for importance sampling, off-policy correction, and training data filtering in async RL. |
