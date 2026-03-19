@@ -147,7 +147,7 @@ The architecture is organized into three logical groups. **No strong assumption 
 
 | agl-lite Component | Responsibility |
 |--------------------|----------------|
-| **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). One deployment, one endpoint. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
+| **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). **In-process store** — gateway validates rollout existence and writes events via synchronous dict lookups (nanoseconds, no I/O, no race conditions). One deployment, one endpoint. |
 | **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
 | **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
 | **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is that it reads `OPENAI_BASE_URL` for LLM calls, `AGL_TASK_INPUT` for the task payload, and optionally `AGL_EVENT_URL` for reporting events. Packaged into a container image. No base class or SDK required. |
@@ -498,11 +498,12 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 The agent calls this as a normal OpenAI endpoint (via `OPENAI_BASE_URL`). The service:
 1. Parses `rollout_id` and `attempt_id` from the path prefix
-2. Applies **parameter adjustment** — add/drop/override request body fields (see below)
-3. Selects a model server from the registry (round-robin or least-connections)
-4. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
-5. Captures the complete request + response as a `model_request` event, including the server's `model_version`
-6. Returns the LLM response to the agent
+2. Validates `rollout_id` exists in the Store (in-process dict lookup, ~100ns). Returns 404 if not found — avoids wasting GPU inference on orphan requests.
+3. Applies **parameter adjustment** — add/drop/override request body fields (see below)
+4. Selects a model server from the registry (round-robin or least-connections)
+5. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
+6. Captures the complete request + response as a `model_request` event, including the server's `model_version`
+7. Returns the LLM response to the agent
 
 **Parameter adjustment** is configured at gateway launch and does not change at runtime:
 
@@ -560,7 +561,7 @@ Accepts explicit events (reward, user-defined types). Body:
 ```json
 {"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
 ```
-The service assigns `event_id` and `timestamp`, appends to the event store in insertion order. **No validation** that `rollout_id` or `attempt_id` exist — event ingestion is fire-and-forget to keep the hot path fast. Orphan events (from stale pods or cancelled rollouts) are harmless — never queried by the algorithm — and cleaned up naturally by `POST /api/rollouts/archive` or periodic GC. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
+The service validates that `rollout_id` exists (in-process dict lookup, ~100ns), assigns `event_id` and `timestamp`, and appends to the event store in insertion order. Returns 404 if rollout not found — rejects orphan events early. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
 
 #### Concurrency and scaling
 
