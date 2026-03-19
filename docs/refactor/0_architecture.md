@@ -803,7 +803,7 @@ The controller builds each Job spec by merging two layers:
 1. **`job_defaults`** from the rollout's resource snapshots (`resource_ids` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
 2. **`rollout.config`** — algorithm-level overrides from the rollout record
 
-The controller caches resource snapshots per ID — an entire batch of 500 rollouts typically shares the same `resource_ids`, so each snapshot is fetched once. When multiple snapshots contain `job_defaults`, they are merged in order (later IDs override earlier ones).
+Resource snapshots are immutable — each POST creates a new snapshot with a new ID. Rollouts reference specific IDs at enqueue time. The controller deduplicates fetches within a reconcile cycle (a batch of 500 rollouts shares the same `resource_ids` → each snapshot fetched once). No invalidation logic needed — IDs never change.
 
 ```
 resources[id].job_defaults (infra)   rollout.config (algorithm)
