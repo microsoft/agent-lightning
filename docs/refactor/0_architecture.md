@@ -334,7 +334,7 @@ class Rollout:
     
     input: Dict                         # task description (delivered as AGL_TASK_INPUT env var)
     config: RolloutConfig               # algorithm-facing Job config (see below)
-    resources_id: Optional[str]         # links to immutable resource snapshot (job_defaults, prompts, etc.)
+    resource_ids: List[str] = []        # links to immutable resource snapshots (job_defaults, prompts, etc.)
     
     # Set by controller during lifecycle
     job_name: Optional[str]             # K8s Job name (set on Job creation)
@@ -356,13 +356,12 @@ class RolloutConfig:
     # Required — describe the container
     image: str                          # agent container image
     command: List[str] = []             # entrypoint override, e.g., ["python", "solve.py"]
-    env: Dict[str, str] = {}            # extra env vars (beyond OPENAI_BASE_URL, AGL_TASK_INPUT, AGL_EVENT_URL)
+    environment_variables: Dict[str, str] = {}  # extra env vars (beyond OPENAI_BASE_URL, AGL_TASK_INPUT, AGL_EVENT_URL)
     mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
     
     # Optional — execution policy
     timeout: Optional[int] = None       # seconds (default from job_defaults in resources)
     max_retries: Optional[int] = None   # retry count (default from job_defaults in resources)
-    mode: str = "train"                 # train/val/test (metadata, no K8s effect)
 
 class Mount:
     name: str                           # volume name
@@ -370,6 +369,14 @@ class Mount:
     source: str                         # host path, PVC name, or ConfigMap name
     read_only: bool = True
 ```
+
+**Reserved resource types**: The controller looks for specific keys in resource snapshots:
+
+| Key | Used by | Purpose |
+|-----|---------|---------|
+| `job_defaults` | K8s Controller | Infra-level Job spec defaults (resources, nodeSelector, tolerations, serviceAccount, imagePullSecrets, etc.) |
+
+All other keys are user-defined and opaque to agl-lite (prompts, eval configs, etc.).
 
 `cancel_requested` is a separate flag rather than a status because:
 - User expresses **intent** (set flag) without knowing the current execution state
@@ -415,7 +422,7 @@ queuing ──[controller creates Job]──────────→ running
 ```python
 class Store:
     # Rollout management
-    async def enqueue_rollout(input, config, resources_id=None) -> Rollout
+    async def enqueue_rollout(input, config, resource_ids=None) -> Rollout
     async def update_rollout(rollout_id, status, expected_version,
                              job_name=None, succeeded_attempt_id=None,
                              error_message=None) -> Rollout
@@ -626,7 +633,7 @@ The archive feature thus serves dual purpose: **data lifecycle** (purge hot stor
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resources_id?}` or batch `{config, resources_id?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resources_id` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
+| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resource_ids?}` or batch `{config, resource_ids?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resource_ids` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
 | `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
 | `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
 | `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
@@ -705,7 +712,7 @@ This per-request version tracking is essential for:
 |--------|------|-------------|
 | `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. For prompt templates, evaluation configs, etc. |
 | `GET` | `/api/resources/latest` | Get the latest resource snapshot. |
-| `GET` | `/api/resources/{resources_id}` | Get a specific resource snapshot by ID. |
+| `GET` | `/api/resources/{resource_id}` | Get a specific resource snapshot by ID. |
 
 **Data lifecycle (archive and purge):**
 
@@ -793,10 +800,10 @@ On creation failure due to `AlreadyExists`, the controller fetches the existing 
 #### Job template
 
 The controller builds each Job spec by merging two layers:
-1. **`job_defaults`** from the rollout's resource snapshot (`resources_id` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
+1. **`job_defaults`** from the rollout's resource snapshots (`resource_ids` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
 2. **`rollout.config`** — algorithm-level overrides from the rollout record
 
-The controller caches resource snapshots per `resources_id` — an entire batch of 500 rollouts typically shares one snapshot, so it's fetched once.
+The controller caches resource snapshots per ID — an entire batch of 500 rollouts typically shares the same `resource_ids`, so each snapshot is fetched once. When multiple snapshots contain `job_defaults`, they are merged in order (later IDs override earlier ones).
 
 ```
 resources[id].job_defaults (infra)   rollout.config (algorithm)
@@ -806,9 +813,9 @@ resources[id].job_defaults (infra)   rollout.config (algorithm)
 │   memory: "1Gi"      │             │   "solve.py"]        │
 │ node_selector:       │             │ timeout: 600         │
 │   gpu: "a100"        │             │ max_retries: 3       │
-│ tolerations: [...]   │             │ env: {DEBUG: "1"}    │
-│ service_account: ... │             │ mount: [{...}]       │
-│ image_pull_secrets:  │             └──────────────────────┘
+│ tolerations: [...]   │             │ environment_variables:│
+│ service_account: ... │             │   {DEBUG: "1"}       │
+│ image_pull_secrets:  │             │ mount: [{...}]       │
 │   ["registry-creds"] │                       │
 │ timeout: 300         │  ← default            │
 │ max_retries: 1       │  ← default            │
@@ -863,7 +870,7 @@ spec:
               value: '{"prompt": "Write a sort function", ...}'
             - name: AGL_EVENT_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
-            # algorithm extra env (from rollout.config.env)
+            # algorithm extra env (from rollout.config.environment_variables)
             - name: DEBUG
               value: "1"
           volumeMounts:              # from rollout.config.mount
