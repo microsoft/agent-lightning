@@ -2,8 +2,8 @@
 
 import pytest
 
-from agl_lite.schemas.api import EnqueueRolloutRequest, UpdateRolloutRequest
-from agl_lite.schemas.errors import ConflictError, InvalidTransitionError, NotFoundError
+from agl_lite.schemas.api import EnqueueRolloutRequest, PatchRolloutRequest
+from agl_lite.schemas.errors import InvalidTransitionError, NotFoundError
 from agl_lite.schemas.rollout import TERMINAL_STATUSES, RolloutConfig, RolloutStatus
 from agl_lite.store.memory import InMemoryStore
 
@@ -20,11 +20,9 @@ def _enqueue(store: InMemoryStore, **kwargs):
     return store.enqueue_rollout(EnqueueRolloutRequest(**kwargs))
 
 
-def _update(store: InMemoryStore, rollout_id: str, status: str, expected_version: int, **kwargs):
-    """Helper: update rollout status."""
-    return store.update_rollout(
-        rollout_id, UpdateRolloutRequest(status=status, expected_version=expected_version, **kwargs)
-    )
+def _patch(store: InMemoryStore, rollout_id: str, **kwargs):
+    """Helper: partial update."""
+    return store.update_rollout(rollout_id, PatchRolloutRequest(**kwargs))
 
 
 class TestEnqueueRollout:
@@ -78,40 +76,42 @@ class TestRolloutExists:
 class TestUpdateRollout:
     def test_queuing_to_running(self, store: InMemoryStore):
         r = _enqueue(store)
-        updated = _update(store, r.rollout_id, "running", 1, job_name="agl-rollout-x")
+        updated = _patch(store, r.rollout_id, status=RolloutStatus.RUNNING, job_name="agl-rollout-x")
         assert updated.status == RolloutStatus.RUNNING
         assert updated.version == 2
         assert updated.job_name == "agl-rollout-x"
 
     def test_running_to_succeeded(self, store: InMemoryStore):
         r = _enqueue(store)
-        _update(store, r.rollout_id, "running", 1)
-        updated = _update(store, r.rollout_id, "succeeded", 2, succeeded_attempt_id="pod-uid-1")
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
+        updated = _patch(store, r.rollout_id, status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="pod-uid-1")
         assert updated.status == RolloutStatus.SUCCEEDED
         assert updated.succeeded_attempt_id == "pod-uid-1"
         assert updated.version == 3
 
     def test_running_to_terminal_failed(self, store: InMemoryStore):
         r = _enqueue(store)
-        _update(store, r.rollout_id, "running", 1)
-        updated = _update(store, r.rollout_id, "terminal_failed", 2, error_message="BackoffLimitExceeded")
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
+        updated = _patch(
+            store, r.rollout_id, status=RolloutStatus.TERMINAL_FAILED, error_message="BackoffLimitExceeded"
+        )
         assert updated.status == RolloutStatus.TERMINAL_FAILED
         assert updated.error_message == "BackoffLimitExceeded"
 
     def test_running_to_cancelled(self, store: InMemoryStore):
         r = _enqueue(store)
-        _update(store, r.rollout_id, "running", 1)
-        updated = _update(store, r.rollout_id, "cancelled", 2)
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
+        updated = _patch(store, r.rollout_id, status=RolloutStatus.CANCELLED)
         assert updated.status == RolloutStatus.CANCELLED
 
     def test_queuing_to_terminal_failed(self, store: InMemoryStore):
         r = _enqueue(store)
-        updated = _update(store, r.rollout_id, "terminal_failed", 1, error_message="Job creation failed")
+        updated = _patch(store, r.rollout_id, status=RolloutStatus.TERMINAL_FAILED, error_message="Job creation failed")
         assert updated.status == RolloutStatus.TERMINAL_FAILED
 
     def test_queuing_to_cancelled(self, store: InMemoryStore):
         r = _enqueue(store)
-        updated = _update(store, r.rollout_id, "cancelled", 1)
+        updated = _patch(store, r.rollout_id, status=RolloutStatus.CANCELLED)
         assert updated.status == RolloutStatus.CANCELLED
 
     # --- Invalid transitions ---
@@ -119,51 +119,67 @@ class TestUpdateRollout:
     def test_queuing_to_succeeded_rejected(self, store: InMemoryStore):
         r = _enqueue(store)
         with pytest.raises(InvalidTransitionError):
-            _update(store, r.rollout_id, "succeeded", 1)
+            _patch(store, r.rollout_id, status=RolloutStatus.SUCCEEDED)
 
     def test_running_to_queuing_rejected(self, store: InMemoryStore):
         r = _enqueue(store)
-        _update(store, r.rollout_id, "running", 1)
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
         with pytest.raises(InvalidTransitionError):
-            _update(store, r.rollout_id, "queuing", 2)
+            _patch(store, r.rollout_id, status=RolloutStatus.QUEUING)
 
     def test_terminal_to_anything_rejected(self, store: InMemoryStore):
         for terminal in TERMINAL_STATUSES:
             s = InMemoryStore()
             r = _enqueue(s)
             if terminal == RolloutStatus.SUCCEEDED:
-                _update(s, r.rollout_id, "running", 1)
-                _update(s, r.rollout_id, terminal.value, 2)
-                version = 3
+                _patch(s, r.rollout_id, status=RolloutStatus.RUNNING)
+                _patch(s, r.rollout_id, status=terminal)
             else:
-                _update(s, r.rollout_id, terminal.value, 1)
-                version = 2
+                _patch(s, r.rollout_id, status=terminal)
 
             for target in RolloutStatus:
                 with pytest.raises(InvalidTransitionError):
-                    _update(s, r.rollout_id, target.value, version)
-
-    # --- Optimistic locking ---
-
-    def test_version_mismatch(self, store: InMemoryStore):
-        r = _enqueue(store)
-        with pytest.raises(ConflictError, match="expected version 99"):
-            _update(store, r.rollout_id, "running", 99)
+                    _patch(s, r.rollout_id, status=target)
 
     def test_not_found(self, store: InMemoryStore):
         with pytest.raises(NotFoundError):
-            _update(store, "nonexistent", "running", 1)
+            _patch(store, "nonexistent", status=RolloutStatus.RUNNING)
 
-    # --- Optional fields preserved ---
+    # --- Partial update semantics ---
 
-    def test_optional_fields_not_overwritten(self, store: InMemoryStore):
-        """Passing None for optional fields should not overwrite existing values."""
+    def test_only_set_fields_applied(self, store: InMemoryStore):
+        """Fields not in request body are untouched."""
         r = _enqueue(store)
-        _update(store, r.rollout_id, "running", 1, job_name="my-job")
-        # Update to succeeded without re-specifying job_name.
-        updated = _update(store, r.rollout_id, "succeeded", 2, succeeded_attempt_id="pod-1")
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING, job_name="my-job")
+        # Patch status only — job_name should be preserved.
+        updated = _patch(store, r.rollout_id, status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="pod-1")
         assert updated.job_name == "my-job"  # preserved
         assert updated.succeeded_attempt_id == "pod-1"
+
+    def test_update_without_status(self, store: InMemoryStore):
+        """Can update non-status fields without changing status."""
+        r = _enqueue(store)
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
+        updated = _patch(store, r.rollout_id, job_name="agl-rollout-xyz")
+        assert updated.status == RolloutStatus.RUNNING  # unchanged
+        assert updated.job_name == "agl-rollout-xyz"
+        assert updated.version == 3
+
+    def test_empty_patch_is_noop(self, store: InMemoryStore):
+        """Empty body = no changes, no version bump."""
+        r = _enqueue(store)
+        updated = store.update_rollout(r.rollout_id, PatchRolloutRequest())
+        assert updated.version == 1  # no bump
+
+    def test_explicit_null_clears_field(self, store: InMemoryStore):
+        """Explicitly sending null should set the field to None."""
+        r = _enqueue(store)
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING, job_name="my-job")
+        # Explicitly clear job_name by constructing request with job_name=None set.
+        req = PatchRolloutRequest.model_validate({"job_name": None})
+        updated = store.update_rollout(r.rollout_id, req)
+        assert updated.job_name is None
+        assert updated.version == 3
 
 
 class TestCancelRollout:
@@ -175,7 +191,7 @@ class TestCancelRollout:
 
     def test_cancel_running(self, store: InMemoryStore):
         r = _enqueue(store)
-        _update(store, r.rollout_id, "running", 1)
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
         updated = store.cancel_rollout(r.rollout_id)
         assert updated.cancel_requested is True
 
@@ -187,7 +203,7 @@ class TestCancelRollout:
 
     def test_cancel_terminal_rejected(self, store: InMemoryStore):
         r = _enqueue(store)
-        _update(store, r.rollout_id, "terminal_failed", 1)
+        _patch(store, r.rollout_id, status=RolloutStatus.TERMINAL_FAILED)
         with pytest.raises(InvalidTransitionError, match="cancel_requested"):
             store.cancel_rollout(r.rollout_id)
 
@@ -219,7 +235,7 @@ class TestQueryRollouts:
     def test_filter_status(self, store: InMemoryStore):
         r1 = _enqueue(store)
         _enqueue(store)
-        _update(store, r1.rollout_id, "running", 1)
+        _patch(store, r1.rollout_id, status=RolloutStatus.RUNNING)
         results = store.query_rollouts(status_in=[RolloutStatus.RUNNING])
         assert len(results) == 1
         assert results[0].rollout_id == r1.rollout_id
@@ -237,7 +253,7 @@ class TestQueryRollouts:
         r2 = _enqueue(store)
         store.cancel_rollout(r1.rollout_id)
         store.cancel_rollout(r2.rollout_id)
-        _update(store, r1.rollout_id, "running", 2)
+        _patch(store, r1.rollout_id, status=RolloutStatus.RUNNING)
         results = store.query_rollouts(status_in=[RolloutStatus.RUNNING], cancel_requested=True)
         assert len(results) == 1
         assert results[0].rollout_id == r1.rollout_id

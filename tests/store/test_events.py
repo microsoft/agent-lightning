@@ -4,9 +4,9 @@ import time
 
 import pytest
 
-from agl_lite.schemas.api import EnqueueRolloutRequest, UpdateRolloutRequest
+from agl_lite.schemas.api import EnqueueRolloutRequest, PatchRolloutRequest
 from agl_lite.schemas.errors import NotFoundError
-from agl_lite.schemas.rollout import RolloutConfig
+from agl_lite.schemas.rollout import RolloutConfig, RolloutStatus
 from agl_lite.store.memory import InMemoryStore
 
 
@@ -21,10 +21,8 @@ def _enqueue(store: InMemoryStore, **kwargs):
     return store.enqueue_rollout(EnqueueRolloutRequest(**kwargs))
 
 
-def _update(store: InMemoryStore, rollout_id: str, status: str, expected_version: int, **kwargs):
-    return store.update_rollout(
-        rollout_id, UpdateRolloutRequest(status=status, expected_version=expected_version, **kwargs)
-    )
+def _patch(store: InMemoryStore, rollout_id: str, **kwargs):
+    return store.update_rollout(rollout_id, PatchRolloutRequest(**kwargs))
 
 
 class TestAddEvent:
@@ -116,8 +114,8 @@ class TestSmartAttemptResolution:
         r = _enqueue(store)
         store.add_event(r.rollout_id, "pod-1", "model_request", {"attempt": "failed"})
         store.add_event(r.rollout_id, "pod-2", "model_request", {"attempt": "succeeded"})
-        _update(store, r.rollout_id, "running", 1)
-        _update(store, r.rollout_id, "succeeded", 2, succeeded_attempt_id="pod-2")
+        _patch(store, r.rollout_id, status=RolloutStatus.RUNNING)
+        _patch(store, r.rollout_id, status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="pod-2")
         events = store.query_events(r.rollout_id)  # no attempt_id
         assert len(events) == 1
         assert events[0].data["attempt"] == "succeeded"

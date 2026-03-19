@@ -12,8 +12,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from agl_lite.schemas.api import ArchiveBackend, ArchiveResult, EnqueueRolloutRequest, UpdateRolloutRequest
-from agl_lite.schemas.errors import ConflictError, InvalidTransitionError, NotFoundError
+from agl_lite.schemas.api import ArchiveBackend, ArchiveResult, EnqueueRolloutRequest, PatchRolloutRequest
+from agl_lite.schemas.errors import InvalidTransitionError, NotFoundError
 from agl_lite.schemas.event import Event
 from agl_lite.schemas.model_server import ModelServer
 from agl_lite.schemas.resources import ResourcesUpdate
@@ -72,35 +72,35 @@ class InMemoryStore:
         """Check if a rollout exists. Used by gateway for fast validation (~100ns)."""
         return rollout_id in self._rollouts
 
-    def update_rollout(self, rollout_id: str, req: UpdateRolloutRequest) -> Rollout:
-        """Update rollout status with optimistic locking and transition validation.
+    def update_rollout(self, rollout_id: str, req: PatchRolloutRequest) -> Rollout:
+        """Partial update of a rollout. Only fields explicitly set in req are applied.
+
+        If `status` is being changed, validates the state transition.
+        Bumps `version` and `updated_at` on every successful update.
 
         Raises:
             NotFoundError: rollout doesn't exist
-            ConflictError: version mismatch
             InvalidTransitionError: illegal state transition
         """
         rollout = self.get_rollout(rollout_id)
+        updates = req.model_dump(exclude_unset=True)
 
-        # Optimistic locking.
-        if rollout.version != req.expected_version:
-            raise ConflictError("Rollout", rollout_id, req.expected_version, rollout.version)
+        if not updates:
+            return rollout  # no-op
 
-        # State transition validation.
-        status = RolloutStatus(req.status)
-        if status not in VALID_TRANSITIONS[rollout.status]:
-            raise InvalidTransitionError(rollout_id, rollout.status, status)
+        # Validate state transition if status is changing.
+        if "status" in updates:
+            new_status = updates["status"]
+            if new_status not in VALID_TRANSITIONS[rollout.status]:
+                raise InvalidTransitionError(rollout_id, rollout.status, new_status)
 
         # Apply update.
         now = time.time()
         updated = rollout.model_copy(
             update={
-                "status": status,
+                **updates,
                 "version": rollout.version + 1,
                 "updated_at": now,
-                **({"job_name": req.job_name} if req.job_name is not None else {}),
-                **({"succeeded_attempt_id": req.succeeded_attempt_id} if req.succeeded_attempt_id is not None else {}),
-                **({"error_message": req.error_message} if req.error_message is not None else {}),
             }
         )
         self._rollouts[rollout_id] = updated

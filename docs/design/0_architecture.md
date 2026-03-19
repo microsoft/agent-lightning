@@ -356,7 +356,7 @@ class Rollout:
     error_message: Optional[str]        # error info (set on terminal_failed)
     
     # Concurrency control
-    version: int                        # optimistic locking — incremented on every update
+    version: int                        # incremented on every update (informational)
     
     created_at: float
     updated_at: float
@@ -437,11 +437,10 @@ queuing ──[controller creates Job]──────────→ running
 class Store:
     # Rollout management
     async def enqueue_rollout(input, config, resources_id=None) -> Rollout
-    async def update_rollout(rollout_id, status, expected_version,
-                             job_name=None, succeeded_attempt_id=None,
-                             error_message=None) -> Rollout
-        # Enforces: valid transition + optimistic locking (version check)
-        # Raises: ConflictError (version mismatch), InvalidTransitionError
+    async def update_rollout(rollout_id, **updates) -> Rollout
+        # Partial update — only provided fields are changed.
+        # Validates state transition if `status` is included.
+        # Raises: InvalidTransitionError
     async def cancel_rollout(rollout_id) -> Rollout
         # Sets cancel_requested=True. Rejects if already terminal.
     async def query_rollouts(ids=None, status_in=None, cancel_requested=None,
@@ -495,7 +494,7 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 | `POST` | `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events. Supports both OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) formats. | Agent pods |
 | `POST` | `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
 | `POST` `GET` | `/api/rollouts` | **Rollout management** — enqueue, query (with batch ID support) | Algorithm, K8s controller |
-| `GET` `PATCH` | `/api/rollouts/{rid}` | **Single rollout** — get, update (with optimistic locking) | K8s controller |
+| `GET` `PATCH` | `/api/rollouts/{rid}` | **Single rollout** — get, partial update | K8s controller |
 | `POST` | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
 | `POST` | `/api/rollouts/archive` | **Data lifecycle** — archive and purge consumed rollouts (optional JSONL persistence) | Algorithm |
 | `POST` `GET` `DELETE` | `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
@@ -586,7 +585,7 @@ The gateway is a single Python async process. The concurrency profile is excelle
 |----------|---------------|------------|
 | Model server registry | Read every request, write once per weight update | Near zero (read-heavy, write-rare) |
 | Event store per `(rid, aid)` | Append per event, naturally partitioned by pod | Near zero (different agents never touch the same partition) |
-| Rollout records | Controller updates status, Algorithm enqueues | Low (not on hot path, optimistic locking) |
+| Rollout records | Controller updates status, Algorithm enqueues | Low (not on hot path) |
 
 No locks needed on the hot path. Single-threaded asyncio serializes all writes naturally. The partition key `(rollout_id, attempt_id)` eliminates cross-agent contention entirely.
 
@@ -650,7 +649,7 @@ The archive feature thus serves dual purpose: **data lifecycle** (purge hot stor
 | `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resources_id?}` or batch `{config, resources_id?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resources_id` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
 | `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
 | `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
-| `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
+| `PATCH` | `/api/rollouts/{rollout_id}` | Partial update. Body: any subset of `{status, job_name, succeeded_attempt_id, error_message}`. Only fields present in the body are applied. Validates state transitions when `status` is included. Used by K8s controller. |
 | `POST` | `/api/rollouts/{rollout_id}/cancel` | Set `cancel_requested=true`. Rejects if already terminal. Used by Algorithm or user. |
 
 **Event / trajectory access:**
@@ -963,15 +962,13 @@ def handle_cancel(rollout):
     if rollout.status == QUEUING and rollout.job_name is None:
         # No Job exists. Straight to cancelled.
         store.update_rollout(rollout.rollout_id,
-            status=CANCELLED,
-            expected_version=rollout.version)
+            status=CANCELLED)
         return
     
     if rollout.job_name is None:
         # Running but no job_name? Shouldn't happen, but be safe.
         store.update_rollout(rollout.rollout_id,
-            status=CANCELLED,
-            expected_version=rollout.version)
+            status=CANCELLED)
         return
     
     job = k8s.get_job(rollout.job_name)
@@ -979,8 +976,7 @@ def handle_cancel(rollout):
     if job is None:
         # Job already gone. Mark cancelled.
         store.update_rollout(rollout.rollout_id,
-            status=CANCELLED,
-            expected_version=rollout.version)
+            status=CANCELLED)
         return
     
     # Job exists. Check if it already succeeded before we delete.
@@ -989,8 +985,7 @@ def handle_cancel(rollout):
         succeeded_pod_uid = find_succeeded_pod_uid(job)
         store.update_rollout(rollout.rollout_id,
             status=SUCCEEDED,
-            succeeded_attempt_id=succeeded_pod_uid,
-            expected_version=rollout.version)
+            succeeded_attempt_id=succeeded_pod_uid)
         k8s.delete_job(rollout.job_name)
         return
     
@@ -998,8 +993,7 @@ def handle_cancel(rollout):
         # Job already failed on its own. User wanted cancel — mark cancelled,
         # not terminal_failed. The intent was cancellation.
         store.update_rollout(rollout.rollout_id,
-            status=CANCELLED,
-            expected_version=rollout.version)
+            status=CANCELLED)
         k8s.delete_job(rollout.job_name)
         return
     
@@ -1020,32 +1014,27 @@ def handle_queuing(rollout):
         job = k8s.get_job(rollout.job_name)
         if job is not None:
             store.update_rollout(rollout.rollout_id,
-                status=RUNNING, job_name=rollout.job_name,
-                expected_version=rollout.version)
+                status=RUNNING, job_name=rollout.job_name)
             return
         # Job name set but Job gone? Something went wrong.
         store.update_rollout(rollout.rollout_id,
             status=TERMINAL_FAILED,
-            error_message="Job not found during recovery",
-            expected_version=rollout.version)
+            error_message="Job not found during recovery")
         return
     
     job_name = f"agl-rollout-{rollout.rollout_id}"
     try:
         k8s.create_job(make_job_spec(rollout, job_name))
         store.update_rollout(rollout.rollout_id,
-            status=RUNNING, job_name=job_name,
-            expected_version=rollout.version)
+            status=RUNNING, job_name=job_name)
     except K8sAlreadyExistsError:
         # Job exists (duplicate from previous attempt). Fetch and proceed.
         store.update_rollout(rollout.rollout_id,
-            status=RUNNING, job_name=job_name,
-            expected_version=rollout.version)
+            status=RUNNING, job_name=job_name)
     except K8sError as e:
         store.update_rollout(rollout.rollout_id,
             status=TERMINAL_FAILED,
-            error_message=f"Job creation failed: {e}",
-            expected_version=rollout.version)
+            error_message=f"Job creation failed: {e}")
 
 
 def handle_running(rollout):
@@ -1056,8 +1045,7 @@ def handle_running(rollout):
         # Job disappeared (manually deleted, namespace cleanup).
         store.update_rollout(rollout.rollout_id,
             status=TERMINAL_FAILED,
-            error_message="K8s Job not found",
-            expected_version=rollout.version)
+            error_message="K8s Job not found")
         return
     
     conditions = {c.type: c for c in (job.status.conditions or [])}
@@ -1066,19 +1054,17 @@ def handle_running(rollout):
         succeeded_pod_uid = find_succeeded_pod_uid(job)
         store.update_rollout(rollout.rollout_id,
             status=SUCCEEDED,
-            succeeded_attempt_id=succeeded_pod_uid,
-            expected_version=rollout.version)
+            succeeded_attempt_id=succeeded_pod_uid)
     elif "Failed" in conditions:
         reason = conditions["Failed"].reason     # BackoffLimitExceeded, DeadlineExceeded
         message = conditions["Failed"].message
         store.update_rollout(rollout.rollout_id,
             status=TERMINAL_FAILED,
-            error_message=f"{reason}: {message}",
-            expected_version=rollout.version)
+            error_message=f"{reason}: {message}")
     # else: Job still active (running or between retries). No update needed.
 ```
 
-All `update_rollout` calls use optimistic locking (`expected_version`). On `ConflictError`, the controller re-fetches the rollout and re-evaluates — another instance may have already handled it.
+All `update_rollout` calls are partial updates — only the fields included in the PATCH body are changed. State transition validation is enforced server-side. The controller is the sole writer for status transitions, so no locking is needed.
 
 #### Edge cases
 
@@ -1086,7 +1072,7 @@ All `update_rollout` calls use optimistic locking (`expected_version`). On `Conf
 On restart, periodic full reconciliation scans all non-terminal rollouts and syncs them with K8s Job status. This is idempotent — if a Job exists, its status is checked; if it's gone, the rollout is marked `terminal_failed`. The deterministic Job name (`agl-rollout-{rollout_id}`) ensures the controller can always find the Job for a rollout.
 
 **Two controller instances (leader election gap):**
-Both read `version=N`, both try to update the same rollout. One succeeds (`version→N+1`), the other gets `ConflictError`, re-fetches, sees the update was already done. Optimistic locking is the single serialization point.
+Both read the same rollout, both try to update. State transition validation prevents invalid updates — e.g., if one controller already moved it to `succeeded`, the other's `PATCH {status: succeeded}` is a no-op (same state) or rejected (if trying a different transition). Single-threaded asyncio in the Store ensures no interleaving.
 
 **Store unavailable:**
 The K8s controller pattern naturally handles this: if `update_rollout` fails due to Store being unreachable, the event is requeued with exponential backoff. The Job keeps running regardless of Store availability. When the Store comes back, the controller retries. No data loss — K8s Job status is the durable record.
@@ -1263,7 +1249,7 @@ A single HTTP service with **~18 endpoints** across 6 domains:
 | `POST /api/rollouts` | `enqueue_rollout`, `enqueue_many_rollouts` (batch via JSON array body) |
 | `GET /api/rollouts` | `query_rollouts` + `wait_for_rollouts` (params: `ids` for batch fetch, `status_in`, `cancel_requested`, `limit`, `offset`). Waiting is client-side polling. |
 | `GET /api/rollouts/{rid}` | `get_rollout_by_id` |
-| `PATCH /api/rollouts/{rid}` | `update_rollout` (with optimistic locking via `expected_version`) |
+| `PATCH /api/rollouts/{rid}` | `update_rollout` — partial update, only provided fields changed. Validates state transitions. |
 | `POST /api/rollouts/{rid}/cancel` | *New.* Sets `cancel_requested` flag. Original used `update_rollout(status="cancelled")`. |
 
 **Model server management (4 endpoints):**
@@ -1328,7 +1314,7 @@ Attempt listing is folded into `GET /api/rollouts/{rid}` response (includes `att
 | `POST /rollout/{rid}/attempt/{aid}/events` | Explicit event ingestion (reward, user-defined types). Original had no direct event API — everything went through OTEL spans. |
 | `POST /api/rollouts/{rid}/cancel` | Explicit cancel with `cancel_requested` flag. Cleaner than overloading `update_rollout(status="cancelled")`. |
 | `cancel_requested` flag on Rollout | Separate intent from execution. Original used status directly. |
-| `expected_version` on `PATCH /api/rollouts/{rid}` | Optimistic locking for safe concurrent updates. Original relied on in-process thread locks or single-writer patterns. |
+| `version` on `Rollout` | Monotonically incrementing counter, bumped on every update. Informational — included in responses for debugging/observability. Not required in PATCH requests. Original relied on in-process thread locks or single-writer patterns. |
 | `succeeded_attempt_id` on Rollout | Directly links successful rollout to its trajectory data. Original required querying attempts to find the successful one. |
 | Open event types (`event_type: str`) | Extensible without schema changes. Original was locked to OTEL span format. |
 | Unified service (proxy + store) | Single deployment, in-process event capture on hot path. Original had separate LLM Proxy and Store Server. |

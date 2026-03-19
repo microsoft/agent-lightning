@@ -5,11 +5,11 @@ from agl_lite.schemas.api import (
     ArchiveRequest,
     EnqueueBatchRequest,
     EnqueueRolloutRequest,
+    PatchRolloutRequest,
     PostEventRequest,
     RegisterModelRequest,
-    UpdateRolloutRequest,
 )
-from agl_lite.schemas.rollout import RolloutConfig
+from agl_lite.schemas.rollout import RolloutConfig, RolloutStatus
 
 
 class TestEnqueueRolloutRequest:
@@ -41,18 +41,26 @@ class TestEnqueueBatchRequest:
         assert b.config.image == "agent:v1"
 
 
-class TestUpdateRolloutRequest:
-    def test_status_update(self):
-        u = UpdateRolloutRequest(status="running", expected_version=1)
-        assert u.job_name is None
+class TestPatchRolloutRequest:
+    def test_status_only(self):
+        p = PatchRolloutRequest(status=RolloutStatus.RUNNING)
+        dumped = p.model_dump(exclude_unset=True)
+        assert dumped == {"status": RolloutStatus.RUNNING}
 
     def test_with_optional_fields(self):
-        u = UpdateRolloutRequest(
-            status="succeeded",
-            expected_version=2,
-            succeeded_attempt_id="pod-uid-1",
-        )
-        assert u.succeeded_attempt_id == "pod-uid-1"
+        p = PatchRolloutRequest(status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="pod-uid-1")
+        dumped = p.model_dump(exclude_unset=True)
+        assert dumped == {"status": RolloutStatus.SUCCEEDED, "succeeded_attempt_id": "pod-uid-1"}
+
+    def test_empty_patch(self):
+        p = PatchRolloutRequest()
+        dumped = p.model_dump(exclude_unset=True)
+        assert dumped == {}
+
+    def test_non_status_field_only(self):
+        p = PatchRolloutRequest(job_name="agl-rollout-abc")
+        dumped = p.model_dump(exclude_unset=True)
+        assert dumped == {"job_name": "agl-rollout-abc"}
 
 
 class TestPostEventRequest:

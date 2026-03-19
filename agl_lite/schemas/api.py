@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from agl_lite.schemas.rollout import RolloutConfig
+from agl_lite.schemas.rollout import RolloutConfig, RolloutStatus
 
 # --- Rollout API ---
 
@@ -27,11 +27,13 @@ class EnqueueBatchRequest(BaseModel):
     rollouts: list[EnqueueRolloutRequest]
 
 
-class UpdateRolloutRequest(BaseModel):
-    """Controller updates rollout status (with optimistic locking)."""
+class PatchRolloutRequest(BaseModel):
+    """Partial update for a rollout. Only fields present in the request body are applied.
 
-    status: str
-    expected_version: int
+    Use `model_dump(exclude_unset=True)` to get only the fields the caller explicitly set.
+    """
+
+    status: RolloutStatus | None = None
     job_name: str | None = None
     succeeded_attempt_id: str | None = None
     error_message: str | None = None

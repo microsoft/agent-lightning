@@ -16,7 +16,7 @@
 ## Completed
 
 - [x] **Phase 0: Schemas and Project Skeleton** — frozen data models, project structure, dev tooling, 36 schema tests
-- [x] **Phase 0.4: State transition rules** — valid transitions table, cancel_requested rules, optimistic locking, exhaustive tests
+- [x] **Phase 0.4: State transition rules** — valid transitions table, cancel_requested rules, exhaustive tests
 - [x] **Phase 1: In-Memory Store** — `InMemoryStore` with all operations, 74 store tests (110 total)
   - Rollout: enqueue, update (transition + version check), cancel, query
   - Events: add, query (smart attempt_id resolution), list_attempts
@@ -177,7 +177,7 @@ These are settled and should not be revisited during implementation:
 | `job_defaults` schema | Typed `JobDefaults` model, validated at POST time. Known fields validated; `overrides` dict for unknown K8s fields. |
 | Auth | API keys, 3 roles, `OPENAI_API_KEY` trick for agents |
 | Health endpoint | `GET /healthz`, no auth |
-| Error codes | 401 missing/invalid key, 403 wrong role, 404 rollout not found, 409 version conflict / invalid transition |
+| Error codes | 401 missing/invalid key, 403 wrong role, 404 rollout not found, 409 invalid transition |
 | Archive format | JSONL, user-specified file path (`*.jsonl`). Append if file exists, create if not. Includes rollout + events + resources per archive call. |
 | Gateway config | Static YAML at startup (param adjustment), no runtime changes |
 | Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |
