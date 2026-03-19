@@ -32,8 +32,31 @@
 
 **Goal**: Full API surface, serving over HTTP, with auth middleware.
 
+### Phase 2 Decisions
+
+| # | Decision |
+|---|---|
+| 1 | Store sharing: `app.state.store` set in lifespan |
+| 2 | `POST /api/rollouts`: single vs batch distinguished by `rollouts` key presence |
+| 3 | `GET /api/rollouts/{rid}` returns `RolloutDetail` with `attempts: List[str]` |
+| 4 | `DELETE /api/models`: optional `?endpoint=` query param (present=remove one, absent=remove all) |
+| 6 | Error format: `{"detail": "message"}` (FastAPI default `HTTPException`) |
+| 8 | Event data: full request body + full response body, **no headers** |
+| 12 | Batch config merging in route handler; store sees individual `EnqueueRolloutRequest`s |
+
+### Phase 2 Open Questions
+
+| # | Topic | Status |
+|---|-------|--------|
+| 5 | Auth: middleware vs dependency, role-checking approach | TBD |
+| 7 | Gateway → model server auth (unauthenticated for MVP?) | TBD |
+| 9 | Parameter adjustment YAML format | TBD |
+| 10 | Event ingestion endpoint location (agent-side vs API-side) | TBD |
+| 11 | Streaming: buffer/tee/event-write flow details | TBD |
+| 12b | Batch-only APIs? Drop individual `add_event`/`register_model` in favor of list-of-one? | TBD |
+
 ### 2.1 FastAPI app (`agl_lite/server/app.py`)
-- [ ] Lifespan: create `InMemoryStore`, load gateway config, load API keys from env
+- [ ] Lifespan: create `InMemoryStore`, set on `app.state.store`; load gateway config, load API keys from env
 - [ ] Mount all route modules
 - [ ] Health endpoint: `GET /healthz` (no auth)
 
@@ -45,20 +68,20 @@
 - [ ] `/healthz` exempt
 
 ### 2.3 Store API routes (`agl_lite/server/routes/`)
-- [ ] `rollouts.py` — POST, GET, GET/{rid}, PATCH/{rid}, POST/{rid}/cancel
-- [ ] `events.py` — GET /api/events (attempt listing folded into GET /api/rollouts/{rid})
-- [ ] `models.py` — POST, GET, DELETE, DELETE?endpoint=<url>
+- [ ] `rollouts.py` — POST (single/batch via `rollouts` key), GET, GET/{rid} (returns `RolloutDetail` with attempts), PATCH/{rid}, POST/{rid}/cancel
+- [ ] `events.py` — GET /api/events
+- [ ] `models.py` — POST (list), GET, DELETE (optional `?endpoint=`)
 - [ ] `resources.py` — POST, GET /latest, GET/{id}
 - [ ] `archive.py` — POST /api/rollouts/archive
 
-All routes delegate to Store methods. Thin HTTP layer — validate request, call store, return response.
+All routes delegate to Store methods. Thin HTTP layer — validate request, call store, return response. Batch config merging for `POST /api/rollouts` happens in route handler.
 
 ### 2.4 Gateway proxy routes (`agl_lite/server/gateway.py`)
 - [ ] Path parsing: extract `rollout_id`, `attempt_id` from `/rollout/{rid}/attempt/{aid}/v1/...`
 - [ ] Rollout existence check (in-process dict lookup)
 - [ ] Model server selection (round-robin from store.models)
 - [ ] Parameter adjustment (load from YAML config at startup)
-- [ ] Non-streaming proxy: forward request, capture response, write event, return
+- [ ] Non-streaming proxy: forward request, capture response (body only, no headers), write event, return
 - [ ] Streaming proxy: tee stream to client + buffer, assemble on completion, write event
 - [ ] Edge cases: client disconnect, backend error, no model servers (503)
 - [ ] Event ingestion endpoint: `/rollout/{rid}/attempt/{aid}/events`
