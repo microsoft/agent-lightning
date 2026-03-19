@@ -478,7 +478,7 @@ class Store:
     async def register_model(endpoint, version) -> ModelServer
     async def register_models(models: List) -> List[ModelServer]
     async def list_models() -> List[ModelServer]
-    async def remove_model(model_id) -> None
+    async def remove_model(endpoint) -> None
     async def remove_all_models() -> None
 ```
 
@@ -499,7 +499,7 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 | `POST` | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
 | `POST` | `/api/rollouts/archive` | **Data lifecycle** — archive and purge consumed rollouts (optional JSONL persistence) | Algorithm |
 | `POST` `GET` `DELETE` | `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
-| `DELETE` | `/api/models/{model_id}` | **Remove single model server** | Algorithm / Compute Backend |
+| `DELETE` | `/api/models?endpoint=<url>` | **Remove single model server** by endpoint | Algorithm / Compute Backend |
 | `GET` | `/api/events` | **Event query** — by rollout/attempt/type, with smart attempt_id default | Algorithm |
 | `POST` `GET` | `/api/resources` | **Resource management** — add, get latest (prompts, config) | Algorithm |
 | `GET` | `/api/resources/{id}` | **Get resource snapshot** by ID | Algorithm |
@@ -665,17 +665,16 @@ Attempt listing is included in `GET /api/rollouts/{rid}` response as an `attempt
 
 ```python
 class ModelServer:
-    model_id: str           # auto-generated UUID
-    endpoint: str           # e.g., "http://vllm-0:8000/v1"
+    endpoint: str           # e.g., "http://vllm-0:8000/v1" — the natural key
     version: int            # training step (monotonically increasing)
     created_at: float
 ```
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/models` | Register model server(s). Body: single `{endpoint, version}` or array `[{endpoint, version}, ...]`. Returns `ModelServer` or `List[ModelServer]`. Gateway immediately starts routing to them. |
+| `POST` | `/api/models` | Register model server(s). Body: single `{endpoint, version}` or array `[{endpoint, version}, ...]`. Upsert by endpoint — re-registering updates version. Returns `ModelServer` or `List[ModelServer]`. Gateway immediately starts routing to them. |
 | `GET` | `/api/models` | List all registered model servers. |
-| `DELETE` | `/api/models/{model_id}` | Remove a single server. In-flight requests to it complete normally; no new requests routed to it. |
+| `DELETE` | `/api/models?endpoint=<url>` | Remove a single server by endpoint (URL-encoded query param). In-flight requests to it complete normally; no new requests routed to it. |
 | `DELETE` | `/api/models` | Remove **all** servers. Gateway enters unavailable state — returns 503 to all new LLM requests until a server is registered. |
 
 #### Weight update protocol
@@ -1271,9 +1270,9 @@ A single HTTP service with **~18 endpoints** across 6 domains:
 
 | Endpoint | Replaces |
 |----------|----------|
-| `POST /api/models` | *New.* Register versioned inference server(s) — single or batch. Original stored model endpoints as generic resources. |
+| `POST /api/models` | *New.* Register versioned inference server(s) — single or batch. Upsert by endpoint. Original stored model endpoints as generic resources. |
 | `GET /api/models` | *New.* List registered servers. |
-| `DELETE /api/models/{model_id}` | *New.* Remove one server from routing. |
+| `DELETE /api/models?endpoint=<url>` | *New.* Remove one server from routing by endpoint. |
 | `DELETE /api/models` | *New.* Remove all servers (weight update window). Gateway returns 503 until new servers registered. |
 
 **Event / trajectory (1 endpoint):**

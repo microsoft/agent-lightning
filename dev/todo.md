@@ -52,7 +52,7 @@
   events: Dict[str, Dict[str, List[Event]]]  # nested: rid → aid → events
   resources: Dict[str, ResourcesUpdate]       # keyed by resources_id
   latest_resources_id: Optional[str]
-  models: Dict[str, ModelServer]              # keyed by model_id
+  models: Dict[str, ModelServer]              # keyed by endpoint
   ```
 - [ ] Rollout operations: enqueue, update (with transition + version check), cancel, query
 - [ ] Event operations: add, query (with smart attempt_id resolution), list_attempts (returns attempt IDs from nested dict keys)
@@ -101,7 +101,7 @@
 ### 2.3 Store API routes (`agl_lite/server/routes/`)
 - [ ] `rollouts.py` — POST, GET, GET/{rid}, PATCH/{rid}, POST/{rid}/cancel
 - [ ] `events.py` — GET /api/events (attempt listing folded into GET /api/rollouts/{rid})
-- [ ] `models.py` — POST, GET, DELETE, DELETE/{model_id}
+- [ ] `models.py` — POST, GET, DELETE, DELETE?endpoint=<url>
 - [ ] `resources.py` — POST, GET /latest, GET/{id}
 - [ ] `archive.py` — POST /api/rollouts/archive
 

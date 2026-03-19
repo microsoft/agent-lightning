@@ -33,7 +33,7 @@ class InMemoryStore:
       rollouts:  dict[rollout_id, Rollout]
       events:    dict[rollout_id, dict[attempt_id, list[Event]]]  (nested)
       resources: dict[resources_id, ResourcesUpdate]
-      models:    dict[model_id, ModelServer]
+      models:    dict[endpoint, ModelServer]
     """
 
     def __init__(self) -> None:
@@ -320,16 +320,14 @@ class InMemoryStore:
     # ── Model server management ──────────────────────────────────────
 
     def register_model(self, endpoint: str, version: int = 0) -> ModelServer:
-        """Register a model inference server."""
-        model_id = uuid.uuid4().hex
+        """Register (or update) a model inference server. Keyed by endpoint — upsert semantics."""
         now = time.time()
         model = ModelServer(
-            model_id=model_id,
             endpoint=endpoint,
             version=version,
             created_at=now,
         )
-        self._models[model_id] = model
+        self._models[endpoint] = model
         return model
 
     def register_models(self, models: list[dict[str, Any]]) -> list[ModelServer]:
@@ -340,12 +338,12 @@ class InMemoryStore:
         """List all registered model servers."""
         return list(self._models.values())
 
-    def remove_model(self, model_id: str) -> None:
-        """Remove a single model server. Raises NotFoundError."""
+    def remove_model(self, endpoint: str) -> None:
+        """Remove a single model server by endpoint. Raises NotFoundError."""
         try:
-            del self._models[model_id]
+            del self._models[endpoint]
         except KeyError:
-            raise NotFoundError("ModelServer", model_id) from None
+            raise NotFoundError("ModelServer", endpoint) from None
 
     def remove_all_models(self) -> None:
         """Remove all model servers. Gateway enters unavailable state (503)."""

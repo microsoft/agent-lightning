@@ -63,12 +63,11 @@ class TestResources:
 class TestModelServers:
     def test_register_and_list(self, store: InMemoryStore):
         m = store.register_model("http://vllm:8000/v1", version=42)
-        assert m.model_id
         assert m.endpoint == "http://vllm:8000/v1"
         assert m.version == 42
         models = store.list_models()
         assert len(models) == 1
-        assert models[0].model_id == m.model_id
+        assert models[0].endpoint == m.endpoint
 
     def test_register_multiple(self, store: InMemoryStore):
         models = store.register_models(
@@ -80,17 +79,25 @@ class TestModelServers:
         assert len(models) == 2
         assert len(store.list_models()) == 2
 
-    def test_remove_one(self, store: InMemoryStore):
-        m1 = store.register_model("http://vllm-0:8000/v1")
-        m2 = store.register_model("http://vllm-1:8000/v1")
-        store.remove_model(m1.model_id)
+    def test_upsert_same_endpoint(self, store: InMemoryStore):
+        """Re-registering the same endpoint updates version (upsert)."""
+        store.register_model("http://vllm:8000/v1", version=1)
+        store.register_model("http://vllm:8000/v1", version=2)
+        models = store.list_models()
+        assert len(models) == 1
+        assert models[0].version == 2
+
+    def test_remove_by_endpoint(self, store: InMemoryStore):
+        store.register_model("http://vllm-0:8000/v1")
+        store.register_model("http://vllm-1:8000/v1")
+        store.remove_model("http://vllm-0:8000/v1")
         remaining = store.list_models()
         assert len(remaining) == 1
-        assert remaining[0].model_id == m2.model_id
+        assert remaining[0].endpoint == "http://vllm-1:8000/v1"
 
     def test_remove_not_found(self, store: InMemoryStore):
         with pytest.raises(NotFoundError):
-            store.remove_model("nonexistent")
+            store.remove_model("http://nonexistent:8000/v1")
 
     def test_remove_all(self, store: InMemoryStore):
         store.register_model("http://vllm-0:8000/v1")
