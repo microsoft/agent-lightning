@@ -27,6 +27,6 @@ def find_succeeded_pod_uid(job) -> Optional[str]:
 
 **Edge cases**:
 - **Multiple succeeded pods** (node partition): pick any one. Both have valid event data partitioned by their own `attempt_id`.
-- **No succeeded pod found** (unexpected): set `succeeded_attempt_id = None`, log a warning. Rollout is still marked `succeeded` but the user must call `GET /api/attempts/{rid}` to find the right attempt.
+- **No succeeded pod found** (unexpected): set `succeeded_attempt_id = None`, log a warning. Rollout is still marked `succeeded` but the user must call `GET /api/rollouts/{rid}` (which includes `attempts` list) to find the right attempt.
 
 **Timing**: Query pods in the **watch callback** (reactive, immediate), not deferred to periodic reconciliation. This minimizes the window between Job completion and pod query.

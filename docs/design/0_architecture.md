@@ -238,16 +238,15 @@ agl-lite is a **data pipe**, not a schema enforcer. The trajectory is a sequence
 ```python
 class Event:
     """Single event in a trajectory. The universal unit of data in agl-lite."""
-    event_id: str
     event_type: str             # "model_request", "reward", or any user-defined string
     rollout_id: str
     attempt_id: str             # = K8s pod UID
-    timestamp: float
+    timestamp: float            # assigned by store at write time
     data: Dict                  # event-type-specific payload (see below)
 ```
 
-Events are stored in insertion order. No explicit `sequence` field — ordering is an emergent property of the storage backend:
-- **In-memory**: list index (single-threaded asyncio guarantees temporal insertion order)
+Events are identified by their **position in the list** (insertion order), not by a separate ID. No explicit `sequence` field — ordering is an emergent property of the storage backend:
+- **In-memory**: list index in a **nested dict** `rid → aid → list[Event]` (single-threaded asyncio guarantees temporal insertion order). The nested structure makes listing attempts for a rollout O(1) — just read the inner dict keys — and archive/purge O(1) — `del store[rid]` removes everything.
 - **SQLite**: ROWID auto-increment (single writer, WAL mode)
 - **PostgreSQL**: SERIAL/IDENTITY primary key
 
@@ -299,7 +298,7 @@ The API returns events in insertion order. Consumers use array position if they 
 {"score": 42, "details": {...}}
 ```
 
-The Store stores all events identically — it does not validate `data` payloads beyond the common fields (`event_id`, `event_type`, `rollout_id`, `attempt_id`, `sequence`, `timestamp`, `data`).
+The Store stores all events identically — it does not validate `data` payloads beyond the common fields (`event_type`, `rollout_id`, `attempt_id`, `timestamp`, `data`).
 
 #### Trajectory
 
@@ -389,7 +388,7 @@ class Mount:
 
 | Key | Used by | Purpose |
 |-----|---------|---------|
-| `job_defaults` | K8s Controller | Infra-level Job spec defaults (resources, nodeSelector, tolerations, serviceAccount, imagePullSecrets, etc.) |
+| `job_defaults` | K8s Controller | Infra-level Job spec defaults (resources, nodeSelector, tolerations, serviceAccount, imagePullSecrets, timeout, max_retries). Known fields are typed and validated; an `overrides` dict provides an escape hatch for arbitrary K8s fields (labels, annotations, dnsPolicy, etc.) that the controller merges raw into the Job spec. |
 
 All other keys are user-defined and opaque to agl-lite (prompts, eval configs, etc.).
 
@@ -450,7 +449,7 @@ class Store:
         # When ids provided, returns exactly those rollouts (batch fetch).
         # Other filters (status_in, etc.) can combine with ids or work standalone.
     
-    # Event storage (insertion order = temporal order, no explicit sequence)
+    # Event storage (nested dict: rid → aid → list[Event], insertion order = temporal order)
     async def add_event(event: Event) -> Event
     async def add_events(events: List[Event]) -> List[Event]
     async def query_events(rollout_id, attempt_id=None,
@@ -460,11 +459,10 @@ class Store:
         #   1. If rollout.succeeded_attempt_id is set → use it
         #   2. Otherwise → attempt with latest MIN(timestamp) from events
         #   3. No events exist → return []
-    async def list_attempts(rollout_id) -> List[AttemptInfo]
-        # Derived from events table, no separate attempt storage:
-        #   SELECT DISTINCT attempt_id, MIN(timestamp) AS first_seen
-        #   FROM events WHERE rollout_id = ?
-        #   GROUP BY attempt_id ORDER BY first_seen
+    async def list_attempts(rollout_id) -> List[str]
+        # Returns attempt IDs for a rollout, derived from nested dict keys.
+        # Ordered by first event timestamp (earliest first).
+        # Included in GET /api/rollouts/{rid} response as "attempts" field.
 
     # Resource management (prompts, config — not model endpoints)
     async def add_resources(resources) -> ResourcesUpdate
@@ -503,7 +501,6 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 | `POST` `GET` `DELETE` | `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
 | `DELETE` | `/api/models/{model_id}` | **Remove single model server** | Algorithm / Compute Backend |
 | `GET` | `/api/events` | **Event query** — by rollout/attempt/type, with smart attempt_id default | Algorithm |
-| `GET` | `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
 | `POST` `GET` | `/api/resources` | **Resource management** — add, get latest (prompts, config) | Algorithm |
 | `GET` | `/api/resources/{id}` | **Get resource snapshot** by ID | Algorithm |
 
@@ -577,7 +574,7 @@ Accepts explicit events (reward, user-defined types). Body:
 ```json
 {"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
 ```
-The service validates that `rollout_id` exists (in-process dict lookup, ~100ns), assigns `event_id` and `timestamp`, and appends to the event store in insertion order. Returns 404 if rollout not found — rejects orphan events early. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
+The service validates that `rollout_id` exists (in-process dict lookup, ~100ns), assigns `timestamp`, and appends to the event store in insertion order. Returns 404 if rollout not found — rejects orphan events early. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
 
 #### Concurrency and scaling
 
@@ -661,7 +658,8 @@ The archive feature thus serves dual purpose: **data lifecycle** (purge hot stor
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Returned in insertion order (temporal). When `attempt_id` is omitted: uses `succeeded_attempt_id` if rollout succeeded, otherwise the most recently created attempt (derived from events). |
-| `GET` | `/api/attempts/{rollout_id}` | List attempts with timing. Derived from events table: `[{attempt_id, first_seen, last_seen, event_count}]` ordered by `first_seen`. No separate attempt storage. |
+
+Attempt listing is included in `GET /api/rollouts/{rid}` response as an `attempts: List[str]` field — the list of attempt IDs for that rollout, ordered by first event timestamp. No separate attempts endpoint needed.
 
 **Model server management:**
 
@@ -836,6 +834,9 @@ resources[id].job_defaults (infra)   rollout.config (algorithm)
 │   ["registry-creds"] │                       │
 │ timeout: 300         │  ← default            │
 │ max_retries: 1       │  ← default            │
+│ overrides:           │  ← escape hatch       │
+│   dnsPolicy: "..."   │                       │
+│   labels: {team: ..} │                       │
 └──────────────────────┘                       │
            │                                   │
            └──────── merge ────────────────────┘
@@ -1247,7 +1248,7 @@ The original `LightningStore` has **25+ methods** across 6 domains:
 
 ### 4.2 agl-lite API Surface
 
-A single HTTP service with **~19 endpoints** across 6 domains:
+A single HTTP service with **~18 endpoints** across 6 domains:
 
 **LLM proxy (2 paths, agent-facing):**
 
@@ -1275,12 +1276,13 @@ A single HTTP service with **~19 endpoints** across 6 domains:
 | `DELETE /api/models/{model_id}` | *New.* Remove one server from routing. |
 | `DELETE /api/models` | *New.* Remove all servers (weight update window). Gateway returns 503 until new servers registered. |
 
-**Event / trajectory (2 endpoints):**
+**Event / trajectory (1 endpoint):**
 
 | Endpoint | Replaces |
 |----------|----------|
 | `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`, `attempt_id`). When `attempt_id` omitted, defaults to succeeded attempt or latest. |
-| `GET /api/attempts/{rid}` | `query_attempts` (derived from events table — no separate attempt storage) |
+
+Attempt listing is folded into `GET /api/rollouts/{rid}` response (includes `attempts` field with ordered attempt IDs). Replaces `query_attempts` — no separate entity or endpoint needed.
 
 **Resource management (3 endpoints):**
 
