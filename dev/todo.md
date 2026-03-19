@@ -1,7 +1,7 @@
 # agl-lite Implementation Plan
 
 > This replaces the old phase-based TODO. Aligned with the final architecture
-> in `docs/refactor/0_architecture.md` and reviewed architecture decisions.
+> in `docs/design/0_architecture.md` and reviewed architecture decisions.
 
 ## Guiding Principles
 
@@ -179,7 +179,7 @@ All routes delegate to Store methods. Thin HTTP layer — validate request, call
   - Merge with `rollout.config`
   - Inject env vars (OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL)
   - Deterministic job name: `agl-rollout-{rollout_id}`
-- [ ] `find_succeeded_pod_uid` — per `docs/refactor/1_k8s_controller.md`
+- [ ] `find_succeeded_pod_uid` — per `docs/design/1_k8s_controller.md`
 - [ ] Optimistic locking: retry on version conflict
 
 ### 3.2 Job template rendering

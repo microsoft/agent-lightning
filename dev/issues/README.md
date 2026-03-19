@@ -1,6 +1,6 @@
 # Architecture Issues
 
-Issues discovered during critical review of `docs/refactor/0_architecture.md`.
+Issues discovered during critical review of `docs/design/0_architecture.md`.
 
 Each issue is a separate file: `{number}_{slug}.md`.
 Severity: 🔴 architectural gap, 🟡 important design issue, 🟢 minor/deferrable.
@@ -9,14 +9,14 @@ Severity: 🔴 architectural gap, 🟡 important design issue, 🟢 minor/deferr
 
 | # | Severity | Title | Status |
 |---|----------|-------|--------|
-| 001 | 🔴 | Streaming LLM response handling | **resolved** → `docs/refactor/0_architecture.md` §3.4 LLM proxy paths |
-| 002 | 🔴 | Task input delivery to agent | **resolved** → `docs/refactor/0_architecture.md` §3.3 (env vars), §3.5 (Job template). `AGL_TASK_INPUT` env var. |
-| 003 | 🔴 | LLM backend routing and resource mapping | **resolved** → `docs/refactor/0_architecture.md` §3.4 Model Server Management |
-| 004 | 🔴 | Batch trajectory query for training | **resolved** → `docs/refactor/0_architecture.md` §3.4 Bulk data transfer. No batch endpoint needed; concurrent queries + archive-to-shared-storage for remote case. |
-| 005 | 🟡 | Gateway scaling and sequence counters | **resolved** → `docs/refactor/0_architecture.md` §3.4 Concurrency and scaling |
+| 001 | 🔴 | Streaming LLM response handling | **resolved** → `docs/design/0_architecture.md` §3.4 LLM proxy paths |
+| 002 | 🔴 | Task input delivery to agent | **resolved** → `docs/design/0_architecture.md` §3.3 (env vars), §3.5 (Job template). `AGL_TASK_INPUT` env var. |
+| 003 | 🔴 | LLM backend routing and resource mapping | **resolved** → `docs/design/0_architecture.md` §3.4 Model Server Management |
+| 004 | 🔴 | Batch trajectory query for training | **resolved** → `docs/design/0_architecture.md` §3.4 Bulk data transfer. No batch endpoint needed; concurrent queries + archive-to-shared-storage for remote case. |
+| 005 | 🟡 | Gateway scaling and sequence counters | **resolved** → `docs/design/0_architecture.md` §3.4 Concurrency and scaling |
 | 006 | 🟡 | Concurrent LLM calls and adapter design | **resolved** → concurrency note in §3.3, adapter relabeled as example in §3.6 |
-| 007 | 🟡 | Rollout config schema | **resolved** → `docs/refactor/0_architecture.md` §3.3 (RolloutConfig + Mount schema), §3.5 (Job template merge). Two-layer: infra defaults (controller config file) + algorithm overrides (per-rollout). |
-| 008 | 🟡 | Data retention and eviction | **resolved** → `docs/refactor/0_architecture.md` §3.4 Data lifecycle |
-| 009 | 🟢 | Event ingestion validation | **resolved** → `docs/refactor/0_architecture.md` §3.4. Validate `rollout_id` exists (in-process dict lookup, ~100ns). 404 rejects orphans early. Implies in-process store for zero-cost validation. |
-| 010 | 🟢 | find_succeeded_pod_uid implementation | **resolved** → `docs/refactor/1_k8s_controller.md` |
-| 011 | 🟡 | Cross-boundary authentication and transport security | **resolved** → `docs/refactor/0_architecture.md` §3.6 Security. API keys per role, OPENAI_API_KEY trick for zero-agent-modification auth. |
+| 007 | 🟡 | Rollout config schema | **resolved** → `docs/design/0_architecture.md` §3.3 (RolloutConfig + Mount schema), §3.5 (Job template merge). Two-layer: infra defaults (controller config file) + algorithm overrides (per-rollout). |
+| 008 | 🟡 | Data retention and eviction | **resolved** → `docs/design/0_architecture.md` §3.4 Data lifecycle |
+| 009 | 🟢 | Event ingestion validation | **resolved** → `docs/design/0_architecture.md` §3.4. Validate `rollout_id` exists (in-process dict lookup, ~100ns). 404 rejects orphans early. Implies in-process store for zero-cost validation. |
+| 010 | 🟢 | find_succeeded_pod_uid implementation | **resolved** → `docs/design/1_k8s_controller.md` |
+| 011 | 🟡 | Cross-boundary authentication and transport security | **resolved** → `docs/design/0_architecture.md` §3.6 Security. API keys per role, OPENAI_API_KEY trick for zero-agent-modification auth. |
