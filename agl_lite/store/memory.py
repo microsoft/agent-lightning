@@ -306,12 +306,13 @@ class InMemoryStore:
 
     # ── Model server management ──────────────────────────────────────
 
-    def register_model(self, endpoint: str, version: int = 0) -> ModelServer:
+    def register_model(self, endpoint: str, version: int = 0, token: str | None = None) -> ModelServer:
         """Register (or update) a model inference server. Keyed by endpoint — upsert semantics."""
         now = time.time()
         model = ModelServer(
             endpoint=endpoint,
             version=version,
+            token=token,
             created_at=now,
         )
         self._models[endpoint] = model
@@ -319,7 +320,10 @@ class InMemoryStore:
 
     def register_models(self, models: list[dict[str, Any]]) -> list[ModelServer]:
         """Register multiple model servers."""
-        return [self.register_model(endpoint=m["endpoint"], version=m.get("version", 0)) for m in models]
+        return [
+            self.register_model(endpoint=m["endpoint"], version=m.get("version", 0), token=m.get("token"))
+            for m in models
+        ]
 
     def list_models(self) -> list[ModelServer]:
         """List all registered model servers."""

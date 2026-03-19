@@ -56,13 +56,11 @@ kubectl create namespace agl
 
 ### 2b. API Keys
 
-Generate keys for the agent and controller roles. The algorithm key is also generated here — the algorithm always uses it when calling agl-lite, but may receive it through its own configuration rather than K8s Secret mount (e.g., if the algorithm runs outside the cluster).
+Generate a shared API key for all components.
 
 ```bash
 kubectl -n agl create secret generic agl-lite-keys \
-  --from-literal=AGENT_KEY=$(openssl rand -hex 32) \
-  --from-literal=CONTROLLER_KEY=$(openssl rand -hex 32) \
-  --from-literal=ALGORITHM_KEY=$(openssl rand -hex 32)
+  --from-literal=AGL_KEY=$(openssl rand -hex 32)
 ```
 
 ### 2c. Controller ServiceAccount + RBAC
@@ -121,10 +119,8 @@ agl-lite is a standalone HTTP server. It has **zero K8s dependency** — run it 
 ### Option A: Run locally (dev)
 
 ```bash
-# Pass keys for verification (read from the Secret, or generate matching ones)
-export AGL_AGENT_KEY="<same key as in K8s Secret>"
-export AGL_CONTROLLER_KEY="<same key as in K8s Secret>"
-export AGL_ALGORITHM_KEY="<same key as in K8s Secret>"
+# Pass key for verification (read from the Secret, or generate a matching one)
+export AGL_KEY="<same key as in K8s Secret>"
 
 agl-lite serve --host 0.0.0.0 --port 8080
 ```
@@ -156,21 +152,11 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: AGL_AGENT_KEY
+            - name: AGL_KEY
               valueFrom:
                 secretKeyRef:
                   name: agl-lite-keys
-                  key: AGENT_KEY
-            - name: AGL_CONTROLLER_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: agl-lite-keys
-                  key: CONTROLLER_KEY
-            - name: AGL_ALGORITHM_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: agl-lite-keys
-                  key: ALGORITHM_KEY
+                  key: AGL_KEY
 ---
 apiVersion: v1
 kind: Service
@@ -226,11 +212,11 @@ spec:
           env:
             - name: AGL_LITE_URL
               value: "http://agl-lite.agl.svc.cluster.local:8080"
-            - name: AGL_CONTROLLER_KEY
+            - name: AGL_KEY
               valueFrom:
                 secretKeyRef:
                   name: agl-lite-keys
-                  key: CONTROLLER_KEY
+                  key: AGL_KEY
             - name: AGL_NAMESPACE
               value: "agl"
 ```
@@ -243,7 +229,7 @@ kubectl apply -f controller-deployment.yaml
 
 ```bash
 export AGL_LITE_URL="http://localhost:8080"
-export AGL_CONTROLLER_KEY="<controller key>"
+export AGL_KEY="<same key as in K8s Secret>"
 export KUBECONFIG=~/.kube/config
 
 agl-lite controller --namespace agl
@@ -263,7 +249,7 @@ The algorithm (or a setup script) posts a resource snapshot containing infra-lev
 import httpx
 
 AGL_LITE_URL = "http://agl-lite.agl.svc.cluster.local:8080"
-HEADERS = {"Authorization": "Bearer <ALGORITHM_KEY>"}
+HEADERS = {"Authorization": "Bearer <AGL_KEY>"}
 
 # Post resource snapshot with job_defaults
 res = httpx.post(f"{AGL_LITE_URL}/api/resources", headers=HEADERS, json={

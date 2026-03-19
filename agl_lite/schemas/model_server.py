@@ -10,4 +10,5 @@ class ModelServer(BaseModel):
 
     endpoint: str  # e.g., "http://vllm-0:8000/v1" — the identity
     version: int  # training step (monotonically increasing)
+    token: str | None = None  # optional auth token for gateway → model server
     created_at: float

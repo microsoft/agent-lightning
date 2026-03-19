@@ -57,6 +57,7 @@ class RegisterModelRequest(BaseModel):
 
     endpoint: str
     version: int = 0
+    token: str | None = None  # optional auth token for gateway → model server
 
 
 # --- Resource API ---

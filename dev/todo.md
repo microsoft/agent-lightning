@@ -40,7 +40,9 @@
 | 2 | `POST /api/rollouts`: single vs batch distinguished by `rollouts` key presence |
 | 3 | `GET /api/rollouts/{rid}` returns `RolloutDetail` with `attempts: List[str]` |
 | 4 | `DELETE /api/models`: optional `?endpoint=` query param (present=remove one, absent=remove all) |
+| 5 | Auth: single `AGL_KEY` for all components, no roles. Gateway checks `Authorization: Bearer` and `x-api-key` |
 | 6 | Error format: `{"detail": "message"}` (FastAPI default `HTTPException`) |
+| 7 | Gateway → model server: optional `token` field on `ModelServer`. If set, gateway sends `Authorization: Bearer <token>` |
 | 8 | Event data: full request body + full response body, **no headers** |
 | 12 | Batch config merging in route handler; store sees individual `EnqueueRolloutRequest`s |
 
@@ -48,8 +50,8 @@
 
 | # | Topic | Status |
 |---|-------|--------|
-| 5 | Auth: middleware vs dependency, role-checking approach | TBD |
-| 7 | Gateway → model server auth (unauthenticated for MVP?) | TBD |
+| 5 | Auth: single `AGL_KEY`, no roles for MVP | **Resolved** |
+| 7 | Gateway → model server auth: optional `token` on `ModelServer` | **Resolved** |
 | 9 | Parameter adjustment YAML format | TBD |
 | 10 | Event ingestion endpoint location (agent-side vs API-side) | TBD |
 | 11 | Streaming: buffer/tee/event-write flow details | TBD |
@@ -61,10 +63,9 @@
 - [ ] Health endpoint: `GET /healthz` (no auth)
 
 ### 2.2 Auth middleware (`agl_lite/server/auth.py`)
-- [ ] Extract `Authorization: Bearer <key>` from request
-- [ ] Map key → role (agent, controller, algorithm)
-- [ ] Check role against path pattern (auth matrix in frozen decisions table)
-- [ ] 401 for missing/invalid key, 403 for wrong role
+- [ ] Extract key from `Authorization: Bearer <key>` or `x-api-key: <key>` header
+- [ ] Validate key against `AGL_KEY`
+- [ ] 401 for missing/invalid key
 - [ ] `/healthz` exempt
 
 ### 2.3 Store API routes (`agl_lite/server/routes/`)
@@ -88,7 +89,7 @@ All routes delegate to Store methods. Thin HTTP layer — validate request, call
 
 ### 2.5 CLI (`agl_lite/cli.py`)
 - [ ] `agl-lite serve --host --port --gateway-config` entrypoint
-- [ ] Reads API keys from env vars: `AGL_AGENT_KEY`, `AGL_CONTROLLER_KEY`, `AGL_ALGORITHM_KEY`
+- [ ] Reads `AGL_KEY` from env var
 
 ### 2.6 Integration tests
 - [ ] Full API round-trip tests (enqueue → query → update → events → archive)
@@ -127,7 +128,7 @@ All routes delegate to Store methods. Thin HTTP layer — validate request, call
 
 ### 3.3 CLI
 - [ ] `agl-lite controller --agl-lite-url --namespace --secret-name`
-- [ ] Reads `AGL_CONTROLLER_KEY` from env
+- [ ] Reads `AGL_KEY` from env
 
 ### 3.4 Tests
 - [ ] Unit tests for Job spec builder (merge logic, env var injection)
@@ -199,9 +200,9 @@ These are settled and should not be revisited during implementation:
 | `event_id` | Removed — events identified by position in list |
 | `timestamp` | Assigned by store at write time |
 | `job_defaults` schema | Typed `JobDefaults` model, validated at POST time. Known fields validated; `overrides` dict for unknown K8s fields. |
-| Auth | API keys, 3 roles, `OPENAI_API_KEY` trick for agents |
+| Auth | Single `AGL_KEY` for all components, no role-based access for MVP. `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` trick for agents. |
 | Health endpoint | `GET /healthz`, no auth |
-| Error codes | 401 missing/invalid key, 403 wrong role, 404 rollout not found, 409 invalid transition |
+| Error codes | 401 missing/invalid key, 404 rollout not found, 409 invalid transition |
 | Archive format | JSONL, user-specified file path (`*.jsonl`). Append if file exists, create if not. Includes rollout + events + resources per archive call. |
 | Gateway config | Static YAML at startup (param adjustment), no runtime changes |
 | Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |
@@ -209,4 +210,4 @@ These are settled and should not be revisited during implementation:
 | `timeout` | Maps to K8s Job `activeDeadlineSeconds` |
 | `max_retries` | Maps to K8s Job `backoffLimit` |
 | Model routing | Round-robin for MVP |
-| Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars in Job spec, both via `secretKeyRef` to same `agl-lite-keys/AGENT_KEY`. Gateway checks both `Authorization: Bearer` and `x-api-key` headers. Controller never reads secret value. |
+| Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars in Job spec, both via `secretKeyRef` to same `agl-lite-keys/AGL_KEY`. Gateway checks both `Authorization: Bearer` and `x-api-key` headers. |

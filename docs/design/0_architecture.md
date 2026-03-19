@@ -181,14 +181,14 @@ env:
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys
-        key: AGENT_KEY
+        key: AGL_KEY
   - name: ANTHROPIC_BASE_URL         # Anthropic SDK — same gateway URL
     value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
   - name: ANTHROPIC_API_KEY          # Anthropic SDK sends as x-api-key header
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys
-        key: AGENT_KEY
+        key: AGL_KEY
   - name: AGL_TASK_INPUT             # task payload (JSON-serialized rollout.input)
     value: '{"prompt": "Write a sort function", "test_cases": [...]}'
   - name: AGL_EVENT_URL              # for explicit event posting (rewards, etc.)
@@ -886,14 +886,14 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: agl-lite-keys
-                  key: AGENT_KEY
+                  key: AGL_KEY
             - name: ANTHROPIC_BASE_URL           # Anthropic SDK — same gateway URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
             - name: ANTHROPIC_API_KEY            # Anthropic SDK → x-api-key
               valueFrom:
                 secretKeyRef:
                   name: agl-lite-keys
-                  key: AGENT_KEY
+                  key: AGL_KEY
             - name: AGL_TASK_INPUT
               value: '{"prompt": "Write a sort function", ...}'
             - name: AGL_EVENT_URL
@@ -1105,22 +1105,20 @@ Rollouts stay `queuing`. When the controller comes back, periodic reconciliation
 
 #### API key authentication (MVP)
 
-Three API keys, one per role. The algorithm always uses its key when calling agl-lite. Storing it in K8s Secret is optional — the algorithm may run outside the cluster (researcher's laptop, compute backend, CI pipeline) and receive the key through its own configuration.
+Single shared API key (`AGL_KEY`) for all components. Stored in a K8s Secret so the controller can inject it into agent pods.
 
 ```
 K8s Secret: agl-lite-keys
 ┌─────────────────────────────────┐
-│ AGENT_KEY:      "ak_xxx..."     │  ← always in K8s Secret (controller injects into Jobs)
-│ CONTROLLER_KEY: "ck_xxx..."     │  ← always in K8s Secret (controller reads it)
-│ ALGORITHM_KEY:  "alg_xxx..."    │  ← optional in K8s Secret (algorithm may get it elsewhere)
+│ AGL_KEY: "agl_xxx..."           │  ← shared key for all components
 └─────────────────────────────────┘
           │
-          ├── mount ──► agl-lite Service   (reads all 3 for verification)
-          ├── mount ──► K8s Controller     (uses CONTROLLER_KEY; injects AGENT_KEY into Jobs)
-          └── mount ──► Algorithm          (uses ALGORITHM_KEY — or gets it from its own config)
+          ├── mount ──► agl-lite Service   (reads AGL_KEY for verification)
+          ├── mount ──► K8s Controller     (uses AGL_KEY for API calls; injects into Jobs)
+          └── mount ──► Algorithm          (uses AGL_KEY — or gets it from its own config)
 ```
 
-**Agent key injection via SDK env vars**: The controller sets both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` to the same agent key in the Job env. Each SDK sends the key in its own header format:
+**Agent key injection via SDK env vars**: The controller sets `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` to `AGL_KEY` in the Job env. Each SDK sends the key in its own header format:
 - OpenAI SDK → `Authorization: Bearer <key>`
 - Anthropic SDK → `x-api-key: <key>`
 
@@ -1133,21 +1131,15 @@ env:
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys
-        key: AGENT_KEY
+        key: AGL_KEY
   - name: ANTHROPIC_API_KEY          # Anthropic SDK → x-api-key
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys
-        key: AGENT_KEY
+        key: AGL_KEY
 ```
 
-#### Role-based access
-
-| Role | Key | Allowed paths |
-|------|-----|---------------|
-| **agent** | `AGENT_KEY` | `POST /rollout/{rid}/attempt/{aid}/v1/...` (LLM proxy), `POST /rollout/{rid}/attempt/{aid}/events` (event ingestion) |
-| **controller** | `CONTROLLER_KEY` | `GET /api/rollouts`, `PATCH /api/rollouts/{rid}`, `GET /api/resources/{id}` |
-| **algorithm** | `ALGORITHM_KEY` | Full access — all endpoints |
+**No role-based access for MVP** — any valid key grants full access. Role-based restrictions can be added later by mapping keys to roles.
 
 #### K8s API access
 
