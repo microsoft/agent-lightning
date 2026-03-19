@@ -14,11 +14,12 @@ class K8sResources(BaseModel):
     limits: dict[str, str] = Field(default_factory=dict)  # e.g., {"cpu": "2", "memory": "4Gi"}
 
 
-class JobDefaults(BaseModel, extra="forbid"):
-    """Infra-level Job spec defaults. Validated when 'job_defaults' key is present in a resource snapshot.
+class JobDefaults(BaseModel):
+    """Infra-level Job spec defaults.
 
-    `extra='forbid'` rejects unknown keys — keeps the schema strict and prevents
-    the controller from silently ignoring typos.
+    Validated when 'job_defaults' key is present in a resource snapshot.
+    Known fields are typed and validated. Unknown/future K8s fields go
+    into `overrides` and are merged raw into the Job spec by the controller.
     """
 
     resources: K8sResources | None = None
@@ -28,6 +29,10 @@ class JobDefaults(BaseModel, extra="forbid"):
     image_pull_secrets: list[str] = Field(default_factory=list)
     timeout: int | None = None  # default timeout (seconds)
     max_retries: int | None = None  # default retry count
+
+    # Escape hatch — raw dict merged into K8s Job spec by controller.
+    # For fields not explicitly modeled above (labels, annotations, DNS policy, etc.).
+    overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 class ResourcesUpdate(BaseModel):

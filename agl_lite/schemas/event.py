@@ -10,16 +10,16 @@ from pydantic import BaseModel
 class Event(BaseModel):
     """Single event in a trajectory.
 
-    Events are stored in insertion order per rollout. Only two event types
+    Events are stored in insertion order per rollout. Position in the list
+    is the identity — no separate event ID needed. Only two event types
     have well-known structure (model_request, reward). Everything else is
     opaque pass-through.
     """
 
-    event_id: str
     event_type: str  # "model_request", "reward", or any user-defined string
     rollout_id: str
     attempt_id: str  # = K8s pod UID
-    timestamp: float
+    timestamp: float  # assigned by store at write time
     data: dict[str, Any]  # event-type-specific payload
 
 
@@ -48,12 +48,3 @@ class RewardData(BaseModel):
 
     value: float  # scalar reward (required)
     message: str | None = None  # optional human-readable explanation
-
-
-class AttemptInfo(BaseModel):
-    """Derived attempt metadata — computed from events, not stored separately."""
-
-    attempt_id: str
-    first_seen: float  # MIN(timestamp) for this attempt
-    last_seen: float  # MAX(timestamp) for this attempt
-    event_count: int

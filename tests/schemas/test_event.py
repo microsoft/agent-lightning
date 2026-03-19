@@ -1,12 +1,11 @@
 """Tests for event schemas."""
 
-from agl_lite.schemas.event import AttemptInfo, Event, ModelRequestData, RewardData
+from agl_lite.schemas.event import Event, ModelRequestData, RewardData
 
 
 class TestEvent:
     def test_basic_event(self):
         e = Event(
-            event_id="e1",
             event_type="model_request",
             rollout_id="r1",
             attempt_id="pod-uid-1",
@@ -19,7 +18,6 @@ class TestEvent:
 
     def test_user_defined_event_type(self):
         e = Event(
-            event_id="e2",
             event_type="tool_result",
             rollout_id="r1",
             attempt_id="pod-uid-1",
@@ -28,6 +26,17 @@ class TestEvent:
         )
         assert e.event_type == "tool_result"
         assert e.data["exit_code"] == 0
+
+    def test_no_event_id_field(self):
+        """Events are identified by position, not by ID."""
+        e = Event(
+            event_type="reward",
+            rollout_id="r1",
+            attempt_id="pod-uid-1",
+            timestamp=1000.0,
+            data={"value": 1.0},
+        )
+        assert not hasattr(e, "event_id")
 
 
 class TestModelRequestData:
@@ -64,14 +73,3 @@ class TestRewardData:
     def test_reward_without_message(self):
         r = RewardData(value=0.0)
         assert r.message is None
-
-
-class TestAttemptInfo:
-    def test_attempt_info(self):
-        a = AttemptInfo(
-            attempt_id="pod-uid-1",
-            first_seen=1000.0,
-            last_seen=1005.0,
-            event_count=5,
-        )
-        assert a.event_count == 5
