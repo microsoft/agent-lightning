@@ -441,18 +441,20 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 #### Path layout
 
-| Path pattern | Function | Consumer |
-|---|---|---|
-| `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events | Agent pods |
-| `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
-| `/api/rollouts` | **Rollout management** — enqueue, query (with batch ID support), cancel | Algorithm, K8s controller |
-| `/api/rollouts/{rid}` | **Single rollout** — get, update | K8s controller |
-| `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
-| `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
-| `/api/events` | **Event query** — query events by rollout/attempt/type, with smart attempt_id default | Algorithm |
-| `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
-| `/api/resources` | **Resource management** — add, get latest (prompts, config — not model endpoints) | Algorithm |
-| `/api/rollouts/archive` | **Data lifecycle** — archive and purge consumed rollouts (optional persistence to JSONL, etc.) | Algorithm |
+| Method(s) | Path pattern | Function | Consumer |
+|---|---|---|---|
+| `POST` | `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events | Agent pods |
+| `POST` | `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
+| `POST` `GET` | `/api/rollouts` | **Rollout management** — enqueue, query (with batch ID support) | Algorithm, K8s controller |
+| `GET` `PATCH` | `/api/rollouts/{rid}` | **Single rollout** — get, update (with optimistic locking) | K8s controller |
+| `POST` | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
+| `POST` | `/api/rollouts/archive` | **Data lifecycle** — archive and purge consumed rollouts (optional JSONL persistence) | Algorithm |
+| `POST` `GET` `DELETE` | `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
+| `DELETE` | `/api/models/{model_id}` | **Remove single model server** | Algorithm / Compute Backend |
+| `GET` | `/api/events` | **Event query** — by rollout/attempt/type, with smart attempt_id default | Algorithm |
+| `GET` | `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
+| `POST` `GET` | `/api/resources` | **Resource management** — add, get latest (prompts, config) | Algorithm |
+| `GET` | `/api/resources/{id}` | **Get resource snapshot** by ID | Algorithm |
 
 #### LLM proxy paths (agent-facing, transparent)
 
