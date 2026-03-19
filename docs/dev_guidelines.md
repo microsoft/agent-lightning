@@ -21,7 +21,7 @@ Tooling, conventions, and implementation standards for agl-lite.
 | `pydantic` (v2) | Schema definitions, validation |
 | `pydantic-settings` | Config from env vars (typed) |
 | `httpx` | Async HTTP client (gateway proxy, controller client) |
-| `kr8s` | K8s client (controller) |
+| `kr8s` | Async K8s client (controller) |
 | `typer` | CLI framework |
 | `structlog` | Structured JSON logging |
 
@@ -116,8 +116,9 @@ typeCheckingMode = "standard"
 **Single-threaded by design.** The entire agl-lite service runs on one asyncio event loop in one process.
 
 - **Route handlers**: always `async def`. This ensures they run on the event loop thread, not in FastAPI's thread pool. Critical for store thread-safety — plain `dict`/`list` with no locks.
-- **Store methods**: plain `def` (synchronous). All operations are in-memory dict/list mutations (nanoseconds). No I/O, no `await`, no blocking. Called directly from `async def` handlers — completes instantly, never blocks the event loop.
+- **Store methods**: plain `def` (synchronous). All operations are in-memory dict/list mutations (nanoseconds). No I/O, no `await`, no blocking. Called directly from `async def` route handlers — completes instantly, never blocks the event loop. This applies to the in-memory store only; future DB-backed stores would use `async def`.
 - **Gateway proxy**: `async def` with `await httpx` calls to model servers. The event loop serves other requests while waiting for LLM inference (seconds). This is the ideal async use case — thousands of concurrent I/O-bound connections.
+- **K8s controller**: `async def` throughout — uses `kr8s` (async) for K8s API calls and `httpx.AsyncClient` for agl-lite service calls. Both are I/O-bound.
 - **Single worker**: `uvicorn` runs with 1 worker (the default). Multiple workers would each get their own in-memory store, breaking the single-store assumption. For scaling beyond one instance (future), use stateless gateways + shared DB.
 
 **Why this works for performance**: The hot path (LLM proxy) is I/O-bound — each request waits 2-20s for inference while the event loop serves others. Store ops are nanoseconds. The bottleneck is always the LLM servers, never the gateway. One async process comfortably handles 5,000+ concurrent connections.
