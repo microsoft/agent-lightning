@@ -332,9 +332,8 @@ class Rollout:
     status: RolloutStatus
     cancel_requested: bool              # flag set by user, read by controller
     
-    input: Dict                         # task description
-    resources_id: Optional[str]         # resource version to use
-    config: Dict                        # backoff limit, timeout, etc.
+    input: Dict                         # task description (delivered as AGL_TASK_INPUT env var)
+    config: RolloutConfig               # algorithm-facing Job config (see below)
     
     # Set by controller during lifecycle
     job_name: Optional[str]             # K8s Job name (set on Job creation)
@@ -346,6 +345,28 @@ class Rollout:
     
     created_at: float
     updated_at: float
+
+class RolloutConfig:
+    """Algorithm-facing config. Describes the containerized task.
+    K8s-specific infra details (resources, nodeSelector, etc.) come from
+    the controller's job_defaults.yaml — the algorithm never sees those."""
+    
+    # Required — describe the container
+    image: str                          # agent container image
+    command: List[str] = []             # entrypoint override, e.g., ["python", "solve.py"]
+    env: Dict[str, str] = {}            # extra env vars (beyond OPENAI_BASE_URL, AGL_TASK_INPUT, AGL_EVENT_URL)
+    mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
+    
+    # Optional — execution policy
+    timeout: Optional[int] = None       # seconds (default from controller job_defaults.yaml)
+    max_retries: Optional[int] = None   # retry count (default from controller job_defaults.yaml)
+    mode: str = "train"                 # train/val/test (metadata, no K8s effect)
+
+class Mount:
+    name: str                           # volume name
+    mount_path: str                     # path inside container, e.g., "/data"
+    source: str                         # host path, PVC name, or ConfigMap name
+    read_only: bool = True
 ```
 
 `cancel_requested` is a separate flag rather than a status because:
@@ -392,7 +413,7 @@ queuing ──[controller creates Job]──────────→ running
 ```python
 class Store:
     # Rollout management
-    async def enqueue_rollout(input, resources_id, config) -> Rollout
+    async def enqueue_rollout(input, config) -> Rollout
     async def update_rollout(rollout_id, status, expected_version,
                              job_name=None, succeeded_attempt_id=None,
                              error_message=None) -> Rollout
@@ -603,7 +624,7 @@ The archive feature thus serves dual purpose: **data lifecycle** (purge hot stor
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?}` or array. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
+| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?}` or batch `{config, rollouts: [{input, config?}, ...]}`. Batch-level `config` applies to all rollouts; per-rollout `config` overrides individual fields. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
 | `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
 | `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
 | `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
@@ -769,6 +790,36 @@ On creation failure due to `AlreadyExists`, the controller fetches the existing 
 
 #### Job template
 
+The controller builds each Job spec by merging two layers:
+1. **`job_defaults.yaml`** — infra-level defaults loaded at controller startup (set by DevOps)
+2. **`rollout.config`** — algorithm-level overrides from the rollout record
+
+```
+job_defaults.yaml (infra)          rollout.config (algorithm)
+┌──────────────────────┐           ┌──────────────────────┐
+│ resources:           │           │ image: my-agent:v2   │
+│   cpu: "500m"        │           │ command: ["python",  │
+│   memory: "1Gi"      │           │   "solve.py"]        │
+│ node_selector:       │           │ timeout: 600         │
+│   gpu: "a100"        │           │ max_retries: 3       │
+│ tolerations: [...]   │           │ env: {DEBUG: "1"}    │
+│ service_account: ... │           │ mount: [{...}]       │
+│ image_pull_secrets:  │           └──────────────────────┘
+│   ["registry-creds"] │                     │
+│ timeout: 300         │  ← default          │
+│ max_retries: 1       │  ← default          │
+└──────────────────────┘                     │
+           │                                 │
+           └───────── merge ─────────────────┘
+                        │
+                        ▼
+                   K8s Job spec
+```
+
+Algorithm fields override defaults where specified; infra fields fill in the rest. The algorithm never sees `nodeSelector`, `tolerations`, or resource requests.
+
+Example generated Job:
+
 ```yaml
 apiVersion: batch/v1
 kind: Job
@@ -777,33 +828,51 @@ metadata:
   labels:
     agl-lite/rollout-id: R1
 spec:
-  backoffLimit: 3                    # K8s retries up to 3 times
-  activeDeadlineSeconds: 600         # timeout after 10 minutes
-  ttlSecondsAfterFinished: 3600     # auto-cleanup 1h after completion (for debugging)
+  backoffLimit: 3                    # from rollout.config.max_retries
+  activeDeadlineSeconds: 600         # from rollout.config.timeout
+  ttlSecondsAfterFinished: 3600     # infra default
   template:
     spec:
       restartPolicy: Never
+      nodeSelector:                  # from job_defaults.yaml
+        gpu: "a100"
+      serviceAccountName: agl-agent  # from job_defaults.yaml
       containers:
         - name: agent
-          image: user/my-agent:latest
+          image: my-agent:v2         # from rollout.config.image
+          command: ["python", "solve.py"]  # from rollout.config.command
+          resources:                 # from job_defaults.yaml
+            requests: {cpu: "500m", memory: "1Gi"}
           env:
+            # agl-lite injected (always present)
             - name: ROLLOUT_ID
               value: "R1"
             - name: POD_UID
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
-            - name: AGL_LITE_URL                 # single endpoint for everything
+            - name: AGL_LITE_URL
               value: "http://agl-lite:8080"
             - name: OPENAI_BASE_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
-            - name: AGL_TASK_INPUT               # task payload from rollout.input
+            - name: AGL_TASK_INPUT
               value: '{"prompt": "Write a sort function", ...}'
             - name: AGL_EVENT_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
+            # algorithm extra env (from rollout.config.env)
+            - name: DEBUG
+              value: "1"
+          volumeMounts:              # from rollout.config.mount
+            - name: datasets
+              mountPath: /data
+              readOnly: true
+      volumes:                       # generated from rollout.config.mount
+        - name: datasets
+          persistentVolumeClaim:
+            claimName: datasets-pvc
 ```
 
-On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` automatically points to a fresh attempt partition in the Gateway. `AGL_TASK_INPUT` stays the same across retries (same rollout, same task).
+On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` and `AGL_EVENT_URL` automatically point to a fresh attempt partition in the Gateway. `AGL_TASK_INPUT` stays the same across retries (same rollout, same task).
 
 #### Controller main loop
 
