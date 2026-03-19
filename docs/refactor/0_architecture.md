@@ -560,7 +560,7 @@ Accepts explicit events (reward, user-defined types). Body:
 ```json
 {"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
 ```
-The service assigns `event_id` and `timestamp`, appends to the event store in insertion order. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
+The service assigns `event_id` and `timestamp`, appends to the event store in insertion order. **No validation** that `rollout_id` or `attempt_id` exist — event ingestion is fire-and-forget to keep the hot path fast. Orphan events (from stale pods or cancelled rollouts) are harmless — never queried by the algorithm — and cleaned up naturally by `POST /api/rollouts/archive` or periodic GC. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
 
 #### Concurrency and scaling
 
