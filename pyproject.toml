@@ -1,0 +1,51 @@
+[project]
+name = "agl-lite"
+version = "0.1.0"
+description = "Minimal workable version of Agent Lightning — agentic RL infrastructure"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "httpx>=0.28.0",
+    "typer>=0.15.0",
+    "structlog>=24.4.0",
+]
+
+[project.optional-dependencies]
+controller = [
+    "kr8s>=0.18.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.11.0",
+    "pyright>=1.1.390",
+]
+
+[project.scripts]
+agl-lite = "agl_lite.cli:app"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
