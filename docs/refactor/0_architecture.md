@@ -150,7 +150,7 @@ The architecture is organized into three logical groups. **No strong assumption 
 | **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). **In-process store** — gateway validates rollout existence and writes events via synchronous dict lookups (nanoseconds, no I/O, no race conditions). One deployment, one endpoint. |
 | **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
 | **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
-| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is that it reads `OPENAI_BASE_URL` for LLM calls, `AGL_TASK_INPUT` for the task payload, and optionally `AGL_EVENT_URL` for reporting events. Packaged into a container image. No base class or SDK required. |
+| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is 4 env vars: `OPENAI_BASE_URL` (LLM calls), `OPENAI_API_KEY` (auth), `AGL_TASK_INPUT` (task payload), and optionally `AGL_EVENT_URL` (reporting events). Packaged into a container image. No base class or SDK required. |
 | **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. Talks to the agl-lite Service API. |
 
 ### 3.3 Simplified Data Model
@@ -177,6 +177,11 @@ env:
     value: "http://agl-lite:8080"    # single service endpoint
   - name: OPENAI_BASE_URL
     value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+  - name: OPENAI_API_KEY             # auth key (SDK sends as Authorization header)
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGENT_KEY
   - name: AGL_TASK_INPUT             # task payload (JSON-serialized rollout.input)
     value: '{"prompt": "Write a sort function", "test_cases": [...]}'
   - name: AGL_EVENT_URL              # for explicit event posting (rewards, etc.)
@@ -186,6 +191,7 @@ env:
 The agent sees a normal OpenAI-compatible base URL, reads its task from `AGL_TASK_INPUT`, and has **zero awareness of agl-lite**:
 ```
 OPENAI_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
+OPENAI_API_KEY=ak_xxx...            # SDK sends automatically
 AGL_TASK_INPUT={"prompt": "Write a sort function", "test_cases": [...]}
 AGL_EVENT_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/events
 ```
@@ -356,7 +362,7 @@ class RolloutConfig:
     # Required — describe the container
     image: str                          # agent container image
     command: List[str] = []             # entrypoint override, e.g., ["python", "solve.py"]
-    environment_variables: Dict[str, str] = {}  # extra env vars (beyond OPENAI_BASE_URL, AGL_TASK_INPUT, AGL_EVENT_URL)
+    environment_variables: Dict[str, str] = {}  # extra env vars (beyond OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL)
     mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
     
     # Optional — execution policy
@@ -1096,19 +1102,19 @@ Rollouts stay `queuing`. When the controller comes back, periodic reconciliation
 
 #### API key authentication (MVP)
 
-Three API keys, one per role. Stored in a K8s Secret, mounted to each component:
+Three API keys, one per role. The algorithm always uses its key when calling agl-lite. Storing it in K8s Secret is optional — the algorithm may run outside the cluster (researcher's laptop, compute backend, CI pipeline) and receive the key through its own configuration.
 
 ```
 K8s Secret: agl-lite-keys
 ┌─────────────────────────────────┐
-│ AGENT_KEY:      "ak_xxx..."     │
-│ CONTROLLER_KEY: "ck_xxx..."     │
-│ ALGORITHM_KEY:  "alg_xxx..."    │
+│ AGENT_KEY:      "ak_xxx..."     │  ← always in K8s Secret (controller injects into Jobs)
+│ CONTROLLER_KEY: "ck_xxx..."     │  ← always in K8s Secret (controller reads it)
+│ ALGORITHM_KEY:  "alg_xxx..."    │  ← optional in K8s Secret (algorithm may get it elsewhere)
 └─────────────────────────────────┘
           │
           ├── mount ──► agl-lite Service   (reads all 3 for verification)
           ├── mount ──► K8s Controller     (uses CONTROLLER_KEY; injects AGENT_KEY into Jobs)
-          └── mount ──► Algorithm          (uses ALGORITHM_KEY)
+          └── mount ──► Algorithm          (uses ALGORITHM_KEY — or gets it from its own config)
 ```
 
 **Agent key injection via `OPENAI_API_KEY`**: The controller sets `OPENAI_API_KEY=<agent_key>` in the Job env. OpenAI SDKs automatically send this as `Authorization: Bearer <key>` on every request. The gateway verifies it. **Zero agent modification needed** — the agent doesn't know auth is happening.

@@ -56,12 +56,13 @@ kubectl create namespace agl
 
 ### 2b. API Keys
 
-Generate keys for the agent and controller roles. The algorithm key is optional for MVP — if the researcher runs the algorithm from a trusted network, skip it.
+Generate keys for the agent and controller roles. The algorithm key is also generated here — the algorithm always uses it when calling agl-lite, but may receive it through its own configuration rather than K8s Secret mount (e.g., if the algorithm runs outside the cluster).
 
 ```bash
 kubectl -n agl create secret generic agl-lite-keys \
   --from-literal=AGENT_KEY=$(openssl rand -hex 32) \
-  --from-literal=CONTROLLER_KEY=$(openssl rand -hex 32)
+  --from-literal=CONTROLLER_KEY=$(openssl rand -hex 32) \
+  --from-literal=ALGORITHM_KEY=$(openssl rand -hex 32)
 ```
 
 ### 2c. Controller ServiceAccount + RBAC
@@ -123,6 +124,7 @@ agl-lite is a standalone HTTP server. It has **zero K8s dependency** — run it 
 # Pass keys for verification (read from the Secret, or generate matching ones)
 export AGL_AGENT_KEY="<same key as in K8s Secret>"
 export AGL_CONTROLLER_KEY="<same key as in K8s Secret>"
+export AGL_ALGORITHM_KEY="<same key as in K8s Secret>"
 
 agl-lite serve --host 0.0.0.0 --port 8080
 ```
@@ -164,6 +166,11 @@ spec:
                 secretKeyRef:
                   name: agl-lite-keys
                   key: CONTROLLER_KEY
+            - name: AGL_ALGORITHM_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: ALGORITHM_KEY
 ---
 apiVersion: v1
 kind: Service
@@ -256,9 +263,10 @@ The algorithm (or a setup script) posts a resource snapshot containing infra-lev
 import httpx
 
 AGL_LITE_URL = "http://agl-lite.agl.svc.cluster.local:8080"
+HEADERS = {"Authorization": "Bearer <ALGORITHM_KEY>"}
 
 # Post resource snapshot with job_defaults
-res = httpx.post(f"{AGL_LITE_URL}/api/resources", json={
+res = httpx.post(f"{AGL_LITE_URL}/api/resources", headers=HEADERS, json={
     "job_defaults": {
         "resources": {
             "requests": {"cpu": "500m", "memory": "1Gi"},
@@ -285,14 +293,14 @@ Tell agl-lite where the model servers are. The gateway routes agent LLM calls to
 
 ```python
 # Register a model server
-httpx.post(f"{AGL_LITE_URL}/api/models", json={
+httpx.post(f"{AGL_LITE_URL}/api/models", headers=HEADERS, json={
     "name": "vllm-0",
     "endpoint": "http://vllm-server:8000",
     "model": "deepseek-r1-7b"
 })
 
 # Verify
-models = httpx.get(f"{AGL_LITE_URL}/api/models").json()
+models = httpx.get(f"{AGL_LITE_URL}/api/models", headers=HEADERS).json()
 print(f"Registered models: {models}")
 ```
 
@@ -304,7 +312,7 @@ Submit tasks. Each rollout becomes a K8s Job running your agent container.
 
 ```python
 # Enqueue a batch of rollouts
-resp = httpx.post(f"{AGL_LITE_URL}/api/rollouts", json={
+resp = httpx.post(f"{AGL_LITE_URL}/api/rollouts", headers=HEADERS, json={
     "resources_id": resources_id,       # from Step 5
     "config": {
         "image": "my-agent:latest",
@@ -351,7 +359,7 @@ import time
 # Poll for completion
 while True:
     rollouts = httpx.get(f"{AGL_LITE_URL}/api/rollouts",
-        params={"ids": ",".join(rollout_ids)}).json()
+        params={"ids": ",".join(rollout_ids)}, headers=HEADERS).json()
     
     done = all(r["status"] in ("succeeded", "terminal_failed", "cancelled")
                for r in rollouts)
@@ -363,7 +371,7 @@ while True:
 for r in rollouts:
     if r["status"] == "succeeded":
         events = httpx.get(f"{AGL_LITE_URL}/api/events",
-            params={"rollout_id": r["rollout_id"]}).json()
+            params={"rollout_id": r["rollout_id"]}, headers=HEADERS).json()
         print(f"Rollout {r['rollout_id']}: {len(events)} events")
 ```
 
