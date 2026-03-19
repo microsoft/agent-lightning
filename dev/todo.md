@@ -15,14 +15,16 @@
 
 ## Completed
 
-- [x] **Phase 0: Schemas and Project Skeleton** — frozen data models, project structure, dev tooling, 36 schema tests
+- [x] **Phase 0: Schemas and Project Skeleton** — frozen data models, project structure, dev tooling
 - [x] **Phase 0.4: State transition rules** — valid transitions table, cancel_requested rules, exhaustive tests
-- [x] **Phase 1: In-Memory Store** — `InMemoryStore` with all operations, 74 store tests (110 total)
-  - Rollout: enqueue, update (transition + version check), cancel, query
+- [x] **Phase 1: In-Memory Store** — `InMemoryStore` with all operations, 114 tests passing
+  - Rollout: enqueue, PATCH-style partial update (transition validation), cancel, query
   - Events: add, query (smart attempt_id resolution), list_attempts
   - Resources: add, get_by_id, get_latest
   - Models: register (upsert by endpoint), list, remove by endpoint, remove_all
   - Archive: validate terminal, write JSONL (append), purge
+  - Key refactors: `UpdateRolloutRequest` → `PatchRolloutRequest` (true PATCH semantics, `exclude_unset`),
+    dropped `model_id` (endpoint is natural key), store methods accept request objects directly
 
 ---
 
@@ -92,7 +94,6 @@ All routes delegate to Store methods. Thin HTTP layer — validate request, call
   - Inject env vars (OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL)
   - Deterministic job name: `agl-rollout-{rollout_id}`
 - [ ] `find_succeeded_pod_uid` — per `docs/design/1_k8s_controller.md`
-- [ ] Optimistic locking: retry on version conflict
 
 ### 3.2 Job template rendering
 - [ ] `job_defaults` (from resources) + `rollout.config` → K8s Job YAML
