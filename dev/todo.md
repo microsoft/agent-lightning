@@ -1,129 +1,276 @@
-# agl-lite TODO
+# agl-lite Implementation Plan
 
-## Phase 0: Foundation — Project Setup [ready]
+> This replaces the old phase-based TODO. Aligned with the final architecture
+> in `docs/refactor/0_architecture.md` and reviewed architecture decisions.
 
-Set up the Python project skeleton and define core data types.
+## Guiding Principles
 
-**Tasks:**
-- Create `pyproject.toml` with project metadata, dependencies (pydantic, fastapi, aiohttp, etc.)
-- Create package layout: `agl_lite/` with `__init__.py`
-- Define core data types in `agl_lite/types/`:
-  - `RequestRecord` — single LLM request-response pair
-  - `Trajectory` — ordered list of `RequestRecord` + reward
-  - `Rollout` — unit of work with simplified states (`queuing`, `running`, `succeeded`, `failed`)
-  - `Resource` / `ResourcesUpdate` — versioned named resource bundles
-  - `Triplet` — `(prompt, response, reward)` for RL algorithms
-- Define base `Store` interface in `agl_lite/store/base.py`
+1. **One repo, one package, two entrypoints**: `agl-lite serve` and `agl-lite controller`
+2. **Controller talks to service only over HTTP** — no shared in-memory state
+3. **Shared code limited to types/schemas** — both entrypoints import the same models
+4. **Test each layer before building the next** — schemas → store → API → gateway → controller
+5. **Freeze normative contracts early** — schemas, state transitions, auth matrix, event ordering
 
-**Files to create:**
-- `pyproject.toml`
-- `agl_lite/__init__.py`
-- `agl_lite/types/__init__.py`
-- `agl_lite/types/core.py`
-- `agl_lite/store/__init__.py`
-- `agl_lite/store/base.py`
+---
 
-## Phase 1: Store Implementation [backlog]
+## Phase 0: Schemas and Project Skeleton
 
-Implement the in-memory store and HTTP API.
+**Goal**: Frozen data models, project structure, dev tooling.
 
-**Tasks:**
-- `InMemoryStore` implementing the base `Store` interface
-- Store HTTP API (FastAPI) — standalone service, reachable from runner and compute backend
-- Store client library for runner/algorithm pods
+### 0.1 Project setup
+- [ ] `pyproject.toml` — metadata, dependencies (fastapi, uvicorn, pydantic, httpx, kubernetes-asyncio)
+- [ ] Package layout:
+  ```
+  agl_lite/
+    __init__.py
+    schemas/           # shared between serve and controller
+    store/             # in-memory store
+    server/            # FastAPI app (serve entrypoint)
+    controller/        # K8s controller (controller entrypoint)
+    cli.py             # CLI entrypoints
+  ```
+- [ ] Dev tooling: `ruff`, `pytest`, `Makefile` or `justfile`
 
-**Files to create:**
-- `agl_lite/store/memory.py`
-- `agl_lite/store/server.py`
-- `agl_lite/store/client.py`
+### 0.2 Frozen schemas (`agl_lite/schemas/`)
+Define as Pydantic v2 models. These are **normative** — implementation must match exactly.
 
-## Phase 2: Gateway [backlog]
+- [ ] `rollout.py` — `Rollout`, `RolloutStatus`, `RolloutConfig`, `Mount`
+- [ ] `event.py` — `Event` (common fields), `ModelRequestData`, `RewardData`
+- [ ] `resources.py` — `ResourcesUpdate`, `JobDefaults` (typed, not arbitrary dict)
+- [ ] `model_server.py` — `ModelServer`
+- [ ] `errors.py` — `ConflictError`, `InvalidTransitionError`
+- [ ] `api.py` — request/response body models for all endpoints
 
-Build the self-owned request gateway replacing LiteLLM proxy and OTEL tracer.
+### 0.3 `JobDefaults` schema (typed, validated at POST time)
+```python
+class JobDefaults(BaseModel):
+    resources: Optional[K8sResources] = None    # {requests: {cpu, memory}, limits: {cpu, memory}}
+    node_selector: Dict[str, str] = {}
+    tolerations: List[Dict] = []
+    service_account: Optional[str] = None
+    image_pull_secrets: List[str] = []
+    timeout: Optional[int] = None               # default timeout (seconds)
+    max_retries: Optional[int] = None           # default retry count
+```
+Unknown keys rejected. Validated when `job_defaults` key is present in `POST /api/resources`.
 
-**Tasks:**
-- Reverse proxy forwarding OpenAI-compatible requests to LLM backends
-- Request-response recording as `RequestRecord` → Store
-- Path-based routing: `/rollout/{rid}/attempt/{aid}/v1/chat/completions`
-- Backend management: read current model endpoint from Store resources
+### 0.4 State transition rules (enforce in Store, test exhaustively)
+- [ ] Valid transitions table (from architecture doc §3.3)
+- [ ] `cancel_requested` rules
+- [ ] Optimistic locking semantics
+- [ ] Unit tests for every valid and invalid transition
 
-**Files to create:**
-- `agl_lite/gateway/__init__.py`
-- `agl_lite/gateway/proxy.py`
-- `agl_lite/gateway/recorder.py`
-- `agl_lite/gateway/server.py`
+### 0.5 Auth matrix
+| Role | Key env var | Allowed |
+|------|-------------|---------|
+| agent | `AGL_AGENT_KEY` | `/rollout/...` paths only |
+| controller | `AGL_CONTROLLER_KEY` | `GET /api/rollouts`, `PATCH /api/rollouts/{rid}`, `GET /api/resources/{id}` |
+| algorithm | `AGL_ALGORITHM_KEY` | all endpoints |
+| (none) | — | `GET /healthz` only |
 
-## Phase 3: Runner [backlog]
+**Deliverables**: schemas module with full test coverage, project builds and lints clean.
 
-Define the runner that manages agent containers.
+---
 
-**Tasks:**
-- Runner loop: dequeue rollout → launch agent container → inject Gateway endpoint env vars → update status
-- Agent contract: any container that reads `OPENAI_BASE_URL` (or similar) from environment
-- Example agent containers (Python, Node.js, etc.) as reference
-- Dockerfile for runner itself
+## Phase 1: In-Memory Store
 
-**Files to create:**
-- `agl_lite/runner/__init__.py`
-- `agl_lite/runner/base.py`
-- `agl_lite/runner/loop.py`
-- `docker/runner/Dockerfile`
-- `examples/agents/` (example agent containers in various languages)
+**Goal**: Complete store implementation with all operations, tested without HTTP.
 
-## Phase 4: Algorithm Framework [backlog]
+### 1.1 Store implementation (`agl_lite/store/memory.py`)
+- [ ] `InMemoryStore` class — all methods from architecture §3.3 Store API
+- [ ] Data structures:
+  ```python
+  rollouts: Dict[str, Rollout]
+  events: Dict[str, List[Event]]         # keyed by rollout_id
+  resources: Dict[str, ResourcesUpdate]  # keyed by resources_id
+  latest_resources_id: Optional[str]
+  models: Dict[str, ModelServer]         # keyed by model_id
+  ```
+- [ ] Rollout operations: enqueue, update (with transition + version check), cancel, query
+- [ ] Event operations: add, query (with smart attempt_id resolution), list_attempts
+- [ ] Resource operations: add, get_by_id, get_latest
+- [ ] Model operations: register, list, remove, remove_all
+- [ ] Archive operation: validate terminal, optionally write JSONL, purge from memory
 
-Define the algorithm abstraction and trajectory adapter.
+### 1.2 Event ordering
+- [ ] Events stored in append-only per-rollout lists — insertion order is canonical
+- [ ] `event_id` = UUID (generated by store)
+- [ ] `timestamp` = time.time() (assigned by store, not client)
+- [ ] Query returns events in list order (not sorted by timestamp)
 
-**Tasks:**
-- `Algorithm` base class with `run()` method
-- `TrajectoryAdapter` converting trajectories → triplets
-- Algorithm loop: enqueue → wait → query → learn → update resources
+### 1.3 Smart attempt_id resolution
+- [ ] If `attempt_id` provided → filter directly
+- [ ] If omitted and rollout.succeeded_attempt_id exists → use it
+- [ ] If omitted and no succeeded → latest attempt (max min-timestamp from events)
+- [ ] If no events → return []
 
-**Files to create:**
-- `agl_lite/algorithm/__init__.py`
-- `agl_lite/algorithm/base.py`
-- `agl_lite/adapter/__init__.py`
-- `agl_lite/adapter/base.py`
-- `agl_lite/adapter/triplet.py`
+### 1.4 Archive format
+- [ ] Single JSONL file per archive call
+- [ ] Each line: `{"record_type": "rollout"|"event"|"resources", ...}`
+- [ ] Archive includes: rollout record + all events + referenced resources snapshot
+- [ ] File path from backend config or default to local directory
 
-## Phase 5: Kubernetes Integration [backlog]
+**Deliverables**: Store with 100% branch coverage on state transitions, event ordering, archive.
 
-K8s manifests and controller for the Agent Runner side. Store and Gateway
-may run in the same cluster or be accessed remotely — no strong co-location
-assumption.
+---
 
-**Tasks:**
-- Runner as K8s Job template
-- K8s controller/watcher syncing Job status → Store rollout status
-- (Optional) Store + Gateway as in-cluster K8s Deployments + Services
-- Support for remote Store/Gateway endpoints (ExternalName Service or env config)
-- Minikube dev setup instructions (all-in-one for development)
+## Phase 2: HTTP API (agl-lite serve)
 
-**Files to create:**
-- `k8s/runner-job-template.yaml`
-- `k8s/store.yaml` (optional, for in-cluster deployment)
-- `k8s/gateway.yaml` (optional, for in-cluster deployment)
-- `k8s/controller/` (TBD)
-- `docs/setup/minikube.md`
+**Goal**: Full API surface, serving over HTTP, with auth middleware.
 
-## Phase 6: VERL Integration [backlog]
+### 2.1 FastAPI app (`agl_lite/server/app.py`)
+- [ ] Lifespan: create `InMemoryStore`, load gateway config, load API keys from env
+- [ ] Mount all route modules
+- [ ] Health endpoint: `GET /healthz` (no auth)
 
-Port the VERL RL algorithm to agl-lite's simplified format.
+### 2.2 Auth middleware (`agl_lite/server/auth.py`)
+- [ ] Extract `Authorization: Bearer <key>` from request
+- [ ] Map key → role (agent, controller, algorithm)
+- [ ] Check role against path pattern (auth matrix from Phase 0.5)
+- [ ] 401 for missing/invalid key, 403 for wrong role
+- [ ] `/healthz` exempt
 
-**Tasks:**
-- Adapt VERL to consume `Trajectory` instead of OTEL spans
-- vLLM backend registration through Gateway
-- End-to-end RL training on K8s
+### 2.3 Store API routes (`agl_lite/server/routes/`)
+- [ ] `rollouts.py` — POST, GET, GET/{rid}, PATCH/{rid}, POST/{rid}/cancel
+- [ ] `events.py` — GET /api/events, GET /api/attempts/{rid}
+- [ ] `models.py` — POST, GET, DELETE, DELETE/{model_id}
+- [ ] `resources.py` — POST, GET /latest, GET/{id}
+- [ ] `archive.py` — POST /api/rollouts/archive
 
-## Phase 7: Polish [backlog]
+All routes delegate to Store methods. Thin HTTP layer — validate request, call store, return response.
 
-CLI, docs, CI/CD.
+### 2.4 Gateway proxy routes (`agl_lite/server/gateway.py`)
+- [ ] Path parsing: extract `rollout_id`, `attempt_id` from `/rollout/{rid}/attempt/{aid}/v1/...`
+- [ ] Rollout existence check (in-process dict lookup)
+- [ ] Model server selection (round-robin from store.models)
+- [ ] Parameter adjustment (load from YAML config at startup)
+- [ ] Non-streaming proxy: forward request, capture response, write event, return
+- [ ] Streaming proxy: tee stream to client + buffer, assemble on completion, write event
+- [ ] Edge cases: client disconnect, backend error, no model servers (503)
+- [ ] Event ingestion endpoint: `/rollout/{rid}/attempt/{aid}/events`
 
-**Tasks:**
-- `agl-lite` CLI (store, gateway, runner subcommands)
-- User documentation and examples
-- CI/CD pipeline
+### 2.5 CLI (`agl_lite/cli.py`)
+- [ ] `agl-lite serve --host --port --gateway-config` entrypoint
+- [ ] Reads API keys from env vars: `AGL_AGENT_KEY`, `AGL_CONTROLLER_KEY`, `AGL_ALGORITHM_KEY`
 
-## Architecture Document [completed]
+### 2.6 Integration tests
+- [ ] Full API round-trip tests (enqueue → query → update → events → archive)
+- [ ] Auth tests (valid key, wrong role, missing key, healthz)
+- [ ] Gateway proxy tests (mock model server, streaming, non-streaming, 503)
 
-Created `docs/refactor/0_architecture.md` capturing full understanding of Agent Lightning and the agl-lite refactoring plan.
+**Deliverables**: Working HTTP service, all endpoints functional, auth enforced.
+
+---
+
+## Phase 3: K8s Controller
+
+**Goal**: Controller that reconciles rollouts into K8s Jobs.
+
+### 3.1 Controller core (`agl_lite/controller/reconciler.py`)
+- [ ] HTTP client for agl-lite API (using controller key)
+- [ ] Reconcile loop:
+  1. Query `queuing` rollouts → create Jobs
+  2. Watch Job events (Complete/Failed) → update rollout status
+  3. Handle `cancel_requested` → delete Job, update status
+  4. Periodic reconcile for crash recovery
+- [ ] Job spec builder:
+  - Fetch resources snapshot (deduplicate per resources_id)
+  - Extract `job_defaults`
+  - Merge with `rollout.config`
+  - Inject env vars (OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL)
+  - Deterministic job name: `agl-rollout-{rollout_id}`
+- [ ] `find_succeeded_pod_uid` — per `docs/refactor/1_k8s_controller.md`
+- [ ] Optimistic locking: retry on version conflict
+
+### 3.2 Job template rendering
+- [ ] `job_defaults` (from resources) + `rollout.config` → K8s Job YAML
+- [ ] Secret ref injection for OPENAI_API_KEY
+- [ ] Mount rendering (PVC, hostPath, ConfigMap)
+- [ ] `timeout` → `activeDeadlineSeconds`
+- [ ] `max_retries` → `backoffLimit`
+
+### 3.3 CLI
+- [ ] `agl-lite controller --agl-lite-url --namespace --secret-name`
+- [ ] Reads `AGL_CONTROLLER_KEY` from env
+
+### 3.4 Tests
+- [ ] Unit tests for Job spec builder (merge logic, env var injection)
+- [ ] Unit tests for state transition mapping (Job conditions → rollout status)
+- [ ] Integration tests with mock K8s API (or kind/minikube)
+
+**Deliverables**: Controller creates/watches/deletes Jobs, updates rollout status correctly.
+
+---
+
+## Phase 4: End-to-End Validation
+
+**Goal**: Prove the system works with a real agent on minikube.
+
+### 4.1 Example agent
+- [ ] Simple Python agent that reads `AGL_TASK_INPUT`, calls LLM via `OPENAI_BASE_URL`, prints result
+- [ ] Dockerfile
+- [ ] Does NOT import agl-lite — proves language-agnostic contract
+
+### 4.2 Example algorithm script
+- [ ] Python script: register resources, register model server, enqueue batch, poll, retrieve events
+- [ ] Demonstrates full lifecycle
+
+### 4.3 Minikube setup
+- [ ] Script or Makefile: start minikube, create namespace, create secret, deploy agl-lite, deploy controller
+- [ ] Matches `docs/get_started.md`
+
+### 4.4 End-to-end test
+- [ ] Algorithm enqueues 5 rollouts → controller creates Jobs → agents run → events captured → algorithm retrieves trajectories
+- [ ] Cancel test
+- [ ] Retry test (agent crashes on first attempt)
+- [ ] Weight update test (503 → retry → success)
+
+**Deliverables**: Working E2E demo on minikube, validated get_started.md.
+
+---
+
+## Phase 5: Algorithm Integration (VERL)
+
+**Goal**: Port VERL RL algorithm to consume agl-lite events.
+
+- [ ] Adapter: events → triplets (prompt, response, reward)
+- [ ] VERL training loop using agl-lite API
+- [ ] vLLM model server registration + weight update protocol
+- [ ] Full RL training loop on minikube
+
+---
+
+## Phase 6: Polish
+
+- [ ] Structured logging (JSON, with rollout_id/attempt_id context)
+- [ ] Prometheus metrics (optional)
+- [ ] Docker images for agl-lite serve and controller
+- [ ] CI/CD pipeline
+- [ ] User documentation beyond get_started.md
+
+---
+
+## Pre-Implementation Decisions (Frozen)
+
+These are settled and should not be revisited during implementation:
+
+| Decision | Resolution |
+|----------|-----------|
+| Package layout | One package, two entrypoints |
+| Controller-to-service communication | HTTP only, no shared memory |
+| Store backend (MVP) | In-memory, single instance |
+| Event ordering | Append order in per-rollout list, no sequence counter |
+| `event_id` | UUID, generated by store |
+| `timestamp` | Assigned by store at write time |
+| `job_defaults` schema | Typed `JobDefaults` model, validated at POST time, unknown keys rejected |
+| Auth | API keys, 3 roles, `OPENAI_API_KEY` trick for agents |
+| Health endpoint | `GET /healthz`, no auth |
+| Error codes | 401 missing/invalid key, 403 wrong role, 404 rollout not found, 409 version conflict / invalid transition |
+| Archive format | JSONL, one file per archive call, includes rollout + events + resources |
+| Gateway config | Static YAML at startup (param adjustment), no runtime changes |
+| Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |
+| Namespace | Single namespace per controller instance |
+| `timeout` | Maps to K8s Job `activeDeadlineSeconds` |
+| `max_retries` | Maps to K8s Job `backoffLimit` |
+| Model routing | Round-robin for MVP |
+| Secret injection | `secretKeyRef` in Job spec, controller never reads secret value |
