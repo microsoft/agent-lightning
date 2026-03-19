@@ -389,10 +389,10 @@ class Store:
         # Raises: ConflictError (version mismatch), InvalidTransitionError
     async def cancel_rollout(rollout_id) -> Rollout
         # Sets cancel_requested=True. Rejects if already terminal.
-    async def query_rollouts(status_in=None, cancel_requested=None) -> List[Rollout]
-    async def wait_for_rollouts(rollout_ids, timeout) -> List[Rollout]
-        # Long-polls until all specified rollouts reach a terminal state,
-        # or timeout expires. Returns current state of all requested rollouts.
+    async def query_rollouts(ids=None, status_in=None, cancel_requested=None,
+                             limit=None, offset=None) -> List[Rollout]
+        # When ids provided, returns exactly those rollouts (batch fetch).
+        # Other filters (status_in, etc.) can combine with ids or work standalone.
     
     # Event storage (insertion order = temporal order, no explicit sequence)
     async def add_event(event: Event) -> Event
@@ -434,10 +434,9 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 |---|---|---|
 | `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events | Agent pods |
 | `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
-| `/api/rollouts` | **Rollout management** — enqueue, query, cancel, wait | Algorithm, K8s controller |
+| `/api/rollouts` | **Rollout management** — enqueue, query (with batch ID support), cancel | Algorithm, K8s controller |
 | `/api/rollouts/{rid}` | **Single rollout** — get, update | K8s controller |
 | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
-| `/api/rollouts/wait` | **Wait for completion** — long-poll until terminal | Algorithm |
 | `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
 | `/api/events` | **Event query** — query events by rollout/attempt/type, with smart attempt_id default | Algorithm |
 | `/api/attempts/{rid}` | **List attempts** — derived from events table, ordered by first_seen | Algorithm |
@@ -527,12 +526,11 @@ Assumptions: each agent makes sequential LLM calls averaging 5–20s, ~100KB mem
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/rollouts` | Enqueue a new rollout. Body: `{input, resources_id?, config?}`. Returns `Rollout` with status `queuing`. |
-| `GET` | `/api/rollouts` | Query rollouts. Params: `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
+| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?}` or array. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
+| `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
 | `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
 | `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
 | `POST` | `/api/rollouts/{rollout_id}/cancel` | Set `cancel_requested=true`. Rejects if already terminal. Used by Algorithm or user. |
-| `POST` | `/api/rollouts/wait` | Long-poll until rollouts complete. Body: `{rollout_ids, timeout?}`. Returns when all reach terminal state or timeout. |
 
 **Event / trajectory access:**
 
@@ -867,7 +865,7 @@ After the controller calls `k8s.delete_job(propagation="Foreground")`, the Job e
 Data stays clean — each pod writes to its own `attempt_id` partition (see Section 3.3). The Job stays `active` throughout, so rollout remains `running`. Only when the Job reaches a terminal condition does the controller update the Store. If both pods succeed, K8s Job (`completions=1`) terminates after the first; `succeeded_attempt_id` records whichever pod K8s considers the completion.
 
 **Algorithm queries stale status:**
-Inherent in async systems. The controller syncs within seconds in normal operation. `wait_for_rollouts(ids, timeout)` long-polls the Store, returning when status changes or timeout fires.
+Inherent in async systems. The controller syncs within seconds in normal operation. Algorithm polls `GET /api/rollouts?ids=...` until terminal.
 
 **Rollout enqueued but controller is down:**
 Rollouts stay `queuing`. When the controller comes back, periodic reconciliation picks them up and creates Jobs. No data loss, just delay.
@@ -932,7 +930,7 @@ The original `LightningStore` has **25+ methods** across 6 domains:
 
 ### 4.2 agl-lite API Surface
 
-A single HTTP service with **~19 endpoints** across 5 domains:
+A single HTTP service with **~18 endpoints** across 5 domains:
 
 **LLM proxy (2 paths, agent-facing):**
 
@@ -941,16 +939,15 @@ A single HTTP service with **~19 endpoints** across 5 domains:
 | `POST /rollout/{rid}/attempt/{aid}/v1/...` | `RolloutAttemptMiddleware` + `StreamConversionMiddleware` + `LightningSpanExporter` + LiteLLM proxy. One path does it all: proxy + auto-capture as event. Returns 503 during weight updates. |
 | `POST /rollout/{rid}/attempt/{aid}/events` | *New.* Explicit event reporting (reward, user-defined). No original equivalent — rewards were extracted from OTEL spans. |
 
-**Rollout management (6 endpoints):**
+**Rollout management (5 endpoints):**
 
 | Endpoint | Replaces |
 |----------|----------|
 | `POST /api/rollouts` | `enqueue_rollout`, `enqueue_many_rollouts` (batch via JSON array body) |
-| `GET /api/rollouts` | `query_rollouts` (simplified params: `status_in`, `cancel_requested`, `limit`, `offset`) |
+| `GET /api/rollouts` | `query_rollouts` + `wait_for_rollouts` (params: `ids` for batch fetch, `status_in`, `cancel_requested`, `limit`, `offset`). Waiting is client-side polling. |
 | `GET /api/rollouts/{rid}` | `get_rollout_by_id` |
 | `PATCH /api/rollouts/{rid}` | `update_rollout` (with optimistic locking via `expected_version`) |
 | `POST /api/rollouts/{rid}/cancel` | *New.* Sets `cancel_requested` flag. Original used `update_rollout(status="cancelled")`. |
-| `POST /api/rollouts/wait` | `wait_for_rollouts` |
 
 **Model server management (4 endpoints):**
 
@@ -986,6 +983,7 @@ A single HTTP service with **~19 endpoints** across 5 domains:
 | `add_span`, `add_many_spans`, `add_otel_span` | Replaced by `model_request` events (auto-captured) and `/events` endpoint. |
 | `get_next_span_sequence_id`, `get_many_span_sequence_ids` | No explicit sequence. Insertion order provides temporal ordering — guaranteed by single-threaded asyncio event loop + storage backend (list index / ROWID / SERIAL). |
 | `query_workers`, `get_worker_by_id`, `update_worker` | K8s manages pod/worker lifecycle. No worker telemetry in agl-lite. |
+| `wait_for_rollouts` | Client-side polling with `GET /api/rollouts?ids=...`. No server-side long-poll — avoids connection timeout issues and notification machinery. |
 | `update_resources` (in-place mutation) | Resources are immutable snapshots. Post a new one instead. |
 | `query_resources` (paginated search) | Simplified to `get latest` and `get by ID`. |
 | `capabilities`, `statistics`, `otlp_traces_endpoint` | No OTEL, no capability negotiation. Stats can be added later if needed. |
