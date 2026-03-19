@@ -150,7 +150,7 @@ The architecture is organized into three logical groups. **No strong assumption 
 | **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). **In-process store** — gateway validates rollout existence and writes events via synchronous dict lookups (nanoseconds, no I/O, no race conditions). One deployment, one endpoint. |
 | **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
 | **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
-| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is 4 env vars: `OPENAI_BASE_URL` (LLM calls), `OPENAI_API_KEY` (auth), `AGL_TASK_INPUT` (task payload), and optionally `AGL_EVENT_URL` (reporting events). Packaged into a container image. No base class or SDK required. |
+| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is env vars: `OPENAI_BASE_URL` + `OPENAI_API_KEY` (for OpenAI SDK), `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` (for Anthropic SDK), `AGL_TASK_INPUT` (task payload), and optionally `AGL_EVENT_URL` (reporting events). All SDK env vars point to the same gateway URL and same key. Packaged into a container image. No base class or SDK required. |
 | **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. Talks to the agl-lite Service API. |
 
 ### 3.3 Simplified Data Model
@@ -177,7 +177,14 @@ env:
     value: "http://agl-lite:8080"    # single service endpoint
   - name: OPENAI_BASE_URL
     value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
-  - name: OPENAI_API_KEY             # auth key (SDK sends as Authorization header)
+  - name: OPENAI_API_KEY             # OpenAI SDK sends as Authorization: Bearer header
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGENT_KEY
+  - name: ANTHROPIC_BASE_URL         # Anthropic SDK — same gateway URL
+    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+  - name: ANTHROPIC_API_KEY          # Anthropic SDK sends as x-api-key header
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys
@@ -188,10 +195,12 @@ env:
     value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
-The agent sees a normal OpenAI-compatible base URL, reads its task from `AGL_TASK_INPUT`, and has **zero awareness of agl-lite**:
+The agent uses whichever SDK it wants — OpenAI, Anthropic, or any framework. All env vars point to the same gateway URL and same key:
 ```
 OPENAI_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
-OPENAI_API_KEY=ak_xxx...            # SDK sends automatically
+OPENAI_API_KEY=ak_xxx...              # OpenAI SDK sends as Authorization: Bearer
+ANTHROPIC_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
+ANTHROPIC_API_KEY=ak_xxx...           # Anthropic SDK sends as x-api-key header
 AGL_TASK_INPUT={"prompt": "Write a sort function", "test_cases": [...]}
 AGL_EVENT_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/events
 ```
@@ -362,7 +371,7 @@ class RolloutConfig:
     # Required — describe the container
     image: str                          # agent container image
     command: List[str] = []             # entrypoint override, e.g., ["python", "solve.py"]
-    environment_variables: Dict[str, str] = {}  # extra env vars (beyond OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL)
+    environment_variables: Dict[str, str] = {}  # extra env vars (beyond OPENAI_*, ANTHROPIC_*, AGL_TASK_INPUT, AGL_EVENT_URL)
     mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
     
     # Optional — execution policy
@@ -485,7 +494,7 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 | Method(s) | Path pattern | Function | Consumer |
 |---|---|---|---|
-| `POST` | `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events | Agent pods |
+| `POST` | `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events. Supports both OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) formats. | Agent pods |
 | `POST` | `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
 | `POST` `GET` | `/api/rollouts` | **Rollout management** — enqueue, query (with batch ID support) | Algorithm, K8s controller |
 | `GET` `PATCH` | `/api/rollouts/{rid}` | **Single rollout** — get, update (with optimistic locking) | K8s controller |
@@ -500,9 +509,10 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 #### LLM proxy paths (agent-facing, transparent)
 
-**`POST /rollout/{rollout_id}/attempt/{attempt_id}/v1/chat/completions`**
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/v1/chat/completions`** (OpenAI format)
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/v1/messages`** (Anthropic/Claude format)
 
-The agent calls this as a normal OpenAI endpoint (via `OPENAI_BASE_URL`). The service:
+The agent calls this as a normal LLM endpoint (via `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`). The service:
 1. Parses `rollout_id` and `attempt_id` from the path prefix
 2. Validates `rollout_id` exists in the Store (in-process dict lookup, ~100ns). Returns 404 if not found — avoids wasting GPU inference on orphan requests.
 3. Applies **parameter adjustment** — add/drop/override request body fields (see below)
@@ -873,7 +883,14 @@ spec:
               value: "http://agl-lite:8080"
             - name: OPENAI_BASE_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
-            - name: OPENAI_API_KEY               # SDK sends as Authorization header
+            - name: OPENAI_API_KEY               # OpenAI SDK → Authorization: Bearer
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: AGENT_KEY
+            - name: ANTHROPIC_BASE_URL           # Anthropic SDK — same gateway URL
+              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+            - name: ANTHROPIC_API_KEY            # Anthropic SDK → x-api-key
               valueFrom:
                 secretKeyRef:
                   name: agl-lite-keys
@@ -1117,12 +1134,21 @@ K8s Secret: agl-lite-keys
           └── mount ──► Algorithm          (uses ALGORITHM_KEY — or gets it from its own config)
 ```
 
-**Agent key injection via `OPENAI_API_KEY`**: The controller sets `OPENAI_API_KEY=<agent_key>` in the Job env. OpenAI SDKs automatically send this as `Authorization: Bearer <key>` on every request. The gateway verifies it. **Zero agent modification needed** — the agent doesn't know auth is happening.
+**Agent key injection via SDK env vars**: The controller sets both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` to the same agent key in the Job env. Each SDK sends the key in its own header format:
+- OpenAI SDK → `Authorization: Bearer <key>`
+- Anthropic SDK → `x-api-key: <key>`
+
+The gateway checks both header formats. **Zero agent modification needed** — the agent uses whichever SDK it wants.
 
 ```yaml
 # Controller injects into Job template
 env:
-  - name: OPENAI_API_KEY           # SDK sends as Authorization header
+  - name: OPENAI_API_KEY             # OpenAI SDK → Authorization: Bearer
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGENT_KEY
+  - name: ANTHROPIC_API_KEY          # Anthropic SDK → x-api-key
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys

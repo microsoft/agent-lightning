@@ -340,7 +340,7 @@ print(f"Enqueued {len(rollout_ids)} rollouts")
 
 2. Each **agent pod** starts with 4 env vars:
    - `OPENAI_BASE_URL` — points to agl-lite gateway (with rollout/attempt path prefix)
-   - `OPENAI_API_KEY` — agent auth key (from K8s Secret)
+   - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — agent auth key (from K8s Secret, same key for both)
    - `AGL_TASK_INPUT` — JSON task payload
    - `AGL_EVENT_URL` — for posting custom events (optional)
 

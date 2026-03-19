@@ -273,4 +273,4 @@ These are settled and should not be revisited during implementation:
 | `timeout` | Maps to K8s Job `activeDeadlineSeconds` |
 | `max_retries` | Maps to K8s Job `backoffLimit` |
 | Model routing | Round-robin for MVP |
-| Agent auth injection | `OPENAI_API_KEY` env var in Job spec, populated via `secretKeyRef` to `agl-lite-keys/AGENT_KEY`. Controller never reads the secret value — only references name + key. K8s resolves at pod creation. |
+| Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars in Job spec, both via `secretKeyRef` to same `agl-lite-keys/AGENT_KEY`. Gateway checks both `Authorization: Bearer` and `x-api-key` headers. Controller never reads secret value. |
