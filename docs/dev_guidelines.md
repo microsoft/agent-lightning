@@ -21,7 +21,7 @@ Tooling, conventions, and implementation standards for agl-lite.
 | `pydantic` (v2) | Schema definitions, validation |
 | `pydantic-settings` | Config from env vars (typed) |
 | `httpx` | Async HTTP client (gateway proxy, controller client) |
-| `kr8s` | Async K8s client (controller) |
+| `kr8s` | K8s client (controller) |
 | `typer` | CLI framework |
 | `structlog` | Structured JSON logging |
 
@@ -107,9 +107,22 @@ typeCheckingMode = "standard"
 - Pydantic models: `PascalCase`, fields `snake_case`
 
 ### Async
-- All store methods are `async def` (even if in-memory impl is synchronous) — keeps interface consistent for future DB backends
-- All HTTP handlers are `async def`
+- Store methods are plain `def` (synchronous) — all in-memory, no I/O. See **Concurrency Model** above.
+- All HTTP route handlers are `async def` — **never use sync `def` handlers** (they run in a thread pool, breaking thread safety)
 - Use `httpx.AsyncClient` for outbound requests (gateway proxy, controller → agl-lite)
+
+### Concurrency Model
+
+**Single-threaded by design.** The entire agl-lite service runs on one asyncio event loop in one process.
+
+- **Route handlers**: always `async def`. This ensures they run on the event loop thread, not in FastAPI's thread pool. Critical for store thread-safety — plain `dict`/`list` with no locks.
+- **Store methods**: plain `def` (synchronous). All operations are in-memory dict/list mutations (nanoseconds). No I/O, no `await`, no blocking. Called directly from `async def` handlers — completes instantly, never blocks the event loop.
+- **Gateway proxy**: `async def` with `await httpx` calls to model servers. The event loop serves other requests while waiting for LLM inference (seconds). This is the ideal async use case — thousands of concurrent I/O-bound connections.
+- **Single worker**: `uvicorn` runs with 1 worker (the default). Multiple workers would each get their own in-memory store, breaking the single-store assumption. For scaling beyond one instance (future), use stateless gateways + shared DB.
+
+**Why this works for performance**: The hot path (LLM proxy) is I/O-bound — each request waits 2-20s for inference while the event loop serves others. Store ops are nanoseconds. The bottleneck is always the LLM servers, never the gateway. One async process comfortably handles 5,000+ concurrent connections.
+
+**Invariant**: Never use `def` (sync) route handlers in FastAPI — they run in a thread pool, allowing concurrent store access from multiple threads. Always `async def`.
 
 ### Error handling
 - `ConflictError` → HTTP 409 (version mismatch, invalid transition)
@@ -135,12 +148,12 @@ typeCheckingMode = "standard"
 
 ## Testing
 
-- **Unit tests**: schemas, store logic, job builder — no I/O
+- **Unit tests**: schemas, store logic, job builder — no I/O, no async
 - **Integration tests**: FastAPI `TestClient` for HTTP layer, mock model servers for gateway
 - **Controller tests**: mock K8s API (or kind/minikube for CI)
 - **E2E tests**: full stack on minikube
 - **Naming**: `test_{module}_{behavior}.py` or `test_{feature}.py`
-- **Async tests**: use `@pytest.mark.asyncio` with `pytest-asyncio`
+- **Async tests**: use `@pytest.mark.asyncio` with `pytest-asyncio` (only for HTTP/controller tests, not store)
 
 ```bash
 # Run all tests
