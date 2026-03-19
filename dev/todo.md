@@ -90,7 +90,7 @@ Unknown keys rejected. Validated when `job_defaults` key is present in `POST /ap
 - [ ] Event operations: add, query (with smart attempt_id resolution), list_attempts
 - [ ] Resource operations: add, get_by_id, get_latest
 - [ ] Model operations: register, list, remove, remove_all
-- [ ] Archive operation: validate terminal, optionally write JSONL, purge from memory
+- [ ] Archive operation: validate terminal, optionally write JSONL (append if exists, create if not), purge from memory
 
 ### 1.2 Event ordering
 - [ ] Events stored in append-only per-rollout lists — insertion order is canonical
@@ -266,11 +266,11 @@ These are settled and should not be revisited during implementation:
 | Auth | API keys, 3 roles, `OPENAI_API_KEY` trick for agents |
 | Health endpoint | `GET /healthz`, no auth |
 | Error codes | 401 missing/invalid key, 403 wrong role, 404 rollout not found, 409 version conflict / invalid transition |
-| Archive format | JSONL, one file per archive call, includes rollout + events + resources |
+| Archive format | JSONL, user-specified file path (`*.jsonl`). Append if file exists, create if not. Includes rollout + events + resources per archive call. |
 | Gateway config | Static YAML at startup (param adjustment), no runtime changes |
 | Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |
 | Namespace | Single namespace per controller instance |
 | `timeout` | Maps to K8s Job `activeDeadlineSeconds` |
 | `max_retries` | Maps to K8s Job `backoffLimit` |
 | Model routing | Round-robin for MVP |
-| Secret injection | `secretKeyRef` in Job spec, controller never reads secret value |
+| Agent auth injection | `OPENAI_API_KEY` env var in Job spec, populated via `secretKeyRef` to `agl-lite-keys/AGENT_KEY`. Controller never reads the secret value — only references name + key. K8s resolves at pod creation. |
