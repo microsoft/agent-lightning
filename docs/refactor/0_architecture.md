@@ -241,15 +241,20 @@ The API returns events in insertion order. Consumers use array position if they 
     "model": "gpt-4",
     "model_version": 42,            # training step of the serving model (from ModelServer registry)
     "request": {
-        "messages": [...],          # OpenAI chat format
+        "messages": [...],          # OpenAI chat format (original, as sent by agent)
         "temperature": 0.7,
         # ... other parameters
+    },
+    "adjusted_params": {            # only present if param adjustment changed anything
+        "added": {"max_tokens": 4096},
+        "dropped": ["stream_options"],
     },
     "response": {                   # full OpenAI-format response
         "choices": [...],
         "usage": {"prompt_tokens": 100, "completion_tokens": 50, ...},
     },
     "latency_ms": 1234.5,
+    "status": "ok",                 # "ok", "client_disconnected", "stream_error"
 }
 
 # event_type = "reward"
@@ -448,10 +453,31 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 
 The agent calls this as a normal OpenAI endpoint (via `OPENAI_BASE_URL`). The service:
 1. Parses `rollout_id` and `attempt_id` from the path prefix
-2. Selects a model server from the registry (round-robin or least-connections)
-3. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
-4. Captures the complete request + response as a `model_request` event, including the server's `model_version`
-5. Returns the LLM response to the agent
+2. Applies **parameter adjustment** — add/drop/override request body fields (see below)
+3. Selects a model server from the registry (round-robin or least-connections)
+4. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
+5. Captures the complete request + response as a `model_request` event, including the server's `model_version`
+6. Returns the LLM response to the agent
+
+**Parameter adjustment** is configured at gateway launch and does not change at runtime:
+
+```yaml
+# gateway config (loaded once at startup)
+params:
+  add:                          # added/overridden on every request
+    temperature: 0.7
+    max_tokens: 4096
+  drop:                         # removed from every request
+    - stream_options            # vLLM doesn't support this
+    - logprobs                  # save compute
+```
+
+- `add` fields are merged into the request body (override if key exists)
+- `drop` fields are removed from the request body
+- Applied **before** forwarding to the model server, **after** event capture of the original request
+- Use case: normalize requests for backends that don't support all OpenAI params (vLLM, TGI), enforce training-time sampling parameters (temperature, top_p)
+
+> **Note**: The event records **both** the original request (what the agent sent) and the adjusted parameters, so the trajectory captures both intent and actual model input. The `model_request` event `data` includes `request` (original) and `adjusted_params` (only the fields that were added/dropped/overridden, if any).
 
 The gateway handles both **non-streaming and streaming** requests transparently:
 
@@ -997,6 +1023,7 @@ A single HTTP service with **~18 endpoints** across 5 domains:
 | New | Reason |
 |-----|--------|
 | **Model server registry** (`/api/models`) | First-class inference server management with version tracking. Original stored model endpoints as opaque resource blobs. Enables training-aware routing, weight update coordination, and async RL. |
+| **Parameter adjustment** (`add_params`, `drop_params`) | Static gateway config to normalize requests for backends (vLLM, TGI). Original relied on LiteLLM's `litellm_params` per model. Gateway records both original and adjusted params in events. |
 | **Weight update protocol** (DELETE all → 503 → POST new) | Clean coordination between training and inference. Gateway returns 503 during weight updates; SDKs auto-retry. No agent crashes, no K8s retry consumed. Emergent from CRUD — no special "update mode" API. |
 | **`model_version` in `model_request` events** | Per-request policy version tracking. Essential for importance sampling, off-policy correction, and training data filtering in async RL. |
 | `POST /rollout/{rid}/attempt/{aid}/events` | Explicit event ingestion (reward, user-defined types). Original had no direct event API — everything went through OTEL spans. |
