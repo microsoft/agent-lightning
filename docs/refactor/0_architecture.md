@@ -150,7 +150,7 @@ The architecture is organized into three logical groups. **No strong assumption 
 | **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). One deployment, one endpoint. Can run as a K8s Service, a standalone process, or be co-located with the Compute Backend. |
 | **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
 | **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
-| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is that it reads the Gateway endpoint from environment variables (e.g., `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`) and makes standard API calls. Packaged into a container image. No base class or SDK required. |
+| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is that it reads `OPENAI_BASE_URL` for LLM calls, `AGL_TASK_INPUT` for the task payload, and optionally `AGL_EVENT_URL` for reporting events. Packaged into a container image. No base class or SDK required. |
 | **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. Talks to the agl-lite Service API. |
 
 ### 3.3 Simplified Data Model
@@ -177,11 +177,17 @@ env:
     value: "http://agl-lite:8080"    # single service endpoint
   - name: OPENAI_BASE_URL
     value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+  - name: AGL_TASK_INPUT             # task payload (JSON-serialized rollout.input)
+    value: '{"prompt": "Write a sort function", "test_cases": [...]}'
+  - name: AGL_EVENT_URL              # for explicit event posting (rewards, etc.)
+    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
-The agent sees a normal OpenAI-compatible base URL and has **zero awareness of agl-lite**:
+The agent sees a normal OpenAI-compatible base URL, reads its task from `AGL_TASK_INPUT`, and has **zero awareness of agl-lite**:
 ```
 OPENAI_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
+AGL_TASK_INPUT={"prompt": "Write a sort function", "test_cases": [...]}
+AGL_EVENT_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/events
 ```
 
 #### Attempt as a data tag, not an entity
@@ -791,11 +797,13 @@ spec:
               value: "http://agl-lite:8080"
             - name: OPENAI_BASE_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+            - name: AGL_TASK_INPUT               # task payload from rollout.input
+              value: '{"prompt": "Write a sort function", ...}'
             - name: AGL_EVENT_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
-On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` automatically points to a fresh attempt partition in the Gateway.
+On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` automatically points to a fresh attempt partition in the Gateway. `AGL_TASK_INPUT` stays the same across retries (same rollout, same task).
 
 #### Controller main loop
 
