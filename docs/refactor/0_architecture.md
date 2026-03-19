@@ -334,6 +334,7 @@ class Rollout:
     
     input: Dict                         # task description (delivered as AGL_TASK_INPUT env var)
     config: RolloutConfig               # algorithm-facing Job config (see below)
+    resources_id: Optional[str]         # links to immutable resource snapshot (job_defaults, prompts, etc.)
     
     # Set by controller during lifecycle
     job_name: Optional[str]             # K8s Job name (set on Job creation)
@@ -349,7 +350,8 @@ class Rollout:
 class RolloutConfig:
     """Algorithm-facing config. Describes the containerized task.
     K8s-specific infra details (resources, nodeSelector, etc.) come from
-    the controller's job_defaults.yaml — the algorithm never sees those."""
+    the controller's job defaults (from resources snapshot) — the algorithm
+    never sees infra-level K8s details like nodeSelector or tolerations."""
     
     # Required — describe the container
     image: str                          # agent container image
@@ -358,8 +360,8 @@ class RolloutConfig:
     mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
     
     # Optional — execution policy
-    timeout: Optional[int] = None       # seconds (default from controller job_defaults.yaml)
-    max_retries: Optional[int] = None   # retry count (default from controller job_defaults.yaml)
+    timeout: Optional[int] = None       # seconds (default from job_defaults in resources)
+    max_retries: Optional[int] = None   # retry count (default from job_defaults in resources)
     mode: str = "train"                 # train/val/test (metadata, no K8s effect)
 
 class Mount:
@@ -413,7 +415,7 @@ queuing ──[controller creates Job]──────────→ running
 ```python
 class Store:
     # Rollout management
-    async def enqueue_rollout(input, config) -> Rollout
+    async def enqueue_rollout(input, config, resources_id=None) -> Rollout
     async def update_rollout(rollout_id, status, expected_version,
                              job_name=None, succeeded_attempt_id=None,
                              error_message=None) -> Rollout
@@ -624,7 +626,7 @@ The archive feature thus serves dual purpose: **data lifecycle** (purge hot stor
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?}` or batch `{config, rollouts: [{input, config?}, ...]}`. Batch-level `config` applies to all rollouts; per-rollout `config` overrides individual fields. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
+| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resources_id?}` or batch `{config, resources_id?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resources_id` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
 | `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
 | `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
 | `PATCH` | `/api/rollouts/{rollout_id}` | Update rollout status. Body: `{status, expected_version, job_name?, succeeded_attempt_id?, error_message?}`. Enforces valid transitions + optimistic locking. Used by K8s controller. |
@@ -791,29 +793,31 @@ On creation failure due to `AlreadyExists`, the controller fetches the existing 
 #### Job template
 
 The controller builds each Job spec by merging two layers:
-1. **`job_defaults.yaml`** — infra-level defaults loaded at controller startup (set by DevOps)
+1. **`job_defaults`** from the rollout's resource snapshot (`resources_id` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
 2. **`rollout.config`** — algorithm-level overrides from the rollout record
 
+The controller caches resource snapshots per `resources_id` — an entire batch of 500 rollouts typically shares one snapshot, so it's fetched once.
+
 ```
-job_defaults.yaml (infra)          rollout.config (algorithm)
-┌──────────────────────┐           ┌──────────────────────┐
-│ resources:           │           │ image: my-agent:v2   │
-│   cpu: "500m"        │           │ command: ["python",  │
-│   memory: "1Gi"      │           │   "solve.py"]        │
-│ node_selector:       │           │ timeout: 600         │
-│   gpu: "a100"        │           │ max_retries: 3       │
-│ tolerations: [...]   │           │ env: {DEBUG: "1"}    │
-│ service_account: ... │           │ mount: [{...}]       │
-│ image_pull_secrets:  │           └──────────────────────┘
-│   ["registry-creds"] │                     │
-│ timeout: 300         │  ← default          │
-│ max_retries: 1       │  ← default          │
-└──────────────────────┘                     │
-           │                                 │
-           └───────── merge ─────────────────┘
-                        │
-                        ▼
-                   K8s Job spec
+resources[id].job_defaults (infra)   rollout.config (algorithm)
+┌──────────────────────┐             ┌──────────────────────┐
+│ resources:           │             │ image: my-agent:v2   │
+│   cpu: "500m"        │             │ command: ["python",  │
+│   memory: "1Gi"      │             │   "solve.py"]        │
+│ node_selector:       │             │ timeout: 600         │
+│   gpu: "a100"        │             │ max_retries: 3       │
+│ tolerations: [...]   │             │ env: {DEBUG: "1"}    │
+│ service_account: ... │             │ mount: [{...}]       │
+│ image_pull_secrets:  │             └──────────────────────┘
+│   ["registry-creds"] │                       │
+│ timeout: 300         │  ← default            │
+│ max_retries: 1       │  ← default            │
+└──────────────────────┘                       │
+           │                                   │
+           └──────── merge ────────────────────┘
+                       │
+                       ▼
+                  K8s Job spec
 ```
 
 Algorithm fields override defaults where specified; infra fields fill in the rest. The algorithm never sees `nodeSelector`, `tolerations`, or resource requests.
@@ -834,14 +838,14 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      nodeSelector:                  # from job_defaults.yaml
+      nodeSelector:                  # from resources.job_defaults
         gpu: "a100"
-      serviceAccountName: agl-agent  # from job_defaults.yaml
+      serviceAccountName: agl-agent  # from resources.job_defaults
       containers:
         - name: agent
           image: my-agent:v2         # from rollout.config.image
           command: ["python", "solve.py"]  # from rollout.config.command
-          resources:                 # from job_defaults.yaml
+          resources:                 # from resources.job_defaults
             requests: {cpu: "500m", memory: "1Gi"}
           env:
             # agl-lite injected (always present)
