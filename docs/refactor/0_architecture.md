@@ -867,6 +867,11 @@ spec:
               value: "http://agl-lite:8080"
             - name: OPENAI_BASE_URL
               value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+            - name: OPENAI_API_KEY               # SDK sends as Authorization header
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: AGENT_KEY
             - name: AGL_TASK_INPUT
               value: '{"prompt": "Write a sort function", ...}'
             - name: AGL_EVENT_URL
@@ -1087,7 +1092,70 @@ Inherent in async systems. The controller syncs within seconds in normal operati
 **Rollout enqueued but controller is down:**
 Rollouts stay `queuing`. When the controller comes back, periodic reconciliation picks them up and creates Jobs. No data loss, just delay.
 
-### 3.6 Adapter Simplification (Example)
+### 3.6 Security
+
+#### API key authentication (MVP)
+
+Three API keys, one per role. Stored in a K8s Secret, mounted to each component:
+
+```
+K8s Secret: agl-lite-keys
+┌─────────────────────────────────┐
+│ AGENT_KEY:      "ak_xxx..."     │
+│ CONTROLLER_KEY: "ck_xxx..."     │
+│ ALGORITHM_KEY:  "alg_xxx..."    │
+└─────────────────────────────────┘
+          │
+          ├── mount ──► agl-lite Service   (reads all 3 for verification)
+          ├── mount ──► K8s Controller     (uses CONTROLLER_KEY; injects AGENT_KEY into Jobs)
+          └── mount ──► Algorithm          (uses ALGORITHM_KEY)
+```
+
+**Agent key injection via `OPENAI_API_KEY`**: The controller sets `OPENAI_API_KEY=<agent_key>` in the Job env. OpenAI SDKs automatically send this as `Authorization: Bearer <key>` on every request. The gateway verifies it. **Zero agent modification needed** — the agent doesn't know auth is happening.
+
+```yaml
+# Controller injects into Job template
+env:
+  - name: OPENAI_API_KEY           # SDK sends as Authorization header
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGENT_KEY
+```
+
+#### Role-based access
+
+| Role | Key | Allowed paths |
+|------|-----|---------------|
+| **agent** | `AGENT_KEY` | `POST /rollout/{rid}/attempt/{aid}/v1/...` (LLM proxy), `POST /rollout/{rid}/attempt/{aid}/events` (event ingestion) |
+| **controller** | `CONTROLLER_KEY` | `GET /api/rollouts`, `PATCH /api/rollouts/{rid}`, `GET /api/resources/{id}` |
+| **algorithm** | `ALGORITHM_KEY` | Full access — all endpoints |
+
+#### K8s API access
+
+Only the K8s Controller needs K8s API access (to create/delete Jobs, watch Job status, read ConfigMaps/Secrets). It uses a ServiceAccount with scoped RBAC:
+
+```yaml
+# Controller ServiceAccount RBAC
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get"]
+```
+
+**agl-lite Service has zero K8s dependency.** It's a pure HTTP server. Keys come from Secret mount (pod volume) or environment variables — no K8s API calls. It can run anywhere: K8s pod, bare VM, Docker container.
+
+#### Production path (future)
+
+- Per-rollout scoped JWTs for agent pods (controller mints short-lived tokens)
+- mTLS between components
+- TLS termination at ingress for cross-boundary deployments
+- Rate limiting per role
+
+### 3.7 Adapter Simplification (Example)
 
 ```python
 class TrajectoryAdapter:

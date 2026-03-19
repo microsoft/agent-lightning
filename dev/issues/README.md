@@ -19,4 +19,4 @@ Severity: 🔴 architectural gap, 🟡 important design issue, 🟢 minor/deferr
 | 008 | 🟡 | Data retention and eviction | **resolved** → `docs/refactor/0_architecture.md` §3.4 Data lifecycle |
 | 009 | 🟢 | Event ingestion validation | **resolved** → `docs/refactor/0_architecture.md` §3.4. Validate `rollout_id` exists (in-process dict lookup, ~100ns). 404 rejects orphans early. Implies in-process store for zero-cost validation. |
 | 010 | 🟢 | find_succeeded_pod_uid implementation | **resolved** → `docs/refactor/1_k8s_controller.md` |
-| 011 | 🟡 | [Cross-boundary authentication and transport security](011_cross_boundary_security.md) | open |
+| 011 | 🟡 | Cross-boundary authentication and transport security | **resolved** → `docs/refactor/0_architecture.md` §3.6 Security. API keys per role, OPENAI_API_KEY trick for zero-agent-modification auth. |
