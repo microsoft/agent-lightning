@@ -13,47 +13,14 @@
 
 ---
 
-## Phase 0: Schemas and Project Skeleton
+## Phase 0: Schemas and Project Skeleton ✅
 
 **Goal**: Frozen data models, project structure, dev tooling.
 
-### 0.1 Project setup
-- [ ] `pyproject.toml` — metadata, dependencies (fastapi, uvicorn, pydantic, httpx, kubernetes-asyncio)
-- [ ] Package layout:
-  ```
-  agl_lite/
-    __init__.py
-    schemas/           # shared between serve and controller
-    store/             # in-memory store
-    server/            # FastAPI app (serve entrypoint)
-    controller/        # K8s controller (controller entrypoint)
-    cli.py             # CLI entrypoints
-  ```
-- [ ] Dev tooling: `ruff`, `pytest`, `Makefile` or `justfile`
-
-### 0.2 Frozen schemas (`agl_lite/schemas/`)
-Define as Pydantic v2 models. These are **normative** — implementation must match exactly.
-
-- [ ] `rollout.py` — `Rollout`, `RolloutStatus`, `RolloutConfig`, `Mount`
-- [ ] `event.py` — `Event` (common fields), `ModelRequestData`, `RewardData`
-- [ ] `resources.py` — `ResourcesUpdate`, `JobDefaults` (typed, not arbitrary dict)
-- [ ] `model_server.py` — `ModelServer`
-- [ ] `errors.py` — `ConflictError`, `InvalidTransitionError`
-- [ ] `api.py` — request/response body models for all endpoints
-
-### 0.3 `JobDefaults` schema (typed, validated at POST time)
-```python
-class JobDefaults(BaseModel):
-    resources: Optional[K8sResources] = None    # {requests: {cpu, memory}, limits: {cpu, memory}}
-    node_selector: Dict[str, str] = {}
-    tolerations: List[Dict] = []
-    service_account: Optional[str] = None
-    image_pull_secrets: List[str] = []
-    timeout: Optional[int] = None               # default timeout (seconds)
-    max_retries: Optional[int] = None           # default retry count
-    overrides: Dict[str, Any] = {}              # escape hatch for arbitrary K8s fields
-```
-Known fields typed and validated. Unknown/future K8s fields go into `overrides` and are merged raw into Job spec by controller. Validated when `job_defaults` key is present in `POST /api/resources`.
+- [x] Project setup: `pyproject.toml`, package layout, dev tooling (ruff, pytest, uv)
+- [x] Frozen schemas: `rollout.py`, `event.py`, `resources.py`, `model_server.py`, `errors.py`, `api.py`
+- [x] `JobDefaults` schema with typed fields + `overrides` escape hatch
+- [x] 36 schema tests passing, ruff clean
 
 ### 0.4 State transition rules (enforce in Store, test exhaustively)
 - [ ] Valid transitions table (from architecture doc §3.3)
