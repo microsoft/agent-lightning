@@ -555,6 +555,42 @@ Assumptions: each agent makes sequential LLM calls averaging 5–20s, ~100KB mem
 
 **Scaling beyond single instance** (future): stateless gateway instances behind a load balancer, with event ordering delegated to the DB backend (PostgreSQL SERIAL). See issue #005.
 
+#### Bulk data transfer
+
+The algorithm fetches trajectories for entire training batches (256–4096 rollouts). No batch endpoint needed — the algorithm fires concurrent `GET /api/events` calls via `asyncio.gather()`. With the single-process async gateway, concurrent requests are fast.
+
+**Data size per batch:**
+
+| Context size | Avg event | Events/rollout | Per rollout | 500 rollouts |
+|---|---|---|---|---|
+| Short (4K) | ~5KB | 10 | 50KB | 25MB |
+| Medium (32K) | ~50KB | 10 | 500KB | 250MB |
+| Long (128K) | ~500KB | 10 | 5MB | 2.5GB |
+
+**Case A — agl-lite colocated with Algorithm** (both in compute backend):
+Transfer is loopback. Even 2.5GB is ~2s. The only overhead is JSON serialization (~100MB/s in Python). **Not a bottleneck.** If serialization ever matters, switch to msgpack/protobuf (5–10x faster) — no architecture change needed. Shared memory is unnecessary: it would couple algorithm to the gateway process and break the API boundary for marginal gain.
+
+**Case B — agl-lite with K8s runner, Algorithm remote** (cross-cluster/region):
+Raw transfer at 1 Gbps: 2.5GB = 20s per iteration. Two mitigations:
+
+1. **HTTP gzip compression** (always-on): LLM text/JSON compresses 5–10x. 2.5GB → 250–500MB → 2–4s. One line of FastAPI middleware.
+2. **Archive to shared storage**: For large batches, bypass the API entirely. The archive endpoint (`POST /api/rollouts/archive`) writes JSONL to shared storage (S3, NFS). Each side accesses storage locally:
+
+```
+Algorithm                     agl-lite (near K8s)          Shared Storage (S3/NFS)
+   │                              │                              │
+   │ POST /api/rollouts/archive   │                              │
+   │ {ids: [...], backend:        │                              │
+   │  {type:"jsonl",              │  ── write JSONL ──────────►  │
+   │   path:"s3://bucket/..."}}   │     (fast, near K8s)         │
+   │◄── 200 OK ──────────────────│                              │
+   │                              │                              │
+   │  ── read JSONL directly ──────────────────────────────────► │
+   │     (fast, near compute)                                    │
+```
+
+The archive feature thus serves dual purpose: **data lifecycle** (purge hot store) and **bulk export** (efficient cross-boundary transfer). No additional API needed.
+
 #### Store paths (management API)
 
 **Rollout management:**

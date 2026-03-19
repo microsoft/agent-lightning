@@ -12,7 +12,7 @@ Severity: 🔴 architectural gap, 🟡 important design issue, 🟢 minor/deferr
 | 001 | 🔴 | Streaming LLM response handling | **resolved** → `docs/refactor/0_architecture.md` §3.4 LLM proxy paths |
 | 002 | 🔴 | [Task input delivery to agent](002_task_input_delivery.md) | open |
 | 003 | 🔴 | LLM backend routing and resource mapping | **resolved** → `docs/refactor/0_architecture.md` §3.4 Model Server Management |
-| 004 | 🔴 | [Batch trajectory query for training](004_batch_trajectory_query.md) | open |
+| 004 | 🔴 | Batch trajectory query for training | **resolved** → `docs/refactor/0_architecture.md` §3.4 Bulk data transfer. No batch endpoint needed; concurrent queries + archive-to-shared-storage for remote case. |
 | 005 | 🟡 | Gateway scaling and sequence counters | **resolved** → `docs/refactor/0_architecture.md` §3.4 Concurrency and scaling |
 | 006 | 🟡 | Concurrent LLM calls and adapter design | **resolved** → concurrency note in §3.3, adapter relabeled as example in §3.6 |
 | 007 | 🟡 | [Rollout config schema](007_rollout_config_schema.md) | open |
