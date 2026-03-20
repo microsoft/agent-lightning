@@ -98,7 +98,7 @@ All routes delegate to Store methods. Thin HTTP layer.
 - [x] Auth tests (valid key, invalid key, auth disabled, healthz)
 - [x] Gateway proxy tests (mock model server, routing, param adjustment, non-streaming, 503)
 - [x] Gateway routing tests (model_in → model_out, passthrough, round-robin)
-- [ ] Streaming proxy test (deferred — needs SSE mock setup)
+- [x] Streaming proxy test (SSE tee+buffer+capture)
 
 **Deliverables**: Working HTTP service, all endpoints functional, auth enforced.
 
