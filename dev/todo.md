@@ -53,7 +53,7 @@
 | 5 | Auth: single `AGL_KEY`, no roles for MVP | **Resolved** |
 | 7 | Gateway → model server auth: optional `token` on `ModelServer` | **Resolved** |
 | 9 | Gateway route config: `model_in → model_out` mapping + per-route param adjustments | **Resolved** |
-| 10 | Event ingestion endpoint location (agent-side vs API-side) | TBD |
+| 10 | Event ingestion: gateway-side `POST /rollout/{rid}/attempt/{aid}/events` | **Resolved** |
 | 11 | Streaming: buffer/tee/event-write flow details | TBD |
 | 12b | Batch-only for rollouts and models; individual for events. No shared config at batch level (client-side sugar). | **Resolved** |
 
@@ -75,26 +75,29 @@
 - [ ] `resources.py` — POST, GET /latest, GET/{id}
 - [ ] `archive.py` — POST /api/rollouts/archive
 
-All routes delegate to Store methods. Thin HTTP layer — validate request, call store, return response. Batch config merging for `POST /api/rollouts` happens in route handler.
+All routes delegate to Store methods. Thin HTTP layer — validate request, call store, return response.
 
-### 2.4 Gateway proxy routes (`agl_lite/server/gateway.py`)
+### 2.4 Gateway module (`agl_lite/gateway/`)
+- [ ] `config.py` — load YAML route config (`model_in → model_out` + `params.add`/`params.drop`)
+- [ ] `router.py` — model routing (resolve model_in → model_out), server selection (round-robin per model pool), param adjustment
+- [ ] `proxy.py` — HTTP forwarding via httpx (non-streaming + streaming), event capture (request body + response body, no headers)
+
+### 2.5 Gateway routes (`agl_lite/server/routes/gateway.py`)
 - [ ] Path parsing: extract `rollout_id`, `attempt_id` from `/rollout/{rid}/attempt/{aid}/v1/...`
 - [ ] Rollout existence check (in-process dict lookup)
-- [ ] Model server selection (round-robin from store.models)
-- [ ] Parameter adjustment (load from YAML config at startup)
-- [ ] Non-streaming proxy: forward request, capture response (body only, no headers), write event, return
-- [ ] Streaming proxy: tee stream to client + buffer, assemble on completion, write event
-- [ ] Edge cases: client disconnect, backend error, no model servers (503)
-- [ ] Event ingestion endpoint: `/rollout/{rid}/attempt/{aid}/events`
+- [ ] Wire gateway module: parse model → route → select server → proxy → capture event
+- [ ] Edge cases: client disconnect, backend error, no servers for model (503)
+- [ ] Event ingestion endpoint: `POST /rollout/{rid}/attempt/{aid}/events`
 
-### 2.5 CLI (`agl_lite/cli.py`)
+### 2.6 CLI (`agl_lite/cli.py`)
 - [ ] `agl-lite serve --host --port --gateway-config` entrypoint
 - [ ] Reads `AGL_KEY` from env var
 
-### 2.6 Integration tests
+### 2.7 Integration tests
 - [ ] Full API round-trip tests (enqueue → query → update → events → archive)
-- [ ] Auth tests (valid key, wrong role, missing key, healthz)
-- [ ] Gateway proxy tests (mock model server, streaming, non-streaming, 503)
+- [ ] Auth tests (valid key, invalid key, healthz)
+- [ ] Gateway proxy tests (mock model server, routing, param adjustment, streaming, non-streaming, 503)
+- [ ] Gateway routing tests (model_in → model_out, passthrough, round-robin)
 
 **Deliverables**: Working HTTP service, all endpoints functional, auth enforced.
 

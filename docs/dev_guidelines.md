@@ -38,22 +38,27 @@ agl_lite/
     model_server.py       # ModelServer
     errors.py             # ConflictError, InvalidTransitionError
     api.py                # request/response body models
-  store/                  # in-memory store
+  store/                  # in-memory store (data layer)
     __init__.py
     memory.py             # InMemoryStore
-  server/                 # FastAPI app (serve entrypoint)
+  gateway/                # LLM reverse proxy (proxy layer)
     __init__.py
-    app.py                # FastAPI lifespan, mount routes
-    auth.py               # API key middleware
+    config.py             # load YAML route config (model_in → model_out + params)
+    router.py             # model routing, server selection (round-robin state)
+    proxy.py              # HTTP forwarding (streaming + non-streaming), event capture
+  server/                 # FastAPI app — thin HTTP wrapper over store + gateway
+    __init__.py
+    app.py                # FastAPI lifespan, mount routes, wire store + gateway
+    auth.py               # API key check
     config.py             # ServerSettings (pydantic-settings)
-    routes/
+    routes/               # API route handlers
       __init__.py
       rollouts.py
       events.py
       models.py
       resources.py
       archive.py
-    gateway.py            # LLM reverse proxy + event auto-capture
+      gateway.py          # mounts gateway proxy + event ingestion as routes
   controller/             # K8s controller (controller entrypoint)
     __init__.py
     reconciler.py         # reconcile loop
@@ -64,7 +69,8 @@ tests/
   __init__.py
   schemas/                # schema validation tests
   store/                  # store logic tests (state transitions, events, archive)
-  server/                 # API integration tests (auth, routes, gateway)
+  gateway/                # gateway logic tests (routing, param adjustment, proxy)
+  server/                 # API integration tests (auth, routes)
   controller/             # controller tests (job builder, reconcile)
   e2e/                    # end-to-end tests
 ```
@@ -126,9 +132,8 @@ typeCheckingMode = "standard"
 **Invariant**: Never use `def` (sync) route handlers in FastAPI — they run in a thread pool, allowing concurrent store access from multiple threads. Always `async def`.
 
 ### Error handling
-- `ConflictError` → HTTP 409 (version mismatch, invalid transition)
+- `ConflictError` → HTTP 409 (invalid transition)
 - `NotFoundError` → HTTP 404 (rollout, resource, model not found)
-- `ForbiddenError` → HTTP 403 (valid key, wrong role)
 - Pydantic `ValidationError` → HTTP 422 (automatic via FastAPI)
 - Unexpected errors → HTTP 500 (log with structlog, include request context)
 
