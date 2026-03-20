@@ -89,6 +89,10 @@ class TestBuildJobSpec:
         # Event URL.
         assert "/events" in env_map["AGL_EVENT_URL"]["value"]
 
+        # AGL_KEY from Secret.
+        assert env_map["AGL_KEY"]["valueFrom"]["secretKeyRef"]["name"] == "agl-secrets"
+        assert env_map["AGL_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "AGL_KEY"
+
     def test_user_env_vars_appended(self, settings: ControllerSettings):
         rollout = _make_rollout(config_overrides={"environment_variables": {"MY_VAR": "hello"}})
         job = build_job_spec(rollout, None, settings)

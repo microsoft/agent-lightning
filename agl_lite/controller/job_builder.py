@@ -62,6 +62,11 @@ def build_job_spec(
         # Task input and event URL.
         {"name": "AGL_TASK_INPUT", "value": json.dumps(rollout.input)},
         {"name": "AGL_EVENT_URL", "value": event_url},
+        # AGL_KEY for authenticating event posts and LLM proxy requests.
+        {
+            "name": "AGL_KEY",
+            "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
+        },
     ]
 
     # User-specified env vars from rollout config (override defaults).
