@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import Depends, FastAPI
 
 from agl_lite.server.auth import build_auth_dependency
@@ -12,11 +13,16 @@ from agl_lite.server.config import ServerSettings
 from agl_lite.server.routes import archive, events, gateway, models, resources, rollouts
 from agl_lite.store.memory import InMemoryStore
 
+log = structlog.get_logger()
+
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     if settings is None:
         settings = ServerSettings()
+
+    if not settings.agl_key:
+        log.warning("AGL_KEY not set — authentication disabled. Do not use in production.")
 
     store = InMemoryStore()
     verify_key = build_auth_dependency(settings.agl_key)
