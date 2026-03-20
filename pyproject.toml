@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.0",
     "typer>=0.15.0",
     "structlog>=24.4.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]
@@ -49,3 +50,8 @@ testpaths = ["tests"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-httpx>=0.36.0",
+]

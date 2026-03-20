@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
 import structlog
 from fastapi import Depends, FastAPI
 
+from agl_lite.gateway.config import GatewayConfig, load_config
+from agl_lite.gateway.router import GatewayRouter
 from agl_lite.server.auth import build_auth_dependency
 from agl_lite.server.config import ServerSettings
 from agl_lite.server.routes import archive, events, gateway, models, resources, rollouts
@@ -27,12 +30,23 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     store = InMemoryStore()
     verify_key = build_auth_dependency(settings.agl_key)
 
+    # Load gateway config.
+    if settings.gateway_config:
+        gateway_config = load_config(settings.gateway_config)
+        log.info("Gateway config loaded", routes=list(gateway_config.routes.keys()))
+    else:
+        gateway_config = GatewayConfig()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Store is already created — attach to app.state for route access.
         app.state.store = store
         app.state.settings = settings
-        yield
+
+        # Gateway router + shared httpx client (connection pooling).
+        app.state.gateway_router = GatewayRouter(gateway_config, store)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=300.0)) as client:
+            app.state.http_client = client
+            yield
 
     app = FastAPI(title="agl-lite", version="0.1.0", lifespan=lifespan)
 
