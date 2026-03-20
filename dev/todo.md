@@ -52,10 +52,10 @@
 |---|-------|--------|
 | 5 | Auth: single `AGL_KEY`, no roles for MVP | **Resolved** |
 | 7 | Gateway → model server auth: optional `token` on `ModelServer` | **Resolved** |
-| 9 | Parameter adjustment YAML format | TBD |
+| 9 | Gateway route config: `model_in → model_out` mapping + per-route param adjustments | **Resolved** |
 | 10 | Event ingestion endpoint location (agent-side vs API-side) | TBD |
 | 11 | Streaming: buffer/tee/event-write flow details | TBD |
-| 12b | Batch-only APIs? Drop individual `add_event`/`register_model` in favor of list-of-one? | TBD |
+| 12b | Batch-only for rollouts and models; individual for events. No shared config at batch level (client-side sugar). | **Resolved** |
 
 ### 2.1 FastAPI app (`agl_lite/server/app.py`)
 - [ ] Lifespan: create `InMemoryStore`, set on `app.state.store`; load gateway config, load API keys from env
@@ -204,10 +204,12 @@ These are settled and should not be revisited during implementation:
 | Health endpoint | `GET /healthz`, no auth |
 | Error codes | 401 missing/invalid key, 404 rollout not found, 409 invalid transition |
 | Archive format | JSONL, user-specified file path (`*.jsonl`). Append if file exists, create if not. Includes rollout + events + resources per archive call. |
-| Gateway config | Static YAML at startup (param adjustment), no runtime changes |
+| Gateway config | Static YAML at startup. Routes: `model_in → model_out` + per-route `params.add`/`params.drop`. No route = passthrough. |
+| Model routing | Per-model round-robin. Model name = grouping key. Store: `Dict[model, Dict[endpoint, ModelServer]]`. |
+| Model server identity | `(model, endpoint)` composite key. Version per server (supports online RL rolling updates). Optional `token` for gateway → model server auth. |
 | Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |
 | Namespace | Single namespace per controller instance |
 | `timeout` | Maps to K8s Job `activeDeadlineSeconds` |
 | `max_retries` | Maps to K8s Job `backoffLimit` |
-| Model routing | Round-robin for MVP |
+| Model routing | Per-model round-robin for MVP |
 | Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars in Job spec, both via `secretKeyRef` to same `agl-lite-keys/AGL_KEY`. Gateway checks both `Authorization: Bearer` and `x-api-key` headers. |

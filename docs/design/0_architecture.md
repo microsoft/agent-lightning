@@ -258,18 +258,17 @@ The API returns events in insertion order. Consumers use array position if they 
 # event_type = "model_request"
 # Created automatically by the Gateway on every LLM call.
 {
-    "model": "gpt-4",
-    "model_version": 42,            # training step of the serving model (from ModelServer registry)
-    "request": {
-        "messages": [...],          # OpenAI chat format (original, as sent by agent)
+    "server": {                     # which server actually handled the request
+        "model": "qwen-7b",        # model_out (after routing)
+        "endpoint": "http://vllm-0:8000/v1",
+        "version": 42,             # training step of this specific server
+    },
+    "request": {                    # original request body (as sent by agent, no headers)
+        "model": "gpt-4.1",        # model_in (before routing)
+        "messages": [...],
         "temperature": 0.7,
-        # ... other parameters
     },
-    "adjusted_params": {            # only present if param adjustment changed anything
-        "added": {"max_tokens": 4096},
-        "dropped": ["stream_options"],
-    },
-    "response": {                   # full OpenAI-format response
+    "response": {                   # full response body from model server (no headers)
         "choices": [...],
         "usage": {"prompt_tokens": 100, "completion_tokens": 50, ...},
     },
@@ -474,11 +473,11 @@ class Store:
         # 3. Purge rollout records and all events from hot store
     
     # Model server management
-    async def register_model(endpoint, version) -> ModelServer
-    async def register_models(models: List) -> List[ModelServer]
-    async def list_models() -> List[ModelServer]
-    async def remove_model(endpoint) -> None
-    async def remove_all_models() -> None
+    def register_model(model, endpoint, version, token?) -> ModelServer
+    def list_models() -> List[ModelServer]
+    def get_model_pool(model) -> List[ModelServer]
+    def remove_model_servers(model, endpoints?) -> None
+    def remove_all_models() -> None
 ```
 
 > **Deployment note**: The agl-lite Service is a single HTTP server. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from the Agent Runner, the K8s Controller, and the Algorithm.
@@ -511,31 +510,43 @@ The Gateway (LLM proxy) and Store (data management) are combined into a **single
 The agent calls this as a normal LLM endpoint (via `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`). The service:
 1. Parses `rollout_id` and `attempt_id` from the path prefix
 2. Validates `rollout_id` exists in the Store (in-process dict lookup, ~100ns). Returns 404 if not found — avoids wasting GPU inference on orphan requests.
-3. Applies **parameter adjustment** — add/drop/override request body fields (see below)
-4. Selects a model server from the registry (round-robin or least-connections)
-5. Strips the prefix, forwards `POST /v1/chat/completions` to the selected server
-6. Captures the complete request + response as a `model_request` event, including the server's `model_version`
-7. Returns the LLM response to the agent
+3. Parses `model` from the request body — this is the **model_in** name the agent uses
+4. Looks up the **gateway route config** for model_in → model_out mapping + parameter overrides
+5. Selects a model server from the model_out pool (round-robin). If model_in has no route config, uses model_in as model_out directly (passthrough).
+6. Rewrites the `model` field in the request body to model_out
+7. Applies **parameter adjustments** from the route config (add/drop/override)
+8. Forwards `POST /v1/chat/completions` (or `/v1/messages`) to the selected server, with optional `Authorization: Bearer <token>` if the server has a token configured
+9. Captures the complete request body + response body (no headers) as a `model_request` event, including the server's `model`, `endpoint`, and `version`
+10. Returns the LLM response to the agent
 
-**Parameter adjustment** is configured at gateway launch and does not change at runtime:
+**Gateway route config** is loaded at startup and defines model_in → model_out mapping + parameter adjustments:
 
 ```yaml
-# gateway config (loaded once at startup)
-params:
-  add:                          # added/overridden on every request
-    temperature: 0.7
-    max_tokens: 4096
-  drop:                         # removed from every request
-    - stream_options            # vLLM doesn't support this
-    - logprobs                  # save compute
+# gateway-config.yaml (loaded once at startup)
+routes:
+  - model_in: "gpt-4.1"              # what the agent sends
+    model_out: "qwen-7b"             # rewrite to this, select servers from this pool
+    params:
+      add:                            # added/overridden on every request
+        temperature: 0.7
+        max_tokens: 4096
+      drop:                           # removed from every request
+        - stream_options              # vLLM doesn't support this
+        - logprobs                    # save compute
+  - model_in: "claude-sonnet-4-20250514"      # Anthropic model alias
+    model_out: "qwen-7b"             # same backend
+    params:
+      add:
+        temperature: 0.9
 ```
 
+- `model_in` with no matching route → passthrough (model_in used as model_out, no param adjustments)
 - `add` fields are merged into the request body (override if key exists)
 - `drop` fields are removed from the request body
-- Applied **before** forwarding to the model server, **after** event capture of the original request
-- Use case: normalize requests for backends that don't support all OpenAI params (vLLM, TGI), enforce training-time sampling parameters (temperature, top_p)
+- Applied **before** forwarding to the model server
+- Use case: normalize requests for backends that don't support all OpenAI params (vLLM, TGI), enforce training-time sampling parameters, map agent-friendly model names to actual model identifiers
 
-> **Note**: The event records **both** the original request (what the agent sent) and the adjusted parameters, so the trajectory captures both intent and actual model input. The `model_request` event `data` includes `request` (original) and `adjusted_params` (only the fields that were added/dropped/overridden, if any).
+> **Note**: The event records **both** the original request (what the agent sent) and the adjusted request (what was actually forwarded). The `model_request` event `data` includes `request` (original body), `response` (model server response body), and `server` metadata (`{model, endpoint, version}`).
 
 The gateway handles both **non-streaming and streaming** requests transparently:
 
@@ -664,35 +675,55 @@ Attempt listing is included in `GET /api/rollouts/{rid}` response as an `attempt
 
 ```python
 class ModelServer:
-    endpoint: str           # e.g., "http://vllm-0:8000/v1" — the natural key
-    version: int            # training step (monotonically increasing)
+    model: str              # grouping key for routing — e.g., "qwen-7b"
+    endpoint: str           # e.g., "http://vllm-0:8000/v1"
+    version: int            # training step — per server (supports online RL rolling updates)
+    token: str | None       # optional auth token for gateway → model server
     created_at: float
 ```
 
+Store structure: `Dict[model, Dict[endpoint, ModelServer]]` — nested dict for efficient lookup by model.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/models` | Register model server(s). Body: single `{endpoint, version}` or array `[{endpoint, version}, ...]`. Upsert by endpoint — re-registering updates version. Returns `ModelServer` or `List[ModelServer]`. Gateway immediately starts routing to them. |
-| `GET` | `/api/models` | List all registered model servers. |
-| `DELETE` | `/api/models?endpoint=<url>` | Remove a single server by endpoint (URL-encoded query param). In-flight requests to it complete normally; no new requests routed to it. |
+| `POST` | `/api/models` | Register model server(s). Body: `[{model, endpoint, version, token?}, ...]`. Upsert by `(model, endpoint)`. Returns flat `List[ModelServer]`. Gateway immediately starts routing to them. |
+| `GET` | `/api/models` | List all registered model servers (flat list). |
+| `DELETE` | `/api/models/{model}` | Remove servers for a model. Optional body: `{endpoints: [...]}` to remove specific servers. No body = remove entire model pool. Empty pool auto-deleted. |
 | `DELETE` | `/api/models` | Remove **all** servers. Gateway enters unavailable state — returns 503 to all new LLM requests until a server is registered. |
 
 #### Weight update protocol
 
-The model server API enables clean weight updates for both synchronous and asynchronous RL:
+The model server API enables clean weight updates for synchronous RL, asynchronous RL, and online RL:
 
+**Sync RL** (stop-the-world):
 ```
                     Algorithm / Compute Backend                    agl-lite Gateway
                     ───────────────────────────                    ────────────────
  1. Training step complete.
- 2. DELETE /api/models                        ──→   Routing table empty.
-                                                    New LLM requests → 503 + Retry-After.
+ 2. DELETE /api/models/{model}                ──→   Model pool empty.
+                                                    New LLM requests for this model → 503 + Retry-After.
                                                     In-flight requests complete normally.
  3. Kill old inference servers.
  4. Launch new servers with updated weights.
  5. Wait for servers to be ready.
- 6. POST /api/models                          ──→   Server registered with new version.
-    {endpoint: "http://vllm:8000/v1",               Routing resumes.
-     version: 43}                                   Retrying agents succeed on next attempt.
+ 6. POST /api/models                          ──→   Servers registered with new version.
+    [{model: "qwen-7b",                             Routing resumes.
+      endpoint: "http://vllm-0:8000/v1",            Retrying agents succeed on next attempt.
+      version: 43},
+     {model: "qwen-7b",
+      endpoint: "http://vllm-1:8000/v1",
+      version: 43}]
+```
+
+**Online RL** (rolling update — no downtime):
+```
+ 1. Training step complete.
+ 2. For each server:
+    a. Stop server, load new weights, restart.
+    b. POST /api/models [{model: "qwen-7b", endpoint: "<this server>", version: 43}]
+       ──→ Upsert: this server now at v43, others still at v42.
+           Gateway keeps routing to available servers.
+ 3. Eventually all servers at v43.
 ```
 
 **During the unavailable window** (steps 2–6):
