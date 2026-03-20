@@ -3,6 +3,7 @@
 from agl_lite.schemas.api import (
     ArchiveBackend,
     ArchiveRequest,
+    DeleteModelServersRequest,
     EnqueueBatchRequest,
     EnqueueRolloutRequest,
     PatchRolloutRequest,
@@ -30,15 +31,12 @@ class TestEnqueueRolloutRequest:
 class TestEnqueueBatchRequest:
     def test_batch(self):
         b = EnqueueBatchRequest(
-            config=RolloutConfig(image="agent:v1"),
-            resources_id="res-1",
             rollouts=[
-                EnqueueRolloutRequest(input={"prompt": "task 1"}),
-                EnqueueRolloutRequest(input={"prompt": "task 2"}),
+                EnqueueRolloutRequest(input={"prompt": "task 1"}, config=RolloutConfig(image="agent:v1")),
+                EnqueueRolloutRequest(input={"prompt": "task 2"}, config=RolloutConfig(image="agent:v1")),
             ],
         )
         assert len(b.rollouts) == 2
-        assert b.config.image == "agent:v1"
 
 
 class TestPatchRolloutRequest:
@@ -74,13 +72,27 @@ class TestPostEventRequest:
 
 
 class TestRegisterModelRequest:
-    def test_with_version(self):
-        m = RegisterModelRequest(endpoint="http://vllm:8000/v1", version=42)
+    def test_full(self):
+        m = RegisterModelRequest(model="qwen-7b", endpoint="http://vllm:8000/v1", version=42, token="sk-secret")
+        assert m.model == "qwen-7b"
+        assert m.endpoint == "http://vllm:8000/v1"
         assert m.version == 42
+        assert m.token == "sk-secret"
 
-    def test_default_version(self):
-        m = RegisterModelRequest(endpoint="http://vllm:8000/v1")
+    def test_defaults(self):
+        m = RegisterModelRequest(model="qwen-7b", endpoint="http://vllm:8000/v1")
         assert m.version == 0
+        assert m.token is None
+
+
+class TestDeleteModelServersRequest:
+    def test_with_endpoints(self):
+        d = DeleteModelServersRequest(endpoints=["http://vllm-0:8000/v1"])
+        assert len(d.endpoints) == 1
+
+    def test_empty_default(self):
+        d = DeleteModelServersRequest()
+        assert d.endpoints == []
 
 
 class TestArchiveRequest:

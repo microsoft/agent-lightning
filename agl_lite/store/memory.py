@@ -33,7 +33,7 @@ class InMemoryStore:
       rollouts:  dict[rollout_id, Rollout]
       events:    dict[rollout_id, dict[attempt_id, list[Event]]]  (nested)
       resources: dict[resources_id, ResourcesUpdate]
-      models:    dict[endpoint, ModelServer]
+      models:    dict[model, dict[endpoint, ModelServer]]  (nested)
     """
 
     def __init__(self) -> None:
@@ -41,7 +41,7 @@ class InMemoryStore:
         self._events: dict[str, dict[str, list[Event]]] = {}
         self._resources: dict[str, ResourcesUpdate] = {}
         self._latest_resources_id: str | None = None
-        self._models: dict[str, ModelServer] = {}
+        self._models: dict[str, dict[str, ModelServer]] = {}
 
     # ── Rollout management ───────────────────────────────────────────
 
@@ -306,35 +306,53 @@ class InMemoryStore:
 
     # ── Model server management ──────────────────────────────────────
 
-    def register_model(self, endpoint: str, version: int = 0, token: str | None = None) -> ModelServer:
-        """Register (or update) a model inference server. Keyed by endpoint — upsert semantics."""
+    def register_model(self, model: str, endpoint: str, version: int = 0, token: str | None = None) -> ModelServer:
+        """Register (or update) a model inference server. Upsert by (model, endpoint)."""
         now = time.time()
-        model = ModelServer(
+        server = ModelServer(
+            model=model,
             endpoint=endpoint,
             version=version,
             token=token,
             created_at=now,
         )
-        self._models[endpoint] = model
-        return model
-
-    def register_models(self, models: list[dict[str, Any]]) -> list[ModelServer]:
-        """Register multiple model servers."""
-        return [
-            self.register_model(endpoint=m["endpoint"], version=m.get("version", 0), token=m.get("token"))
-            for m in models
-        ]
+        if model not in self._models:
+            self._models[model] = {}
+        self._models[model][endpoint] = server
+        return server
 
     def list_models(self) -> list[ModelServer]:
-        """List all registered model servers."""
-        return list(self._models.values())
+        """List all registered model servers (flat list)."""
+        return [server for pool in self._models.values() for server in pool.values()]
 
-    def remove_model(self, endpoint: str) -> None:
-        """Remove a single model server by endpoint. Raises NotFoundError."""
-        try:
-            del self._models[endpoint]
-        except KeyError:
-            raise NotFoundError("ModelServer", endpoint) from None
+    def get_model_pool(self, model: str) -> list[ModelServer]:
+        """Get all servers for a model. Returns empty list if model not found."""
+        pool = self._models.get(model, {})
+        return list(pool.values())
+
+    def remove_model_servers(self, model: str, endpoints: list[str] | None = None) -> None:
+        """Remove servers for a model.
+
+        If endpoints is None or empty, remove the entire model pool.
+        Otherwise, remove only the specified endpoints.
+        Auto-deletes the model entry if the pool becomes empty.
+        Raises NotFoundError if model not found.
+        """
+        if model not in self._models:
+            raise NotFoundError("Model", model)
+
+        if not endpoints:
+            # Remove entire pool.
+            del self._models[model]
+            return
+
+        pool = self._models[model]
+        for ep in endpoints:
+            pool.pop(ep, None)  # silently skip missing endpoints
+
+        # Auto-delete empty pool.
+        if not pool:
+            del self._models[model]
 
     def remove_all_models(self) -> None:
         """Remove all model servers. Gateway enters unavailable state (503)."""

@@ -6,9 +6,10 @@ from pydantic import BaseModel
 
 
 class ModelServer(BaseModel):
-    """A registered model inference server. Keyed by endpoint (natural key)."""
+    """A registered model inference server. Keyed by (model, endpoint)."""
 
-    endpoint: str  # e.g., "http://vllm-0:8000/v1" — the identity
-    version: int  # training step (monotonically increasing)
+    model: str  # grouping key for routing — e.g., "qwen-7b"
+    endpoint: str  # e.g., "http://vllm-0:8000/v1"
+    version: int  # training step — per server (supports online RL rolling updates)
     token: str | None = None  # optional auth token for gateway → model server
     created_at: float

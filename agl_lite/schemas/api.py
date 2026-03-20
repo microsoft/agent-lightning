@@ -20,10 +20,8 @@ class EnqueueRolloutRequest(BaseModel):
 
 
 class EnqueueBatchRequest(BaseModel):
-    """Batch rollout enqueue. Batch-level config/resources_id apply to all; per-rollout fields override."""
+    """Batch rollout enqueue — flat list, each item self-contained."""
 
-    config: RolloutConfig
-    resources_id: str | None = None
     rollouts: list[EnqueueRolloutRequest]
 
 
@@ -53,11 +51,21 @@ class PostEventRequest(BaseModel):
 
 
 class RegisterModelRequest(BaseModel):
-    """Register a model inference server."""
+    """Register a model inference server. Upsert by (model, endpoint)."""
 
+    model: str
     endpoint: str
     version: int = 0
     token: str | None = None  # optional auth token for gateway → model server
+
+
+class DeleteModelServersRequest(BaseModel):
+    """Optional body for DELETE /api/models/{model} — remove specific endpoints.
+
+    If not provided (or endpoints is empty), all servers for the model are removed.
+    """
+
+    endpoints: list[str] = Field(default_factory=list)
 
 
 # --- Resource API ---
