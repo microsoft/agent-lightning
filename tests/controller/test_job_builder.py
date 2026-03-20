@@ -74,24 +74,22 @@ class TestBuildJobSpec:
         # Pod UID via Downward API.
         assert env_map["AGL_POD_UID"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"
 
-        # OpenAI SDK.
+        # All three API key env vars reference the same AGL_KEY in Secret.
+        for env_name in ("AGL_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+            ref = env_map[env_name]["valueFrom"]["secretKeyRef"]
+            assert ref["name"] == "agl-secrets"
+            assert ref["key"] == "AGL_KEY"
+
+        # SDK base URLs.
         assert "$(AGL_POD_UID)" in env_map["OPENAI_BASE_URL"]["value"]
         assert env_map["OPENAI_BASE_URL"]["value"].endswith("/v1")
-        assert env_map["OPENAI_API_KEY"]["valueFrom"]["secretKeyRef"]["name"] == "agl-secrets"
-
-        # Anthropic SDK.
         assert "$(AGL_POD_UID)" in env_map["ANTHROPIC_BASE_URL"]["value"]
-        assert env_map["ANTHROPIC_API_KEY"]["valueFrom"]["secretKeyRef"]["name"] == "agl-secrets"
 
         # Task input.
         assert json.loads(env_map["AGL_TASK_INPUT"]["value"]) == {"task": "code"}
 
         # Event URL.
         assert "/events" in env_map["AGL_EVENT_URL"]["value"]
-
-        # AGL_KEY from Secret.
-        assert env_map["AGL_KEY"]["valueFrom"]["secretKeyRef"]["name"] == "agl-secrets"
-        assert env_map["AGL_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "AGL_KEY"
 
     def test_user_env_vars_appended(self, settings: ControllerSettings):
         rollout = _make_rollout(config_overrides={"environment_variables": {"MY_VAR": "hello"}})

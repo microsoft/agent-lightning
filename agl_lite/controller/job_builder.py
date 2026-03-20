@@ -47,26 +47,27 @@ def build_job_spec(
             "name": "AGL_POD_UID",
             "valueFrom": {"fieldRef": {"fieldPath": "metadata.uid"}},
         },
-        # OpenAI-compatible SDK env vars.
-        {"name": "OPENAI_BASE_URL", "value": f"{gateway_base}/v1"},
-        {
-            "name": "OPENAI_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "OPENAI_API_KEY", "optional": True}},
-        },
-        # Anthropic SDK env vars.
-        {"name": "ANTHROPIC_BASE_URL", "value": f"{gateway_base}/v1"},
-        {
-            "name": "ANTHROPIC_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "ANTHROPIC_API_KEY", "optional": True}},
-        },
-        # Task input and event URL.
-        {"name": "AGL_TASK_INPUT", "value": json.dumps(rollout.input)},
-        {"name": "AGL_EVENT_URL", "value": event_url},
-        # AGL_KEY for authenticating event posts and LLM proxy requests.
+        # Single AGL_KEY from Secret — used for all auth (gateway, event posts).
+        # Also injected as OPENAI_API_KEY and ANTHROPIC_API_KEY so SDKs send it
+        # as Authorization: Bearer / x-api-key headers automatically.
         {
             "name": "AGL_KEY",
             "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
         },
+        {
+            "name": "OPENAI_API_KEY",
+            "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
+        },
+        {
+            "name": "ANTHROPIC_API_KEY",
+            "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
+        },
+        # SDK base URLs — point to agl-lite gateway.
+        {"name": "OPENAI_BASE_URL", "value": f"{gateway_base}/v1"},
+        {"name": "ANTHROPIC_BASE_URL", "value": f"{gateway_base}/v1"},
+        # Task input and event URL.
+        {"name": "AGL_TASK_INPUT", "value": json.dumps(rollout.input)},
+        {"name": "AGL_EVENT_URL", "value": event_url},
     ]
 
     # User-specified env vars from rollout config (override defaults).
