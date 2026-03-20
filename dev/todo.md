@@ -104,53 +104,56 @@ All routes delegate to Store methods. Thin HTTP layer.
 
 ---
 
-## Phase 3: K8s Controller
+## Phase 3: K8s Controller ✅
 
 **Goal**: Controller that reconciles rollouts into K8s Jobs.
 
-### 3.0 Python client (`agl_lite/client.py`)
-- [ ] `AglLiteClient` — thin typed HTTP client wrapping agl-lite API
-- [ ] Shared by controller and algorithm (no duplication)
-- [ ] Methods: rollouts (enqueue, query, get, patch, cancel, archive), events, models, resources
-- [ ] Uses httpx.AsyncClient with connection pooling
-- [ ] Tests: unit tests against real FastAPI app (TestClient or async)
+### 3.0 Python client (`agl_lite/client.py`) ✅
+- [x] `AglLiteClient` — thin typed HTTP client wrapping agl-lite API
+- [x] Shared by controller and algorithm (no duplication)
+- [x] Methods: rollouts (enqueue, query, get, patch, cancel, archive), events, models, resources
+- [x] Uses httpx.AsyncClient with connection pooling
+- [x] Tests: 15 unit tests against real FastAPI app (httpx ASGITransport)
 
-### 3.1 Controller config (`agl_lite/controller/config.py`)
-- [ ] `ControllerSettings` — namespace, poll_interval, max_queue_time, agl_lite_url, secret_name
-- [ ] Reads from env vars (pydantic-settings)
+### 3.1 Controller config (`agl_lite/controller/config.py`) ✅
+- [x] `ControllerSettings` — namespace, poll_interval, max_queue_time, agl_lite_url, secret_name
+- [x] Reads from env vars (pydantic-settings, AGL_ prefix)
 
-### 3.2 Job spec builder (`agl_lite/controller/job_builder.py`)
-- [ ] Pure function: `build_job_spec(rollout, job_defaults, controller_settings) -> dict`
-- [ ] `job_defaults` (from resources) + `rollout.config` merge
-- [ ] Env var injection: OPENAI_BASE_URL, OPENAI_API_KEY, ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL
-- [ ] Secret ref injection for API keys (from `secret_name` setting)
-- [ ] `timeout` → `activeDeadlineSeconds`, `max_retries` → `backoffLimit`
-- [ ] `overrides` escape hatch merged into Job spec
-- [ ] Deterministic job name: `agl-rollout-{rollout_id}`
-- [ ] `ttlSecondsAfterFinished: 3600` for pod GC safety
+### 3.2 Job spec builder (`agl_lite/controller/job_builder.py`) ✅
+- [x] Pure function: `build_job_spec(rollout, job_defaults, controller_settings) -> dict`
+- [x] `job_defaults` (from resources) + `rollout.config` merge
+- [x] Env var injection: OPENAI_BASE_URL, OPENAI_API_KEY, ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL
+- [x] Secret ref injection for API keys (from `secret_name` setting)
+- [x] `timeout` → `activeDeadlineSeconds`, `max_retries` → `backoffLimit`
+- [x] `overrides` escape hatch merged into Job spec (deep merge)
+- [x] Deterministic job name: `agl-rollout-{rollout_id}`
+- [x] `ttlSecondsAfterFinished: 3600` for pod GC safety
+- [x] 31 unit tests
 
-### 3.3 Reconciler (`agl_lite/controller/reconciler.py`)
-- [ ] Resources cache: `dict[resources_id, ResourcesUpdate]`, persistent, no invalidation
-- [ ] Reconcile loop (`asyncio.gather`):
+### 3.3 Reconciler (`agl_lite/controller/reconciler.py`) ✅
+- [x] K8sClient protocol for testability (mock in tests, kr8s in prod)
+- [x] Resources cache: `dict[resources_id, ResourcesUpdate]`, persistent, no invalidation
+- [x] Reconcile loop (`asyncio.gather`):
   1. `periodic_reconcile()` — query `queuing` rollouts → create Jobs; crash recovery
   2. `watch_jobs()` — watch Job events (Complete/Failed) → update rollout status
   3. Handle `cancel_requested` — delete Job, update status to `cancelled`
-- [ ] Job creation failure → stay in `queuing`, retry next cycle
-- [ ] Max queue time (default 1h) → `terminal_failed` with error_message
-- [ ] `find_succeeded_pod_uid` — list pods by job-name label
-- [ ] Uses `AglLiteClient` for store access, kr8s for K8s API
+- [x] Job creation failure → stay in `queuing`, retry next cycle
+- [x] Max queue time (default 1h) → `terminal_failed` with error_message
+- [x] `find_succeeded_pod_uid` — list pods by job-name label
+- [x] Uses `AglLiteClient` for store access, K8sClient protocol for K8s API
+- [x] 19 unit tests with fully mocked K8s + API clients
 
-### 3.4 CLI
-- [ ] `agl-lite controller --agl-lite-url --namespace --secret-name`
-- [ ] Reads `AGL_KEY` from env
+### 3.4 CLI ✅
+- [x] `agl-lite controller --agl-lite-url --namespace --secret-name`
+- [x] Reads `AGL_KEY` from env
+- [ ] kr8s adapter (`Kr8sClient`) — deferred to Phase 4 (needs real cluster)
 
-### 3.5 Tests
-- [ ] Unit tests for Job spec builder (merge logic, env var injection, overrides)
-- [ ] Unit tests for state transition mapping (Job conditions → rollout status)
-- [ ] Unit tests for reconciler with mocked AglLiteClient + mocked kr8s
-- [ ] Unit tests for Python client against FastAPI TestClient
+### 3.5 Tests ✅
+- [x] 31 unit tests for Job spec builder (merge logic, env var injection, overrides, mounts)
+- [x] 19 unit tests for reconciler (create, cancel, crash recovery, watch events, caching)
+- [x] 15 unit tests for Python client against FastAPI app
 
-**Deliverables**: Controller creates/watches/deletes Jobs, updates rollout status correctly.
+**Deliverables**: Controller creates/watches/deletes Jobs, updates rollout status correctly. 254 tests total.
 
 ---
 
