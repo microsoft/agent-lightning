@@ -1,4 +1,11 @@
-"""Event API routes."""
+"""Event API routes (read-only).
+
+Events are written through two paths, neither on /api:
+  1. Agents post rewards/custom events via POST /rollout/{rid}/attempt/{aid}/events (gateway router)
+  2. Gateway auto-captures model_request events internally during LLM proxying
+
+This router provides read access for the algorithm to query collected events.
+"""
 
 from __future__ import annotations
 
