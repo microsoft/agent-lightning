@@ -36,6 +36,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         log.info("Gateway config loaded", routes=list(gateway_config.routes.keys()))
     else:
         gateway_config = GatewayConfig()
+        log.warning("No gateway config — all model names pass through without routing or parameter adjustment.")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
