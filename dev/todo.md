@@ -54,7 +54,7 @@
 | 7 | Gateway → model server auth: optional `token` on `ModelServer` | **Resolved** |
 | 9 | Gateway route config: `model_in → model_out` mapping + per-route param adjustments | **Resolved** |
 | 10 | Event ingestion: gateway-side `POST /rollout/{rid}/attempt/{aid}/events` | **Resolved** |
-| 11 | Streaming: buffer/tee/event-write flow details | TBD |
+| 11 | Streaming: tee + buffer + event-write. Detail during implementation of `gateway/proxy.py`. | **Deferred to impl** |
 | 12b | Batch-only for rollouts and models; individual for events. No shared config at batch level (client-side sugar). | **Resolved** |
 
 ### 2.1 FastAPI app (`agl_lite/server/app.py`)
