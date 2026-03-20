@@ -17,7 +17,7 @@ def _enqueue(store: InMemoryStore, **kwargs):
     """Helper: enqueue with defaults."""
     kwargs.setdefault("input", {})
     kwargs.setdefault("config", RolloutConfig(image="agent:v1"))
-    return store.enqueue_rollout(EnqueueRolloutRequest(**kwargs))
+    return store.enqueue_rollouts([EnqueueRolloutRequest(**kwargs)])[0]
 
 
 def _patch(store: InMemoryStore, rollout_id: str, **kwargs):
@@ -49,7 +49,7 @@ class TestEnqueueRollout:
         assert store._events[r.rollout_id] == {}
 
     def test_default_config_when_none(self, store: InMemoryStore):
-        r = store.enqueue_rollout(EnqueueRolloutRequest(input={"x": 1}))
+        r = store.enqueue_rollouts([EnqueueRolloutRequest(input={"x": 1})])[0]
         assert r.config is not None
 
 

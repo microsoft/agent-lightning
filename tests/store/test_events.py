@@ -18,7 +18,7 @@ def store() -> InMemoryStore:
 def _enqueue(store: InMemoryStore, **kwargs):
     kwargs.setdefault("input", {})
     kwargs.setdefault("config", RolloutConfig(image="agent:v1"))
-    return store.enqueue_rollout(EnqueueRolloutRequest(**kwargs))
+    return store.enqueue_rollouts([EnqueueRolloutRequest(**kwargs)])[0]
 
 
 def _patch(store: InMemoryStore, rollout_id: str, **kwargs):
@@ -60,20 +60,6 @@ class TestAddEvent:
     def test_nonexistent_rollout(self, store: InMemoryStore):
         with pytest.raises(NotFoundError):
             store.add_event("nonexistent", "pod-1", "reward", {"value": 1.0})
-
-
-class TestAddEvents:
-    def test_batch(self, store: InMemoryStore):
-        r = _enqueue(store)
-        events = store.add_events(
-            [
-                {"rollout_id": r.rollout_id, "attempt_id": "pod-1", "event_type": "model_request", "data": {"i": 0}},
-                {"rollout_id": r.rollout_id, "attempt_id": "pod-1", "event_type": "reward", "data": {"value": 1.0}},
-            ]
-        )
-        assert len(events) == 2
-        assert events[0].event_type == "model_request"
-        assert events[1].event_type == "reward"
 
 
 class TestQueryEvents:

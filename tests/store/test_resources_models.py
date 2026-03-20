@@ -2,8 +2,16 @@
 
 import pytest
 
+from agl_lite.schemas.api import RegisterModelRequest
 from agl_lite.schemas.errors import NotFoundError
 from agl_lite.store.memory import InMemoryStore
+
+
+def _register(store: InMemoryStore, model: str, endpoint: str, version: int = 0, token: str | None = None):
+    """Helper: register a single model server."""
+    return store.register_models([RegisterModelRequest(model=model, endpoint=endpoint, version=version, token=token)])[
+        0
+    ]
 
 
 @pytest.fixture
@@ -62,7 +70,7 @@ class TestResources:
 
 class TestModelServers:
     def test_register_and_list(self, store: InMemoryStore):
-        m = store.register_model("qwen-7b", "http://vllm:8000/v1", version=42)
+        m = _register(store, "qwen-7b", "http://vllm:8000/v1", version=42)
         assert m.model == "qwen-7b"
         assert m.endpoint == "http://vllm:8000/v1"
         assert m.version == 42
@@ -71,33 +79,33 @@ class TestModelServers:
         assert models[0].endpoint == m.endpoint
 
     def test_register_multiple_servers_same_model(self, store: InMemoryStore):
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1", version=10)
-        store.register_model("qwen-7b", "http://vllm-1:8000/v1", version=10)
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1", version=10)
+        _register(store, "qwen-7b", "http://vllm-1:8000/v1", version=10)
         assert len(store.list_models()) == 2
         pool = store.get_model_pool("qwen-7b")
         assert len(pool) == 2
 
     def test_register_different_models(self, store: InMemoryStore):
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1")
-        store.register_model("reward-model", "http://reward-0:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1")
+        _register(store, "reward-model", "http://reward-0:8000/v1")
         assert len(store.list_models()) == 2
         assert len(store.get_model_pool("qwen-7b")) == 1
         assert len(store.get_model_pool("reward-model")) == 1
 
     def test_upsert_same_model_endpoint(self, store: InMemoryStore):
         """Re-registering the same (model, endpoint) updates version (upsert)."""
-        store.register_model("qwen-7b", "http://vllm:8000/v1", version=1)
-        store.register_model("qwen-7b", "http://vllm:8000/v1", version=2)
+        _register(store, "qwen-7b", "http://vllm:8000/v1", version=1)
+        _register(store, "qwen-7b", "http://vllm:8000/v1", version=2)
         pool = store.get_model_pool("qwen-7b")
         assert len(pool) == 1
         assert pool[0].version == 2
 
     def test_online_rl_rolling_update(self, store: InMemoryStore):
         """Online RL: update one server while others keep old version."""
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1", version=3)
-        store.register_model("qwen-7b", "http://vllm-1:8000/v1", version=3)
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1", version=3)
+        _register(store, "qwen-7b", "http://vllm-1:8000/v1", version=3)
         # Rolling update: vllm-0 gets new weights
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1", version=4)
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1", version=4)
         pool = store.get_model_pool("qwen-7b")
         versions = {s.endpoint: s.version for s in pool}
         assert versions["http://vllm-0:8000/v1"] == 4
@@ -107,22 +115,22 @@ class TestModelServers:
         assert store.get_model_pool("nonexistent") == []
 
     def test_remove_entire_model(self, store: InMemoryStore):
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1")
-        store.register_model("qwen-7b", "http://vllm-1:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-1:8000/v1")
         store.remove_model_servers("qwen-7b")
         assert store.get_model_pool("qwen-7b") == []
         assert store.list_models() == []
 
     def test_remove_specific_endpoints(self, store: InMemoryStore):
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1")
-        store.register_model("qwen-7b", "http://vllm-1:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-1:8000/v1")
         store.remove_model_servers("qwen-7b", endpoints=["http://vllm-0:8000/v1"])
         pool = store.get_model_pool("qwen-7b")
         assert len(pool) == 1
         assert pool[0].endpoint == "http://vllm-1:8000/v1"
 
     def test_remove_last_server_auto_deletes_pool(self, store: InMemoryStore):
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1")
         store.remove_model_servers("qwen-7b", endpoints=["http://vllm-0:8000/v1"])
         assert store.get_model_pool("qwen-7b") == []
         assert "qwen-7b" not in store._models
@@ -133,13 +141,13 @@ class TestModelServers:
 
     def test_remove_nonexistent_endpoint_silent(self, store: InMemoryStore):
         """Removing an endpoint that doesn't exist in the pool is silently ignored."""
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1")
         store.remove_model_servers("qwen-7b", endpoints=["http://nonexistent:8000/v1"])
         assert len(store.get_model_pool("qwen-7b")) == 1  # unchanged
 
     def test_remove_all(self, store: InMemoryStore):
-        store.register_model("qwen-7b", "http://vllm-0:8000/v1")
-        store.register_model("reward-model", "http://reward-0:8000/v1")
+        _register(store, "qwen-7b", "http://vllm-0:8000/v1")
+        _register(store, "reward-model", "http://reward-0:8000/v1")
         store.remove_all_models()
         assert store.list_models() == []
 
@@ -148,13 +156,13 @@ class TestModelServers:
         assert store.list_models() == []
 
     def test_default_version(self, store: InMemoryStore):
-        m = store.register_model("qwen-7b", "http://vllm:8000/v1")
+        m = _register(store, "qwen-7b", "http://vllm:8000/v1")
         assert m.version == 0
 
     def test_token_stored(self, store: InMemoryStore):
-        m = store.register_model("qwen-7b", "http://vllm:8000/v1", token="sk-secret")
+        m = _register(store, "qwen-7b", "http://vllm:8000/v1", token="sk-secret")
         assert m.token == "sk-secret"
 
     def test_token_default_none(self, store: InMemoryStore):
-        m = store.register_model("qwen-7b", "http://vllm:8000/v1")
+        m = _register(store, "qwen-7b", "http://vllm:8000/v1")
         assert m.token is None

@@ -21,16 +21,7 @@ def _get_store(request: Request) -> InMemoryStore:
 async def register_models(body: list[RegisterModelRequest], request: Request) -> list[ModelServer]:
     """Register model server(s). Upsert by (model, endpoint)."""
     store = _get_store(request)
-    results: list[ModelServer] = []
-    for item in body:
-        m = store.register_model(
-            model=item.model,
-            endpoint=item.endpoint,
-            version=item.version,
-            token=item.token,
-        )
-        results.append(m)
-    return results
+    return store.register_models(body)
 
 
 @router.get("/models", response_model=list[ModelServer])

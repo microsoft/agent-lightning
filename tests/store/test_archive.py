@@ -19,7 +19,7 @@ def store() -> InMemoryStore:
 def _enqueue(store: InMemoryStore, **kwargs):
     kwargs.setdefault("input", {"prompt": "test"})
     kwargs.setdefault("config", RolloutConfig(image="agent:v1"))
-    return store.enqueue_rollout(EnqueueRolloutRequest(**kwargs))
+    return store.enqueue_rollouts([EnqueueRolloutRequest(**kwargs)])[0]
 
 
 def _patch(store: InMemoryStore, rollout_id: str, **kwargs):

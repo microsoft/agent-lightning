@@ -29,11 +29,7 @@ class RolloutDetail(BaseModel):
 async def enqueue_rollouts(body: EnqueueBatchRequest, request: Request) -> list[Rollout]:
     """Enqueue rollouts. Each item in the list is self-contained."""
     store = _get_store(request)
-    results: list[Rollout] = []
-    for item in body.rollouts:
-        r = store.enqueue_rollout(item)
-        results.append(r)
-    return results
+    return store.enqueue_rollouts(body.rollouts)
 
 
 @router.get("/rollouts", response_model=list[Rollout])

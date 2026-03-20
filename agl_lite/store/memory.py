@@ -12,7 +12,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from agl_lite.schemas.api import ArchiveBackend, ArchiveResult, EnqueueRolloutRequest, PatchRolloutRequest
+from agl_lite.schemas.api import (
+    ArchiveBackend,
+    ArchiveResult,
+    EnqueueRolloutRequest,
+    PatchRolloutRequest,
+    RegisterModelRequest,
+)
 from agl_lite.schemas.errors import InvalidTransitionError, NotFoundError
 from agl_lite.schemas.event import Event
 from agl_lite.schemas.model_server import ModelServer
@@ -45,21 +51,24 @@ class InMemoryStore:
 
     # ── Rollout management ───────────────────────────────────────────
 
-    def enqueue_rollout(self, req: EnqueueRolloutRequest) -> Rollout:
-        """Create a new rollout in QUEUING status."""
-        now = time.time()
-        rollout_id = uuid.uuid4().hex
-        rollout = Rollout(
-            rollout_id=rollout_id,
-            input=req.input,
-            config=req.config or RolloutConfig(image=""),
-            resources_id=req.resources_id,
-            created_at=now,
-            updated_at=now,
-        )
-        self._rollouts[rollout_id] = rollout
-        self._events[rollout_id] = {}
-        return rollout
+    def enqueue_rollouts(self, requests: list[EnqueueRolloutRequest]) -> list[Rollout]:
+        """Create new rollouts in QUEUING status."""
+        results: list[Rollout] = []
+        for req in requests:
+            now = time.time()
+            rollout_id = uuid.uuid4().hex
+            rollout = Rollout(
+                rollout_id=rollout_id,
+                input=req.input,
+                config=req.config or RolloutConfig(image=""),
+                resources_id=req.resources_id,
+                created_at=now,
+                updated_at=now,
+            )
+            self._rollouts[rollout_id] = rollout
+            self._events[rollout_id] = {}
+            results.append(rollout)
+        return results
 
     def get_rollout(self, rollout_id: str) -> Rollout:
         """Get a single rollout by ID. Raises NotFoundError."""
@@ -186,18 +195,6 @@ class InMemoryStore:
         rid_events[attempt_id].append(event)
         return event
 
-    def add_events(self, events: list[dict[str, Any]]) -> list[Event]:
-        """Append multiple events. Each dict must have rollout_id, attempt_id, event_type, data."""
-        return [
-            self.add_event(
-                rollout_id=e["rollout_id"],
-                attempt_id=e["attempt_id"],
-                event_type=e["event_type"],
-                data=e["data"],
-            )
-            for e in events
-        ]
-
     def query_events(
         self,
         rollout_id: str,
@@ -306,20 +303,23 @@ class InMemoryStore:
 
     # ── Model server management ──────────────────────────────────────
 
-    def register_model(self, model: str, endpoint: str, version: int = 0, token: str | None = None) -> ModelServer:
-        """Register (or update) a model inference server. Upsert by (model, endpoint)."""
-        now = time.time()
-        server = ModelServer(
-            model=model,
-            endpoint=endpoint,
-            version=version,
-            token=token,
-            created_at=now,
-        )
-        if model not in self._models:
-            self._models[model] = {}
-        self._models[model][endpoint] = server
-        return server
+    def register_models(self, requests: list[RegisterModelRequest]) -> list[ModelServer]:
+        """Register (or update) model inference servers. Upsert by (model, endpoint)."""
+        results: list[ModelServer] = []
+        for req in requests:
+            now = time.time()
+            server = ModelServer(
+                model=req.model,
+                endpoint=req.endpoint,
+                version=req.version,
+                token=req.token,
+                created_at=now,
+            )
+            if req.model not in self._models:
+                self._models[req.model] = {}
+            self._models[req.model][req.endpoint] = server
+            results.append(server)
+        return results
 
     def list_models(self) -> list[ModelServer]:
         """List all registered model servers (flat list)."""
