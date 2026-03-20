@@ -30,10 +30,49 @@ def serve(
 
 
 @app.command()
-def controller() -> None:
+def controller(
+    agl_lite_url: str = typer.Option("http://localhost:8000", help="agl-lite server URL"),
+    namespace: str = typer.Option("default", help="K8s namespace for agent Jobs"),
+    secret_name: str = typer.Option("agl-api-keys", help="K8s Secret name with API keys"),
+    poll_interval: int = typer.Option(10, help="Seconds between reconcile cycles"),
+    max_queue_time: int = typer.Option(3600, help="Max seconds a rollout can stay in queuing"),
+) -> None:
     """Start the K8s controller (reconcile loop)."""
-    typer.echo("K8s controller not yet implemented (Phase 3)")
-    raise typer.Exit(code=1)
+    import asyncio
+    import os
+
+    from agl_lite.client import AglLiteClient
+    from agl_lite.controller.config import ControllerSettings
+    from agl_lite.controller.reconciler import Reconciler
+
+    settings = ControllerSettings(
+        lite_url=agl_lite_url,
+        key=os.environ.get("AGL_KEY", ""),
+        namespace=namespace,
+        secret_name=secret_name,
+        poll_interval=poll_interval,
+        max_queue_time=max_queue_time,
+    )
+
+    async def _run() -> None:
+        api = AglLiteClient(base_url=settings.lite_url, agl_key=settings.key or None)
+        # kr8s client created here in production; for now use a placeholder.
+        # The real kr8s adapter will be added in Phase 4 (E2E validation).
+        try:
+            from agl_lite.controller.kr8s_adapter import Kr8sClient
+
+            k8s = Kr8sClient(namespace=settings.namespace)
+        except ImportError:
+            typer.echo("kr8s adapter not yet implemented — install kr8s and implement Kr8sClient")
+            raise typer.Exit(code=1) from None
+
+        reconciler = Reconciler(api=api, k8s=k8s, settings=settings)
+        try:
+            await reconciler.run()
+        finally:
+            await api.close()
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
