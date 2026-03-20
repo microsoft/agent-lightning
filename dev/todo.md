@@ -17,14 +17,14 @@
 
 - [x] **Phase 0: Schemas and Project Skeleton** — frozen data models, project structure, dev tooling
 - [x] **Phase 0.4: State transition rules** — valid transitions table, cancel_requested rules, exhaustive tests
-- [x] **Phase 1: In-Memory Store** — `InMemoryStore` with all operations, 114 tests passing
-  - Rollout: enqueue, PATCH-style partial update (transition validation), cancel, query
-  - Events: add, query (smart attempt_id resolution), list_attempts
+- [x] **Phase 1: In-Memory Store** — `InMemoryStore` with all operations, 156 tests passing
+  - Rollout: enqueue_rollouts (batch), PATCH-style partial update (transition validation), cancel, query
+  - Events: add_event (individual), query (smart attempt_id resolution), list_attempts
   - Resources: add, get_by_id, get_latest
-  - Models: register (upsert by endpoint), list, remove by endpoint, remove_all
+  - Models: register_models (batch, upsert by model+endpoint), list, get_model_pool, remove by model/endpoints, remove_all
   - Archive: validate terminal, write JSONL (append), purge
-  - Key refactors: `UpdateRolloutRequest` → `PatchRolloutRequest` (true PATCH semantics, `exclude_unset`),
-    dropped `model_id` (endpoint is natural key), store methods accept request objects directly
+  - Key refactors: `PatchRolloutRequest` (true PATCH semantics, `exclude_unset`), store methods accept request objects,
+    batch interface for rollouts and models (`enqueue_rollouts`, `register_models`)
 
 ---
 
@@ -37,14 +37,13 @@
 | # | Decision |
 |---|---|
 | 1 | Store sharing: `app.state.store` set in lifespan |
-| 2 | `POST /api/rollouts`: single vs batch distinguished by `rollouts` key presence |
 | 3 | `GET /api/rollouts/{rid}` returns `RolloutDetail` with `attempts: List[str]` |
-| 4 | `DELETE /api/models`: optional `?endpoint=` query param (present=remove one, absent=remove all) |
-| 5 | Auth: single `AGL_KEY` for all components, no roles. Gateway checks `Authorization: Bearer` and `x-api-key` |
+| 4 | `DELETE /api/models/{model}`: optional body `{endpoints: [...]}` to remove specific servers; no body = remove pool. `DELETE /api/models` removes all. |
+| 5 | Auth: single `AGL_KEY` for all components, no roles. Gateway checks `Authorization: Bearer` and `x-api-key`. Warning logged when unset. |
 | 6 | Error format: `{"detail": "message"}` (FastAPI default `HTTPException`) |
 | 7 | Gateway → model server: optional `token` field on `ModelServer`. If set, gateway sends `Authorization: Bearer <token>` |
 | 8 | Event data: full request body + full response body, **no headers** |
-| 12 | Batch config merging in route handler; store sees individual `EnqueueRolloutRequest`s |
+| 12 | Batch-only for rollouts and models at both HTTP and store level. Store owns batch semantics (`enqueue_rollouts`, `register_models`). Events stay individual. |
 
 ### Phase 2 Open Questions
 
@@ -57,25 +56,26 @@
 | 11 | Streaming: tee + buffer + event-write. Detail during implementation of `gateway/proxy.py`. | **Deferred to impl** |
 | 12b | Batch-only for rollouts and models; individual for events. No shared config at batch level (client-side sugar). | **Resolved** |
 
-### 2.1 FastAPI app (`agl_lite/server/app.py`)
-- [ ] Lifespan: create `InMemoryStore`, set on `app.state.store`; load gateway config, load API keys from env
-- [ ] Mount all route modules
-- [ ] Health endpoint: `GET /healthz` (no auth)
+### 2.1 FastAPI app (`agl_lite/server/app.py`) ✅
+- [x] Lifespan: create `InMemoryStore`, set on `app.state.store`
+- [x] Mount all route modules
+- [x] Health endpoint: `GET /healthz` (no auth)
+- [x] Warn when `AGL_KEY` not set
 
-### 2.2 Auth middleware (`agl_lite/server/auth.py`)
-- [ ] Extract key from `Authorization: Bearer <key>` or `x-api-key: <key>` header
-- [ ] Validate key against `AGL_KEY`
-- [ ] 401 for missing/invalid key
-- [ ] `/healthz` exempt
+### 2.2 Auth (`agl_lite/server/auth.py`) ✅
+- [x] Extract key from `Authorization: Bearer <key>` or `x-api-key: <key>` header
+- [x] Validate key against `AGL_KEY`; empty key = auth disabled
+- [x] 401 for missing/invalid key
+- [x] `/healthz` exempt
 
-### 2.3 Store API routes (`agl_lite/server/routes/`)
-- [ ] `rollouts.py` — POST (single/batch via `rollouts` key), GET, GET/{rid} (returns `RolloutDetail` with attempts), PATCH/{rid}, POST/{rid}/cancel
-- [ ] `events.py` — GET /api/events
-- [ ] `models.py` — POST (list), GET, DELETE (optional `?endpoint=`)
-- [ ] `resources.py` — POST, GET /latest, GET/{id}
-- [ ] `archive.py` — POST /api/rollouts/archive
+### 2.3 Store API routes (`agl_lite/server/routes/`) ✅
+- [x] `rollouts.py` — POST (batch), GET (query), GET/{rid} (RolloutDetail + attempts), PATCH/{rid}, POST/{rid}/cancel
+- [x] `events.py` — GET /api/events (read-only; writes via gateway)
+- [x] `models.py` — POST (batch register), GET (list), DELETE/{model} (optional body), DELETE (all)
+- [x] `resources.py` — POST, GET /latest, GET/{id}
+- [x] `archive.py` — POST /api/rollouts/archive
 
-All routes delegate to Store methods. Thin HTTP layer — validate request, call store, return response.
+All routes delegate to Store methods. Thin HTTP layer.
 
 ### 2.4 Gateway module (`agl_lite/gateway/`)
 - [ ] `config.py` — load YAML route config (`model_in → model_out` + `params.add`/`params.drop`)
@@ -83,19 +83,19 @@ All routes delegate to Store methods. Thin HTTP layer — validate request, call
 - [ ] `proxy.py` — HTTP forwarding via httpx (non-streaming + streaming), event capture (request body + response body, no headers)
 
 ### 2.5 Gateway routes (`agl_lite/server/routes/gateway.py`)
-- [ ] Path parsing: extract `rollout_id`, `attempt_id` from `/rollout/{rid}/attempt/{aid}/v1/...`
-- [ ] Rollout existence check (in-process dict lookup)
+- [x] Path parsing: extract `rollout_id`, `attempt_id` from `/rollout/{rid}/attempt/{aid}/...`
+- [x] Event ingestion endpoint: `POST /rollout/{rid}/attempt/{aid}/events`
+- [ ] Rollout existence check (in-process dict lookup) for LLM proxy
 - [ ] Wire gateway module: parse model → route → select server → proxy → capture event
 - [ ] Edge cases: client disconnect, backend error, no servers for model (503)
-- [ ] Event ingestion endpoint: `POST /rollout/{rid}/attempt/{aid}/events`
 
-### 2.6 CLI (`agl_lite/cli.py`)
-- [ ] `agl-lite serve --host --port --gateway-config` entrypoint
-- [ ] Reads `AGL_KEY` from env var
+### 2.6 CLI (`agl_lite/cli.py`) ✅
+- [x] `agl-lite serve --host --port --gateway-config` entrypoint
+- [x] Reads `AGL_KEY` from env var
 
 ### 2.7 Integration tests
-- [ ] Full API round-trip tests (enqueue → query → update → events → archive)
-- [ ] Auth tests (valid key, invalid key, healthz)
+- [x] Full API round-trip tests (enqueue → query → update → events → archive)
+- [x] Auth tests (valid key, invalid key, auth disabled, healthz)
 - [ ] Gateway proxy tests (mock model server, routing, param adjustment, streaming, non-streaming, 503)
 - [ ] Gateway routing tests (model_in → model_out, passthrough, round-robin)
 
