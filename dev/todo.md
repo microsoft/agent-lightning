@@ -44,7 +44,7 @@
 | 11 | **Dataset**: GSM8K 30-problem subset (`examples/math-poc/data/gsm8k_sample.jsonl`). Reward = compare extracted answer to ground truth. With mockai (echo mode) reward is always 0 — proves pipeline structure, not model quality. |
 | 12 | **Agent image**: Contains all agent scripts at `/app/`. Rollout `config.command` selects which to run (e.g. `["python", "/app/qa_agent.py"]`). Image = environment, command = task. |
 | 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
-| 14 | **Configuration**: Single `.env.example` in `deploy/`. Setup script reads `.env` → creates K8s Secret (`AGL_KEY` via `--from-literal`, never on disk) + ConfigMap (all other vars via pipe to `--from-env-file=/dev/stdin`). Manifests reference ConfigMap/Secret via `valueFrom` — no hardcoded values. `.env` also used host-side (`source .env`). |
+| 14 | **Configuration**: Split into `deploy/.env` (secrets + bootstrap: `AGL_KEY`, `AGL_K8S_NAMESPACE`) and `deploy/config.yaml` (structured non-secret config: serve host/port, agl_lite_url, controller settings). Setup script reads `.env` for namespace/secret creation, loads `config.yaml` into K8s ConfigMap (`--from-file`). Pods mount ConfigMap as `/etc/agl-lite/config.yaml`. CLI supports `--config` flag. Precedence: config file → env vars → CLI args. |
 | 15 | **Dockerfile**: Use `uv` for fast installs (`curl -LsSf https://astral.sh/uv/install.sh`). `.dockerignore` excludes `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`. |
 | 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_NAMESPACE` from `.env`. Works for any namespace. |
 
@@ -68,22 +68,23 @@
 deploy/
 ├── agl-lite/                    # HTTP service (store + gateway)
 │   ├── Dockerfile               # python:3.12-slim + uv + pip install .[controller]
-│   ├── k8s.yaml                 # Deployment + Service (env from ConfigMap/Secret)
+│   ├── k8s.yaml                 # Deployment + Service (mounts ConfigMap, env from Secret)
 │   └── README.md
 ├── controller/                  # K8s reconciler (reuses agl-lite image)
-│   ├── k8s.yaml                 # Deployment (env from ConfigMap/Secret)
+│   ├── k8s.yaml                 # Deployment (mounts ConfigMap, env from Secret)
 │   ├── rbac.yaml                # ServiceAccount + Role + RoleBinding
 │   └── README.md
-├── .env.example                 # all config: AGL_KEY, AGL_LITE_URL, AGL_NAMESPACE, etc.
+├── .env.example                 # secrets + bootstrap: AGL_KEY, AGL_K8S_NAMESPACE
+├── config.example.yaml          # structured non-secret config: serve, controller, agl_lite_url
 └── README.md                    # deploy overview + ordering guide
 ```
 
-Setup script creates K8s resources from `.env`:
-- `kubectl create namespace $AGL_NAMESPACE`
-- `kubectl -n $AGL_NAMESPACE create secret generic $AGL_SECRET_NAME --from-literal=AGL_KEY="$AGL_KEY"` (never on disk)
-- `grep -v '^AGL_KEY=' .env | grep -v '^#' | grep -v '^$' | kubectl -n $AGL_NAMESPACE create configmap agl-lite-config --from-env-file=/dev/stdin`
-- `kubectl apply -n $AGL_NAMESPACE -f deploy/...` (manifests omit namespace)
-- Manifests use `valueFrom: configMapKeyRef/secretKeyRef` — no hardcoded values
+Setup script creates K8s resources from `.env` + `config.yaml`:
+- `source deploy/.env`
+- `kubectl create namespace $AGL_K8S_NAMESPACE`
+- `kubectl -n $AGL_K8S_NAMESPACE create secret generic agl-lite-keys --from-literal=AGL_KEY="$AGL_KEY"` (never on disk)
+- `kubectl -n $AGL_K8S_NAMESPACE create configmap agl-lite-config --from-file=config.yaml=deploy/config.yaml`
+- `kubectl apply -n $AGL_K8S_NAMESPACE -f deploy/...` (manifests omit namespace, mount ConfigMap as volume)
 
 ```
 examples/
