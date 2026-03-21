@@ -50,22 +50,15 @@ class TestResources:
         assert store.get_resources(r1.resources_id).resources["prompt"] == "v1"
         assert store.get_resources(r2.resources_id).resources["prompt"] == "v2"
 
-    def test_validates_job_defaults(self, store: InMemoryStore):
-        """job_defaults key is validated as JobDefaults schema."""
+    def test_job_template_is_opaque(self, store: InMemoryStore):
+        """job_template is stored as-is — no validation."""
         res = store.add_resources(
             {
-                "job_defaults": {"timeout": 300, "overrides": {"dnsPolicy": "ClusterFirst"}},
+                "job_template": {"spec": {"containers": [{"name": "agent"}]}},
                 "prompt": "hello",
             }
         )
-        assert res.resources["job_defaults"]["timeout"] == 300
-
-    def test_rejects_invalid_job_defaults(self, store: InMemoryStore):
-        from pydantic import ValidationError
-
-        # timeout must be int, not a string
-        with pytest.raises(ValidationError):
-            store.add_resources({"job_defaults": {"timeout": "not-a-number"}})
+        assert res.resources["job_template"]["spec"]["containers"][0]["name"] == "agent"
 
 
 class TestModelServers:

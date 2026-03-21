@@ -8,7 +8,6 @@ import pytest
 
 from agl_lite.controller.config import ControllerSettings
 from agl_lite.controller.job_builder import _deep_merge, build_job_name, build_job_spec
-from agl_lite.schemas.resources import JobDefaults, K8sResources
 from agl_lite.schemas.rollout import Rollout, RolloutConfig, RolloutStatus
 
 
@@ -18,8 +17,7 @@ def _make_rollout(
     input: dict | None = None,
     config_overrides: dict | None = None,
 ) -> Rollout:
-    """Create a minimal rollout for testing."""
-    config_kwargs = {"image": image}
+    config_kwargs: dict = {"image": image}
     if config_overrides:
         config_kwargs.update(config_overrides)
     return Rollout(
@@ -30,6 +28,35 @@ def _make_rollout(
         created_at=1000.0,
         updated_at=1000.0,
     )
+
+
+def _simple_template() -> dict:
+    """Minimal job template — single agent container."""
+    return {
+        "spec": {
+            "serviceAccountName": "default",
+            "containers": [
+                {
+                    "name": "agent",
+                    "imagePullPolicy": "Never",
+                    "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
+                }
+            ],
+        }
+    }
+
+
+def _multi_container_template() -> dict:
+    """Job template with agent + scorer sidecar."""
+    return {
+        "spec": {
+            "containers": [
+                {"name": "agent", "imagePullPolicy": "Never"},
+                {"name": "scorer", "image": "scorer:latest", "command": ["python", "score.py"]},
+            ],
+            "volumes": [{"name": "workspace", "emptyDir": {}}],
+        }
+    }
 
 
 @pytest.fixture
@@ -50,8 +77,9 @@ class TestBuildJobName:
         assert build_job_name("r1") == build_job_name("r1")
 
 
-class TestBuildJobSpec:
-    def test_minimal(self, settings: ControllerSettings):
+class TestBuildJobSpecBasic:
+    def test_minimal_no_template(self, settings):
+        """No template — agent container created from scratch."""
         rollout = _make_rollout()
         job = build_job_spec(rollout, None, settings)
 
@@ -64,34 +92,53 @@ class TestBuildJobSpec:
         assert container["name"] == "agent"
         assert container["image"] == "agent:v1"
 
-    def test_env_vars_injected(self, settings: ControllerSettings):
+    def test_with_template(self, settings):
+        """Template provides pod spec, rollout config fills agent container."""
+        rollout = _make_rollout()
+        job = build_job_spec(rollout, _simple_template(), settings)
+
+        pod_spec = job["spec"]["template"]["spec"]
+        assert pod_spec["serviceAccountName"] == "default"
+
+        container = pod_spec["containers"][0]
+        assert container["name"] == "agent"
+        assert container["image"] == "agent:v1"
+        assert container["imagePullPolicy"] == "Never"
+        assert container["resources"]["requests"]["cpu"] == "100m"
+
+    def test_restart_policy_always_never(self, settings):
+        rollout = _make_rollout()
+        job = build_job_spec(rollout, None, settings)
+        assert job["spec"]["template"]["spec"]["restartPolicy"] == "Never"
+
+    def test_template_restart_policy_preserved(self, settings):
+        """restartPolicy from template is preserved (setdefault, not overwrite)."""
+        rollout = _make_rollout()
+        template = {"spec": {"restartPolicy": "Never", "containers": [{"name": "agent"}]}}
+        job = build_job_spec(rollout, template, settings)
+        assert job["spec"]["template"]["spec"]["restartPolicy"] == "Never"
+
+
+class TestEnvVarInjection:
+    def test_controller_env_vars(self, settings):
         rollout = _make_rollout(input={"task": "code"})
         job = build_job_spec(rollout, None, settings)
 
         container = job["spec"]["template"]["spec"]["containers"][0]
         env_map = {e["name"]: e for e in container["env"]}
 
-        # Pod UID via Downward API.
         assert env_map["AGL_POD_UID"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"
-
-        # All three API key env vars reference the same AGL_KEY in Secret.
-        for env_name in ("AGL_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
-            ref = env_map[env_name]["valueFrom"]["secretKeyRef"]
+        for name in ("AGL_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+            ref = env_map[name]["valueFrom"]["secretKeyRef"]
             assert ref["name"] == "agl-secrets"
             assert ref["key"] == "AGL_KEY"
 
-        # SDK base URLs.
         assert "$(AGL_POD_UID)" in env_map["OPENAI_BASE_URL"]["value"]
         assert env_map["OPENAI_BASE_URL"]["value"].endswith("/v1")
-        assert "$(AGL_POD_UID)" in env_map["ANTHROPIC_BASE_URL"]["value"]
-
-        # Task input.
         assert json.loads(env_map["AGL_TASK_INPUT"]["value"]) == {"task": "code"}
-
-        # Event URL.
         assert "/events" in env_map["AGL_EVENT_URL"]["value"]
 
-    def test_user_env_vars_appended(self, settings: ControllerSettings):
+    def test_user_env_vars(self, settings):
         rollout = _make_rollout(config_overrides={"environment_variables": {"MY_VAR": "hello"}})
         job = build_job_spec(rollout, None, settings)
 
@@ -99,196 +146,194 @@ class TestBuildJobSpec:
         env_map = {e["name"]: e for e in container["env"]}
         assert env_map["MY_VAR"]["value"] == "hello"
 
-    def test_command(self, settings: ControllerSettings):
+    def test_template_env_vars_preserved(self, settings):
+        """Template env vars on agent container are kept (appended after controller vars)."""
+        template = {"spec": {"containers": [{"name": "agent", "env": [{"name": "FROM_TEMPLATE", "value": "yes"}]}]}}
+        rollout = _make_rollout()
+        job = build_job_spec(rollout, template, settings)
+
+        container = job["spec"]["template"]["spec"]["containers"][0]
+        env_map = {e["name"]: e for e in container["env"]}
+        assert "FROM_TEMPLATE" in env_map
+        assert "AGL_TASK_INPUT" in env_map
+
+
+class TestCommandAndImage:
+    def test_command(self, settings):
         rollout = _make_rollout(config_overrides={"command": ["python", "run.py"]})
         job = build_job_spec(rollout, None, settings)
-
         container = job["spec"]["template"]["spec"]["containers"][0]
         assert container["command"] == ["python", "run.py"]
 
-    def test_no_command_omitted(self, settings: ControllerSettings):
+    def test_no_command_omitted(self, settings):
         rollout = _make_rollout()
         job = build_job_spec(rollout, None, settings)
-
         container = job["spec"]["template"]["spec"]["containers"][0]
         assert "command" not in container
 
-    def test_timeout_from_config(self, settings: ControllerSettings):
+    def test_image_overrides_template(self, settings):
+        """RolloutConfig.image always overrides what's in the template."""
+        template = {"spec": {"containers": [{"name": "agent", "image": "old:v1"}]}}
+        rollout = _make_rollout(image="new:v2")
+        job = build_job_spec(rollout, template, settings)
+        container = job["spec"]["template"]["spec"]["containers"][0]
+        assert container["image"] == "new:v2"
+
+
+class TestJobSpecFields:
+    def test_timeout(self, settings):
         rollout = _make_rollout(config_overrides={"timeout": 300})
         job = build_job_spec(rollout, None, settings)
-
         assert job["spec"]["activeDeadlineSeconds"] == 300
 
-    def test_timeout_from_defaults(self, settings: ControllerSettings):
-        rollout = _make_rollout()
-        defaults = JobDefaults(timeout=600)
-        job = build_job_spec(rollout, defaults, settings)
-
-        assert job["spec"]["activeDeadlineSeconds"] == 600
-
-    def test_timeout_config_overrides_defaults(self, settings: ControllerSettings):
-        rollout = _make_rollout(config_overrides={"timeout": 300})
-        defaults = JobDefaults(timeout=600)
-        job = build_job_spec(rollout, defaults, settings)
-
-        assert job["spec"]["activeDeadlineSeconds"] == 300
-
-    def test_no_timeout(self, settings: ControllerSettings):
+    def test_no_timeout(self, settings):
         rollout = _make_rollout()
         job = build_job_spec(rollout, None, settings)
-
         assert "activeDeadlineSeconds" not in job["spec"]
 
-    def test_max_retries_from_config(self, settings: ControllerSettings):
+    def test_max_retries(self, settings):
         rollout = _make_rollout(config_overrides={"max_retries": 3})
         job = build_job_spec(rollout, None, settings)
-
         assert job["spec"]["backoffLimit"] == 3
 
-    def test_max_retries_from_defaults(self, settings: ControllerSettings):
-        rollout = _make_rollout()
-        defaults = JobDefaults(max_retries=5)
-        job = build_job_spec(rollout, defaults, settings)
-
-        assert job["spec"]["backoffLimit"] == 5
-
-    def test_max_retries_config_overrides_defaults(self, settings: ControllerSettings):
-        rollout = _make_rollout(config_overrides={"max_retries": 2})
-        defaults = JobDefaults(max_retries=5)
-        job = build_job_spec(rollout, defaults, settings)
-
-        assert job["spec"]["backoffLimit"] == 2
-
-    def test_default_backoff_limit_zero(self, settings: ControllerSettings):
+    def test_default_backoff_zero(self, settings):
         rollout = _make_rollout()
         job = build_job_spec(rollout, None, settings)
-
         assert job["spec"]["backoffLimit"] == 0
 
-    def test_ttl_after_finished(self, settings: ControllerSettings):
+    def test_ttl(self, settings):
         rollout = _make_rollout()
         job = build_job_spec(rollout, None, settings)
-
         assert job["spec"]["ttlSecondsAfterFinished"] == 3600
 
-    def test_restart_policy_never(self, settings: ControllerSettings):
-        rollout = _make_rollout()
-        job = build_job_spec(rollout, None, settings)
-
-        assert job["spec"]["template"]["spec"]["restartPolicy"] == "Never"
-
-    def test_labels(self, settings: ControllerSettings):
+    def test_labels(self, settings):
         rollout = _make_rollout(rollout_id="r42")
         job = build_job_spec(rollout, None, settings)
-
-        # Job-level labels.
         assert job["metadata"]["labels"]["app.kubernetes.io/managed-by"] == "agl-lite"
         assert job["metadata"]["labels"]["agl-lite/rollout-id"] == "r42"
+        assert job["spec"]["template"]["metadata"]["labels"]["agl-lite/rollout-id"] == "r42"
 
-        # Pod template labels.
-        pod_labels = job["spec"]["template"]["metadata"]["labels"]
-        assert pod_labels["agl-lite/rollout-id"] == "r42"
 
-    def test_resources_from_defaults(self, settings: ControllerSettings):
-        defaults = JobDefaults(
-            resources=K8sResources(
-                requests={"cpu": "500m", "memory": "1Gi"},
-                limits={"cpu": "2", "memory": "4Gi"},
-            )
-        )
+class TestTemplatePassthrough:
+    def test_node_selector(self, settings):
+        template = {"spec": {"nodeSelector": {"gpu": "a100"}, "containers": [{"name": "agent"}]}}
         rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
-
-        container = job["spec"]["template"]["spec"]["containers"][0]
-        assert container["resources"]["requests"]["cpu"] == "500m"
-        assert container["resources"]["limits"]["memory"] == "4Gi"
-
-    def test_node_selector(self, settings: ControllerSettings):
-        defaults = JobDefaults(node_selector={"gpu": "a100"})
-        rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
-
+        job = build_job_spec(rollout, template, settings)
         assert job["spec"]["template"]["spec"]["nodeSelector"] == {"gpu": "a100"}
 
-    def test_tolerations(self, settings: ControllerSettings):
-        toleration = {"key": "gpu", "operator": "Exists", "effect": "NoSchedule"}
-        defaults = JobDefaults(tolerations=[toleration])
+    def test_tolerations(self, settings):
+        tol = {"key": "gpu", "operator": "Exists", "effect": "NoSchedule"}
+        template = {"spec": {"tolerations": [tol], "containers": [{"name": "agent"}]}}
         rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
+        job = build_job_spec(rollout, template, settings)
+        assert job["spec"]["template"]["spec"]["tolerations"] == [tol]
 
-        assert job["spec"]["template"]["spec"]["tolerations"] == [toleration]
-
-    def test_service_account(self, settings: ControllerSettings):
-        defaults = JobDefaults(service_account="agent-sa")
+    def test_service_account(self, settings):
+        template = {"spec": {"serviceAccountName": "agent-sa", "containers": [{"name": "agent"}]}}
         rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
-
+        job = build_job_spec(rollout, template, settings)
         assert job["spec"]["template"]["spec"]["serviceAccountName"] == "agent-sa"
 
-    def test_image_pull_secrets(self, settings: ControllerSettings):
-        defaults = JobDefaults(image_pull_secrets=["my-registry"])
+    def test_image_pull_secrets(self, settings):
+        template = {"spec": {"imagePullSecrets": [{"name": "my-reg"}], "containers": [{"name": "agent"}]}}
         rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
+        job = build_job_spec(rollout, template, settings)
+        assert job["spec"]["template"]["spec"]["imagePullSecrets"] == [{"name": "my-reg"}]
 
-        assert job["spec"]["template"]["spec"]["imagePullSecrets"] == [{"name": "my-registry"}]
+    def test_arbitrary_k8s_fields(self, settings):
+        template = {"spec": {"dnsPolicy": "ClusterFirst", "hostNetwork": True, "containers": [{"name": "agent"}]}}
+        rollout = _make_rollout()
+        job = build_job_spec(rollout, template, settings)
+        assert job["spec"]["template"]["spec"]["dnsPolicy"] == "ClusterFirst"
+        assert job["spec"]["template"]["spec"]["hostNetwork"] is True
 
-    def test_mounts_host_path(self, settings: ControllerSettings):
+
+class TestMultiContainer:
+    def test_other_containers_preserved(self, settings):
+        rollout = _make_rollout()
+        job = build_job_spec(rollout, _multi_container_template(), settings)
+
+        containers = job["spec"]["template"]["spec"]["containers"]
+        names = [c["name"] for c in containers]
+        assert "agent" in names
+        assert "scorer" in names
+
+        scorer = next(c for c in containers if c["name"] == "scorer")
+        assert scorer["image"] == "scorer:latest"
+        assert scorer["command"] == ["python", "score.py"]
+
+    def test_volumes_preserved(self, settings):
+        rollout = _make_rollout()
+        job = build_job_spec(rollout, _multi_container_template(), settings)
+        volumes = job["spec"]["template"]["spec"]["volumes"]
+        assert any(v["name"] == "workspace" for v in volumes)
+
+
+class TestOverrides:
+    def test_override_other_container_image(self, settings):
+        """Per-rollout override of scorer container image (SWE-bench case)."""
         rollout = _make_rollout(
             config_overrides={
-                "mount": [{"name": "data", "mount_path": "/data", "source": "/host/data"}],
+                "overrides": {"containers": [{"name": "scorer", "image": "repo-123-test"}]}
             }
         )
+        job = build_job_spec(rollout, _multi_container_template(), settings)
+
+        scorer = next(c for c in job["spec"]["template"]["spec"]["containers"] if c["name"] == "scorer")
+        assert scorer["image"] == "repo-123-test"
+        # Original command preserved.
+        assert scorer["command"] == ["python", "score.py"]
+
+    def test_override_pod_level_field(self, settings):
+        """Override adds a pod-level field."""
+        rollout = _make_rollout(config_overrides={"overrides": {"dnsPolicy": "Default"}})
+        job = build_job_spec(rollout, _simple_template(), settings)
+        assert job["spec"]["template"]["spec"]["dnsPolicy"] == "Default"
+
+    def test_override_unknown_container_ignored(self, settings):
+        """Override for a container not in the template is silently ignored."""
+        rollout = _make_rollout(
+            config_overrides={
+                "overrides": {"containers": [{"name": "nonexistent", "image": "foo"}]}
+            }
+        )
+        job = build_job_spec(rollout, _simple_template(), settings)
+        names = [c["name"] for c in job["spec"]["template"]["spec"]["containers"]]
+        assert "nonexistent" not in names
+
+    def test_template_not_mutated(self, settings):
+        """Ensure the original template dict is not modified."""
+        template = _simple_template()
+        original_image_pull = template["spec"]["containers"][0].get("imagePullPolicy")
+
+        rollout = _make_rollout(config_overrides={"overrides": {"containers": [{"name": "agent", "resources": {"limits": {"gpu": "1"}}}]}})
+        build_job_spec(rollout, template, settings)
+
+        # Template should be unchanged.
+        assert template["spec"]["containers"][0].get("imagePullPolicy") == original_image_pull
+        assert "limits" not in template["spec"]["containers"][0].get("resources", {})
+
+
+class TestMounts:
+    def test_host_path(self, settings):
+        rollout = _make_rollout(config_overrides={"mount": [{"name": "data", "mount_path": "/data", "source": "/host/data"}]})
         job = build_job_spec(rollout, None, settings)
-
         container = job["spec"]["template"]["spec"]["containers"][0]
-        assert container["volumeMounts"][0]["name"] == "data"
         assert container["volumeMounts"][0]["mountPath"] == "/data"
-
         volumes = job["spec"]["template"]["spec"]["volumes"]
         assert volumes[0]["hostPath"]["path"] == "/host/data"
 
-    def test_mounts_pvc(self, settings: ControllerSettings):
-        rollout = _make_rollout(
-            config_overrides={
-                "mount": [{"name": "workspace", "mount_path": "/work", "source": "pvc:my-pvc"}],
-            }
-        )
+    def test_pvc(self, settings):
+        rollout = _make_rollout(config_overrides={"mount": [{"name": "ws", "mount_path": "/work", "source": "pvc:my-pvc"}]})
         job = build_job_spec(rollout, None, settings)
-
         volumes = job["spec"]["template"]["spec"]["volumes"]
         assert volumes[0]["persistentVolumeClaim"]["claimName"] == "my-pvc"
 
-    def test_mounts_configmap(self, settings: ControllerSettings):
-        rollout = _make_rollout(
-            config_overrides={
-                "mount": [{"name": "cfg", "mount_path": "/etc/config", "source": "my-configmap"}],
-            }
-        )
+    def test_configmap(self, settings):
+        rollout = _make_rollout(config_overrides={"mount": [{"name": "cfg", "mount_path": "/etc/config", "source": "my-cm"}]})
         job = build_job_spec(rollout, None, settings)
-
         volumes = job["spec"]["template"]["spec"]["volumes"]
-        assert volumes[0]["configMap"]["name"] == "my-configmap"
-
-    def test_overrides_escape_hatch(self, settings: ControllerSettings):
-        defaults = JobDefaults(
-            overrides={
-                "template": {"metadata": {"annotations": {"iam.amazonaws.com/role": "my-role"}}},
-            }
-        )
-        rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
-
-        annotations = job["spec"]["template"]["metadata"]["annotations"]
-        assert annotations["iam.amazonaws.com/role"] == "my-role"
-        # Labels should still be preserved (deep merge, not replace).
-        assert "agl-lite/rollout-id" in job["spec"]["template"]["metadata"]["labels"]
-
-    def test_overrides_add_new_fields(self, settings: ControllerSettings):
-        defaults = JobDefaults(overrides={"completionMode": "Indexed"})
-        rollout = _make_rollout()
-        job = build_job_spec(rollout, defaults, settings)
-
-        assert job["spec"]["completionMode"] == "Indexed"
+        assert volumes[0]["configMap"]["name"] == "my-cm"
 
 
 class TestDeepMerge:

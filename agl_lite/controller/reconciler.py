@@ -19,10 +19,31 @@ from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.controller.config import ControllerSettings
 from agl_lite.controller.job_builder import build_job_name, build_job_spec
 from agl_lite.schemas.api import PatchRolloutRequest
-from agl_lite.schemas.resources import JobDefaults, ResourcesUpdate
+from agl_lite.schemas.resources import ResourcesUpdate
 from agl_lite.schemas.rollout import Rollout, RolloutStatus
 
 log = structlog.get_logger()
+
+
+# --- Error classification ---
+
+
+def _is_invalid_spec_error(exc: Exception) -> bool:
+    """Distinguish permanent spec errors from transient resource errors.
+
+    K8s API returns:
+      - 422 Unprocessable Entity: invalid spec (bad fields, schema errors) → permanent
+      - 409 Conflict: name collision → transient (retry)
+      - 403 Forbidden: quota exceeded → transient (retry when quota frees)
+      - Other: treat as transient (network errors, timeouts, etc.)
+
+    We check the string representation for known kr8s/httpx error patterns.
+    """
+    msg = str(exc).lower()
+    # kr8s raises ServerError with status code info.
+    if "422" in msg or "unprocessable" in msg or "invalid" in msg:
+        return True
+    return False
 
 
 # --- K8s abstraction (for testability) ---
@@ -161,11 +182,11 @@ class Reconciler:
             )
             return
 
-        # Fetch resources (with caching).
-        job_defaults = await self._get_job_defaults(rollout.resources_id)
+        # Fetch job_template (with caching).
+        job_template = await self._get_job_template(rollout.resources_id)
 
         # Build and create Job.
-        manifest = build_job_spec(rollout, job_defaults, self._settings)
+        manifest = build_job_spec(rollout, job_template, self._settings)
         try:
             await self._k8s.create_job(manifest)
             log.info("Job created", rollout_id=rollout.rollout_id, job_name=job_name)
@@ -174,8 +195,20 @@ class Reconciler:
                 PatchRolloutRequest(status=RolloutStatus.RUNNING, job_name=job_name),
             )
         except Exception as e:
-            # Job creation failed — stay in queuing, retry next cycle.
-            log.warning("Job creation failed — will retry", rollout_id=rollout.rollout_id, error=str(e))
+            error_str = str(e)
+            if _is_invalid_spec_error(e):
+                # Permanent error — bad job template or rollout config.
+                log.error("Invalid Job spec — marking failed", rollout_id=rollout.rollout_id, error=error_str)
+                await self._patch_rollout(
+                    rollout.rollout_id,
+                    PatchRolloutRequest(
+                        status=RolloutStatus.TERMINAL_FAILED,
+                        error_message=f"Invalid Job spec: {error_str}",
+                    ),
+                )
+            else:
+                # Transient error (resource shortage, API timeout) — stay queuing, retry.
+                log.warning("Job creation failed — will retry", rollout_id=rollout.rollout_id, error=error_str)
 
     async def _cancel_rollout(self, rollout: Rollout) -> None:
         """Cancel a queuing rollout (no Job exists)."""
@@ -284,8 +317,8 @@ class Reconciler:
 
     # --- Helpers ---
 
-    async def _get_job_defaults(self, resources_id: str | None) -> JobDefaults | None:
-        """Fetch job_defaults from resources, with caching."""
+    async def _get_job_template(self, resources_id: str | None) -> dict[str, Any] | None:
+        """Fetch job_template (raw pod spec dict) from resources, with caching."""
         if not resources_id:
             return None
 
@@ -300,10 +333,7 @@ class Reconciler:
                 log.warning("Failed to fetch resources", resources_id=resources_id)
                 return None
 
-        raw = res.resources.get("job_defaults")
-        if raw is None:
-            return None
-        return JobDefaults.model_validate(raw)
+        return res.resources.get("job_template")
 
     async def _patch_rollout(self, rollout_id: str, patch: PatchRolloutRequest) -> None:
         """Patch a rollout, handling errors gracefully."""

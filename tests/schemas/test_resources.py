@@ -1,50 +1,6 @@
-"""Tests for resource schemas — JobDefaults validation, snapshot semantics."""
+"""Tests for resource schemas — snapshot semantics, job_template as opaque dict."""
 
-from agl_lite.schemas.resources import JobDefaults, K8sResources, ResourcesUpdate
-
-
-class TestJobDefaults:
-    def test_minimal(self):
-        jd = JobDefaults()
-        assert jd.resources is None
-        assert jd.node_selector == {}
-        assert jd.tolerations == []
-        assert jd.service_account is None
-        assert jd.image_pull_secrets == []
-        assert jd.timeout is None
-        assert jd.max_retries is None
-        assert jd.overrides == {}
-
-    def test_full(self):
-        jd = JobDefaults(
-            resources=K8sResources(
-                requests={"cpu": "500m", "memory": "1Gi"},
-                limits={"cpu": "2", "memory": "4Gi"},
-            ),
-            node_selector={"gpu": "a100"},
-            tolerations=[{"key": "gpu", "operator": "Exists", "effect": "NoSchedule"}],
-            service_account="agl-agent",
-            image_pull_secrets=["registry-creds"],
-            timeout=300,
-            max_retries=2,
-        )
-        assert jd.resources.requests["cpu"] == "500m"
-        assert jd.node_selector["gpu"] == "a100"
-        assert jd.timeout == 300
-
-    def test_overrides_escape_hatch(self):
-        """Unknown K8s fields go into overrides, not rejected."""
-        jd = JobDefaults(
-            timeout=600,
-            overrides={
-                "dnsPolicy": "ClusterFirst",
-                "labels": {"team": "ml-infra"},
-                "annotations": {"iam.amazonaws.com/role": "arn:aws:iam::role/agent"},
-            },
-        )
-        assert jd.overrides["dnsPolicy"] == "ClusterFirst"
-        assert jd.overrides["labels"]["team"] == "ml-infra"
-        assert jd.timeout == 600
+from agl_lite.schemas.resources import ResourcesUpdate
 
 
 class TestResourcesUpdate:
@@ -56,31 +12,46 @@ class TestResourcesUpdate:
         )
         assert r.resources["system_prompt"] == "You are helpful"
 
-    def test_validates_job_defaults_when_present(self):
+    def test_job_template_is_opaque(self):
+        """job_template is stored as-is — no validation at store level."""
         r = ResourcesUpdate(
             resources_id="res-2",
             resources={
-                "job_defaults": {"resources": {"requests": {"cpu": "1"}}, "timeout": 600},
+                "job_template": {
+                    "spec": {
+                        "serviceAccountName": "default",
+                        "containers": [
+                            {"name": "agent", "imagePullPolicy": "Never", "resources": {"requests": {"cpu": "1"}}}
+                        ],
+                    }
+                },
                 "prompt": "hello",
             },
             created_at=1000.0,
         )
-        assert r.resources["job_defaults"]["timeout"] == 600
+        assert r.resources["job_template"]["spec"]["serviceAccountName"] == "default"
 
-    def test_validates_job_defaults_with_overrides(self):
+    def test_job_template_any_k8s_fields(self):
+        """Any valid K8s field can go in job_template — no schema restrictions."""
         r = ResourcesUpdate(
             resources_id="res-3",
             resources={
-                "job_defaults": {
-                    "timeout": 300,
-                    "overrides": {"dnsPolicy": "ClusterFirst"},
+                "job_template": {
+                    "spec": {
+                        "nodeSelector": {"gpu": "a100"},
+                        "tolerations": [{"key": "gpu", "operator": "Exists"}],
+                        "dnsPolicy": "ClusterFirst",
+                        "containers": [{"name": "agent"}, {"name": "scorer", "image": "scorer:latest"}],
+                    }
                 },
             },
             created_at=1000.0,
         )
-        assert r.resources["job_defaults"]["overrides"]["dnsPolicy"] == "ClusterFirst"
+        template = r.resources["job_template"]
+        assert template["spec"]["nodeSelector"]["gpu"] == "a100"
+        assert len(template["spec"]["containers"]) == 2
 
-    def test_no_validation_without_job_defaults_key(self):
+    def test_no_job_template_is_fine(self):
         r = ResourcesUpdate(
             resources_id="res-4",
             resources={"anything": {"nested": {"deeply": True}}},

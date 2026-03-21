@@ -1,15 +1,15 @@
-"""Job spec builder — pure function that converts rollout + resources into a K8s Job manifest.
+"""Job spec builder — pure function that converts rollout + job_template into a K8s Job manifest.
 
 No I/O, no K8s API calls. Easy to unit test.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any
 
 from agl_lite.controller.config import ControllerSettings
-from agl_lite.schemas.resources import JobDefaults
 from agl_lite.schemas.rollout import Rollout
 
 
@@ -20,36 +20,97 @@ def build_job_name(rollout_id: str) -> str:
 
 def build_job_spec(
     rollout: Rollout,
-    job_defaults: JobDefaults | None,
+    job_template: dict[str, Any] | None,
     settings: ControllerSettings,
 ) -> dict[str, Any]:
-    """Build a K8s Job manifest dict from rollout config + job defaults + controller settings.
+    """Build a K8s Job manifest from rollout config + job_template + controller settings.
 
-    Merge order (last wins):
-        1. job_defaults (infra-level defaults from resources snapshot)
-        2. rollout.config (algorithm-specified overrides)
-        3. controller settings (namespace, secret, ttl)
+    Merge order:
+        1. job_template (raw pod spec from resources snapshot — infra/task environment)
+        2. rollout.config.overrides (per-rollout K8s overrides, name-matched containers)
+        3. rollout.config named fields (image, command, env vars → agent container)
+        4. controller fields (namespace, labels, gateway env vars, secret refs)
     """
     config = rollout.config
-    defaults = job_defaults or JobDefaults()
+    template = copy.deepcopy(job_template) if job_template else {}
 
-    # --- Resolve execution policy ---
-    timeout = config.timeout or defaults.timeout
-    max_retries = config.max_retries if config.max_retries is not None else defaults.max_retries
+    # --- Start from template as pod spec ---
+    pod_spec: dict[str, Any] = template.get("spec", {}) if "spec" in template else copy.deepcopy(template)
 
-    # --- Build container env vars ---
+    # Ensure restartPolicy is Never (controller requirement).
+    pod_spec.setdefault("restartPolicy", "Never")
+
+    # Ensure containers list exists.
+    pod_spec.setdefault("containers", [])
+
+    # --- Apply rollout overrides (name-matched container merge) ---
+    if config.overrides:
+        overrides = copy.deepcopy(config.overrides)
+        # Handle containers specially: merge by name.
+        override_containers = overrides.pop("containers", [])
+        for oc in override_containers:
+            oc_name = oc.get("name")
+            if not oc_name:
+                continue
+            # Find matching container by name.
+            matched = False
+            for container in pod_spec["containers"]:
+                if container.get("name") == oc_name:
+                    _deep_merge(container, oc)
+                    matched = True
+                    break
+            if not matched:
+                # No matching container — skip (don't add unknown containers).
+                pass
+
+        # Merge remaining override fields into pod spec.
+        _deep_merge(pod_spec, overrides)
+
+    # --- Find or create the "agent" container ---
+    agent_container = None
+    for c in pod_spec["containers"]:
+        if c.get("name") == "agent":
+            agent_container = c
+            break
+
+    if agent_container is None:
+        agent_container = {"name": "agent"}
+        pod_spec["containers"].insert(0, agent_container)
+
+    # --- Inject RolloutConfig named fields into agent container ---
+    agent_container["image"] = config.image
+
+    if config.command:
+        agent_container["command"] = config.command
+
+    # Volume mounts from rollout config.
+    if config.mount:
+        agent_container.setdefault("volumeMounts", [])
+        for m in config.mount:
+            agent_container["volumeMounts"].append(
+                {"name": m.name, "mountPath": m.mount_path, "readOnly": m.read_only}
+            )
+        # Add volume definitions to pod spec.
+        pod_spec.setdefault("volumes", [])
+        for m in config.mount:
+            vol: dict[str, Any] = {"name": m.name}
+            if m.source.startswith("/"):
+                vol["hostPath"] = {"path": m.source}
+            elif m.source.startswith("pvc:"):
+                vol["persistentVolumeClaim"] = {"claimName": m.source[4:]}
+            else:
+                vol["configMap"] = {"name": m.source}
+            pod_spec["volumes"].append(vol)
+
+    # --- Inject controller env vars into agent container ---
     gateway_base = f"{settings.lite_url}/rollout/{rollout.rollout_id}/attempt/$(AGL_POD_UID)"
     event_url = f"{gateway_base}/events"
 
-    env: list[dict[str, Any]] = [
-        # Pod UID via Downward API — used to construct attempt_id.
+    controller_env: list[dict[str, Any]] = [
         {
             "name": "AGL_POD_UID",
             "valueFrom": {"fieldRef": {"fieldPath": "metadata.uid"}},
         },
-        # Single AGL_KEY from Secret — used for all auth (gateway, event posts).
-        # Also injected as OPENAI_API_KEY and ANTHROPIC_API_KEY so SDKs send it
-        # as Authorization: Bearer / x-api-key headers automatically.
         {
             "name": "AGL_KEY",
             "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
@@ -62,77 +123,24 @@ def build_job_spec(
             "name": "ANTHROPIC_API_KEY",
             "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
         },
-        # SDK base URLs — point to agl-lite gateway.
         {"name": "OPENAI_BASE_URL", "value": f"{gateway_base}/v1"},
         {"name": "ANTHROPIC_BASE_URL", "value": f"{gateway_base}/v1"},
-        # Task input and event URL.
         {"name": "AGL_TASK_INPUT", "value": json.dumps(rollout.input)},
         {"name": "AGL_EVENT_URL", "value": event_url},
     ]
 
-    # User-specified env vars from rollout config (override defaults).
+    # User-specified env vars from rollout config.
     for key, value in config.environment_variables.items():
-        env.append({"name": key, "value": value})
+        controller_env.append({"name": key, "value": value})
 
-    # --- Build container spec ---
-    container: dict[str, Any] = {
-        "name": "agent",
-        "image": config.image,
-        "env": env,
-    }
-
-    if config.command:
-        container["command"] = config.command
-
-    # Resource requests/limits from job_defaults.
-    if defaults.resources:
-        container["resources"] = {}
-        if defaults.resources.requests:
-            container["resources"]["requests"] = defaults.resources.requests
-        if defaults.resources.limits:
-            container["resources"]["limits"] = defaults.resources.limits
-
-    # Volume mounts from rollout config.
-    if config.mount:
-        container["volumeMounts"] = [
-            {"name": m.name, "mountPath": m.mount_path, "readOnly": m.read_only} for m in config.mount
-        ]
-
-    # --- Build pod spec ---
-    pod_spec: dict[str, Any] = {
-        "restartPolicy": "Never",
-        "containers": [container],
-    }
-
-    if defaults.service_account:
-        pod_spec["serviceAccountName"] = defaults.service_account
-
-    if defaults.node_selector:
-        pod_spec["nodeSelector"] = defaults.node_selector
-
-    if defaults.tolerations:
-        pod_spec["tolerations"] = defaults.tolerations
-
-    if defaults.image_pull_secrets:
-        pod_spec["imagePullSecrets"] = [{"name": s} for s in defaults.image_pull_secrets]
-
-    # Volumes from rollout config mounts.
-    if config.mount:
-        volumes: list[dict[str, Any]] = []
-        for m in config.mount:
-            vol: dict[str, Any] = {"name": m.name}
-            # Heuristic: if source looks like a PVC name, use persistentVolumeClaim.
-            # If it starts with /, use hostPath. Otherwise, use configMap.
-            if m.source.startswith("/"):
-                vol["hostPath"] = {"path": m.source}
-            elif m.source.startswith("pvc:"):
-                vol["persistentVolumeClaim"] = {"claimName": m.source[4:]}
-            else:
-                vol["configMap"] = {"name": m.source}
-            volumes.append(vol)
-        pod_spec["volumes"] = volumes
+    # Prepend controller env vars (so template env vars don't override them).
+    existing_env = agent_container.get("env", [])
+    agent_container["env"] = controller_env + existing_env
 
     # --- Build Job spec ---
+    timeout = config.timeout
+    max_retries = config.max_retries
+
     job_spec: dict[str, Any] = {
         "backoffLimit": max_retries if max_retries is not None else 0,
         "ttlSecondsAfterFinished": settings.ttl_after_finished,
@@ -151,7 +159,7 @@ def build_job_spec(
         job_spec["activeDeadlineSeconds"] = timeout
 
     # --- Build full Job manifest ---
-    job: dict[str, Any] = {
+    return {
         "apiVersion": "batch/v1",
         "kind": "Job",
         "metadata": {
@@ -164,12 +172,6 @@ def build_job_spec(
         },
         "spec": job_spec,
     }
-
-    # --- Apply overrides escape hatch ---
-    if defaults.overrides:
-        _deep_merge(job["spec"], defaults.overrides)
-
-    return job
 
 
 def _deep_merge(base: dict, override: dict) -> None:

@@ -78,7 +78,7 @@ class TestClientCLI:
         assert not any(m["model"] == "to-delete" for m in models)
 
     def test_resources_add_and_latest(self, server) -> None:
-        _run_cli("resources", "add", '{"job_defaults": {}, "system_prompt": "test"}')
+        _run_cli("resources", "add", '{"job_template": {}, "system_prompt": "test"}')
         out = _run_cli("resources", "latest")
         res = json.loads(out)
         assert "resources_id" in res

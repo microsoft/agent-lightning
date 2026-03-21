@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -48,20 +49,28 @@ class Mount(BaseModel):
 class RolloutConfig(BaseModel):
     """Algorithm-facing config. Describes the containerized task.
 
-    K8s-specific infra details (resources, nodeSelector, etc.) come from
-    the controller's job defaults (from resources snapshot) — the algorithm
-    never sees infra-level K8s details like nodeSelector or tolerations.
+    Named fields target the 'agent' container in the pod spec.
+    The 'overrides' field provides per-rollout K8s overrides for the pod spec,
+    including other containers via overrides.containers (name-matched merge).
+
+    K8s pod-level infra details (nodeSelector, tolerations, etc.) come from
+    the job_template in the resources snapshot — not here.
     """
 
-    # Required — describe the container.
+    # Required — describe the agent container.
     image: str
     command: list[str] = Field(default_factory=list)
     environment_variables: dict[str, str] = Field(default_factory=dict)
     mount: list[Mount] = Field(default_factory=list)
 
-    # Optional — execution policy (defaults from job_defaults in resources).
+    # Optional — execution policy.
     timeout: int | None = None  # seconds → K8s activeDeadlineSeconds
     max_retries: int | None = None  # retry count → K8s backoffLimit
+
+    # Per-rollout K8s overrides (optional). Merged into the pod spec.
+    # Use overrides.containers (list of {name: ..., ...}) for name-matched
+    # merge into other containers (e.g., different scorer image per task).
+    overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 class Rollout(BaseModel):

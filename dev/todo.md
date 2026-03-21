@@ -113,7 +113,7 @@ examples/
 - [x] Uses `openai` SDK (max_retries=5 for 503 handling). Does NOT import agl-lite.
 - [x] Pure source code — no Dockerfile here
 
-### 4a.4b Refactor: `job_defaults` → `job_template` (raw K8s spec) [discuss]
+### 4a.4b Refactor: `job_defaults` → `job_template` (raw K8s spec) [completed]
 
 **Blocking**: must complete before 4a.5 (math-poc needs `imagePullPolicy: Never`).
 

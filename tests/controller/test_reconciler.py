@@ -367,7 +367,7 @@ class TestResourcesCaching:
 
         res = ResourcesUpdate(
             resources_id="res-1",
-            resources={"job_defaults": {"timeout": 300}},
+            resources={"job_template": {"spec": {"containers": [{"name": "agent"}]}}},
             created_at=1000.0,
         )
         mock_api.get_resources = AsyncMock(return_value=res)
@@ -375,28 +375,28 @@ class TestResourcesCaching:
         rec = Reconciler(mock_api, mock_k8s, _settings())
 
         # First call fetches.
-        defaults = await rec._get_job_defaults("res-1")
-        assert defaults is not None
-        assert defaults.timeout == 300
+        template = await rec._get_job_template("res-1")
+        assert template is not None
+        assert template["spec"]["containers"][0]["name"] == "agent"
         assert mock_api.get_resources.call_count == 1
 
         # Second call uses cache.
-        defaults2 = await rec._get_job_defaults("res-1")
-        assert defaults2 is not None
+        template2 = await rec._get_job_template("res-1")
+        assert template2 is not None
         assert mock_api.get_resources.call_count == 1  # still 1
 
     async def test_no_resources_id(self, mock_api: AsyncMock, mock_k8s: MockK8s):
         rec = Reconciler(mock_api, mock_k8s, _settings())
-        defaults = await rec._get_job_defaults(None)
-        assert defaults is None
+        template = await rec._get_job_template(None)
+        assert template is None
         mock_api.get_resources.assert_not_called()
 
     async def test_resources_fetch_error(self, mock_api: AsyncMock, mock_k8s: MockK8s):
         mock_api.get_resources = AsyncMock(side_effect=AglLiteError(404, "not found"))
 
         rec = Reconciler(mock_api, mock_k8s, _settings())
-        defaults = await rec._get_job_defaults("bad-id")
-        assert defaults is None
+        template = await rec._get_job_template("bad-id")
+        assert template is None
 
 
 class TestHelpers:

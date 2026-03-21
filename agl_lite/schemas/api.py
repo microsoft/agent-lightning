@@ -74,7 +74,7 @@ class DeleteModelServersRequest(BaseModel):
 class AddResourcesRequest(BaseModel):
     """Add a new resource snapshot."""
 
-    resources: dict[str, Any]  # {"job_defaults": {...}, "system_prompt": "...", ...}
+    resources: dict[str, Any]  # {"job_template": {...}, "system_prompt": "...", ...}
 
 
 # --- Archive API ---
