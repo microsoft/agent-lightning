@@ -44,11 +44,11 @@
 | 11 | **Dataset**: GSM8K 30-problem subset (`examples/math-poc/data/gsm8k_sample.jsonl`). Algorithm embeds correct or randomly wrong answers in the prompt. Mockai (echo mode) echoes the prompt back. Reward function extracts embedded answer and compares to ground truth — real parsing, mix of reward 1.0/0.0, fully verifiable. No mockai modification needed. |
 | 12 | **Agent image**: Contains all agent scripts at `/app/`. Rollout `config.command` selects which to run (e.g. `["python", "/app/qa_agent.py"]`). Image = environment, command = task. |
 | 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
-| 14 | **Configuration**: Single `deploy/config.yaml` (structured YAML with `k8s:`, `controller:`, `serve:` sections). `AGL_KEY` is the only secret — env var only, never on disk, no `.env` file. Deploy script (Python) reads config.yaml, flattens `k8s:` + `controller:` sections into ConfigMap literal keys, and includes full YAML as file key. |
+| 14 | **Configuration**: Single `deploy/.env` (flat KEY=VALUE). Contains all config: namespace, URLs, controller settings. `AGL_KEY` placeholder commented out — user sets via env var or uncomments. Deploy script creates ConfigMap from `.env` (excluding `AGL_KEY`), Secret from `$AGL_KEY` env var. No YAML config, no Python parsing. |
 | 15 | **Dockerfile**: Use `uv` for fast installs (`curl -LsSf https://astral.sh/uv/install.sh`). `.dockerignore` excludes `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`. |
 | 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_K8S_NAMESPACE` from `.env`. Works for any namespace. |
 | 17 | **Phase 4a topology**: All-in-K8s (agl-lite serve, controller, mockai as Deployments). Only algorithm script runs on host (via port-forward). Avoids host↔K8s bridging complexity. |
-| 18 | **Deploy scripts**: Python for deploy (`scripts/deploy.py` — reads config.yaml, flattens to ConfigMap, creates namespace/secret/manifests, waits). Bash for image builds (`scripts/build_images.sh`). PoC orchestration in `examples/math-poc/run.py`. |
+| 18 | **Deploy scripts**: Bash for deploy (`scripts/deploy.sh` — reads .env, creates namespace/secret/configmap/manifests, waits) and image builds (`scripts/build_images.sh`). PoC orchestration in `examples/math-poc/run.py` (Python — needs port-forward lifecycle, AglLiteClient). |
 
 ### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [completed]
 - [x] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler

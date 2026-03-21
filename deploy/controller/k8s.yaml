@@ -36,11 +36,18 @@ spec:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_K8S_NAMESPACE
-          volumeMounts:
-            - name: config
-              mountPath: /etc/agl-lite
-              readOnly: true
-      volumes:
-        - name: config
-          configMap:
-            name: agl-lite-config
+            - name: AGL_SECRET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_SECRET_NAME
+            - name: AGL_POLL_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_POLL_INTERVAL
+            - name: AGL_MAX_QUEUE_TIME
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_MAX_QUEUE_TIME

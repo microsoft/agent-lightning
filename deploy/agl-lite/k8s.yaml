@@ -27,20 +27,12 @@ spec:
                 secretKeyRef:
                   name: agl-lite-keys
                   key: AGL_KEY
-          volumeMounts:
-            - name: config
-              mountPath: /etc/agl-lite
-              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
-      volumes:
-        - name: config
-          configMap:
-            name: agl-lite-config
 ---
 apiVersion: v1
 kind: Service
