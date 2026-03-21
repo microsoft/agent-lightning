@@ -33,7 +33,12 @@ deploy/
 
 3. Deploy:
    ```bash
-   scripts/deploy.py
+   scripts/deploy.sh
+   ```
+
+4. Teardown:
+   ```bash
+   scripts/deploy.sh --teardown
    ```
 
 ## Manual Deploy
@@ -48,9 +53,13 @@ kubectl create namespace $AGL_K8S_NAMESPACE --dry-run=client -o yaml | kubectl a
 kubectl -n $AGL_K8S_NAMESPACE create secret generic agl-lite-keys \
   --from-literal=AGL_KEY="$AGL_KEY" --dry-run=client -o yaml | kubectl apply -f -
 
-# Create configmap from config.yaml
+# Create configmap (YAML file + extracted values as env-accessible keys)
+AGL_LITE_URL=$(grep '^agl_lite_url:' deploy/config.yaml | awk '{print $2}')
 kubectl -n $AGL_K8S_NAMESPACE create configmap agl-lite-config \
-  --from-env-file=deploy/config.yaml --dry-run=client -o yaml | kubectl apply -f -
+  --from-file=config.yaml=deploy/config.yaml \
+  --from-literal=AGL_K8S_NAMESPACE="$AGL_K8S_NAMESPACE" \
+  --from-literal=AGL_LITE_URL="$AGL_LITE_URL" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # Apply manifests
 kubectl apply -n $AGL_K8S_NAMESPACE -f deploy/controller/rbac.yaml
