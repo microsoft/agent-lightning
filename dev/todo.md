@@ -106,12 +106,12 @@ examples/
 └── README.md
 ```
 
-### 4a.4 Example agents (`examples/agents/python/`) [discuss]
-- [ ] `qa_agent.py` — simplest: read `AGL_TASK_INPUT`, one LLM call via `OPENAI_BASE_URL`, print result
-- [ ] `react_agent.py` — multi-turn: tool-use loop with multiple LLM calls (tests multi-event capture)
-- [ ] `CRASH_ON_FIRST=1` env var support in qa_agent (for retry test)
-- [ ] Does NOT import agl-lite — proves language-agnostic contract
-- [ ] Pure source code — no Dockerfile here (Dockerfile is PoC-specific, lives in `examples/math-poc/`)
+### 4a.4 Example agents (`examples/agents/python/`) [completed]
+- [x] `qa_agent.py` — read `AGL_TASK_INPUT`, one LLM call via openai SDK, print result
+- [ ] `react_agent.py` — placeholder for future (multi-turn tool loop)
+- [x] `CRASH_ON_FIRST=1` env var support (marker file so only first attempt crashes)
+- [x] Uses `openai` SDK (max_retries=5 for 503 handling). Does NOT import agl-lite.
+- [x] Pure source code — no Dockerfile here
 
 ### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [discuss]
 - [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
