@@ -347,7 +347,7 @@ class Rollout:
     
     input: Dict                         # task description (delivered as AGL_TASK_INPUT env var)
     config: RolloutConfig               # algorithm-facing Job config (see below)
-    resources_id: Optional[str] = None   # links to immutable resource snapshot (job_defaults, prompts, etc.)
+    resources_id: Optional[str] = None   # links to immutable resource snapshot (job_template, prompts, etc.)
     
     # Set by controller during lifecycle
     job_name: Optional[str]             # K8s Job name (set on Job creation)
@@ -373,8 +373,9 @@ class RolloutConfig:
     mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
     
     # Optional — execution policy
-    timeout: Optional[int] = None       # seconds (default from job_defaults in resources)
-    max_retries: Optional[int] = None   # retry count (default from job_defaults in resources)
+    timeout: Optional[int] = None       # seconds
+    max_retries: Optional[int] = None   # retry count
+    overrides: Optional[dict] = None    # per-rollout K8s overrides (e.g., other container images)
 
 class Mount:
     name: str                           # volume name
@@ -387,7 +388,7 @@ class Mount:
 
 | Key | Used by | Purpose |
 |-----|---------|---------|
-| `job_defaults` | K8s Controller | Infra-level Job spec defaults (resources, nodeSelector, tolerations, serviceAccount, imagePullSecrets, timeout, max_retries). Known fields are typed and validated; an `overrides` dict provides an escape hatch for arbitrary K8s fields (labels, annotations, dnsPolicy, etc.) that the controller merges raw into the Job spec. |
+| `job_template` | K8s Controller | Raw K8s pod spec (any valid K8s fields). Loaded from a YAML file, stored as an opaque dict. No typed schema — the store does not validate it. The controller uses it as the base pod spec, injects RolloutConfig into the `agent` container, and wraps in Job metadata. See [Job template](#job-template) for merge logic and examples. |
 
 All other keys are user-defined and opaque to agl-lite (prompts, eval configs, etc.).
 
@@ -847,39 +848,93 @@ On creation failure due to `AlreadyExists`, the controller fetches the existing 
 #### Job template
 
 The controller builds each Job spec by merging two layers:
-1. **`job_defaults`** from the rollout's resource snapshot (`resources_id` → `/api/resources/{id}`) — infra-level defaults set by the algorithm's setup script or DevOps
-2. **`rollout.config`** — algorithm-level overrides from the rollout record
+1. **`job_template`** from the rollout's resource snapshot (`resources_id` → `/api/resources/{id}`) — a raw K8s **pod spec** loaded from a YAML file, maintained by the infra team or researcher per experiment
+2. **`rollout.config`** — per-rollout config set by the algorithm (image, command, env vars, and optionally overrides for other containers)
 
-Resource snapshots are immutable — each POST creates a new snapshot with a new ID. A rollout references one `resources_id` that bundles everything it needs (job_defaults, prompts, eval config — all in one Dict). The controller deduplicates fetches within a reconcile cycle (a batch of 500 rollouts shares the same `resources_id` → fetched once). No invalidation logic needed — IDs never change.
+Resource snapshots are immutable — each POST creates a new snapshot with a new ID. A rollout references one `resources_id` that bundles everything it needs (job_template, prompts, eval config — all in one Dict). The controller deduplicates fetches within a reconcile cycle (a batch of 500 rollouts shares the same `resources_id` → fetched once). No invalidation logic needed — IDs never change.
 
+**Design principles:**
+- `job_template` is a **raw K8s pod spec** (any valid K8s field works, no typed schema, no validation at store level)
+- The controller owns one convention: inject into the container named **`agent`**
+- Other containers in the template are passed through unchanged
+- `RolloutConfig` named fields (image, command, env_vars) target the `agent` container
+- `RolloutConfig.overrides` provides per-rollout overrides, including for other containers via `overrides.containers` (name-matched merge)
+
+**Merge order:**
 ```
-resources[id].job_defaults (infra)   rollout.config (algorithm)
-┌──────────────────────┐             ┌──────────────────────┐
-│ resources:           │             │ image: my-agent:v2   │
-│   cpu: "500m"        │             │ command: ["python",  │
-│   memory: "1Gi"      │             │   "solve.py"]        │
-│ node_selector:       │             │ timeout: 600         │
-│   gpu: "a100"        │             │ max_retries: 3       │
-│ tolerations: [...]   │             │ environment_variables:│
-│ service_account: ... │             │   {DEBUG: "1"}       │
-│ image_pull_secrets:  │             │ mount: [{...}]       │
-│   ["registry-creds"] │                       │
-│ timeout: 300         │  ← default            │
-│ max_retries: 1       │  ← default            │
-│ overrides:           │  ← escape hatch       │
-│   dnsPolicy: "..."   │                       │
-│   labels: {team: ..} │                       │
-└──────────────────────┘                       │
-           │                                   │
-           └──────── merge ────────────────────┘
-                       │
-                       ▼
-                  K8s Job spec
+job_template (raw pod spec, from YAML file)
+  │
+  ├── Deep merge rollout.config.overrides (if any)
+  │     └── overrides.containers: name-matched merge into pod containers
+  │
+  ├── Inject into "agent" container:
+  │     ├── image (from rollout.config.image)
+  │     ├── command (from rollout.config.command)
+  │     ├── env vars (from rollout.config.environment_variables)
+  │     └── env vars (controller: gateway URLs, keys, task input)
+  │
+  └── Wrap in Job metadata:
+        ├── name, namespace, labels (controller)
+        ├── backoffLimit (from rollout.config.max_retries or template default)
+        ├── activeDeadlineSeconds (from rollout.config.timeout or template default)
+        └── ttlSecondsAfterFinished (controller setting)
 ```
 
-Algorithm fields override defaults where specified; infra fields fill in the rest. The algorithm never sees `nodeSelector`, `tolerations`, or resource requests.
+**Example use cases:**
 
-Example generated Job:
+*Simple (same image for all tasks — math, QA):*
+```yaml
+# job-template.yaml
+spec:
+  containers:
+    - name: agent
+      imagePullPolicy: Never
+      resources:
+        requests: {cpu: "100m", memory: "128Mi"}
+```
+
+*Multi-container (agent + scorer sidecar — coding tasks):*
+```yaml
+# job-template.yaml
+spec:
+  containers:
+    - name: agent
+      imagePullPolicy: Never
+      resources:
+        requests: {cpu: "1", memory: "2Gi"}
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+    - name: scorer
+      image: scorer:latest              # default, can be overridden per-rollout
+      command: ["python", "run_tests.py"]
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+  volumes:
+    - name: workspace
+      emptyDir: {}
+```
+
+*Per-task overrides for multiple containers (SWE-bench):*
+```python
+RolloutConfig(
+    image="repo-123-dev",                     # → agent container
+    command=["python", "solve.py"],           # → agent container
+    overrides={
+        "containers": [                       # name-matched merge
+            {"name": "scorer", "image": "repo-123-test"}
+        ]
+    }
+)
+```
+
+**Error handling:**
+The store does not validate `job_template` or `overrides` — they are opaque dicts. Validation happens when the controller submits the rendered Job to K8s:
+- **Invalid spec** (bad field names, schema errors): K8s rejects immediately → controller marks rollout as `terminal_failed` with the K8s error message
+- **Resource shortage** (insufficient CPU/memory/GPU, no matching nodes): K8s accepts the Job but the pod stays `Pending` → controller does NOT fail the rollout, K8s retries when resources become available
+
+Example generated Job (simple case):
 
 ```yaml
 apiVersion: batch/v1
@@ -891,21 +946,22 @@ metadata:
 spec:
   backoffLimit: 3                    # from rollout.config.max_retries
   activeDeadlineSeconds: 600         # from rollout.config.timeout
-  ttlSecondsAfterFinished: 3600     # infra default
+  ttlSecondsAfterFinished: 3600     # controller setting
   template:
-    spec:
-      restartPolicy: Never
-      nodeSelector:                  # from resources.job_defaults
+    spec:                            # ← starts from job_template
+      restartPolicy: Never           # from template
+      nodeSelector:                  # from template
         gpu: "a100"
-      serviceAccountName: agl-agent  # from resources.job_defaults
+      serviceAccountName: agl-agent  # from template
       containers:
         - name: agent
           image: my-agent:v2         # from rollout.config.image
+          imagePullPolicy: Never     # from template
           command: ["python", "solve.py"]  # from rollout.config.command
-          resources:                 # from resources.job_defaults
+          resources:                 # from template
             requests: {cpu: "500m", memory: "1Gi"}
           env:
-            # agl-lite injected (always present)
+            # controller injected (always present)
             - name: ROLLOUT_ID
               value: "R1"
             - name: POD_UID

@@ -122,12 +122,17 @@ examples/
 **Solution**: Replace `JobDefaults` with `job_template` — a raw K8s pod spec dict loaded from a YAML file. No schema, no validation at store level. Any valid K8s field just works.
 
 Changes:
-- [ ] `agl_lite/schemas/resources.py` — remove `JobDefaults` schema. Reserved key becomes `job_template` (raw dict, opaque to store).
-- [ ] `agl_lite/schemas/rollout.py` — add `overrides: dict[str, Any]` to `RolloutConfig` (per-rollout K8s escape hatch, optional placeholder).
-- [ ] `agl_lite/controller/job_builder.py` — simplify: start from `job_template` (raw), deep-merge `rollout.config.overrides`, then inject named fields (image, command, env vars) + controller fields (namespace, labels, secrets).
-- [ ] `deploy/job-template.example.yaml` — example template file for infra team.
+- [ ] `agl_lite/schemas/resources.py` — remove `JobDefaults` typed schema. Reserved key becomes `job_template` (raw dict, opaque to store).
+- [ ] `agl_lite/schemas/rollout.py` — add `overrides: dict[str, Any]` to `RolloutConfig`. Named fields target `agent` container. `overrides.containers` enables name-matched merge into other containers.
+- [ ] `agl_lite/controller/job_builder.py` — simplify: start from `job_template` (raw pod spec), deep-merge `rollout.config.overrides` (with name-matched container merge), then inject named fields (image, command, env vars) into `agent` container + controller fields (namespace, labels, secrets).
+- [ ] `agl_lite/controller/reconciler.py` — distinguish K8s rejection errors: invalid spec → `terminal_failed` with error message; resource shortage (HTTP 403/409 from K8s) → stay `queuing`, retry.
+- [ ] `examples/math-poc/job-template.yaml` — example template file for math-poc.
 - [ ] Update tests for all changed modules.
-- [ ] Controller reports K8s rejection errors back to store (already works — job creation failure keeps rollout in `queuing`).
+
+Error handling in controller:
+- **Invalid spec** (K8s 422 Unprocessable Entity): controller marks rollout `terminal_failed` with K8s error message → user sees what's wrong
+- **Resource shortage** (pod stays Pending, or K8s 403 Forbidden): controller keeps rollout in `queuing` → retry when resources available
+- Store does NOT validate `job_template` or `overrides` — they are opaque dicts
 
 Merge order:
 ```
