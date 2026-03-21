@@ -113,6 +113,33 @@ examples/
 - [x] Uses `openai` SDK (max_retries=5 for 503 handling). Does NOT import agl-lite.
 - [x] Pure source code — no Dockerfile here
 
+### 4a.4b Refactor: `job_defaults` → `job_template` (raw K8s spec) [discuss]
+
+**Blocking**: must complete before 4a.5 (math-poc needs `imagePullPolicy: Never`).
+
+**Problem**: Current `JobDefaults` is a typed schema with ad-hoc named fields + `overrides` escape hatch. Three-layer merge (hardcoded → job_defaults → rolloutconfig) is confusing. Adding new K8s fields (e.g., `imagePullPolicy`) requires schema changes.
+
+**Solution**: Replace `JobDefaults` with `job_template` — a raw K8s pod spec dict loaded from a YAML file. No schema, no validation at store level. Any valid K8s field just works.
+
+Changes:
+- [ ] `agl_lite/schemas/resources.py` — remove `JobDefaults` schema. Reserved key becomes `job_template` (raw dict, opaque to store).
+- [ ] `agl_lite/schemas/rollout.py` — add `overrides: dict[str, Any]` to `RolloutConfig` (per-rollout K8s escape hatch, optional placeholder).
+- [ ] `agl_lite/controller/job_builder.py` — simplify: start from `job_template` (raw), deep-merge `rollout.config.overrides`, then inject named fields (image, command, env vars) + controller fields (namespace, labels, secrets).
+- [ ] `deploy/job-template.example.yaml` — example template file for infra team.
+- [ ] Update tests for all changed modules.
+- [ ] Controller reports K8s rejection errors back to store (already works — job creation failure keeps rollout in `queuing`).
+
+Merge order:
+```
+job_template (raw K8s, from file, infra team)
+  ↓ deep merge
+rollout.config.overrides (raw K8s, per-rollout, researcher, optional)
+  ↓ inject
+rollout.config named fields (image, command, env_vars, timeout, max_retries)
+  ↓ inject
+controller fields (namespace, labels, gateway env vars, secret refs)
+```
+
 ### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [discuss]
 - [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
 - [ ] `Dockerfile.agent` — agent image for this PoC (COPY agents from `../agents/python/`, add any data/tools)
@@ -197,7 +224,7 @@ These are settled and should not be revisited during implementation:
 | Event ordering | Append order in per-rollout list, no sequence counter |
 | `event_id` | Removed — events identified by position in list |
 | `timestamp` | Assigned by store at write time |
-| `job_defaults` schema | Typed `JobDefaults` model, validated at POST time. Known fields validated; `overrides` dict for unknown K8s fields. |
+| `job_template` schema | **Pending refactor (4a.4b)**: Raw K8s pod spec dict, loaded from YAML file. No typed schema — any valid K8s field works. `overrides` escape hatch moves to `RolloutConfig` for per-rollout overrides. |
 | Auth | Single `AGL_KEY` for all components, no role-based access for MVP. `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` trick for agents. |
 | Health endpoint | `GET /healthz`, no auth |
 | Error codes | 401 missing/invalid key, 404 rollout not found, 409 invalid transition |
