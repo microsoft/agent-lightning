@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agl-lite
+  labels:
+    app: agl-lite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agl-lite
+  template:
+    metadata:
+      labels:
+        app: agl-lite
+    spec:
+      containers:
+        - name: agl-lite
+          image: agl-lite:dev
+          imagePullPolicy: Never
+          command: ["agl-lite", "serve", "--host", "0.0.0.0", "--port", "8080"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AGL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: AGL_KEY
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agl-lite
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: agl-lite-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agl-lite
+  labels:
+    app: agl-lite
+spec:
+  selector:
+    app: agl-lite
+  ports:
+    - port: 8080
+      targetPort: 8080

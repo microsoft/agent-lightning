@@ -64,7 +64,7 @@
 - [x] Reads `AGL_LITE_URL` and `AGL_KEY` from env
 - [x] 7 integration tests against real FastAPI server (subprocess CLI calls)
 
-### 4a.3 Deploy and examples structure [discuss]
+### 4a.3 Deploy and examples structure [completed]
 
 `deploy/` = infrastructure (any agl-lite setup). `examples/` = task-specific (agents, PoC scenarios).
 

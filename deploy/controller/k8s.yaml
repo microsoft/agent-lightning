@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agl-controller
+  labels:
+    app: agl-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agl-controller
+  template:
+    metadata:
+      labels:
+        app: agl-controller
+    spec:
+      serviceAccountName: agl-controller
+      containers:
+        - name: controller
+          image: agl-lite:dev
+          imagePullPolicy: Never
+          command: ["agl-lite", "controller"]
+          env:
+            - name: AGL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: AGL_KEY
+            - name: AGL_LITE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_LITE_URL
+            - name: AGL_K8S_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_K8S_NAMESPACE
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agl-lite
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: agl-lite-config

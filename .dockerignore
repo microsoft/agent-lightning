@@ -1,0 +1,17 @@
+.venv/
+.git/
+.local/
+__pycache__/
+*.pyc
+tests/
+docs/
+dev/
+examples/
+node_modules/
+tmp/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+uv.lock
