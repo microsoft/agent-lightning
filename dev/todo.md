@@ -161,33 +161,62 @@ All routes delegate to Store methods. Thin HTTP layer.
 
 **Goal**: Prove the full agl-lite lifecycle works end-to-end, fast and deterministic, using a mock OpenAI-compatible server inside minikube.
 
-### 4a.1 Mock OpenAI server
-- [ ] Minimal FastAPI app: `POST /v1/chat/completions` (non-streaming JSON + streaming SSE)
-- [ ] Configurable behaviors via env vars or query params: normal response, 503 (weight update sim), crash/exit (retry sim)
-- [ ] Dockerfile (slim Python image)
-- [ ] K8s Deployment + Service manifest
+### Phase 4a Decisions
 
-### 4a.2 Example agent
-- [ ] Simple Python agent that reads `AGL_TASK_INPUT`, calls LLM via `OPENAI_BASE_URL`, prints result
-- [ ] Dockerfile
+| # | Decision |
+|---|----------|
+| 1 | **Mock server**: Use existing `~/mockai` (polly3d/mockai) — Node.js OpenAI-compatible mock with echo/random/fixed modes, streaming SSE, configurable delay. No custom mock needed. |
+| 2 | **Failure modes**: 503 tested via model deregistration in agl-lite (gateway returns 503 when no servers). Agent retry tested via agent crash (env var `CRASH_ON_FIRST=1`). Mock itself stays healthy. |
+| 3 | **Client CLI**: Add `agl-lite client` subcommand group wrapping `AglLiteClient` — query rollouts, events, models, etc. from command line. Useful for debugging, demos, E2E scripts. |
+| 4 | **Examples folder**: `examples/agents/` (qa_agent, react_agent, shared Dockerfile), `examples/algorithm/` (run_batch.py). Agents use only `openai` SDK — no agl-lite import. |
+| 5 | **Docker builds**: `minikube image build` with local context + `imagePullPolicy: Never`. agl-lite image: `COPY . /src && pip install /src[controller]`. Agent/mock: self-contained dirs. |
+| 6 | **E2E cleanup**: Delete + recreate namespace at test start. Single `scripts/e2e_test.sh` wraps full lifecycle. |
+| 7 | **Deployments**: agl-lite serve and controller as separate K8s Deployments (matches production topology). Algorithm script runs on host via `kubectl port-forward`. |
+
+### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [discuss]
+- [ ] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
+- [ ] Methods: create_job, delete_job, get_job, list_jobs, list_pods, watch_jobs
+- [ ] Wire into `agl-lite controller` CLI entrypoint
+
+### 4a.2 Client CLI (`agl-lite client`) [discuss]
+- [ ] Typer subcommand group wrapping `AglLiteClient`
+- [ ] Subcommands: `rollouts list`, `rollouts get <rid>`, `events list`, `models list`, `models register`, `resources get-latest`, etc.
+- [ ] Reads `--url` and `AGL_KEY` from env/options
+- [ ] Useful for debugging, demos, and E2E test scripts
+
+### 4a.3 Mock OpenAI server (mockai) [discuss]
+- [ ] Build `~/mockai` into minikube: `minikube image build -t mockai:dev ~/mockai`
+- [ ] K8s Deployment + Service manifest (`examples/mock-openai/k8s.yaml`)
+- [ ] Config: `MOCK_TYPE=echo` (returns last user message — deterministic, verifiable)
+- [ ] No modifications to mockai needed
+
+### 4a.4 Example agents (`examples/agents/`) [discuss]
+- [ ] `qa_agent.py` — simplest: read `AGL_TASK_INPUT`, one LLM call via `OPENAI_BASE_URL`, print result
+- [ ] `react_agent.py` — multi-turn: tool-use loop with multiple LLM calls (tests multi-event capture)
+- [ ] Shared `Dockerfile` (build arg to select agent script)
+- [ ] `CRASH_ON_FIRST=1` env var support in qa_agent (for retry test)
 - [ ] Does NOT import agl-lite — proves language-agnostic contract
 
-### 4a.3 Example algorithm script
-- [ ] Python script: register resources, register mock model server, enqueue batch, poll, retrieve events
-- [ ] Demonstrates full lifecycle
+### 4a.5 Example algorithm script (`examples/algorithm/`) [discuss]
+- [ ] `run_batch.py` — register resources, register mock model server, enqueue batch, poll, retrieve events
+- [ ] Demonstrates full lifecycle using `AglLiteClient` or `agl-lite client` CLI
 
-### 4a.4 Minikube setup
-- [ ] Script or Makefile: start minikube, create namespace, create secret, deploy agl-lite serve, deploy controller, deploy mock server
-- [ ] kr8s adapter (`Kr8sClient`) — wired into controller for real K8s API access
-- [ ] Matches `docs/get_started.md`
+### 4a.6 K8s manifests and setup script [discuss]
+- [ ] `deploy/namespace.yaml` — namespace + RBAC + secret
+- [ ] `deploy/agl-lite.yaml` — agl-lite serve Deployment + Service
+- [ ] `deploy/controller.yaml` — controller Deployment
+- [ ] `deploy/mock-openai.yaml` — mockai Deployment + Service
+- [ ] `scripts/e2e_setup.sh` — nuke namespace, rebuild images, apply all manifests, wait for ready
+- [ ] Dockerfile for agl-lite (serve + controller share one image, different CMD)
 
-### 4a.5 End-to-end tests
-- [ ] Algorithm enqueues 5 rollouts → controller creates Jobs → agents run → events captured → algorithm retrieves trajectories
-- [ ] Cancel test
-- [ ] Retry test (agent crashes on first attempt, K8s Job retries)
-- [ ] Weight update test (deregister mock → 503 → re-register → success)
+### 4a.7 End-to-end tests [discuss]
+- [ ] `scripts/e2e_test.sh` or `tests/e2e/test_minikube.py` — orchestrates full lifecycle
+- [ ] Happy path: enqueue 5 rollouts → Jobs created → agents run → events captured → retrieve trajectories
+- [ ] Cancel test: enqueue → cancel mid-run → verify cancelled status
+- [ ] Retry test: agent crashes on first attempt (`CRASH_ON_FIRST=1`) → K8s retries → succeeds
+- [ ] Weight update test: deregister model → agents get 503 → re-register → agents succeed
 
-**Deliverables**: Working E2E demo on minikube (CPU-only), validated get_started.md. All tests fast and deterministic.
+**Deliverables**: Working E2E demo on minikube (CPU-only), client CLI, validated get_started.md. All tests fast and deterministic.
 
 ---
 
