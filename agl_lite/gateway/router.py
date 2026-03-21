@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agl_lite.gateway.config import GatewayConfig, RouteConfig
+from agl_lite.gateway.config import WILDCARD, GatewayConfig, RouteConfig
 from agl_lite.schemas.model_server import ModelServer
 from agl_lite.store.memory import InMemoryStore
 
@@ -21,7 +21,7 @@ class GatewayRouter:
     """Routes agent requests to model servers.
 
     Responsibilities:
-      - Resolve model_in → model_out via config (exact match, passthrough if missing)
+      - Resolve model_in → model_out via config (list-based, first match wins, wildcard support)
       - Select a server from the model pool (round-robin)
       - Adjust request body parameters (add/drop fields, rewrite model)
 
@@ -31,17 +31,22 @@ class GatewayRouter:
     def __init__(self, config: GatewayConfig, store: InMemoryStore) -> None:
         self._config = config
         self._store = store
-        # Round-robin index per model. TODO: configurable strategy (least-connections, random, etc.)
         self._rr_index: dict[str, int] = {}
 
     def resolve(self, model_in: str) -> tuple[str, RouteConfig | None]:
         """Resolve model_in to (model_out, route_config).
 
-        Exact match in config routes. If no match, passthrough: model_out = model_in, no adjustments.
+        Iterates routes in order. First match wins:
+          - Exact match on model_in
+          - Wildcard "*" matches any model_in
+
+        model_out: if "*", keeps original model_in (passthrough with adjustments).
+        No match at all: passthrough with no adjustments.
         """
-        route = self._config.routes.get(model_in)
-        if route is not None:
-            return route.model_out, route
+        for route in self._config.routes:
+            if route.model_in == model_in or route.model_in == WILDCARD:
+                model_out = model_in if route.model_out == WILDCARD else route.model_out
+                return model_out, route
         return model_in, None
 
     def select_server(self, model: str) -> ModelServer:
@@ -67,10 +72,8 @@ class GatewayRouter:
         body = {**body, "model": model_out}
 
         if route is not None:
-            # Add/override parameters.
             if route.params_add:
                 body.update(route.params_add)
-            # Drop parameters.
             for key in route.params_drop:
                 body.pop(key, None)
 

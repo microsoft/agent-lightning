@@ -19,8 +19,8 @@ def settings(tmp_path) -> ServerSettings:
     config_file = tmp_path / "gateway.yaml"
     config_file.write_text("""
 routes:
-  gpt-4:
-    model: qwen-7b
+  - model_in: gpt-4
+    model_out: qwen-7b
     params:
       add:
         temperature: 0.7

@@ -8,11 +8,19 @@ from typing import Any
 
 import yaml
 
+# Wildcard constant — matches any model name.
+WILDCARD = "*"
+
 
 @dataclass(frozen=True)
 class RouteConfig:
-    """Mapping for a single model_in → model_out with parameter adjustments."""
+    """Single route rule: model_in pattern → model_out with parameter adjustments.
 
+    model_in: exact model name or "*" (wildcard, matches any).
+    model_out: target model name or "*" (passthrough, keep original model_in).
+    """
+
+    model_in: str
     model_out: str
     params_add: dict[str, Any] = field(default_factory=dict)
     params_drop: list[str] = field(default_factory=list)
@@ -22,42 +30,57 @@ class RouteConfig:
 class GatewayConfig:
     """Gateway configuration. Loaded once at startup, immutable.
 
-    routes: exact-match dict from model_in → RouteConfig.
-    Missing model_in = passthrough (model_in used as model_out, no param adjustment).
+    routes: ordered list of RouteConfig. First match wins.
+    Empty list = passthrough for all models (no adjustments).
     """
 
-    routes: dict[str, RouteConfig] = field(default_factory=dict)
+    routes: list[RouteConfig] = field(default_factory=list)
 
 
 def load_config(path: str) -> GatewayConfig:
     """Load gateway config from a YAML file.
 
-    Expected format:
+    Expected format (list-based, priority order):
         routes:
-          gpt-4:                    # model_in (what agent sends)
-            model: qwen-7b          # model_out (lookup key in store)
+          - model_in: gpt-4          # exact match
+            model_out: qwen-7b
             params:
               add:
                 temperature: 0.7
                 max_tokens: 4096
               drop:
                 - frequency_penalty
-          claude-3:
-            model: qwen-7b
+
+          - model_in: claude-3       # exact match
+            model_out: qwen-7b
             params:
               add:
                 temperature: 0.8
+
+          - model_in: "*"            # wildcard catch-all (lowest priority)
+            model_out: qwen-7b       # redirect all unmatched to qwen-7b
+            params:
+              drop:
+                - stream_options
+
+    Wildcard rules:
+      - model_in: "*" matches any model name not matched by earlier rules.
+      - model_out: "*" means keep the original model name (passthrough).
+      - Order matters: first match wins. Put specific rules before wildcards.
     """
     raw = yaml.safe_load(Path(path).read_text())
     if not raw or "routes" not in raw:
         return GatewayConfig()
 
-    routes: dict[str, RouteConfig] = {}
-    for model_in, route_raw in raw["routes"].items():
+    routes: list[RouteConfig] = []
+    for route_raw in raw["routes"]:
         params = route_raw.get("params", {})
-        routes[model_in] = RouteConfig(
-            model_out=route_raw["model"],
-            params_add=params.get("add", {}),
-            params_drop=params.get("drop", []),
+        routes.append(
+            RouteConfig(
+                model_in=str(route_raw["model_in"]),
+                model_out=str(route_raw["model_out"]),
+                params_add=params.get("add", {}),
+                params_drop=params.get("drop", []),
+            )
         )
     return GatewayConfig(routes=routes)

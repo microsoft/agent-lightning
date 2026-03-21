@@ -33,7 +33,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     # Load gateway config.
     if settings.gateway_config:
         gateway_config = load_config(settings.gateway_config)
-        log.info("Gateway config loaded", routes=list(gateway_config.routes.keys()))
+        log.info("Gateway config loaded", num_routes=len(gateway_config.routes))
     else:
         gateway_config = GatewayConfig()
         log.warning("No gateway config — all model names pass through without routing or parameter adjustment.")
