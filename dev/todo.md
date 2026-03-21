@@ -75,13 +75,13 @@ deploy/
 
 examples/
 ├── agents/
-│   └── python/                  # Python agent template
+│   └── python/                  # Python agent source (reusable templates)
 │       ├── qa_agent.py          # simplest: 1 LLM call
 │       ├── react_agent.py       # multi-turn: tool loop
-│       ├── Dockerfile           # agent image (lives with source)
 │       └── README.md
 ├── math-poc/                    # Full PoC: mock RL iterations on CPU
 │   ├── mock_rl_loop.py          # algorithm script (runs on host)
+│   ├── Dockerfile.agent         # agent image for this PoC (copies agents, adds data/tools)
 │   ├── k8s-mockai.yaml          # mockai Deployment+Service (PoC-specific)
 │   ├── run.sh                   # one-command: setup + run + verify
 │   └── README.md                # how to run this PoC end-to-end
@@ -93,9 +93,11 @@ examples/
 - [ ] `react_agent.py` — multi-turn: tool-use loop with multiple LLM calls (tests multi-event capture)
 - [ ] `CRASH_ON_FIRST=1` env var support in qa_agent (for retry test)
 - [ ] Does NOT import agl-lite — proves language-agnostic contract
+- [ ] Pure source code — no Dockerfile here (Dockerfile is PoC-specific, lives in `examples/math-poc/`)
 
 ### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [discuss]
 - [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
+- [ ] `Dockerfile.agent` — agent image for this PoC (COPY agents from `../agents/python/`, add any data/tools)
 - [ ] `k8s-mockai.yaml` — mockai Deployment + Service (PoC-specific, not infra)
 - [ ] `run.sh` — one-command E2E: setup infra + deploy mockai + run algorithm + verify
 - [ ] Full 2-iteration RL loop:
