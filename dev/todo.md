@@ -33,7 +33,7 @@
 |---|----------|
 | 1 | **Mock server**: Use existing `~/mockai` (polly3d/mockai) — Node.js OpenAI-compatible mock with echo/random/fixed modes, streaming SSE, configurable delay. No custom mock needed. |
 | 2 | **Failure modes**: 503 tested via model deregistration in agl-lite (gateway returns 503 when no servers). Agent retry tested via agent crash (env var `CRASH_ON_FIRST=1`). Mock itself stays healthy. |
-| 3 | **Client CLI**: Add `agl-lite client` subcommand group wrapping `AglLiteClient` — query rollouts, events, models, etc. from command line. Useful for debugging, demos, E2E scripts. |
+| 3 | **Client CLI**: Separate entrypoint `agl-client` (not a subcommand of `agl-lite`). `agl-lite` = infra (serve, controller). `agl-client` = API consumer (rollouts, events, models, resources). Wraps `AglLiteClient`. |
 | 4 | **Examples folder**: `examples/agents/python/` (source + Dockerfile, openai SDK only), `examples/math-poc/` (full PoC scenario with algorithm script + PoC-specific K8s manifests like mockai). Agents are task-specific, not infra. |
 | 5 | **Docker builds**: Unified `scripts/build_images.sh` (bash). Uses `minikube image build` + `imagePullPolicy: Never`. Infra from `deploy/`, PoC images selective via args. `.dockerignore` for fast builds. agl-lite Dockerfile builds from repo root context. |
 | 6 | **E2E cleanup**: Delete + recreate namespace at test start. Single `scripts/e2e_test.sh` wraps full lifecycle. |
@@ -56,11 +56,12 @@
 - [x] Wire into `agl-lite controller` CLI entrypoint
 - [x] 9 integration tests against real minikube (create, get, delete, list, watch, complete, fail)
 
-### 4a.2 Client CLI (`agl-lite client`) [discuss]
-- [ ] Typer subcommand group wrapping `AglLiteClient`
+### 4a.2 Client CLI (`agl-client`) [discuss]
+- [ ] Separate entrypoint: `agl-client` (not a subcommand of `agl-lite`)
+- [ ] `agl-lite` = infra operator (serve, controller). `agl-client` = API consumer (rollouts, events, models, resources).
+- [ ] Typer app in `agl_lite/client_cli.py`, registered as `agl-client` in pyproject.toml
 - [ ] Subcommands: `rollouts list`, `rollouts get <rid>`, `events list`, `models list`, `models register`, `resources get-latest`, etc.
 - [ ] Reads `--url` and `AGL_KEY` from env/options
-- [ ] Useful for debugging, demos, and E2E test scripts
 
 ### 4a.3 Deploy and examples structure [discuss]
 
