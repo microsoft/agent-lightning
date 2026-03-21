@@ -133,7 +133,8 @@ def teardown() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deploy agl-lite to K8s")
-    parser.add_argument("--teardown", action="store_true", help="Tear down the deployment")
+    parser.add_argument("--teardown", "--cleanup", action="store_true", dest="teardown",
+                        help="Remove all agl-lite resources (delete namespace)")
     args = parser.parse_args()
 
     if args.teardown:
