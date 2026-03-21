@@ -34,12 +34,12 @@
 | 1 | **Mock server**: Use existing `~/mockai` (polly3d/mockai) — Node.js OpenAI-compatible mock with echo/random/fixed modes, streaming SSE, configurable delay. No custom mock needed. |
 | 2 | **Failure modes**: 503 tested via model deregistration in agl-lite (gateway returns 503 when no servers). Agent retry tested via agent crash (env var `CRASH_ON_FIRST=1`). Mock itself stays healthy. |
 | 3 | **Client CLI**: Add `agl-lite client` subcommand group wrapping `AglLiteClient` — query rollouts, events, models, etc. from command line. Useful for debugging, demos, E2E scripts. |
-| 4 | **Examples folder**: `examples/agents/` (Python, openai SDK only), `examples/algorithm/` (Python, uses AglLiteClient). Agents prove language-agnostic contract. |
-| 5 | **Docker builds**: `minikube image build` with local context + `imagePullPolicy: Never`. Per-module build context under `deploy/`. |
+| 4 | **Examples folder**: `examples/agents/python/` (source + Dockerfile, openai SDK only), `examples/math-poc/` (full PoC scenario with algorithm script + PoC-specific K8s manifests like mockai). Agents are task-specific, not infra. |
+| 5 | **Docker builds**: `minikube image build` with local context + `imagePullPolicy: Never`. Infra images built from `deploy/`, agent images built from `examples/agents/python/`. |
 | 6 | **E2E cleanup**: Delete + recreate namespace at test start. Single `scripts/e2e_test.sh` wraps full lifecycle. |
 | 7 | **Deployments**: agl-lite serve and controller as separate K8s Deployments (matches production topology). Controller reuses agl-lite image with different CMD (no separate Dockerfile). |
 | 8 | **Algorithm script**: Python, runs on host via `kubectl port-forward`. No Docker image needed — target audience is RL researchers using Python. Uses `AglLiteClient`. |
-| 9 | **Deploy layout**: Per-module directories under `deploy/`. Each module has its own Dockerfile (if needed), k8s.yaml, config, and README. Self-documenting — works for K8s and non-K8s (VM) deployment. |
+| 9 | **Deploy layout**: `deploy/` = infra only (agl-lite, controller, common K8s resources). Task-specific things (agents, mockai, algorithm scripts) live in `examples/`. |
 | 10 | **Mock algorithm**: Full RL loop sim — 2 iterations with weight update (deregister → 503 window → re-register with bumped version). Verifies version tracking in events. No mockai restart needed (version is store metadata). |
 
 ### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [discuss]
@@ -53,9 +53,9 @@
 - [ ] Reads `--url` and `AGL_KEY` from env/options
 - [ ] Useful for debugging, demos, and E2E test scripts
 
-### 4a.3 Deploy structure [discuss]
+### 4a.3 Deploy and examples structure [discuss]
 
-Per-module layout under `deploy/`. Each dir is self-contained.
+`deploy/` = infrastructure (any agl-lite setup). `examples/` = task-specific (agents, PoC scenarios).
 
 ```
 deploy/
@@ -68,26 +68,36 @@ deploy/
 │   ├── k8s.yaml                 # Deployment (image: agl-lite:dev, cmd: agl-lite controller)
 │   ├── rbac.yaml                # ServiceAccount + Role + RoleBinding
 │   └── README.md
-├── mockai/                      # Mock OpenAI server (CPU E2E only)
-│   ├── k8s.yaml                 # Deployment + Service
-│   └── README.md                # Points to ~/mockai for image build
-├── agents/                      # Example agent container
-│   ├── Dockerfile               # python:3.12-slim + openai SDK + COPY agents
-│   └── README.md
 ├── common/                      # Shared K8s resources
 │   ├── namespace.yaml           # Namespace
 │   └── secret.yaml              # AGL_KEY secret template
 └── README.md                    # Deploy overview + ordering guide
+
+examples/
+├── agents/
+│   └── python/                  # Python agent template
+│       ├── qa_agent.py          # simplest: 1 LLM call
+│       ├── react_agent.py       # multi-turn: tool loop
+│       ├── Dockerfile           # agent image (lives with source)
+│       └── README.md
+├── math-poc/                    # Full PoC: mock RL iterations on CPU
+│   ├── mock_rl_loop.py          # algorithm script (runs on host)
+│   ├── k8s-mockai.yaml          # mockai Deployment+Service (PoC-specific)
+│   ├── run.sh                   # one-command: setup + run + verify
+│   └── README.md                # how to run this PoC end-to-end
+└── README.md
 ```
 
-### 4a.4 Example agents (`examples/agents/`) [discuss]
+### 4a.4 Example agents (`examples/agents/python/`) [discuss]
 - [ ] `qa_agent.py` — simplest: read `AGL_TASK_INPUT`, one LLM call via `OPENAI_BASE_URL`, print result
 - [ ] `react_agent.py` — multi-turn: tool-use loop with multiple LLM calls (tests multi-event capture)
 - [ ] `CRASH_ON_FIRST=1` env var support in qa_agent (for retry test)
 - [ ] Does NOT import agl-lite — proves language-agnostic contract
 
-### 4a.5 Mock RL loop (`examples/algorithm/mock_rl_loop.py`) [discuss]
-- [ ] Python script, runs on host, uses `AglLiteClient`
+### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [discuss]
+- [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
+- [ ] `k8s-mockai.yaml` — mockai Deployment + Service (PoC-specific, not infra)
+- [ ] `run.sh` — one-command E2E: setup infra + deploy mockai + run algorithm + verify
 - [ ] Full 2-iteration RL loop:
   - Iter 1: register resources + model (v1) → enqueue batch → poll → retrieve trajectories → "compute rewards"
   - Weight update: DELETE model → (simulated delay) → re-register model (v2, same endpoint)
@@ -96,9 +106,9 @@ deploy/
 - [ ] Serves as both E2E test driver and user-facing example
 
 ### 4a.6 E2E scripts [discuss]
-- [ ] `scripts/e2e_setup.sh` — nuke namespace → build images (`minikube image build`) → apply manifests → wait for pods ready
-- [ ] `scripts/e2e_test.sh` — setup + port-forward + run mock_rl_loop.py + assert success
+- [ ] `scripts/e2e_setup.sh` — nuke namespace → build images (agl-lite from `deploy/agl-lite/`, agents from `examples/agents/python/`) → apply infra manifests → wait for pods ready
 - [ ] `scripts/e2e_teardown.sh` — delete namespace (optional cleanup)
+- [ ] PoC-specific orchestration lives in `examples/math-poc/run.sh` (calls e2e_setup.sh, then deploys mockai, runs algorithm)
 
 ### 4a.7 End-to-end test scenarios [discuss]
 - [ ] **Happy path**: 2-iteration RL loop (4a.5) — full lifecycle with weight update
