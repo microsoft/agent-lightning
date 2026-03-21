@@ -45,10 +45,11 @@
 | 12 | **Agent image**: Contains all agent scripts at `/app/`. Rollout `config.command` selects which to run (e.g. `["python", "/app/qa_agent.py"]`). Image = environment, command = task. |
 | 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
 
-### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [discuss]
-- [ ] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
-- [ ] Methods: create_job, delete_job, get_job, list_jobs, list_pods, watch_jobs
-- [ ] Wire into `agl-lite controller` CLI entrypoint
+### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [completed]
+- [x] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
+- [x] Methods: create_job, delete_job, get_job, list_jobs, list_pods, watch_jobs
+- [x] Wire into `agl-lite controller` CLI entrypoint
+- [x] 9 integration tests against real minikube (create, get, delete, list, watch, complete, fail)
 
 ### 4a.2 Client CLI (`agl-lite client`) [discuss]
 - [ ] Typer subcommand group wrapping `AglLiteClient`
