@@ -157,36 +157,65 @@ All routes delegate to Store methods. Thin HTTP layer.
 
 ---
 
-## Phase 4: End-to-End Validation
+## Phase 4a: E2E with Mock Model Server (CPU-only minikube) [discuss]
 
-**Goal**: Prove the system works with a real agent on minikube.
+**Goal**: Prove the full agl-lite lifecycle works end-to-end, fast and deterministic, using a mock OpenAI-compatible server inside minikube.
 
-### 4.1 Example agent
+### 4a.1 Mock OpenAI server
+- [ ] Minimal FastAPI app: `POST /v1/chat/completions` (non-streaming JSON + streaming SSE)
+- [ ] Configurable behaviors via env vars or query params: normal response, 503 (weight update sim), crash/exit (retry sim)
+- [ ] Dockerfile (slim Python image)
+- [ ] K8s Deployment + Service manifest
+
+### 4a.2 Example agent
 - [ ] Simple Python agent that reads `AGL_TASK_INPUT`, calls LLM via `OPENAI_BASE_URL`, prints result
 - [ ] Dockerfile
 - [ ] Does NOT import agl-lite — proves language-agnostic contract
 
-### 4.2 Example algorithm script
-- [ ] Python script: register resources, register model server, enqueue batch, poll, retrieve events
+### 4a.3 Example algorithm script
+- [ ] Python script: register resources, register mock model server, enqueue batch, poll, retrieve events
 - [ ] Demonstrates full lifecycle
 
-### 4.3 Minikube setup
-- [ ] Script or Makefile: start minikube, create namespace, create secret, deploy agl-lite, deploy controller
+### 4a.4 Minikube setup
+- [ ] Script or Makefile: start minikube, create namespace, create secret, deploy agl-lite serve, deploy controller, deploy mock server
+- [ ] kr8s adapter (`Kr8sClient`) — wired into controller for real K8s API access
 - [ ] Matches `docs/get_started.md`
 
-### 4.4 End-to-end test
+### 4a.5 End-to-end tests
 - [ ] Algorithm enqueues 5 rollouts → controller creates Jobs → agents run → events captured → algorithm retrieves trajectories
 - [ ] Cancel test
-- [ ] Retry test (agent crashes on first attempt)
-- [ ] Weight update test (503 → retry → success)
+- [ ] Retry test (agent crashes on first attempt, K8s Job retries)
+- [ ] Weight update test (deregister mock → 503 → re-register → success)
 
-**Deliverables**: Working E2E demo on minikube, validated get_started.md.
+**Deliverables**: Working E2E demo on minikube (CPU-only), validated get_started.md. All tests fast and deterministic.
+
+---
+
+## Phase 4b: E2E with Real vLLM (GPU) [backlog]
+
+**Goal**: Validate agl-lite with a real vLLM inference server on GPU. Bridge to VERL integration.
+
+### 4b.1 vLLM deployment
+- [ ] Deploy vLLM on host GPUs (4× A6000), expose to minikube (NodePort or host network)
+- [ ] Model selection (small model for fast iteration, e.g., Qwen-2.5-1.5B or similar)
+- [ ] Register real vLLM endpoint as model server via agl-lite API
+
+### 4b.2 Real inference E2E
+- [ ] Reuse Phase 4a agent + algorithm script against real vLLM
+- [ ] Verify event capture contains real model responses
+- [ ] Weight update protocol: vLLM model reload + agl-lite model server re-registration
+
+### 4b.3 Performance baseline
+- [ ] Measure: rollout throughput, gateway proxy latency overhead, event capture overhead
+- [ ] Compare direct vLLM vs gateway-proxied vLLM
+
+**Deliverables**: Proven real-inference path, performance baseline. Prerequisite for Phase 5.
 
 ---
 
 ## Phase 5: Algorithm Integration (VERL)
 
-**Goal**: Port VERL RL algorithm to consume agl-lite events.
+**Goal**: Port VERL RL algorithm to consume agl-lite events. Assumes Phase 4b (real vLLM) is complete.
 
 - [ ] Adapter: events → triplets (prompt, response, reward)
 - [ ] VERL training loop using agl-lite API
