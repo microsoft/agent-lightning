@@ -44,8 +44,9 @@
 | 11 | **Dataset**: GSM8K 30-problem subset (`examples/math-poc/data/gsm8k_sample.jsonl`). Reward = compare extracted answer to ground truth. With mockai (echo mode) reward is always 0 — proves pipeline structure, not model quality. |
 | 12 | **Agent image**: Contains all agent scripts at `/app/`. Rollout `config.command` selects which to run (e.g. `["python", "/app/qa_agent.py"]`). Image = environment, command = task. |
 | 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
-| 14 | **Configuration**: Single `.env.example` in `deploy/`. Setup script reads `.env` and creates K8s Secret (`AGL_KEY`) + ConfigMap (`AGL_LITE_URL`, `AGL_NAMESPACE`, etc.). Manifests reference ConfigMap/Secret via `valueFrom` — no hardcoded values. `.env` also used host-side (`source .env`). |
+| 14 | **Configuration**: Single `.env.example` in `deploy/`. Setup script reads `.env` → creates K8s Secret (`AGL_KEY` via `--from-literal`, never on disk) + ConfigMap (all other vars via pipe to `--from-env-file=/dev/stdin`). Manifests reference ConfigMap/Secret via `valueFrom` — no hardcoded values. `.env` also used host-side (`source .env`). |
 | 15 | **Dockerfile**: Use `uv` for fast installs (`curl -LsSf https://astral.sh/uv/install.sh`). `.dockerignore` excludes `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`. |
+| 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_NAMESPACE` from `.env`. Works for any namespace. |
 
 ### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [completed]
 - [x] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
@@ -79,8 +80,9 @@ deploy/
 
 Setup script creates K8s resources from `.env`:
 - `kubectl create namespace $AGL_NAMESPACE`
-- `kubectl create secret generic $AGL_SECRET_NAME --from-literal=AGL_KEY=$AGL_KEY`
-- `kubectl create configmap agl-lite-config --from-literal=AGL_LITE_URL=$AGL_LITE_URL`
+- `kubectl -n $AGL_NAMESPACE create secret generic $AGL_SECRET_NAME --from-literal=AGL_KEY="$AGL_KEY"` (never on disk)
+- `grep -v '^AGL_KEY=' .env | grep -v '^#' | grep -v '^$' | kubectl -n $AGL_NAMESPACE create configmap agl-lite-config --from-env-file=/dev/stdin`
+- `kubectl apply -n $AGL_NAMESPACE -f deploy/...` (manifests omit namespace)
 - Manifests use `valueFrom: configMapKeyRef/secretKeyRef` — no hardcoded values
 
 ```
