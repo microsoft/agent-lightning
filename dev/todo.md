@@ -56,12 +56,13 @@
 - [x] Wire into `agl-lite controller` CLI entrypoint
 - [x] 9 integration tests against real minikube (create, get, delete, list, watch, complete, fail)
 
-### 4a.2 Client CLI (`agl-client`) [discuss]
-- [ ] Separate entrypoint: `agl-client` (not a subcommand of `agl-lite`)
-- [ ] `agl-lite` = infra operator (serve, controller). `agl-client` = API consumer (rollouts, events, models, resources).
-- [ ] Typer app in `agl_lite/client_cli.py`, registered as `agl-client` in pyproject.toml
-- [ ] Subcommands: `rollouts list`, `rollouts get <rid>`, `events list`, `models list`, `models register`, `resources get-latest`, etc.
-- [ ] Reads `--url` and `AGL_KEY` from env/options
+### 4a.2 Client CLI (`agl-client`) [completed]
+- [x] Separate entrypoint: `agl-client` (not a subcommand of `agl-lite`)
+- [x] `agl-lite` = infra operator (serve, controller). `agl-client` = API consumer (rollouts, events, models, resources).
+- [x] Typer app in `agl_lite/client_cli.py`, registered as `agl-client` in pyproject.toml
+- [x] Subcommands: `rollouts list/get/cancel`, `events list`, `models list/register/delete/delete-all`, `resources get/latest/add`, `health`
+- [x] Reads `AGL_LITE_URL` and `AGL_KEY` from env
+- [x] 7 integration tests against real FastAPI server (subprocess CLI calls)
 
 ### 4a.3 Deploy and examples structure [discuss]
 

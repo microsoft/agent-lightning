@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 agl-lite = "agl_lite.cli:app"
+agl-client = "agl_lite.client_cli:app"
 
 [tool.ruff]
 line-length = 120
