@@ -46,7 +46,9 @@
 | 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
 | 14 | **Configuration**: Split into `deploy/.env` (secrets + bootstrap: `AGL_KEY`, `AGL_K8S_NAMESPACE`) and `deploy/config.yaml` (structured non-secret config: serve host/port, agl_lite_url, controller settings). Setup script reads `.env` for namespace/secret creation, loads `config.yaml` into K8s ConfigMap (`--from-file`). Pods mount ConfigMap as `/etc/agl-lite/config.yaml`. CLI supports `--config` flag. Precedence: config file → env vars → CLI args. |
 | 15 | **Dockerfile**: Use `uv` for fast installs (`curl -LsSf https://astral.sh/uv/install.sh`). `.dockerignore` excludes `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`. |
-| 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_NAMESPACE` from `.env`. Works for any namespace. |
+| 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_K8S_NAMESPACE` from `.env`. Works for any namespace. |
+| 17 | **Phase 4a topology**: All-in-K8s (agl-lite serve, controller, mockai as Deployments). Only algorithm script runs on host (via port-forward). Avoids host↔K8s bridging complexity. |
+| 18 | **Deploy scripts**: Python for orchestration (`scripts/deploy.py` — namespace, secrets, configmap, manifests, wait, health check). Bash for image builds (`scripts/build_images.sh` — thin wrapper around `minikube image build`). PoC orchestration in `examples/math-poc/run.py` (Python). |
 
 ### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [completed]
 - [x] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
@@ -122,11 +124,11 @@ examples/
 - [ ] Serves as both E2E test driver and user-facing example
 
 ### 4a.6 E2E scripts [discuss]
-- [ ] `scripts/build_images.sh` — unified image builder (bash). Always builds agl-lite; selectively builds PoC images via args (e.g., `--math-poc`). Uses `minikube image build`.
-- [ ] `scripts/e2e_setup.sh` — nuke namespace → call build_images.sh → apply infra manifests → wait for pods ready
-- [ ] `scripts/e2e_teardown.sh` — delete namespace (optional cleanup)
-- [ ] `.dockerignore` — exclude `.venv/`, `.git/`, `tests/`, etc. for fast agl-lite image builds
-- [ ] PoC-specific orchestration lives in `examples/math-poc/run.sh` (calls e2e_setup.sh, then deploys mockai, runs algorithm)
+- [ ] `scripts/build_images.sh` — bash, thin wrapper around `minikube image build`. Always builds agl-lite; selectively builds PoC images via args (e.g., `--math-poc`).
+- [ ] `scripts/deploy.py` — Python orchestration: read `.env` + `config.yaml`, create namespace/secret/configmap, apply manifests, wait for pods ready, health check agl-lite.
+- [ ] `scripts/teardown.sh` — bash, `kubectl delete namespace` (simple).
+- [ ] `.dockerignore` — exclude `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`.
+- [ ] `examples/math-poc/run.py` — Python: calls deploy.py for infra, deploys mockai, starts port-forward, runs mock_rl_loop.py, verifies results, cleanup.
 
 ### 4a.7 End-to-end test scenarios [discuss]
 - [ ] **Happy path**: 2-iteration RL loop (4a.5) — full lifecycle with weight update
