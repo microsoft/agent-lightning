@@ -1,6 +1,8 @@
 .venv/
 .git/
 .local/
+.env
+**/.env
 __pycache__/
 *.pyc
 tests/
