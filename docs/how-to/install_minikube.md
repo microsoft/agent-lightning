@@ -1,25 +1,9 @@
-Install Minikube on a Linux VM
+# Install Minikube on a Linux VM
 Follow these steps to set up Minikube using Docker as the driver. This guide assumes you are using an Ubuntu/Debian-based distribution.
 
-1. Update System & Install Dependencies
-Ensure your package list is current and install basic transport tools.
+Before you begin, ensure you have the prerequisites (such as Docker) installed. If you haven't done so, install them first by following the [prerequisites guide](./install_prerequisites.md).
 
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl apt-transport-https
-```
-
-2. Install Docker (The Driver)
-Minikube needs a way to run the cluster. Docker is the most common choice for VMs.
-
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-# Allow your user to run Docker without sudo
-sudo usermod -aG docker $USER && newgrp docker
-```
-
-3. Install kubectl
+## kubectl
 This is the command-line tool used to control Kubernetes.
 
 ```bash
@@ -31,7 +15,7 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 kubectl version --client
 ```
 
-4. Install Minikube
+## Minikube
 Now, download and install the Minikube binary.
 
 ```bash
@@ -43,7 +27,7 @@ sudo install minikube-linux-amd64 /usr/local/bin/minikube
 minikube version
 ```
 
-5. Start the Cluster
+### Start the Cluster
 Initialize Minikube using the Docker driver.
 
 ```bash
@@ -52,7 +36,7 @@ minikube start --driver=docker
 
 Note: The first run will take a few minutes to download the VM images.
 
-6. Verify & Test
+### Verify & Test
 Check if your node is online and healthy.
 
 ```bash
@@ -61,14 +45,23 @@ minikube status
 # See your cluster node
 kubectl get nodes
 ```
+Some useful commands to manage your Minikube cluster:
 
-------------------------------
-Useful Commands
+```bash
+# Check cluster status
+minikube status
 
-* Stop the cluster: `minikube stop`
-* Delete the cluster: `minikube delete`
-* Open Dashboard: `minikube dashboard`
-* Pause Kubernetes: `minikube pause`
+# Check cluster pods
+kubectl get pods 
+kubectl describe pod <pod-name>
+
+# Pause and resume the cluster
+minikube pause
+minikube unpause
+
+# Stop the cluster
+minikube stop
+```
 
 Do you need help exposing the dashboard or services so you can access them from your host machine's browser?
 
