@@ -39,11 +39,13 @@
 | 6 | **E2E cleanup**: Delete + recreate namespace at test start. Single `scripts/e2e_test.sh` wraps full lifecycle. |
 | 7 | **Deployments**: agl-lite serve and controller as separate K8s Deployments (matches production topology). Controller reuses agl-lite image with different CMD (no separate Dockerfile). |
 | 8 | **Algorithm script**: Python, runs on host via `kubectl port-forward`. No Docker image needed — target audience is RL researchers using Python. Uses `AglLiteClient`. |
-| 9 | **Deploy layout**: `deploy/` = infra only (agl-lite, controller, common K8s resources). Task-specific things (agents, mockai, algorithm scripts) live in `examples/`. |
+| 9 | **Deploy layout**: `deploy/` = infra only (agl-lite, controller). No `deploy/common/` — setup script creates K8s resources from `.env`. Task-specific things (agents, mockai, algorithm scripts) live in `examples/`. |
 | 10 | **Mock algorithm**: Full RL loop sim — 2 iterations with weight update (deregister → 503 window → re-register with bumped version). Verifies version tracking in events. No mockai restart needed (version is store metadata). |
 | 11 | **Dataset**: GSM8K 30-problem subset (`examples/math-poc/data/gsm8k_sample.jsonl`). Reward = compare extracted answer to ground truth. With mockai (echo mode) reward is always 0 — proves pipeline structure, not model quality. |
 | 12 | **Agent image**: Contains all agent scripts at `/app/`. Rollout `config.command` selects which to run (e.g. `["python", "/app/qa_agent.py"]`). Image = environment, command = task. |
 | 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
+| 14 | **Configuration**: Single `.env.example` in `deploy/`. Setup script reads `.env` and creates K8s Secret (`AGL_KEY`) + ConfigMap (`AGL_LITE_URL`, `AGL_NAMESPACE`, etc.). Manifests reference ConfigMap/Secret via `valueFrom` — no hardcoded values. `.env` also used host-side (`source .env`). |
+| 15 | **Dockerfile**: Use `uv` for fast installs (`curl -LsSf https://astral.sh/uv/install.sh`). `.dockerignore` excludes `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`. |
 
 ### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [completed]
 - [x] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
@@ -64,19 +66,24 @@
 ```
 deploy/
 ├── agl-lite/                    # HTTP service (store + gateway)
-│   ├── Dockerfile               # python:3.12-slim + pip install .[controller]
-│   ├── k8s.yaml                 # Deployment + Service
-│   ├── gateway-config.yaml      # Example route config (passthrough for mock)
+│   ├── Dockerfile               # python:3.12-slim + uv + pip install .[controller]
+│   ├── k8s.yaml                 # Deployment + Service (env from ConfigMap/Secret)
 │   └── README.md
 ├── controller/                  # K8s reconciler (reuses agl-lite image)
-│   ├── k8s.yaml                 # Deployment (image: agl-lite:dev, cmd: agl-lite controller)
+│   ├── k8s.yaml                 # Deployment (env from ConfigMap/Secret)
 │   ├── rbac.yaml                # ServiceAccount + Role + RoleBinding
 │   └── README.md
-├── common/                      # Shared K8s resources
-│   ├── namespace.yaml           # Namespace
-│   └── secret.yaml              # AGL_KEY secret template
-└── README.md                    # Deploy overview + ordering guide
+├── .env.example                 # all config: AGL_KEY, AGL_LITE_URL, AGL_NAMESPACE, etc.
+└── README.md                    # deploy overview + ordering guide
+```
 
+Setup script creates K8s resources from `.env`:
+- `kubectl create namespace $AGL_NAMESPACE`
+- `kubectl create secret generic $AGL_SECRET_NAME --from-literal=AGL_KEY=$AGL_KEY`
+- `kubectl create configmap agl-lite-config --from-literal=AGL_LITE_URL=$AGL_LITE_URL`
+- Manifests use `valueFrom: configMapKeyRef/secretKeyRef` — no hardcoded values
+
+```
 examples/
 ├── agents/
 │   └── python/                  # Python agent source (reusable templates)
