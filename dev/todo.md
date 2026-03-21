@@ -200,7 +200,7 @@ These are settled and should not be revisited during implementation:
 | Health endpoint | `GET /healthz`, no auth |
 | Error codes | 401 missing/invalid key, 404 rollout not found, 409 invalid transition |
 | Archive format | JSONL, user-specified file path (`*.jsonl`). Append if file exists, create if not. Includes rollout + events + resources per archive call. |
-| Gateway config | Static YAML at startup. Routes: `model_in → model_out` + per-route `params.add`/`params.drop`. No route = passthrough. |
+| Gateway config | Static YAML at startup. List-based routes: `[{model_in, model_out, params}]`, first match wins. Wildcard `model_in: "*"` catches unmatched models. Wildcard `model_out: "*"` = passthrough with param adjustments. No match and no wildcard = passthrough, no adjustments. |
 | Model routing | Per-model round-robin. Model name = grouping key. Store: `Dict[model, Dict[endpoint, ModelServer]]`. |
 | Model server identity | `(model, endpoint)` composite key. Version per server (supports online RL rolling updates). Optional `token` for gateway → model server auth. |
 | Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |

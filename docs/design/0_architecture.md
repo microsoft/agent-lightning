@@ -541,6 +541,9 @@ routes:
 ```
 
 - `model_in` with no matching route → passthrough (model_in used as model_out, no param adjustments)
+- `model_in: "*"` → wildcard catch-all, matches any model not matched by earlier rules
+- `model_out: "*"` → passthrough, keeps original model name but applies param adjustments
+- Routes are evaluated in list order — first match wins. Put specific rules before wildcards.
 - `add` fields are merged into the request body (override if key exists)
 - `drop` fields are removed from the request body
 - Applied **before** forwarding to the model server
