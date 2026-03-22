@@ -53,14 +53,160 @@ Not on the critical path — the happy-path lifecycle is fully validated. Add wh
 
 ---
 
-## Phase 5: Algorithm Integration (VERL)
+## Phase 5: VERL Algorithm Integration
 
-**Goal**: Port VERL RL algorithm to consume agl-lite events. Assumes Phase 4b (real vLLM) is complete.
+**Goal**: Connect VERL's PPO training loop to agl-lite as the data pipe. agl-lite handles
+rollout orchestration, event collection, and triplet extraction; VERL handles tensor
+construction and weight updates.
 
-- [ ] Adapter: events → triplets (prompt, response, reward)
-- [ ] VERL training loop using agl-lite API
-- [ ] vLLM model server registration + weight update protocol
-- [ ] Full RL training loop on minikube
+### Background: Agent Lightning daemon structure (1154 lines)
+
+The `AgentModeDaemon` in Agent Lightning is the bridge between the store and the VERL trainer.
+The trainer calls 4 daemon methods: `set_up_data_and_server`, `run_until_all_finished`,
+`get_train_data_batch`, `clear_data_and_server`. The daemon internally calls 4 store methods
+(`add_resources`, `enqueue_many_rollouts`, `wait_for_rollouts`, `query_spans`) plus an adapter
+(`spans → triplets`), then builds padded tensors from triplets.
+
+Breakdown of what to replace vs reuse:
+
+| Category | Lines | % | Action |
+|---|---|---|---|
+| Store interaction | 209 | 18% | **Replace** (agl-lite HTTP API) |
+| Proxy server | 141 | 12% | **Drop** (gateway replaces) |
+| Init (mixed) | 72 | 6% | **Simplify** |
+| `get_train_data_batch` | 328 | 28% | **Reuse** |
+| Multimodal (mrope) | 63 | 5% | **Reuse** (not tested in MVP) |
+| Validation/metrics | 106 | 9% | **Reuse** |
+| Utilities (padding) | 157 | 14% | **Reuse** |
+
+### Key design: Triplet API in agl-lite
+
+Instead of fetching raw events and converting on the VERL side, agl-lite itself provides
+a triplet endpoint. This keeps event→triplet conversion in the data pipe where it belongs.
+
+```
+Agent Lightning original:
+  daemon → store.query_spans() → adapter.adapt(spans) → List[Triplet]
+           ~~~~~~~~~~~~~~~~~~~    ~~~~~~~~~~~~~~~~~~~~
+           complex Span objects   600-line tree adapter
+
+agl-lite:
+  daemon → GET /api/rollouts/{id}/triplets → List[Triplet]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+           server does events→triplets internally (~50 lines)
+```
+
+The triplet extraction logic in agl-lite is simple because events are flat:
+- `model_request` events have `response.prompt_token_ids` and `response.choices[].token_ids`
+- `reward` events have `data.value`
+- Match by order (each model_request pairs with the following reward)
+- Streaming responses: gather `token_ids` across SSE chunks, `prompt_token_ids` from first chunk
+
+### Phase 5a: Triplet API (server-side, in agl-lite)
+
+- [ ] **5a.1**: Triplet schema + extraction logic
+  - `Triplet` model: `prompt: {"token_ids": [...], "image_urls": [...]}`,
+    `response: {"token_ids": [...]}`, `reward: float | None`, `metadata: {}`
+  - Extraction function: `events_to_triplets(events: list[Event]) → list[Triplet]`
+  - Handle streaming (gather token_ids across chunks) and non-streaming responses
+  - Unit tests with synthetic events
+
+- [ ] **5a.2**: HTTP endpoint
+  - `GET /api/rollouts/{rollout_id}/triplets` → `List[Triplet]`
+  - Calls store to fetch events, runs extraction, returns triplets
+  - Optional `?attempt_id=` filter (default: latest attempt)
+  - Tests with mock store
+
+- [ ] **5a.3**: E2E verification
+  - Extend `rl_loop.py` to call triplet API after rollout completion
+  - Verify: prompt_token_ids match, response token_ids match, reward matches
+  - Log triplet summary (n_triplets, token lengths)
+
+### Phase 5b: VERL-side integration (OPEN — two options, choose one)
+
+Both options reuse `get_train_data_batch()` (328 lines of tensor math) unchanged.
+Both talk to agl-lite over HTTP to enqueue rollouts, poll, and fetch triplets.
+The difference is how they integrate with Agent Lightning's class hierarchy.
+
+#### Option A: New daemon subclass
+
+Subclass `AgentModeDaemon`, override the store-interaction methods (~210 lines).
+Inherit `get_train_data_batch`, multimodal, validation, utilities (730 lines).
+
+```python
+class AglLiteDaemon(AgentModeDaemon):
+    """Daemon that talks to agl-lite HTTP API instead of LightningStore."""
+
+    def __init__(self, agl_lite_url, agl_key, ...):
+        # Skip proxy server setup, just init HTTP client
+        ...
+
+    async def _async_set_up(self, data, server_addresses, is_train=True):
+        # POST /api/resources/models (register model)
+        # POST /api/rollouts/enqueue (batch enqueue)
+        ...
+
+    async def _validate_data_v1(self, rollout) -> RolloutLegacy:
+        # GET /api/rollouts/{id}/triplets (use new triplet API)
+        # No adapter needed — agl-lite did the conversion
+        ...
+
+    async def _async_run_until_finished(self, verbose=True):
+        # GET /api/rollouts?status=succeeded (poll)
+        ...
+```
+
+| Pro | Con |
+|-----|-----|
+| Minimal new code (~150 lines) | Inherits 1154-line class with proxy/v0 baggage |
+| Proven tensor math, no copy needed | Coupled to Agent Lightning internals |
+| Multimodal support inherited for free | `__init__` needs careful super() avoidance |
+| Trainer class unchanged | Fragile if upstream daemon changes |
+
+#### Option B: New standalone interface
+
+Clean class with same 4 methods the trainer expects. Copy `get_train_data_batch`
+and utilities (~500 lines) into agl-lite or a bridge package.
+
+```python
+class AglLiteInterface:
+    """Standalone bridge between agl-lite and VERL trainer."""
+
+    def set_up_data_and_server(self, data, server_addresses, is_train=True):
+        # HTTP calls to agl-lite
+        ...
+
+    def run_until_all_finished(self, verbose=True):
+        # Poll agl-lite for completion
+        ...
+
+    def get_train_data_batch(self, max_prompt_length, max_response_length, device, global_steps):
+        # Copied/imported tensor math
+        ...
+
+    def clear_data_and_server(self):
+        ...
+```
+
+| Pro | Con |
+|-----|-----|
+| No dependency on Agent Lightning daemon code | Must copy ~500 lines of tensor math |
+| Clean, testable, self-contained | Multimodal support must be explicitly copied |
+| No fragile inheritance | More upfront work |
+| Could live entirely in agl-lite repo | Tensor math diverges from upstream over time |
+
+#### Decision criteria (to discuss)
+
+- **How stable is `AgentModeDaemon`?** If it changes often, Option B is safer.
+- **Do we want agl-lite to depend on `agentlightning` package?** Option A requires it; Option B doesn't.
+- **Will we customize tensor construction?** If yes, Option B gives more control.
+- **Timeline**: Option A is ~150 lines new; Option B is ~150 lines new + ~500 lines copied.
+
+### Phase 5c: Full training loop E2E
+
+- [ ] Training script using agl-lite + VERL on Qwen2.5-1.5B-Instruct
+- [ ] Weight update protocol: after PPO step, update vLLM model weights
+- [ ] Multi-iteration training with measurable reward improvement
 
 ---
 
