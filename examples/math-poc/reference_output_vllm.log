@@ -1,0 +1,87 @@
+=== Math PoC — RL Loop (vLLM) ===
+  agl-lite:  http://localhost:8080
+  model:     Qwen/Qwen2.5-1.5B-Instruct → http://host.minikube.internal:8010/v1
+  namespace: agl-test
+  batch:     5, iterations: 1
+
+--- Setup ---
+  Job template: job-template.yaml
+  Resources registered: <rollout-id>
+  Dataset loaded: 30 problems
+
+--- Register model server (v1) ---
+  Qwen/Qwen2.5-1.5B-Instruct → http://host.minikube.internal:8010/v1 (version=1)
+
+============================================================
+  ITERATION 1 (model version=1)
+============================================================
+  Tasks (5):
+    [0] Q: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every ...
+         GT: 18
+    [1] Q: A robe takes 2 bolts of blue fiber and half that much white fiber.  Ho...
+         GT: 3
+    [2] Q: Josh decides to try flipping a house.  He buys a house for $80,000 and...
+         GT: 70000
+    [3] Q: James decides to run 3 sprints 3 times a week.  He runs 60 meters each...
+         GT: 540
+    [4] Q: Every day, Wendi feeds each of her chickens three cups of mixed chicke...
+         GT: 20
+  Enqueued 5 rollouts
+  Polling for completion...
+  [poll #1] {'queuing': 5}
+  [poll #2] {'queuing': 5}
+  [poll #3] {'running': 1, 'queuing': 4}
+  [poll #4] {'running': 3, 'queuing': 2}
+  [poll #5] {'succeeded': 2, 'running': 3}
+  [poll #6] {'succeeded': 4, 'running': 1}
+  [poll #7] All done: {'succeeded': 5}
+  Completed: 5 succeeded, 0 failed
+  Results:
+
+  ── First model_request event (sample) ──
+    server:   model=Qwen/Qwen2.5-1.5B-Instruct, version=1
+    request.model:    Qwen/Qwen2.5-1.5B-Instruct
+    request.stream:   True
+    request.messages: 2 messages
+    response: 288 SSE chunks (streaming)
+      content (1042 chars):
+        To determine how much Janet makes every day from selling her duck eggs at the farmers' market, we need to follow these steps:
+        
+        1. Calculate the total number of eggs laid by the ducks each day.
+        2. Determine the number of eggs eaten for breakfast each day.
+        3. Subtract the number of eggs eaten for brea
+        ...
+  ── end sample ──
+
+    <rollout-id>: [✓] answer='18', gt='18' → correct
+    <rollout-id>: [✓] answer='3', gt='3' → correct
+    <rollout-id>: [✓] answer='70000', gt='70000' → correct
+    <rollout-id>: [✓] answer='540', gt='540' → correct
+    <rollout-id>: [✓] answer='20', gt='20' → correct
+
+  --- Iteration 1 Summary ---
+  Rollouts: 5 succeeded, 0 failed
+  Events: 5 model_request, 5 agent_output, 5 reward
+  Versions seen: [1]
+  Average reward: 1.00 (5/5 correct)
+  ✅ All structural checks passed
+
+============================================================
+  FINAL SUMMARY
+============================================================
+  Iterations: 1
+  Rollouts: 5 succeeded, 0 failed
+  Events: 5 model_request, 5 agent_output, 5 reward
+  Accuracy: 5/5 = 100.0%
+  Iter 1: reward=1.00 (5/5)
+
+  Checks:
+    ✅ Rollouts succeeded: 5/5
+    ✅ model_request events: 5
+    ✅ agent_output events: 5
+    ✅ reward events: 5
+    ✅ Version 1 seen: {1}
+    ✅ Structural checks: 0 failures
+    ✅ Some correct answers: 5 correct
+
+  ✅ Math PoC (vLLM) completed successfully!

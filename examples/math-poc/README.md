@@ -130,17 +130,22 @@ examples/math-poc/run.sh
 scripts/start_vllm.sh --stop
 ```
 
-### 4. Verify (mock mode)
+### 4. Verify
 
-Compare against the reference output:
+Compare against reference outputs:
 
 ```bash
+# Mock mode:
 sed -E 's/[0-9a-f]{32}/<rollout-id>/g' examples/math-poc/logs/*/mock_rl_loop.log \
   | diff - examples/math-poc/reference_output.log
+
+# vLLM mode (structure matches; LLM reasoning text may vary):
+diff <(grep -E '^\s*(✅|❌|Rollouts|Events|Accuracy|Iter |Checks:)' examples/math-poc/logs/*/rl_loop.log) \
+     <(grep -E '^\s*(✅|❌|Rollouts|Events|Accuracy|Iter |Checks:)' examples/math-poc/reference_output_vllm.log)
 ```
 
-For vLLM mode, results are non-deterministic (real model inference), but the
-log structure, event types, and checks should all pass.
+For mock mode the output is fully deterministic. For vLLM mode, the model's
+reasoning text varies but the structure (events, checks, rewards) should match.
 
 ---
 
@@ -158,7 +163,8 @@ log structure, event types, and checks should all pass.
 | `.env.mockai.example` | Complete config for mock mode → `cp` to `deploy/.env` |
 | `.env.vllm.example` | Complete config for vLLM mode → `cp` to `deploy/.env` |
 | `run.sh` | One-command: build → deploy → run → verify → collect logs |
-| `reference_output.log` | Expected output (mock mode, redacted IDs) |
+| `reference_output.log` | Expected output — mock mode (redacted IDs) |
+| `reference_output_vllm.log` | Expected output — vLLM mode (redacted IDs) |
 | `logs/` | Per-run logs (gitignored) |
 
 ---
