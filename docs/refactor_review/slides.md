@@ -49,6 +49,8 @@ layout: section
 
 # Three Design Choices
 
+*Self-owned gateway · Gateway-level data capture · K8s-native runner*
+
 **1. Self-owned request gateway** — a purpose-built LLM reverse proxy that captures all request-response data transparently as it flows through
 
 **2. Gateway-level data capture** — instead of instrumenting agents, the gateway records request-response pairs during transfer and stores them as events — the proxy *is* the instrumentation
@@ -584,19 +586,19 @@ On retry, K8s creates a new pod → new `POD_UID` → URLs automatically point t
 
 ---
 
-# Job Template: Separating Infra from Algorithm
+# Job Template: Examples
 
-The `job_template` is a raw K8s pod spec — maintained per experiment, stored as an immutable resource snapshot. The controller merges it with per-rollout config at Job creation time.
+The `job_template` is a raw K8s pod spec — maintained per experiment, stored as an immutable resource snapshot.
 
 <div class="grid grid-cols-2 gap-6 mt-2">
 <div>
 
-#### Example: Math PoC
+#### Simple: Math PoC (single container)
 
 <div class="compact-code-block">
 
 ```yaml
-# job-template.yaml — simple single-container
+# job-template.yaml
 containers:
   - name: agent
     image: math-agent:dev
@@ -610,12 +612,15 @@ containers:
 
 </div>
 
-#### Example: Coding tasks (multi-container)
+</div>
+<div>
 
-<div class="compact-code-block-xs">
+#### Multi-container: Coding tasks (agent + scorer sidecar)
+
+<div class="compact-code-block">
 
 ```yaml
-# job-template.yaml — agent + scorer sidecar
+# job-template.yaml
 containers:
   - name: agent
     imagePullPolicy: Never
@@ -638,20 +643,44 @@ volumes:
 </div>
 
 </div>
+</div>
+
+<div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+
+💡 Any valid K8s pod spec fields work — nodeSelector, tolerations, volumes, init containers. The store doesn't validate it — K8s does at Job creation.
+
+</div>
+
+---
+
+# Job Template: Merge Flow
+
+The controller merges `job_template` with per-rollout config at Job creation time.
+
+<div class="grid grid-cols-2 gap-6 mt-2">
 <div>
 
 #### How the merge works
 
 <div class="compact-text">
 
-1. **`job_template`** provides the base pod spec — any valid K8s fields (nodeSelector, tolerations, sidecars, volumes...)
+1. **`job_template`** provides the base pod spec (from resources snapshot)
 2. **Controller injects** into the container named `agent`: env vars (`OPENAI_BASE_URL`, `AGL_TASK_INPUT`, etc.)
 3. **`rollout.config`** can override per-rollout: image, command, extra env vars
 4. **`rollout.config.overrides`** can patch other containers by name (e.g., swap scorer image per task)
 
 </div>
 
-<div class="compact-code-block-xs mt-4">
+<div class="mt-4 p-3 bg-green-50 rounded border border-green-200">
+
+✅ **Infra team** owns the template. **Researcher** sets `rollout.config`. Separation of concerns.
+
+</div>
+
+</div>
+<div>
+
+<div class="compact-code-block">
 
 ```
 job_template (raw pod spec, from YAML)
@@ -669,12 +698,6 @@ job_template (raw pod spec, from YAML)
         ├── backoffLimit (retries)
         └── activeDeadlineSeconds (timeout)
 ```
-
-</div>
-
-<div class="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
-
-💡 **Infra team** owns the template. **Researcher** sets `rollout.config`. The store doesn't validate the template — K8s does at Job creation.
 
 </div>
 
