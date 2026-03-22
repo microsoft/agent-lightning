@@ -78,7 +78,7 @@ layout: section
 
 # High-Level Architecture
 
-![agl-lite architecture](../images/lite_arch.excalidraw.svg)
+<img src="/lite_arch.excalidraw.svg" alt="Architecture diagram" class="w-full border rounded">
 
 <!--
 Three groups connected only by HTTP.
@@ -583,6 +583,105 @@ On retry, K8s creates a new pod → new `POD_UID` → URLs automatically point t
 </div>
 
 ---
+
+# Job Template: Separating Infra from Algorithm
+
+The `job_template` is a raw K8s pod spec — maintained per experiment, stored as an immutable resource snapshot. The controller merges it with per-rollout config at Job creation time.
+
+<div class="grid grid-cols-2 gap-6 mt-2">
+<div>
+
+#### Example: Math PoC
+
+<div class="compact-code-block">
+
+```yaml
+# job-template.yaml — simple single-container
+containers:
+  - name: agent
+    image: math-agent:dev
+    command: ["python", "/app/qa_agent.py"]
+    imagePullPolicy: Never
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+```
+
+</div>
+
+#### Example: Coding tasks (multi-container)
+
+<div class="compact-code-block-xs">
+
+```yaml
+# job-template.yaml — agent + scorer sidecar
+containers:
+  - name: agent
+    imagePullPolicy: Never
+    resources:
+      requests: {cpu: "1", memory: "2Gi"}
+    volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+  - name: scorer
+    image: scorer:latest
+    command: ["python", "run_tests.py"]
+    volumeMounts:
+      - name: workspace
+        mountPath: /workspace
+volumes:
+  - name: workspace
+    emptyDir: {}
+```
+
+</div>
+
+</div>
+<div>
+
+#### How the merge works
+
+<div class="compact-text">
+
+1. **`job_template`** provides the base pod spec — any valid K8s fields (nodeSelector, tolerations, sidecars, volumes...)
+2. **Controller injects** into the container named `agent`: env vars (`OPENAI_BASE_URL`, `AGL_TASK_INPUT`, etc.)
+3. **`rollout.config`** can override per-rollout: image, command, extra env vars
+4. **`rollout.config.overrides`** can patch other containers by name (e.g., swap scorer image per task)
+
+</div>
+
+<div class="compact-code-block-xs mt-4">
+
+```
+job_template (raw pod spec, from YAML)
+  │
+  ├── controller injects into "agent" container:
+  │     ├── OPENAI_BASE_URL, OPENAI_API_KEY
+  │     ├── AGL_TASK_INPUT, AGL_EVENT_URL
+  │     └── extra env from rollout.config
+  │
+  ├── rollout.config.overrides (if any):
+  │     └── name-matched container merge
+  │
+  └── wrap in Job metadata:
+        ├── name: agl-rollout-{rid}
+        ├── backoffLimit (retries)
+        └── activeDeadlineSeconds (timeout)
+```
+
+</div>
+
+<div class="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
+
+💡 **Infra team** owns the template. **Researcher** sets `rollout.config`. The store doesn't validate the template — K8s does at Job creation.
+
+</div>
+
+</div>
+</div>
+
+---
 layout: section
 ---
 
@@ -751,7 +850,7 @@ layout: section
 
 # Math PoC: GSM8K with Qwen2.5-1.5B-Instruct
 
-The `examples/math-poc/` demonstrates the full loop: enqueue tasks → agents solve via vLLM → algorithm scores.
+The `examples/math-poc/` demonstrates: enqueue tasks → agents solve via vLLM → algorithm scores.
 
 <div class="compact-code-block">
 
@@ -767,10 +866,10 @@ The `examples/math-poc/` demonstrates the full loop: enqueue tasks → agents so
                                                        ▼
 ┌─ host ────────────────────────────────────────────┐
 │  agl-lite serve    (process :8080)                │
-│    └─ gateway ──→ vLLM (localhost:8010)            │
+│    └─ gateway ──→ vLLM (localhost:8010)           │
 │                                                   │
 │  rl_loop.py        ← algorithm (localhost:8080)   │
-│  vLLM (Docker, GPU 0)  ← Qwen2.5-1.5B-Instruct  │
+│  vLLM (Docker, GPU 0)  ← Qwen2.5-1.5B-Instruct    │
 └───────────────────────────────────────────────────┘
 ```
 
@@ -803,67 +902,39 @@ The `examples/math-poc/` demonstrates the full loop: enqueue tasks → agents so
 | `reward` | algorithm | score, ground truth, comparison |
 
 </div>
-
-#### Run output (5 GSM8K problems)
+</div>
+<div>
 
 <div class="compact-code-block-xs">
 
 ```
 ITERATION 1 (model version=1)
-  [0] Q: Janet's ducks lay 16 eggs...  GT: 18
-      → Agent: 18  ✅ reward=1.0
-  [1] Q: A robe takes 2 bolts...       GT: 3
-      → Agent: 2   ❌ reward=0.0
-  [2] Q: Josh decides to try flipping.. GT: 70000
-      → Agent: 70000 ✅ reward=1.0
-  ...
-  Batch reward: 5/5 correct (1.000)
+  ── First model_request event (sample) ──
+    server:   model=Qwen/Qwen2.5-1.5B-Instruct, version=1
+    request.model:    Qwen/Qwen2.5-1.5B-Instruct
+    request.stream:   True
+    request.return_token_ids: True
+    request.messages: 2 messages
+    response: 362 SSE chunks (streaming)
+      content (1285 chars):
+        To determine how much Janet makes every day at the farmers' market, we need to follow these steps:
+        1. Calculate the total number of eggs laid by the ducks each day.
+        2. Determine how many eggs are eaten for breakfast.
+        3. Subtract the number of eggs eaten from the total number of eggs laid to find ou
+        ...
+      prompt_token_ids: 102 tokens
+      response token_ids: 361 tokens
+        first 10: [151644, 8948, 198, 2610, 2299, 264, 10950, 6888, 17847, 13]
+        first 10: [1249, 8253, 1246, 1753, 53665, 3643, 1449, 1899, 518, 279]
+  ── end sample ──
+    <rollout-id>: [✓] answer='18', gt='18' → correct
+    <rollout-id>: [✓] answer='3', gt='3' → correct
+    <rollout-id>: [✗] answer='0', gt='70000' → wrong: 0.0 != 70000.0
+    <rollout-id>: [✓] answer='540', gt='540' → correct
+    <rollout-id>: [✓] answer='20', gt='20' → correct
 ```
 
 </div>
-
-</div>
-<div>
-
-#### Two modes available
-
-<div class="compact-text">
-
-**Mock mode** (CPU-only, no GPU):
-- Echo server returns input verbatim
-- Deterministic rewards (assertion-checked)
-- Good for CI and development
-
-**vLLM mode** (GPU):
-- Qwen2.5-1.5B-Instruct on GPU 0
-- Real inference, real token IDs
-- 5/5 correct on tested batch
-
-</div>
-
-#### Getting started
-
-<div class="compact-code-block-xs">
-
-```bash
-# Clone, sync, test
-git clone <repo> && cd agl-lite
-uv sync && uv run pytest  # 284 tests, ~10s
-
-# Mock mode (CPU)
-cp examples/math-poc/.env.mockai.example \
-   deploy/.env
-./examples/math-poc/run.sh
-
-# vLLM mode (GPU)
-cp examples/math-poc/.env.vllm.example \
-   deploy/.env
-./scripts/start_vllm.sh
-./examples/math-poc/run.sh
-```
-
-</div>
-
 </div>
 </div>
 

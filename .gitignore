@@ -212,3 +212,6 @@ __marimo__/
 # Local settings
 .local/
 .vscode/examples/math-poc/logs/
+
+# some sites building
+public
