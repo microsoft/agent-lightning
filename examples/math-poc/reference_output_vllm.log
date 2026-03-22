@@ -1,6 +1,6 @@
 === Math PoC — RL Loop (vLLM) ===
   agl-lite:  http://localhost:8080
-  model:     Qwen/Qwen2.5-1.5B-Instruct → http://host.minikube.internal:8010/v1
+  model:     Qwen/Qwen2.5-1.5B-Instruct → http://localhost:8010/v1
   namespace: agl-test
   batch:     5, iterations: 1
 
@@ -10,7 +10,7 @@
   Dataset loaded: 30 problems
 
 --- Register model server (v1) ---
-  Qwen/Qwen2.5-1.5B-Instruct → http://host.minikube.internal:8010/v1 (version=1)
+  Qwen/Qwen2.5-1.5B-Instruct → http://localhost:8010/v1 (version=1)
 
 ============================================================
   ITERATION 1 (model version=1)
@@ -29,12 +29,11 @@
   Enqueued 5 rollouts
   Polling for completion...
   [poll #1] {'queuing': 5}
-  [poll #2] {'queuing': 5}
-  [poll #3] {'running': 1, 'queuing': 4}
-  [poll #4] {'running': 3, 'queuing': 2}
-  [poll #5] {'succeeded': 1, 'running': 4}
-  [poll #6] {'succeeded': 2, 'running': 3}
-  [poll #7] All done: {'succeeded': 5}
+  [poll #2] {'running': 1, 'queuing': 4}
+  [poll #3] {'running': 3, 'queuing': 2}
+  [poll #4] {'succeeded': 1, 'running': 3, 'queuing': 1}
+  [poll #5] {'succeeded': 2, 'running': 3}
+  [poll #6] All done: {'succeeded': 5}
   Completed: 5 succeeded, 0 failed
   Results:
 
@@ -44,31 +43,31 @@
     request.stream:   True
     request.return_token_ids: True
     request.messages: 2 messages
-    response: 254 SSE chunks (streaming)
-      content (965 chars):
-        To determine how much Janet makes each day from selling the eggs at the farmers' market, we need to follow these steps:
+    response: 362 SSE chunks (streaming)
+      content (1285 chars):
+        To determine how much Janet makes every day at the farmers' market, we need to follow these steps:
         
         1. Calculate the total number of eggs laid by the ducks each day.
-        2. Determine how many eggs are eaten or used up in the morning.
-        3. Subtract the number of eggs used from the tota
+        2. Determine how many eggs are eaten for breakfast.
+        3. Subtract the number of eggs eaten from the total number of eggs laid to find ou
         ...
       prompt_token_ids: 102 tokens
-      response token_ids: 253 tokens
+      response token_ids: 361 tokens
         first 10: [151644, 8948, 198, 2610, 2299, 264, 10950, 6888, 17847, 13]
-        first 10: [1249, 8253, 1246, 1753, 53665, 3643, 1817, 1899, 504, 11236]
+        first 10: [1249, 8253, 1246, 1753, 53665, 3643, 1449, 1899, 518, 279]
   ── end sample ──
 
-    <rollout-id>: [✗] answer='26', gt='18' → wrong: 26.0 != 18.0
+    <rollout-id>: [✓] answer='18', gt='18' → correct
     <rollout-id>: [✓] answer='3', gt='3' → correct
-    <rollout-id>: [✓] answer='70000', gt='70000' → correct
+    <rollout-id>: [✗] answer='0', gt='70000' → wrong: 0.0 != 70000.0
     <rollout-id>: [✓] answer='540', gt='540' → correct
-    <rollout-id>: [✗] answer='To determine how many cups of feed Wendi needs for one chicken, we first calculate the total amount of feed given to all chickens over the course of the day.\n\nEach chicken receives:\n- Morning feed: \\(3\\) cups\n- Afternoon feed: \\(3\\) cups\n\nSo, each chicken gets:\n\\[ 3 + 3 = 6 \\text{ cups per day} \\]\n\nNext, we find out the total number of cups of feed needed for all 20 chickens:\n\n\\[\n20 \\text{ chickens} \\times 6 \\text{ cups/chicken/day} = 120 \\text{ cups}\n\\]\n\nWendi has already given feed to her chickens as follows:\n- Morning feed: \\(15\\) cups\n- Afternoon feed: \\(25\\) cups\n\nWe sum these amounts to see what has been given so far:\n\n\\[\n15 \\text{ cups} + 25 \\text{ cups} = 40 \\text{ cups}\n\\]\n\nFinally, we subtract the total amount of feed already given from the total required:\n\n\\[\n120 \\text{ cups} - 40 \\text{ cups} = 80 \\text{ cups}\n\\]\n\nThus, Wendi needs to give her chickens an additional **80 cups** for the final meal of the day.', gt='20' → agent answer not numeric: 'To determine how many cups of feed Wendi needs for one chicken, we first calculate the total amount of feed given to all chickens over the course of the day.\n\nEach chicken receives:\n- Morning feed: \\(3\\) cups\n- Afternoon feed: \\(3\\) cups\n\nSo, each chicken gets:\n\\[ 3 + 3 = 6 \\text{ cups per day} \\]\n\nNext, we find out the total number of cups of feed needed for all 20 chickens:\n\n\\[\n20 \\text{ chickens} \\times 6 \\text{ cups/chicken/day} = 120 \\text{ cups}\n\\]\n\nWendi has already given feed to her chickens as follows:\n- Morning feed: \\(15\\) cups\n- Afternoon feed: \\(25\\) cups\n\nWe sum these amounts to see what has been given so far:\n\n\\[\n15 \\text{ cups} + 25 \\text{ cups} = 40 \\text{ cups}\n\\]\n\nFinally, we subtract the total amount of feed already given from the total required:\n\n\\[\n120 \\text{ cups} - 40 \\text{ cups} = 80 \\text{ cups}\n\\]\n\nThus, Wendi needs to give her chickens an additional **80 cups** for the final meal of the day.'
+    <rollout-id>: [✓] answer='20', gt='20' → correct
 
   --- Iteration 1 Summary ---
   Rollouts: 5 succeeded, 0 failed
   Events: 5 model_request, 5 agent_output, 5 reward
   Versions seen: [1]
-  Average reward: 0.60 (3/5 correct)
+  Average reward: 0.80 (4/5 correct)
   ✅ All structural checks passed
 
 ============================================================
@@ -77,8 +76,8 @@
   Iterations: 1
   Rollouts: 5 succeeded, 0 failed
   Events: 5 model_request, 5 agent_output, 5 reward
-  Accuracy: 3/5 = 60.0%
-  Iter 1: reward=0.60 (3/5)
+  Accuracy: 4/5 = 80.0%
+  Iter 1: reward=0.80 (4/5)
 
   Checks:
     ✅ Rollouts succeeded: 5/5
@@ -87,6 +86,6 @@
     ✅ reward events: 5
     ✅ Version 1 seen: {1}
     ✅ Structural checks: 0 failures
-    ✅ Some correct answers: 3 correct
+    ✅ Some correct answers: 4 correct
 
   ✅ Math PoC (vLLM) completed successfully!

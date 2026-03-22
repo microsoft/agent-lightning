@@ -1,6 +1,10 @@
 #!/bin/bash
 # Run the math-poc end-to-end on minikube.
 #
+# Topology:
+#   mock mode: all services in minikube (agl-lite, controller, mockai, agents)
+#   vllm mode: agl-lite + vLLM on host, controller + agents in minikube
+#
 # Usage:
 #   cp examples/math-poc/.env.mockai.example deploy/.env   # or .env.vllm.example
 #   export AGL_KEY=$(openssl rand -hex 32)
@@ -45,11 +49,11 @@ echo "=== Mode: $MODE ==="
 
 # --- For vLLM mode, verify vLLM is reachable ---
 if [ "$MODE" = "vllm" ]; then
-    VLLM_PORT="${AGL_VLLM_PORT:-8001}"
+    VLLM_PORT="${AGL_VLLM_PORT:-8010}"
     echo "Checking vLLM on localhost:$VLLM_PORT ..."
     if ! curl -sf "http://localhost:$VLLM_PORT/v1/models" > /dev/null 2>&1; then
         echo "ERROR: vLLM not reachable at localhost:$VLLM_PORT"
-        echo "Start it with: vllm serve ${AGL_MODEL_NAME:-model} --port $VLLM_PORT --host 0.0.0.0"
+        echo "Start it with: scripts/start_vllm.sh"
         exit 1
     fi
     echo "  vLLM OK"
@@ -59,35 +63,16 @@ fi
 echo "=== Building images ==="
 scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
 
-# --- Deploy infra ---
+# --- Deploy K8s infra ---
 echo ""
-echo "=== Deploying agl-lite infra ==="
-scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"
-
-# --- Apply gateway config (vllm mode) ---
 if [ "$MODE" = "vllm" ]; then
-    GATEWAY_CONFIG="$SCRIPT_DIR/gateway-config.yaml"
-    if [ -f "$GATEWAY_CONFIG" ]; then
-        echo ""
-        echo "=== Applying gateway config ==="
-        kubectl -n "$NS" create configmap agl-gateway-config \
-            --from-file=gateway-config.yaml="$GATEWAY_CONFIG" \
-            --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_DIR/deploy.log"
-        # Patch agl-lite deployment to mount gateway config and add --gateway-config flag
-        kubectl -n "$NS" patch deployment agl-lite --type=json -p='[
-          {"op": "add", "path": "/spec/template/spec/volumes", "value": [
-            {"name": "gateway-config", "configMap": {"name": "agl-gateway-config"}}
-          ]},
-          {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts", "value": [
-            {"name": "gateway-config", "mountPath": "/etc/agl-lite", "readOnly": true}
-          ]},
-          {"op": "replace", "path": "/spec/template/spec/containers/0/command", "value": [
-            "agl-lite", "serve", "--host", "0.0.0.0", "--port", "8080",
-            "--gateway-config", "/etc/agl-lite/gateway-config.yaml"
-          ]}
-        ]' 2>&1 | tee -a "$LOG_DIR/deploy.log"
-        kubectl -n "$NS" rollout status deployment/agl-lite --timeout=60s 2>&1 | tee -a "$LOG_DIR/deploy.log"
-    fi
+    # vLLM mode: only controller in K8s, agl-lite runs on host
+    echo "=== Deploying controller to K8s (agl-lite will run on host) ==="
+    scripts/deploy.sh --no-serve 2>&1 | tee "$LOG_DIR/deploy.log"
+else
+    # Mock mode: everything in K8s
+    echo "=== Deploying agl-lite infra to K8s ==="
+    scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"
 fi
 
 # --- Deploy mockai (mock mode only) ---
@@ -98,23 +83,54 @@ if [ "$MODE" = "mock" ]; then
     kubectl -n "$NS" wait --for=condition=available deployment/mockai --timeout=120s 2>&1 | tee -a "$LOG_DIR/deploy.log"
 fi
 
-# --- Port forward ---
-echo ""
-echo "=== Starting port-forward ==="
-kubectl -n "$NS" port-forward svc/agl-lite 8080:8080 &
-PF_PID=$!
-sleep 2
+# --- Start agl-lite serve ---
+SERVE_PID=""
+PF_PID=""
 
-# Cleanup on exit — collect K8s logs
+if [ "$MODE" = "vllm" ]; then
+    # vLLM mode: start agl-lite on host
+    GATEWAY_CONFIG="$SCRIPT_DIR/gateway-config.yaml"
+    SERVE_CMD=(uv run agl-lite serve --host 0.0.0.0 --port 8080)
+    if [ -f "$GATEWAY_CONFIG" ]; then
+        SERVE_CMD+=(--gateway-config "$GATEWAY_CONFIG")
+    fi
+    echo ""
+    echo "=== Starting agl-lite serve on host ==="
+    echo "  ${SERVE_CMD[*]}"
+    AGL_KEY="$AGL_KEY" "${SERVE_CMD[@]}" > "$LOG_DIR/agl-lite.log" 2>&1 &
+    SERVE_PID=$!
+
+    # Wait for agl-lite to be ready
+    for i in $(seq 1 30); do
+        if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then
+            echo "  agl-lite ready"
+            break
+        fi
+        if ! kill -0 $SERVE_PID 2>/dev/null; then
+            echo "ERROR: agl-lite process died"
+            tail -20 "$LOG_DIR/agl-lite.log"
+            exit 1
+        fi
+        sleep 1
+    done
+else
+    # Mock mode: port-forward to K8s agl-lite
+    echo ""
+    echo "=== Starting port-forward ==="
+    kubectl -n "$NS" port-forward svc/agl-lite 8080:8080 &
+    PF_PID=$!
+    sleep 2
+fi
+
+# Cleanup on exit — collect logs
 cleanup() {
     echo ""
     echo "=== Collecting K8s logs ==="
-    kubectl -n "$NS" logs deployment/agl-lite --tail=200 > "$LOG_DIR/agl-lite.log" 2>&1 || true
-    kubectl -n "$NS" logs deployment/agl-controller --tail=200 > "$LOG_DIR/controller.log" 2>&1 || true
     if [ "$MODE" = "mock" ]; then
+        kubectl -n "$NS" logs deployment/agl-lite --tail=200 > "$LOG_DIR/agl-lite.log" 2>&1 || true
         kubectl -n "$NS" logs deployment/mockai --tail=200 > "$LOG_DIR/mockai.log" 2>&1 || true
     fi
-    # Collect logs from any agent pods (Jobs)
+    kubectl -n "$NS" logs deployment/agl-controller --tail=200 > "$LOG_DIR/controller.log" 2>&1 || true
     for pod in $(kubectl -n "$NS" get pods -l managed-by=agl-controller -o name 2>/dev/null); do
         name=$(basename "$pod")
         kubectl -n "$NS" logs "$pod" --all-containers > "$LOG_DIR/agent-$name.log" 2>&1 || true
@@ -122,8 +138,14 @@ cleanup() {
     kubectl -n "$NS" get pods -o wide > "$LOG_DIR/pods.log" 2>&1 || true
     kubectl -n "$NS" get jobs -o wide > "$LOG_DIR/jobs.log" 2>&1 || true
     echo "=== Cleanup ==="
-    kill $PF_PID 2>/dev/null || true
-    echo "Port-forward stopped. Cluster resources left running."
+    [ -n "$PF_PID" ] && kill $PF_PID 2>/dev/null || true
+    [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
+    if [ -n "$SERVE_PID" ]; then
+        echo "agl-lite serve stopped."
+    else
+        echo "Port-forward stopped."
+    fi
+    echo "Cluster resources left running."
     echo "Logs saved to: $LOG_DIR"
     echo "To tear down: scripts/deploy.sh --cleanup"
 }
@@ -138,7 +160,7 @@ export AGL_MODEL_NAME="${AGL_MODEL_NAME:-mock-llm}"
 export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
 export AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}"
 export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-2}"
-export AGL_VLLM_PORT="${AGL_VLLM_PORT:-8001}"
+export AGL_VLLM_PORT="${AGL_VLLM_PORT:-8010}"
 
 # --- Run algorithm ---
 echo ""

@@ -37,36 +37,36 @@ Everything runs on a single machine with minikube. No GPU required.
 
 ### vLLM mode (Phase 4b — GPU)
 
-vLLM runs on the host as a Docker container with GPU access. agl-lite infra
-runs in minikube. Agent pods reach vLLM through the gateway, which forwards
-to `host.minikube.internal`.
+agl-lite and vLLM run on the host (colocated). Only the controller and agent
+pods run in minikube. This minimizes network hops: gateway → vLLM is localhost.
 
 ```
 ┌─ minikube ────────────────────────────────────────┐
 │                                                   │
-│  agl-lite serve    (Deployment)  ← HTTP API       │
 │  agl-controller    (Deployment)  ← creates Jobs   │
 │                                                   │
-│  agent pods        (Jobs)   ─── gateway ──────────┼──┐
+│  agent pods        (Jobs)   ─── OPENAI_BASE_URL ──┼──┐
 │                                                   │  │
-└──────────────────────┬────────────────────────────┘  │
-                       │ port-forward :8080             │
-                       ▼                               ▼
+└───────────────────────────────────────────────────┘  │
+                                                       │ host.minikube.internal:8080
+                                                       ▼
 ┌─ host ────────────────────────────────────────────┐
-│  rl_loop.py        ← algorithm (enqueue, reward)  │
+│                                                   │
+│  agl-lite serve    (process :8080)                │
+│    └─ gateway ──→ vLLM (localhost:8010)            │
+│                                                   │
+│  rl_loop.py        ← algorithm (localhost:8080)   │
 │                                                   │
 │  vLLM (Docker)     ← Qwen2.5-1.5B-Instruct       │
-│   :8010              real inference on GPU         │
-│   (vllm/vllm-openai:latest)                      │
+│   :8010              (vllm/vllm-openai:latest)    │
 └───────────────────────────────────────────────────┘
 ```
 
-- **vLLM** runs via Docker (`vllm/vllm-openai:latest`) with NVIDIA GPU access.
-  Started separately with `scripts/start_vllm.sh`.
-- **Agent** sends `stream=True` requests. Gateway captures all SSE chunks as
-  `model_request` events, then forwards to the agent.
-- **Reward**: parse model's `\boxed{answer}`, compare to ground truth
-  numerically (handles `18` vs `18.0`, `$18`, `18,000`, etc.).
+- **agl-lite** runs on host — no port-forward needed for the algorithm.
+- **Gateway → vLLM** is `localhost:8010` — no cross-network hop.
+- **Agent pods** reach agl-lite via `host.minikube.internal:8080`.
+- **Gateway config** injects `return_token_ids: true` into all requests
+  (needed for RL training — prompt + response token IDs).
 - **Model is frozen** in Phase 4b — no actual weight updates.
 
 ---

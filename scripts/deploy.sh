@@ -28,6 +28,14 @@ if [[ "${1:-}" == "--cleanup" || "${1:-}" == "--teardown" ]]; then
     exit 0
 fi
 
+# --- Parse flags ---
+SKIP_SERVE=false
+for arg in "$@"; do
+    case "$arg" in
+        --no-serve) SKIP_SERVE=true ;;
+    esac
+done
+
 # --- Check AGL_KEY ---
 if [ -z "${AGL_KEY:-}" ]; then
     echo "ERROR: AGL_KEY not set. Either:"
@@ -60,16 +68,23 @@ echo "--- Applying RBAC ---"
 kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/rbac.yaml"
 
 # 5. Deployments
-echo "--- Deploying agl-lite serve ---"
-kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/agl-lite/k8s.yaml"
+if [ "$SKIP_SERVE" = false ]; then
+    echo "--- Deploying agl-lite serve ---"
+    kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/agl-lite/k8s.yaml"
+fi
 
 echo "--- Deploying controller ---"
 kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/k8s.yaml"
 
 # 6. Wait
-echo "--- Waiting for pods ---"
-kubectl -n "$NS" wait --for=condition=available deployment/agl-lite --timeout=120s
-kubectl -n "$NS" wait --for=condition=available deployment/agl-controller --timeout=120s
+if [ "$SKIP_SERVE" = false ]; then
+    echo "--- Waiting for pods ---"
+    kubectl -n "$NS" wait --for=condition=available deployment/agl-lite --timeout=120s
+    kubectl -n "$NS" wait --for=condition=available deployment/agl-controller --timeout=120s
+else
+    echo "--- Waiting for controller ---"
+    kubectl -n "$NS" wait --for=condition=available deployment/agl-controller --timeout=120s
+fi
 
 echo ""
 echo "=== agl-lite deployed to namespace: $NS ==="
