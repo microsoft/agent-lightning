@@ -22,8 +22,15 @@
 - [x] **Phase 4a**: E2E with mock model server (CPU-only minikube). 271 unit tests + 9 e2e/cpu tests.
   - Kr8s adapter, `agl-client` CLI, deploy structure, example agents
   - `job_template` refactor (raw K8s pod spec, name-matched container overrides)
-  - Math PoC: 2-iteration RL loop with weight update (v1→v2), streaming mode, deterministic rewards via `\boxed{}` embedding, model_request event validation (10 structural checks per event), logging with reference output
+  - Math PoC mock mode: 2-iteration RL loop with weight update (v1→v2), streaming, deterministic rewards via `\boxed{}` embedding, model_request event validation, reference log
   - Scripts: `build_images.sh`, `deploy.sh`, `run.sh` (one-command E2E with log capture)
+- [x] **Phase 4b**: E2E with real vLLM (GPU).
+  - vLLM via Docker (`vllm/vllm-openai:latest`) on host GPU, reachable from minikube via `host.minikube.internal`
+  - `scripts/start_vllm.sh` — convenience start/stop for vLLM Docker container
+  - `rl_loop.py` — real algorithm: plain questions, numeric reward parsing, structural checks on streaming model_request events
+  - Qwen2.5-1.5B-Instruct: 5/5 correct (100%) on GSM8K sample, 288 SSE chunks per response
+  - Two self-contained `.env` examples (`.env.mockai.example`, `.env.vllm.example`), mode-aware `run.sh`
+  - Reference logs for both modes (`reference_output.log`, `reference_output_vllm.log`)
 
 ---
 
@@ -37,25 +44,10 @@ Not on the critical path — the happy-path lifecycle is fully validated. Add wh
 
 ---
 
-## Phase 4b: E2E with Real vLLM (GPU) [discuss]
+## Phase 4b.3: Performance baseline [backlog]
 
-**Goal**: Validate agl-lite with a real vLLM inference server on GPU. Bridge to VERL integration.
-
-### 4b.1 vLLM deployment
-- [ ] Deploy vLLM on host GPUs (4× A6000), expose to minikube (NodePort or host network)
-- [ ] Model selection (small model for fast iteration, e.g., Qwen-2.5-1.5B or similar)
-- [ ] Register real vLLM endpoint as model server via agl-lite API
-
-### 4b.2 Real inference E2E
-- [ ] Reuse Phase 4a agent + algorithm script against real vLLM
-- [ ] Verify event capture contains real model responses
-- [ ] Weight update protocol: vLLM model reload + agl-lite model server re-registration
-
-### 4b.3 Performance baseline
 - [ ] Measure: rollout throughput, gateway proxy latency overhead, event capture overhead
 - [ ] Compare direct vLLM vs gateway-proxied vLLM
-
-**Deliverables**: Proven real-inference path, performance baseline. Prerequisite for Phase 5.
 
 ---
 
@@ -102,3 +94,4 @@ These are settled and should not be revisited during implementation:
 | Namespace | Single namespace per controller instance. Manifests omit namespace, applied via `-n`. |
 | `timeout` / `max_retries` | Map to K8s Job `activeDeadlineSeconds` / `backoffLimit` |
 | Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars via `secretKeyRef` to `agl-lite-keys/AGL_KEY`. |
+| vLLM deployment | Docker container (`vllm/vllm-openai:latest`) on host, separate from agl-lite lifecycle. `scripts/start_vllm.sh` for convenience. |
