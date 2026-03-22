@@ -172,6 +172,8 @@ async def run_iteration(
     versions_seen = set()
     assertion_failures = []
 
+    first_mr_logged = False
+
     log(f"  Collecting events and computing rewards:")
     for rollout in succeeded:
         events = await client.get_events(rollout.rollout_id)
@@ -188,6 +190,79 @@ async def run_iteration(
             v = server.get("version")
             if v is not None:
                 versions_seen.add(v)
+
+        # --- Validate model_request event structure ---
+        for event in mr_events:
+            d = event.data
+            req = d.get("request", {})
+            resp = d.get("response")
+            srv = d.get("server", {})
+
+            # Print the first model_request event in full detail
+            if not first_mr_logged:
+                log(f"")
+                log(f"  ── First model_request event (sample) ──")
+                log(f"    rollout:  {rollout.rollout_id}")
+                log(f"    attempt:  {event.attempt_id}")
+                log(f"    server:   model={srv.get('model')}, version={srv.get('version')}, endpoint={srv.get('endpoint')}")
+                log(f"    request.model:    {req.get('model')}")
+                log(f"    request.stream:   {req.get('stream')}")
+                log(f"    request.messages: {len(req.get('messages', []))} messages")
+                for i, msg in enumerate(req.get("messages", [])):
+                    role = msg.get("role", "?")
+                    content_preview = str(msg.get("content", ""))[:60]
+                    log(f"      [{i}] {role}: {content_preview}...")
+                if isinstance(resp, list):
+                    log(f"    response: {len(resp)} SSE chunks (streaming)")
+                    if resp:
+                        log(f"      first chunk: {json.dumps(resp[0], indent=None)[:120]}...")
+                        # Reassemble content from chunks
+                        assembled = ""
+                        for chunk in resp:
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                assembled += delta.get("content", "")
+                        log(f"      assembled content ({len(assembled)} chars): {assembled[:80]}...")
+                elif isinstance(resp, dict):
+                    log(f"    response: non-streaming (dict)")
+                    content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    log(f"      content ({len(content)} chars): {content[:80]}...")
+                else:
+                    log(f"    response: {type(resp).__name__}")
+                log(f"  ── end sample ──")
+                log(f"")
+                first_mr_logged = True
+
+            # Structural assertions on every model_request
+            has_request = "request" in d
+            has_response = "response" in d
+            has_server = "server" in d
+            has_model = "model" in req
+            has_messages = "messages" in req and len(req["messages"]) >= 2
+            has_stream = "stream" in req
+            is_streaming = req.get("stream") is True
+            has_version = "version" in srv and srv["version"] is not None
+            resp_is_list = isinstance(resp, list)  # streaming → list of chunks
+            resp_nonempty = bool(resp)
+
+            checks = [
+                ("has request", has_request),
+                ("has response", has_response),
+                ("has server", has_server),
+                ("has model in request", has_model),
+                ("has ≥2 messages", has_messages),
+                ("has stream flag", has_stream),
+                ("stream=True", is_streaming),
+                ("has version in server", has_version),
+                ("response is list (SSE chunks)", resp_is_list),
+                ("response non-empty", resp_nonempty),
+            ]
+            for check_name, ok in checks:
+                if not ok:
+                    assertion_failures.append(
+                        f"{rollout.rollout_id}: model_request check failed: {check_name}"
+                    )
 
         # Get agent answer
         agent_answer = None

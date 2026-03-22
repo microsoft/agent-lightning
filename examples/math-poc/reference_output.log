@@ -36,16 +36,36 @@
   [poll #1] {'queuing': 5}
   [poll #2] {'queuing': 5}
   [poll #3] {'queuing': 5}
-  [poll #4] {'queuing': 5}
-  [poll #5] {'running': 1, 'queuing': 4}
+  [poll #4] {'running': 1, 'queuing': 4}
+  [poll #5] {'running': 2, 'queuing': 3}
   [poll #6] {'running': 3, 'queuing': 2}
   [poll #7] {'running': 4, 'queuing': 1}
-  [poll #8] {'succeeded': 2, 'running': 3}
-  [poll #9] {'succeeded': 2, 'running': 3}
-  [poll #10] {'succeeded': 4, 'running': 1}
-  [poll #11] All done: {'succeeded': 5}
+  [poll #8] {'running': 5}
+  [poll #9] {'running': 4, 'succeeded': 1}
+  [poll #10] {'succeeded': 2, 'running': 3}
+  [poll #11] {'succeeded': 4, 'running': 1}
+  [poll #12] {'succeeded': 4, 'running': 1}
+  [poll #13] {'succeeded': 4, 'running': 1}
+  [poll #14] {'succeeded': 4, 'running': 1}
+  [poll #15] {'succeeded': 4, 'running': 1}
+  [poll #16] All done: {'succeeded': 5}
   Completed: 5 succeeded, 0 failed
   Collecting events and computing rewards:
+
+  ── First model_request event (sample) ──
+    rollout:  <rollout-id>
+    attempt:  <attempt-id>
+    server:   model=mock-llm, version=1, endpoint=http://mockai.agl-test.svc.cluster.local:5002/v1
+    request.model:    mock-llm
+    request.stream:   True
+    request.messages: 2 messages
+      [0] system: You're a helpful math assistant. For every given problem, pu...
+      [1] user: Janet’s ducks lay 16 eggs per day. She eats three for breakf...
+    response: 110 SSE chunks (streaming)
+      first chunk: {"id": "chatcmpl-<id>", "object": "chat.completion.chunk", "created": <ts>, "model": "...
+      assembled content (291 chars): Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning an...
+  ── end sample ──
+
     <rollout-id>: [✓]
       events: 1 model_request, 1 agent_output
       boxed='18', agent_answer='18', ground_truth='18'
@@ -105,17 +125,35 @@
   Polling for completion...
   [poll #1] {'queuing': 5}
   [poll #2] {'queuing': 5}
-  [poll #3] {'queuing': 5}
-  [poll #4] {'queuing': 5}
-  [poll #5] {'running': 1, 'queuing': 4}
-  [poll #6] {'running': 2, 'queuing': 3}
-  [poll #7] {'running': 3, 'queuing': 2}
-  [poll #8] {'succeeded': 1, 'running': 3, 'queuing': 1}
+  [poll #3] {'running': 1, 'queuing': 4}
+  [poll #4] {'running': 3, 'queuing': 2}
+  [poll #5] {'running': 4, 'queuing': 1}
+  [poll #6] {'running': 5}
+  [poll #7] {'running': 5}
+  [poll #8] {'succeeded': 1, 'running': 4}
   [poll #9] {'succeeded': 2, 'running': 3}
-  [poll #10] {'succeeded': 3, 'running': 2}
-  [poll #11] All done: {'succeeded': 5}
+  [poll #10] {'succeeded': 2, 'running': 3}
+  [poll #11] {'succeeded': 3, 'running': 2}
+  [poll #12] {'succeeded': 4, 'running': 1}
+  [poll #13] {'succeeded': 4, 'running': 1}
+  [poll #14] All done: {'succeeded': 5}
   Completed: 5 succeeded, 0 failed
   Collecting events and computing rewards:
+
+  ── First model_request event (sample) ──
+    rollout:  <rollout-id>
+    attempt:  <attempt-id>
+    server:   model=mock-llm, version=2, endpoint=http://mockai.agl-test.svc.cluster.local:5002/v1
+    request.model:    mock-llm
+    request.stream:   True
+    request.messages: 2 messages
+      [0] system: You're a helpful math assistant. For every given problem, pu...
+      [1] user: Kylar went to the store to buy glasses for his new apartment...
+    response: 89 SSE chunks (streaming)
+      first chunk: {"id": "chatcmpl-<id>", "object": "chat.completion.chunk", "created": <ts>, "model": "...
+      assembled content (214 chars): Kylar went to the store to buy glasses for his new apartment. One glass costs $5...
+  ── end sample ──
+
     <rollout-id>: [✓]
       events: 1 model_request, 1 agent_output
       boxed='64', agent_answer='64', ground_truth='64'

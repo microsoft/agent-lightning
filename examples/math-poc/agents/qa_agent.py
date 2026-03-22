@@ -89,9 +89,16 @@ def main() -> None:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": question},
         ],
+        stream=True,
     )
 
-    content = response.choices[0].message.content or ""
+    # Collect streamed chunks
+    content_parts: list[str] = []
+    for chunk in response:
+        delta = chunk.choices[0].delta if chunk.choices else None
+        if delta and delta.content:
+            content_parts.append(delta.content)
+    content = "".join(content_parts)
     print(f"LLM response: {content}")
 
     # --- Parse answer ---
