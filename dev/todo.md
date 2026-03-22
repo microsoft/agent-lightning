@@ -19,71 +19,25 @@
 - [x] **Phase 1**: In-memory store — rollouts (batch), events, resources, models, archive. 156 tests.
 - [x] **Phase 2**: HTTP API — FastAPI app, auth, all store routes, gateway (config/router/proxy with wildcard + list-based routes), CLI, streaming SSE.
 - [x] **Phase 3**: K8s controller — Python client, job builder, reconciler (create/watch/cancel/crash-recovery), CLI. 254 tests total.
-- [x] **Phase 4a.1**: Kr8s adapter — real K8s client implementing K8sClient protocol. 9 integration tests against minikube.
-- [x] **Phase 4a.2**: `agl-client` CLI — separate entrypoint for API consumers (rollouts, events, models, resources, health). 7 tests.
-- [x] **Phase 4a.3**: Deploy structure — Dockerfile, K8s manifests, deploy.sh, build_images.sh, .env config.
-- [x] **Phase 4a.4**: Example agents — qa_agent.py (openai SDK, CRASH_ON_FIRST support, no agl-lite import).
-- [x] **Phase 4a.4b**: Refactor job_defaults → job_template (raw K8s pod spec, no typed schema, name-matched container overrides in RolloutConfig). 271 tests total.
+- [x] **Phase 4a**: E2E with mock model server (CPU-only minikube). 271 unit tests + 9 e2e/cpu tests.
+  - Kr8s adapter, `agl-client` CLI, deploy structure, example agents
+  - `job_template` refactor (raw K8s pod spec, name-matched container overrides)
+  - Math PoC: 2-iteration RL loop with weight update (v1→v2), streaming mode, deterministic rewards via `\boxed{}` embedding, model_request event validation (10 structural checks per event), logging with reference output
+  - Scripts: `build_images.sh`, `deploy.sh`, `run.sh` (one-command E2E with log capture)
 
 ---
 
-## Phase 4a: E2E with Mock Model Server (CPU-only minikube) [discuss]
+## Phase 4a.7: Additional E2E scenarios [backlog]
 
-**Goal**: Prove the full agl-lite lifecycle works end-to-end, fast and deterministic, using a mock OpenAI-compatible server inside minikube.
+Not on the critical path — the happy-path lifecycle is fully validated. Add when needed.
 
-### Phase 4a Decisions
-
-| # | Decision |
-|---|----------|
-| 1 | **Mock server**: Use existing `~/mockai` (polly3d/mockai) — Node.js OpenAI-compatible mock with echo/random/fixed modes, streaming SSE, configurable delay. No custom mock needed. |
-| 2 | **Failure modes**: 503 tested via model deregistration in agl-lite (gateway returns 503 when no servers). Agent retry tested via agent crash (env var `CRASH_ON_FIRST=1`). Mock itself stays healthy. |
-| 3 | **Client CLI**: Separate entrypoint `agl-client` (not a subcommand of `agl-lite`). `agl-lite` = infra (serve, controller). `agl-client` = API consumer (rollouts, events, models, resources). Wraps `AglLiteClient`. |
-| 4 | **Examples folder**: `examples/agents/python/` (source + Dockerfile, openai SDK only), `examples/math-poc/` (full PoC scenario with algorithm script + PoC-specific K8s manifests like mockai). Agents are task-specific, not infra. |
-| 5 | **Docker builds**: Unified `scripts/build_images.sh` (bash). Uses `minikube image build` + `imagePullPolicy: Never`. Infra from `deploy/`, PoC images selective via args. `.dockerignore` for fast builds. agl-lite Dockerfile builds from repo root context. |
-| 6 | **E2E cleanup**: Delete + recreate namespace at test start. Single `scripts/e2e_test.sh` wraps full lifecycle. |
-| 7 | **Deployments**: agl-lite serve and controller as separate K8s Deployments (matches production topology). Controller reuses agl-lite image with different CMD (no separate Dockerfile). |
-| 8 | **Algorithm script**: Python, runs on host via `kubectl port-forward`. No Docker image needed — target audience is RL researchers using Python. Uses `AglLiteClient`. |
-| 9 | **Deploy layout**: `deploy/` = infra only (agl-lite, controller). No `deploy/common/` — setup script creates K8s resources from `.env`. Task-specific things (agents, mockai, algorithm scripts) live in `examples/`. |
-| 10 | **Mock algorithm**: Full RL loop sim — 2 iterations with weight update (deregister → 503 window → re-register with bumped version). Verifies version tracking in events. No mockai restart needed (version is store metadata). |
-| 11 | **Dataset**: GSM8K 30-problem subset (`examples/math-poc/data/gsm8k_sample.jsonl`). Algorithm embeds correct or randomly wrong answers in the prompt. Mockai (echo mode) echoes the prompt back. Reward function extracts embedded answer and compares to ground truth — real parsing, mix of reward 1.0/0.0, fully verifiable. No mockai modification needed. |
-| 12 | **Agent image**: Contains all agent scripts at `/app/`. Rollout `config.command` selects which to run (e.g. `["python", "/app/qa_agent.py"]`). Image = environment, command = task. |
-| 13 | **Agent Dockerfile context**: `examples/` as build context, `Dockerfile.agent` COPYs from `agents/python/` and `math-poc/data/`. |
-| 14 | **Configuration**: Single `deploy/.env` (flat KEY=VALUE). Contains all config: namespace, URLs, controller settings. `AGL_KEY` placeholder commented out — user sets via env var or uncomments. Deploy script creates ConfigMap from `.env` (excluding `AGL_KEY`), Secret from `$AGL_KEY` env var. No YAML config, no Python parsing. |
-| 15 | **Dockerfile**: Use `uv` for fast installs (`curl -LsSf https://astral.sh/uv/install.sh`). `.dockerignore` excludes `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`. |
-| 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_K8S_NAMESPACE` from `.env`. Works for any namespace. |
-| 17 | **Phase 4a topology**: All-in-K8s (agl-lite serve, controller, mockai as Deployments). Only algorithm script runs on host (via port-forward). Avoids host↔K8s bridging complexity. |
-| 18 | **Deploy scripts**: Bash for deploy (`scripts/deploy.sh` — reads .env, creates namespace/secret/configmap/manifests, waits) and image builds (`scripts/build_images.sh`). PoC orchestration in `examples/math-poc/run.py` (Python — needs port-forward lifecycle, AglLiteClient). |
-
-### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [ongoing]
-- [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
-- [ ] `Dockerfile.agent` — agent image for this PoC (COPY agents from `../agents/python/`, add any data/tools)
-- [ ] `k8s-mockai.yaml` — mockai Deployment + Service (PoC-specific, not infra)
-- [ ] `run.sh` — one-command E2E: setup infra + deploy mockai + run algorithm + verify
-- [ ] Full 2-iteration RL loop:
-  - Iter 1: register resources + model (v1) → enqueue batch → poll → retrieve trajectories → "compute rewards"
-  - Weight update: DELETE model → (simulated delay) → re-register model (v2, same endpoint)
-  - Iter 2: enqueue batch → poll → retrieve trajectories → verify events have version=2
-- [ ] Print summary: iterations completed, rollouts, events, versions seen
-- [ ] Serves as both E2E test driver and user-facing example
-
-### 4a.6 E2E scripts [discuss]
-- [ ] `scripts/build_images.sh` — bash, thin wrapper around `minikube image build`. Always builds agl-lite; selectively builds PoC images via args (e.g., `--math-poc`).
-- [ ] `scripts/deploy.py` — Python orchestration: read `.env` + `config.yaml`, create namespace/secret/configmap, apply manifests, wait for pods ready, health check agl-lite.
-- [ ] `scripts/teardown.sh` — bash, `kubectl delete namespace` (simple).
-- [ ] `.dockerignore` — exclude `.venv/`, `.git/`, `tests/`, `docs/`, `dev/`, `examples/`, `node_modules/`, `tmp/`, `.local/`, `__pycache__/`.
-- [ ] `examples/math-poc/run.py` — Python: calls deploy.py for infra, deploys mockai, starts port-forward, runs mock_rl_loop.py, verifies results, cleanup.
-
-### 4a.7 End-to-end test scenarios [discuss]
-- [ ] **Happy path**: 2-iteration RL loop (4a.5) — full lifecycle with weight update
 - [ ] **Cancel test**: enqueue → cancel mid-run → verify cancelled status
 - [ ] **Retry test**: agent with `CRASH_ON_FIRST=1` → K8s Job retries → succeeds on second attempt
-- [ ] **503 test**: part of weight update in RL loop — agents hitting gateway during model deregistration window
-
-**Deliverables**: Working E2E demo on minikube (CPU-only), client CLI, per-module deploy structure, validated get_started.md. All tests fast and deterministic.
+- [ ] **503 test**: agents hitting gateway during model deregistration window
 
 ---
 
-## Phase 4b: E2E with Real vLLM (GPU) [backlog]
+## Phase 4b: E2E with Real vLLM (GPU) [discuss]
 
 **Goal**: Validate agl-lite with a real vLLM inference server on GPU. Bridge to VERL integration.
 
@@ -138,17 +92,13 @@ These are settled and should not be revisited during implementation:
 | Event ordering | Append order in per-rollout list, no sequence counter |
 | `event_id` | Removed — events identified by position in list |
 | `timestamp` | Assigned by store at write time |
-| `job_template` schema | **Pending refactor (4a.4b)**: Raw K8s pod spec dict, loaded from YAML file. No typed schema — any valid K8s field works. `overrides` escape hatch moves to `RolloutConfig` for per-rollout overrides. |
+| `job_template` | Raw K8s pod spec dict, loaded from YAML file. No typed schema — any valid K8s field works. `overrides` on `RolloutConfig` for per-rollout overrides. |
 | Auth | Single `AGL_KEY` for all components, no role-based access for MVP. `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` trick for agents. |
 | Health endpoint | `GET /healthz`, no auth |
 | Error codes | 401 missing/invalid key, 404 rollout not found, 409 invalid transition |
 | Archive format | JSONL, user-specified file path (`*.jsonl`). Append if file exists, create if not. Includes rollout + events + resources per archive call. |
-| Gateway config | Static YAML at startup. List-based routes: `[{model_in, model_out, params}]`, first match wins. Wildcard `model_in: "*"` catches unmatched models. Wildcard `model_out: "*"` = passthrough with param adjustments. No match and no wildcard = passthrough, no adjustments. |
-| Model routing | Per-model round-robin. Model name = grouping key. Store: `Dict[model, Dict[endpoint, ModelServer]]`. |
-| Model server identity | `(model, endpoint)` composite key. Version per server (supports online RL rolling updates). Optional `token` for gateway → model server auth. |
-| Rollout existence check | On both LLM proxy and event ingestion (in-process, ~100ns) |
-| Namespace | Single namespace per controller instance |
-| `timeout` | Maps to K8s Job `activeDeadlineSeconds` |
-| `max_retries` | Maps to K8s Job `backoffLimit` |
-| Model routing | Per-model round-robin for MVP |
-| Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars in Job spec, both via `secretKeyRef` to same `agl-lite-keys/AGL_KEY`. Gateway checks both `Authorization: Bearer` and `x-api-key` headers. |
+| Gateway config | Static YAML at startup. List-based routes: `[{model_in, model_out, params}]`, first match wins. Wildcard support. |
+| Model routing | Per-model round-robin. `(model, endpoint)` composite key. Version per server. Optional `token`. |
+| Namespace | Single namespace per controller instance. Manifests omit namespace, applied via `-n`. |
+| `timeout` / `max_retries` | Map to K8s Job `activeDeadlineSeconds` / `backoffLimit` |
+| Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars via `secretKeyRef` to `agl-lite-keys/AGL_KEY`. |
