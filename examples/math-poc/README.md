@@ -12,18 +12,18 @@ Two modes: **mock** (CPU-only, deterministic) and **vllm** (real GPU inference).
 Everything runs on a single machine with minikube. No GPU required.
 
 ```
-┌─ minikube ───────────────────────────────────────┐
+┌─ minikube ────────────────────────────────────────┐
 │                                                   │
 │  agl-lite serve    (Deployment)  ← HTTP API       │
 │  agl-controller    (Deployment)  ← creates Jobs   │
-│  mockai            (Deployment)  ← echo server     │
+│  mockai            (Deployment)  ← echo server    │
 │                                                   │
-│  agent pods        (Jobs)        ← created per     │
-│                                    rollout         │
+│  agent pods        (Jobs)        ← created per    │
+│                                    rollout        │
 └──────────────────────┬───────────────────────────-┘
                        │ port-forward :8080
                        ▼
-┌─ host ───────────────────────────────────────────┐
+┌─ host ────────────────────────────────────────────┐
 │  mock_rl_loop.py   ← algorithm (enqueue, reward)  │
 └───────────────────────────────────────────────────┘
 ```
@@ -41,7 +41,7 @@ vLLM runs on the host with GPU access. Minikube pods reach it via
 `host.minikube.internal`.
 
 ```
-┌─ minikube ───────────────────────────────────────┐
+┌─ minikube ────────────────────────────────────────┐
 │                                                   │
 │  agl-lite serve    (Deployment)  ← HTTP API       │
 │  agl-controller    (Deployment)  ← creates Jobs   │
@@ -49,11 +49,11 @@ vLLM runs on the host with GPU access. Minikube pods reach it via
 │  agent pods        (Jobs)   ─── gateway ──────────┼──┐
 │                                                   │  │
 └──────────────────────┬────────────────────────────┘  │
-                       │ port-forward :8080             │
+                       │ port-forward :8080            │
                        ▼                               ▼
-┌─ host ───────────────────────────────────────────┐
+┌─ host ────────────────────────────────────────────┐
 │  rl_loop.py        ← algorithm (enqueue, reward)  │
-│  vLLM :8001        ← Qwen2.5-1.5B-Instruct       │
+│  vLLM :8001        ← Qwen2.5-1.5B-Instruct        │
 │                      (4× A6000, real inference)   │
 └───────────────────────────────────────────────────┘
 ```
@@ -92,17 +92,18 @@ model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm
 ### 1. Configure
 
 ```bash
-# Infrastructure config
-cp deploy/.env.example deploy/.env
-# Edit: set AGL_K8S_NAMESPACE, AGL_LITE_URL
+# Mock mode (CPU-only, deterministic):
+cp examples/math-poc/.env.mockai.example deploy/.env
 
-# PoC config (optional — defaults work for mock mode)
-cp examples/math-poc/.env.example examples/math-poc/.env
-# Edit: MODE, MODEL_NAME, VLLM_PORT, etc.
+# OR vLLM mode (real GPU inference):
+cp examples/math-poc/.env.vllm.example deploy/.env
 
-# API key
+# API key (set once, used by all components)
 export AGL_KEY=$(openssl rand -hex 32)
 ```
+
+Each `.env` file is self-contained — infrastructure settings, model server
+config, and experiment parameters all in one place.
 
 ### 2. Run (mock mode)
 
@@ -110,21 +111,13 @@ export AGL_KEY=$(openssl rand -hex 32)
 examples/math-poc/run.sh
 ```
 
-This builds images, deploys everything to minikube, runs the algorithm, and
-prints results. Logs are saved to `examples/math-poc/logs/<timestamp>/`.
-
 ### 3. Run (vLLM mode)
 
 ```bash
 # Start vLLM on host (separate terminal)
 vllm serve Qwen/Qwen2.5-1.5B-Instruct --port 8001 --host 0.0.0.0
 
-# Edit PoC config
-#   MODE=vllm
-#   MODEL_NAME=Qwen/Qwen2.5-1.5B-Instruct
-#   VLLM_PORT=8001
-
-# Run
+# Run (uses settings from deploy/.env)
 examples/math-poc/run.sh
 ```
 
@@ -150,7 +143,8 @@ sed -E 's/[0-9a-f]{32}/<rollout-id>/g' examples/math-poc/logs/*/mock_rl_loop.log
 | `Dockerfile.agent` | Agent container image |
 | `k8s-mockai.yaml` | Mockai deployment + service (mock mode only) |
 | `data/gsm8k_sample.jsonl` | 30 GSM8K problems with ground truth |
-| `.env.example` | PoC configuration template |
+| `.env.mockai.example` | Complete config for mock mode → copy to `deploy/.env` |
+| `.env.vllm.example` | Complete config for vLLM mode → copy to `deploy/.env` |
 | `run.sh` | One-command: build → deploy → run → verify → collect logs |
 | `reference_output.log` | Expected output (mock mode, redacted IDs) |
 | `logs/` | Per-run logs (gitignored) |

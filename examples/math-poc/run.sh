@@ -1,11 +1,16 @@
 #!/bin/bash
 # Run the math-poc end-to-end on minikube.
-# Usage: examples/math-poc/run.sh
+#
+# Usage:
+#   cp examples/math-poc/.env.mockai.example deploy/.env   # or .env.vllm.example
+#   export AGL_KEY=$(openssl rand -hex 32)
+#   examples/math-poc/run.sh
 #
 # Prerequisites:
 #   - minikube running
-#   - deploy/.env configured
+#   - deploy/.env configured (copy from examples/math-poc/.env.*.example)
 #   - AGL_KEY set in environment
+#   - For vLLM mode: vLLM serving on host (see .env.vllm.example)
 #
 # Logs are saved to examples/math-poc/logs/<timestamp>/
 set -euo pipefail
@@ -22,17 +27,32 @@ echo "=== Logs → $LOG_DIR ==="
 
 # --- Load config ---
 if [ ! -f deploy/.env ]; then
-    echo "ERROR: deploy/.env not found. Run:"
-    echo "  cp deploy/.env.example deploy/.env"
-    echo "  # edit deploy/.env"
+    echo "ERROR: deploy/.env not found. Run one of:"
+    echo "  cp examples/math-poc/.env.mockai.example deploy/.env"
+    echo "  cp examples/math-poc/.env.vllm.example deploy/.env"
     exit 1
 fi
 source deploy/.env
 NS="${AGL_K8S_NAMESPACE:?AGL_K8S_NAMESPACE not set}"
+MODE="${AGL_MODEL_MODE:-mock}"
 
 if [ -z "${AGL_KEY:-}" ]; then
-    echo "ERROR: AGL_KEY not set."
+    echo "ERROR: AGL_KEY not set. Run: export AGL_KEY=\$(openssl rand -hex 32)"
     exit 1
+fi
+
+echo "=== Mode: $MODE ==="
+
+# --- For vLLM mode, verify vLLM is reachable ---
+if [ "$MODE" = "vllm" ]; then
+    VLLM_PORT="${AGL_VLLM_PORT:-8001}"
+    echo "Checking vLLM on localhost:$VLLM_PORT ..."
+    if ! curl -sf "http://localhost:$VLLM_PORT/v1/models" > /dev/null 2>&1; then
+        echo "ERROR: vLLM not reachable at localhost:$VLLM_PORT"
+        echo "Start it with: vllm serve ${AGL_MODEL_NAME:-model} --port $VLLM_PORT --host 0.0.0.0"
+        exit 1
+    fi
+    echo "  vLLM OK"
 fi
 
 # --- Build images ---
@@ -44,11 +64,13 @@ echo ""
 echo "=== Deploying agl-lite infra ==="
 scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"
 
-# --- Deploy mockai ---
-echo ""
-echo "=== Deploying mockai ==="
-kubectl apply -n "$NS" -f examples/math-poc/k8s-mockai.yaml 2>&1 | tee -a "$LOG_DIR/deploy.log"
-kubectl -n "$NS" wait --for=condition=available deployment/mockai --timeout=120s 2>&1 | tee -a "$LOG_DIR/deploy.log"
+# --- Deploy mockai (mock mode only) ---
+if [ "$MODE" = "mock" ]; then
+    echo ""
+    echo "=== Deploying mockai ==="
+    kubectl apply -n "$NS" -f examples/math-poc/k8s-mockai.yaml 2>&1 | tee -a "$LOG_DIR/deploy.log"
+    kubectl -n "$NS" wait --for=condition=available deployment/mockai --timeout=120s 2>&1 | tee -a "$LOG_DIR/deploy.log"
+fi
 
 # --- Port forward ---
 echo ""
@@ -63,7 +85,9 @@ cleanup() {
     echo "=== Collecting K8s logs ==="
     kubectl -n "$NS" logs deployment/agl-lite --tail=200 > "$LOG_DIR/agl-lite.log" 2>&1 || true
     kubectl -n "$NS" logs deployment/agl-controller --tail=200 > "$LOG_DIR/controller.log" 2>&1 || true
-    kubectl -n "$NS" logs deployment/mockai --tail=200 > "$LOG_DIR/mockai.log" 2>&1 || true
+    if [ "$MODE" = "mock" ]; then
+        kubectl -n "$NS" logs deployment/mockai --tail=200 > "$LOG_DIR/mockai.log" 2>&1 || true
+    fi
     # Collect logs from any agent pods (Jobs)
     for pod in $(kubectl -n "$NS" get pods -l managed-by=agl-controller -o name 2>/dev/null); do
         name=$(basename "$pod")
@@ -79,11 +103,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Run algorithm ---
-echo ""
-echo "=== Running mock RL loop ==="
+# --- Export env for algorithm script ---
 export AGL_LITE_URL=http://localhost:8080
 export AGL_K8S_NAMESPACE="$NS"
 export AGL_KEY
+export AGL_MODEL_MODE="$MODE"
+export AGL_MODEL_NAME="${AGL_MODEL_NAME:-mock-llm}"
+export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
+export AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}"
+export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-2}"
+export AGL_VLLM_PORT="${AGL_VLLM_PORT:-8001}"
 
-uv run python examples/math-poc/mock_rl_loop.py 2>&1 | tee "$LOG_DIR/mock_rl_loop.log"
+# --- Run algorithm ---
+echo ""
+if [ "$MODE" = "mock" ]; then
+    echo "=== Running mock RL loop ==="
+    uv run python examples/math-poc/mock_rl_loop.py 2>&1 | tee "$LOG_DIR/mock_rl_loop.log"
+else
+    echo "=== Running RL loop (vLLM) ==="
+    uv run python examples/math-poc/rl_loop.py 2>&1 | tee "$LOG_DIR/rl_loop.log"
+fi

@@ -35,9 +35,9 @@ from agl_lite.schemas.rollout import RolloutStatus
 
 # --- Config ---
 
-MOCKAI_MODEL = "mock-llm"
-BATCH_SIZE = 5
-NUM_ITERATIONS = 2
+MOCKAI_MODEL = os.environ.get("AGL_MODEL_NAME", "mock-llm")
+BATCH_SIZE = int(os.environ.get("AGL_BATCH_SIZE", "5"))
+NUM_ITERATIONS = int(os.environ.get("AGL_NUM_ITERATIONS", "2"))
 POLL_INTERVAL = 3
 MAX_POLL_TIME = 180
 
@@ -353,11 +353,11 @@ async def main() -> None:
     agl_key = os.environ.get("AGL_KEY")
     namespace = os.environ.get("AGL_K8S_NAMESPACE", "agl")
 
-    mockai_url = f"http://mockai.{namespace}.svc.cluster.local:5002/v1"
+    model_endpoint = os.environ.get("AGL_MODEL_ENDPOINT") or f"http://mockai.{namespace}.svc.cluster.local:5002/v1"
 
     log(f"=== Math PoC — Mock RL Loop ===")
     log(f"  agl-lite:  {base_url}")
-    log(f"  mockai:    {mockai_url}")
+    log(f"  model:     {MOCKAI_MODEL} → {model_endpoint}")
     log(f"  namespace: {namespace}")
 
     client = AglLiteClient(base_url=base_url, agl_key=agl_key)
@@ -382,9 +382,9 @@ async def main() -> None:
         log(f"")
         log(f"--- Register model server (v1) ---")
         await client.register_models([
-            RegisterModelRequest(model=MOCKAI_MODEL, endpoint=mockai_url, version=1),
+            RegisterModelRequest(model=MOCKAI_MODEL, endpoint=model_endpoint, version=1),
         ])
-        log(f"  {MOCKAI_MODEL} → {mockai_url} (version=1)")
+        log(f"  {MOCKAI_MODEL} → {model_endpoint} (version=1)")
 
         # --- Iteration 1 ---
         results = []
@@ -406,9 +406,9 @@ async def main() -> None:
 
         log(f"  Re-registering model (v2)...")
         await client.register_models([
-            RegisterModelRequest(model=MOCKAI_MODEL, endpoint=mockai_url, version=2),
+            RegisterModelRequest(model=MOCKAI_MODEL, endpoint=model_endpoint, version=2),
         ])
-        log(f"  {MOCKAI_MODEL} → {mockai_url} (version=2)")
+        log(f"  {MOCKAI_MODEL} → {model_endpoint} (version=2)")
 
         # --- Iteration 2 ---
         r2 = await run_iteration(client, resources_id, dataset, iteration=2, expected_version=2)
