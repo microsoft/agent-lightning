@@ -25,12 +25,14 @@
   - Math PoC mock mode: 2-iteration RL loop with weight update (v1→v2), streaming, deterministic rewards via `\boxed{}` embedding, model_request event validation, reference log
   - Scripts: `build_images.sh`, `deploy.sh`, `run.sh` (one-command E2E with log capture)
 - [x] **Phase 4b**: E2E with real vLLM (GPU).
-  - vLLM via Docker (`vllm/vllm-openai:latest`) on host GPU, reachable from minikube via `host.minikube.internal`
-  - `scripts/start_vllm.sh` — convenience start/stop for vLLM Docker container
-  - `rl_loop.py` — real algorithm: plain questions, numeric reward parsing, structural checks on streaming model_request events
-  - Qwen2.5-1.5B-Instruct: 5/5 correct (100%) on GSM8K sample, 288 SSE chunks per response
-  - Two self-contained `.env` examples (`.env.mockai.example`, `.env.vllm.example`), mode-aware `run.sh`
-  - Reference logs for both modes (`reference_output.log`, `reference_output_vllm.log`)
+  - vLLM via Docker (`vllm/vllm-openai:latest`) on host GPU; `scripts/start_vllm.sh`
+  - Colocated topology: agl-lite + vLLM + algorithm on host, only controller + agents in minikube
+  - Gateway param injection: `gateway-config.yaml` adds `return_token_ids: true` to all requests; prompt + response token IDs captured in `model_request` events
+  - `rl_loop.py` — real algorithm: plain questions, numeric reward, token_id verification
+  - `deploy.sh --no-serve` for controller-only K8s deployment
+  - Two `.env` examples (`.env.mockai.example`, `.env.vllm.example`), mode-aware `run.sh`
+  - Reference logs for both modes; event captures prepared body (with injected params)
+  - 271 unit tests passing, both modes E2E verified
 
 ---
 
@@ -95,3 +97,6 @@ These are settled and should not be revisited during implementation:
 | `timeout` / `max_retries` | Map to K8s Job `activeDeadlineSeconds` / `backoffLimit` |
 | Agent auth injection | `OPENAI_API_KEY` + `ANTHROPIC_API_KEY` env vars via `secretKeyRef` to `agl-lite-keys/AGL_KEY`. |
 | vLLM deployment | Docker container (`vllm/vllm-openai:latest`) on host, separate from agl-lite lifecycle. `scripts/start_vllm.sh` for convenience. |
+| vLLM topology | agl-lite colocated with algorithm + vLLM on host. Controller + agents in minikube. Gateway → vLLM is localhost. Agents reach host via `host.minikube.internal`. |
+| Gateway param injection | `gateway-config.yaml` with `params.add` injects RL-specific params (e.g., `return_token_ids: true`). Event captures prepared body (post-injection). |
+| Event request body | Captures the prepared body (after gateway param injection), not the original agent request. RL algorithm sees exactly what was sent to the model server. |
