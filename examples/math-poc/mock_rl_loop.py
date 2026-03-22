@@ -37,8 +37,6 @@ from agl_lite.schemas.rollout import RolloutStatus
 # --- Config ---
 
 MOCKAI_MODEL = "mock-llm"
-AGENT_IMAGE = "math-agent:dev"
-AGENT_COMMAND = ["python", "/app/qa_agent.py", "--model", MOCKAI_MODEL]
 BATCH_SIZE = 5
 NUM_ITERATIONS = 2
 POLL_INTERVAL = 3
@@ -120,7 +118,7 @@ async def run_iteration(
         EnqueueRolloutRequest(
             resources_id=resources_id,
             input=t["input"],
-            config={"image": AGENT_IMAGE, "command": AGENT_COMMAND},
+            config={},
         )
         for t in tasks
     ]

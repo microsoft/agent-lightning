@@ -57,8 +57,9 @@ class RolloutConfig(BaseModel):
     the job_template in the resources snapshot — not here.
     """
 
-    # Required — describe the agent container.
-    image: str
+    # Agent container — image and command can come from job_template or here.
+    # If set here, they override what's in the template.
+    image: str | None = None
     command: list[str] = Field(default_factory=list)
     environment_variables: dict[str, str] = Field(default_factory=dict)
     mount: list[Mount] = Field(default_factory=list)

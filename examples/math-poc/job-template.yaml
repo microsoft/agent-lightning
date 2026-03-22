@@ -2,14 +2,15 @@
 # See https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
 #
 # The controller injects into the "agent" container:
-#   image, command (from RolloutConfig)
 #   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, etc. (auto)
 #
-# Everything else here is the pod environment — edit as needed.
+# image and command are fixed for this PoC — all rollouts share them.
 
 containers:
   - name: agent
-    imagePullPolicy: Never          # minikube local images
+    image: math-agent:dev
+    command: ["python", "/app/qa_agent.py", "--model", "mock-llm"]
+    imagePullPolicy: Never
     resources:
       requests:
         cpu: "100m"

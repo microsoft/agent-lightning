@@ -85,7 +85,8 @@ def build_job_spec(
         pod_spec["containers"].insert(0, agent_container)
 
     # --- Inject RolloutConfig named fields into agent container ---
-    agent_container["image"] = config.image
+    if config.image:
+        agent_container["image"] = config.image
 
     if config.command:
         agent_container["command"] = config.command
