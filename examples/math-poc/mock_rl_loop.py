@@ -38,7 +38,7 @@ from agl_lite.schemas.rollout import RolloutStatus
 
 MOCKAI_MODEL = "mock-llm"
 AGENT_IMAGE = "math-agent:dev"
-AGENT_COMMAND = ["python", "/app/qa_agent.py"]
+AGENT_COMMAND = ["python", "/app/qa_agent.py", "--model", MOCKAI_MODEL]
 BATCH_SIZE = 5
 NUM_ITERATIONS = 2
 POLL_INTERVAL = 3
@@ -58,18 +58,15 @@ def load_dataset() -> list[dict]:
 
 
 def build_tasks(dataset: list[dict], batch_size: int) -> list[dict]:
-    """Build task inputs — plain questions with ground truth for reward computation.
+    """Build task inputs — plain text questions with ground truth for reward.
 
-    The agent receives {"question": "...", "model": "mock-llm"}.
+    The agent receives AGL_TASK_INPUT as a JSON-encoded string (the question).
     Ground truth stays in the algorithm (not sent to the agent).
     """
     tasks = []
     sample = random.sample(dataset, min(batch_size, len(dataset)))
     for item in sample:
-        # Agent input: just the question and model name
-        agent_input = {"question": item["question"], "model": MOCKAI_MODEL}
-        # Algorithm keeps ground truth for reward
-        tasks.append({"input": agent_input, "ground_truth": item["answer"]})
+        tasks.append({"input": item["question"], "ground_truth": item["answer"]})
     return tasks
 
 
@@ -166,11 +163,9 @@ async def run_iteration(
                 attempt_id = event.attempt_id
                 break
 
-        # Find ground truth (match by rollout input)
-        gt = rollout.input.get("question", "")
-        # Match back to our tasks list by question
+        # Find ground truth — match by question text
         matching_task = next(
-            (t for t in tasks if t["input"]["question"] == rollout.input.get("question")),
+            (t for t in tasks if t["input"] == rollout.input),
             None,
         )
         gt = matching_task["ground_truth"] if matching_task else ""

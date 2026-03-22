@@ -1,18 +1,21 @@
 """Minimal QA agent — reads a task, makes one LLM call, parses the answer, reports it.
 
 Environment variables (set automatically by agl-lite controller):
-  AGL_TASK_INPUT   — JSON dict with "question" field (plain text math problem)
+  AGL_TASK_INPUT   — plain text question (JSON-encoded string)
   OPENAI_BASE_URL  — points to agl-lite gateway
   OPENAI_API_KEY   — auth key for gateway
   AGL_EVENT_URL    — URL to post events (agent_output)
 
 Optional:
   CRASH_ON_FIRST   — if "1", exit non-zero on first attempt (for retry testing).
-                     Creates a marker file so only the first attempt crashes.
 
 Does NOT import agl-lite — proves language-agnostic contract.
+
+Usage:
+  python qa_agent.py --model mock-llm
 """
 
+import argparse
 import json
 import os
 import re
@@ -21,10 +24,9 @@ import sys
 import httpx
 from openai import OpenAI
 
-PROMPT_TEMPLATE = (
+SYSTEM_PROMPT = (
     "You're a helpful math assistant. "
-    "For every given problem, put the answer in the format \\boxed{answer}.\n\n"
-    "Question: {question}"
+    "For every given problem, put your final answer in \\boxed{answer} format."
 )
 
 
@@ -55,6 +57,10 @@ def post_event(event_type: str, data: dict) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="QA agent for math problems")
+    parser.add_argument("--model", default="mock-llm", help="Model name to use")
+    args = parser.parse_args()
+
     # --- Crash-on-first support (for K8s retry testing) ---
     marker = "/tmp/.agl_crash_done"
     if os.environ.get("CRASH_ON_FIRST") == "1" and not os.path.exists(marker):
@@ -63,28 +69,26 @@ def main() -> None:
         print("CRASH_ON_FIRST: simulating failure on first attempt", file=sys.stderr)
         sys.exit(1)
 
-    # --- Read task input ---
+    # --- Read task input (plain text question) ---
     raw = os.environ.get("AGL_TASK_INPUT")
     if not raw:
         print("ERROR: AGL_TASK_INPUT not set", file=sys.stderr)
         sys.exit(1)
 
-    task = json.loads(raw)
-    question = task.get("question") if isinstance(task, dict) else str(task)
-    if not question:
-        print("ERROR: task has no 'question' field", file=sys.stderr)
+    question = json.loads(raw)
+    if not isinstance(question, str):
+        print(f"ERROR: AGL_TASK_INPUT should be a plain text string, got {type(question)}", file=sys.stderr)
         sys.exit(1)
-
-    # --- Build prompt ---
-    prompt = PROMPT_TEMPLATE.format(question=question)
 
     # --- Call LLM via gateway ---
     client = OpenAI(max_retries=5, timeout=120.0)
-    model = task.get("model", "mock-llm") if isinstance(task, dict) else "mock-llm"
 
     response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
+        model=args.model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": question},
+        ],
     )
 
     content = response.choices[0].message.content or ""

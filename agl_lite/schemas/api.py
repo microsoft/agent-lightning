@@ -14,7 +14,7 @@ from agl_lite.schemas.rollout import RolloutConfig, RolloutStatus
 class EnqueueRolloutRequest(BaseModel):
     """Single rollout enqueue."""
 
-    input: dict[str, Any]
+    input: Any  # task payload (string, dict, or any JSON-serializable value)
     config: RolloutConfig | None = None
     resources_id: str | None = None
 

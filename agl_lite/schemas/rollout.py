@@ -80,7 +80,7 @@ class Rollout(BaseModel):
     status: RolloutStatus = RolloutStatus.QUEUING
     cancel_requested: bool = False
 
-    input: dict  # task description (delivered as AGL_TASK_INPUT env var)
+    input: Any  # task payload (delivered as AGL_TASK_INPUT env var, json-encoded)
     config: RolloutConfig
     resources_id: str | None = None  # links to immutable resource snapshot
 
