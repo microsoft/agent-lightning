@@ -57,6 +57,7 @@ cover/
 
 # Django stuff:
 *.log
+!examples/math-poc/reference_output.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -209,4 +210,4 @@ __marimo__/
 
 # Local settings
 .local/
-.vscode/
+.vscode/examples/math-poc/logs/
