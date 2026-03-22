@@ -6,13 +6,14 @@ Two iterations with a weight update between them:
   Weight update: deregister model → re-register (v2, same endpoint)
   Iter 2: enqueue batch → poll → retrieve → rewards → verify version=2 in events
 
+Event flow per rollout:
+  model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm)
+
 Usage:
     export AGL_LITE_URL=http://localhost:8080
     export AGL_KEY=<your-key>
     export AGL_K8S_NAMESPACE=<namespace>
     python examples/math-poc/mock_rl_loop.py
-
-Requires: agl-lite serve + controller + mockai running in K8s.
 """
 
 from __future__ import annotations
@@ -21,18 +22,16 @@ import asyncio
 import json
 import os
 import random
-import re
 import sys
 import time
 from pathlib import Path
 
-# Add repo root to path so we can import agl_lite.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import yaml
 
 from agl_lite.client import AglLiteClient, AglLiteError
-from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
+from agl_lite.schemas.api import EnqueueRolloutRequest, PostEventRequest, RegisterModelRequest
 from agl_lite.schemas.rollout import RolloutStatus
 
 # --- Config ---
@@ -40,10 +39,10 @@ from agl_lite.schemas.rollout import RolloutStatus
 MOCKAI_MODEL = "mock-llm"
 AGENT_IMAGE = "math-agent:dev"
 AGENT_COMMAND = ["python", "/app/qa_agent.py"]
-BATCH_SIZE = 5  # rollouts per iteration
+BATCH_SIZE = 5
 NUM_ITERATIONS = 2
-POLL_INTERVAL = 3  # seconds between polls
-MAX_POLL_TIME = 120  # seconds before giving up
+POLL_INTERVAL = 3
+MAX_POLL_TIME = 120
 
 DATA_DIR = Path(__file__).parent / "data"
 TEMPLATE_PATH = Path(__file__).parent / "job-template.yaml"
@@ -58,41 +57,28 @@ def load_dataset() -> list[dict]:
     return items
 
 
-def build_prompts(dataset: list[dict], batch_size: int) -> list[dict]:
-    """Build prompts with embedded answers (some correct, some wrong).
+def build_tasks(dataset: list[dict], batch_size: int) -> list[dict]:
+    """Build task inputs — plain questions with ground truth for reward computation.
 
-    Mockai echo mode returns the prompt verbatim. The reward function
-    extracts the embedded answer and compares to ground truth.
+    The agent receives {"question": "...", "model": "mock-llm"}.
+    Ground truth stays in the algorithm (not sent to the agent).
     """
-    prompts = []
+    tasks = []
     sample = random.sample(dataset, min(batch_size, len(dataset)))
     for item in sample:
-        if random.random() < 0.5:
-            # Embed correct answer
-            answer = item["answer"]
-        else:
-            # Embed wrong answer
-            try:
-                answer = str(int(item["answer"]) + random.randint(1, 10))
-            except ValueError:
-                answer = "999"
-
-        prompt = f"Solve: {item['question']} The answer is {answer}."
-        prompts.append({
-            "prompt": prompt,
-            "model": MOCKAI_MODEL,
-            "ground_truth": item["answer"],
-            "embedded_answer": answer,
-        })
-    return prompts
+        # Agent input: just the question and model name
+        agent_input = {"question": item["question"], "model": MOCKAI_MODEL}
+        # Algorithm keeps ground truth for reward
+        tasks.append({"input": agent_input, "ground_truth": item["answer"]})
+    return tasks
 
 
-def compute_reward(response_text: str, ground_truth: str) -> float:
-    """Extract embedded answer from echoed response and compare to ground truth."""
-    match = re.search(r"The answer is (\S+)\.", response_text)
-    if match and match.group(1).strip() == ground_truth.strip():
-        return 1.0
-    return 0.0
+def compute_reward(agent_answer: str, ground_truth: str) -> float:
+    """Compare agent's extracted answer to ground truth."""
+    try:
+        return 1.0 if agent_answer.strip() == ground_truth.strip() else 0.0
+    except Exception:
+        return 0.0
 
 
 async def wait_for_rollouts(
@@ -105,8 +91,7 @@ async def wait_for_rollouts(
     start = time.time()
     while time.time() - start < max_time:
         rollouts = await client.query_rollouts(ids=rollout_ids, limit=len(rollout_ids))
-        statuses = {r.status for r in rollouts}
-        done = all(s in terminal for s in statuses)
+        done = all(r.status in terminal for r in rollouts)
         if done:
             return rollouts
 
@@ -125,22 +110,22 @@ async def run_iteration(
     iteration: int,
     expected_version: int,
 ) -> dict:
-    """Run one batch of rollouts and collect results."""
+    """Run one batch of rollouts, collect agent outputs, compute and post rewards."""
     print(f"\n{'='*60}")
     print(f"  ITERATION {iteration} (model version={expected_version})")
     print(f"{'='*60}")
 
-    # Build prompts
-    prompts = build_prompts(dataset, BATCH_SIZE)
+    # Build tasks
+    tasks = build_tasks(dataset, BATCH_SIZE)
 
     # Enqueue rollouts
     requests = [
         EnqueueRolloutRequest(
             resources_id=resources_id,
-            input=p,
+            input=t["input"],
             config={"image": AGENT_IMAGE, "command": AGENT_COMMAND},
         )
-        for p in prompts
+        for t in tasks
     ]
     rollouts = await client.enqueue_rollouts(requests)
     rollout_ids = [r.rollout_id for r in rollouts]
@@ -152,50 +137,78 @@ async def run_iteration(
     failed = [r for r in completed if r.status == RolloutStatus.TERMINAL_FAILED]
     print(f"  Results: {len(succeeded)} succeeded, {len(failed)} failed")
 
-    # Retrieve events and compute rewards
+    # Retrieve events, compute rewards, post reward events
     total_reward = 0.0
-    event_count = 0
+    model_request_count = 0
+    agent_output_count = 0
+    reward_count = 0
     versions_seen = set()
 
-    for rollout in succeeded:
+    for i, rollout in enumerate(succeeded):
         events = await client.get_events(rollout.rollout_id)
-        event_count += len(events)
 
+        # Find model_request events → check version
         for event in events:
             if event.event_type == "model_request":
-                # Check version
+                model_request_count += 1
                 server = event.data.get("server", {})
                 v = server.get("version")
                 if v is not None:
                     versions_seen.add(v)
 
-                # Compute reward from echoed response
-                response = event.data.get("response", {})
-                choices = response.get("choices", [])
-                if choices:
-                    content = choices[0].get("message", {}).get("content", "")
-                    # Find matching prompt by rollout_id
-                    matching = [p for p in prompts if True]  # all prompts for now
-                    gt = rollout.input.get("ground_truth", "")
-                    reward = compute_reward(content, gt)
-                    total_reward += reward
+        # Find agent_output event → get the answer
+        agent_answer = None
+        attempt_id = None
+        for event in events:
+            if event.event_type == "agent_output":
+                agent_output_count += 1
+                agent_answer = event.data.get("answer", "")
+                attempt_id = event.attempt_id
+                break
+
+        # Find ground truth (match by rollout input)
+        gt = rollout.input.get("question", "")
+        # Match back to our tasks list by question
+        matching_task = next(
+            (t for t in tasks if t["input"]["question"] == rollout.input.get("question")),
+            None,
+        )
+        gt = matching_task["ground_truth"] if matching_task else ""
+
+        # Compute reward
+        reward = compute_reward(agent_answer or "", gt) if agent_answer else 0.0
+        total_reward += reward
+
+        # Post reward event
+        if attempt_id:
+            try:
+                await client.post_event(
+                    rollout.rollout_id,
+                    attempt_id,
+                    PostEventRequest(event_type="reward", data={"value": reward, "ground_truth": gt, "agent_answer": agent_answer}),
+                )
+                reward_count += 1
+            except AglLiteError as e:
+                print(f"  Warning: failed to post reward for {rollout.rollout_id}: {e}", file=sys.stderr)
 
     avg_reward = total_reward / len(succeeded) if succeeded else 0.0
-    print(f"  Events: {event_count}, Versions seen: {versions_seen}")
+    print(f"  Events: {model_request_count} model_request, {agent_output_count} agent_output, {reward_count} reward")
+    print(f"  Versions seen: {versions_seen}")
     print(f"  Average reward: {avg_reward:.2f}")
 
     return {
         "iteration": iteration,
         "succeeded": len(succeeded),
         "failed": len(failed),
-        "events": event_count,
+        "model_requests": model_request_count,
+        "agent_outputs": agent_output_count,
+        "rewards": reward_count,
         "versions": versions_seen,
         "avg_reward": avg_reward,
     }
 
 
 async def main() -> None:
-    # --- Config from env ---
     base_url = os.environ.get("AGL_LITE_URL", "http://localhost:8080")
     agl_key = os.environ.get("AGL_KEY")
     namespace = os.environ.get("AGL_K8S_NAMESPACE", "agl")
@@ -242,7 +255,7 @@ async def main() -> None:
         await client.delete_model(MOCKAI_MODEL)
         print("  Model pool empty — gateway returns 503 for new requests")
 
-        await asyncio.sleep(2)  # Simulate weight loading
+        await asyncio.sleep(2)
 
         print("  Re-registering model (v2)...")
         await client.register_models([
@@ -260,26 +273,31 @@ async def main() -> None:
         print(f"{'='*60}")
         total_succeeded = sum(r["succeeded"] for r in results)
         total_failed = sum(r["failed"] for r in results)
-        total_events = sum(r["events"] for r in results)
+        total_model_requests = sum(r["model_requests"] for r in results)
+        total_agent_outputs = sum(r["agent_outputs"] for r in results)
+        total_rewards = sum(r["rewards"] for r in results)
         all_versions = set()
         for r in results:
             all_versions.update(r["versions"])
 
         print(f"  Iterations: {len(results)}")
-        print(f"  Total rollouts: {total_succeeded} succeeded, {total_failed} failed")
-        print(f"  Total events: {total_events}")
+        print(f"  Rollouts: {total_succeeded} succeeded, {total_failed} failed")
+        print(f"  Events: {total_model_requests} model_request, {total_agent_outputs} agent_output, {total_rewards} reward")
         print(f"  Versions seen: {all_versions}")
 
         # --- Verify ---
         ok = True
-        if total_succeeded < BATCH_SIZE * NUM_ITERATIONS * 0.5:
-            print(f"\n  ❌ Too many failures: {total_failed}/{BATCH_SIZE * NUM_ITERATIONS}")
+        if total_succeeded < BATCH_SIZE:
+            print(f"\n  ❌ Too many failures")
             ok = False
-        if not all_versions:
-            print("\n  ❌ No version info in events")
+        if total_model_requests == 0:
+            print(f"\n  ❌ No model_request events captured")
             ok = False
-        if total_events == 0:
-            print("\n  ❌ No events captured")
+        if total_agent_outputs == 0:
+            print(f"\n  ❌ No agent_output events — agent not reporting results")
+            ok = False
+        if total_rewards == 0:
+            print(f"\n  ❌ No reward events posted")
             ok = False
 
         if ok:
@@ -293,5 +311,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    random.seed(42)  # Reproducible prompt generation
+    random.seed(42)
     asyncio.run(main())

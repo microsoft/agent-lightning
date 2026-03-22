@@ -1,16 +1,31 @@
-# Example Agents
-
-Reusable agent templates. Pure source code — no Dockerfile here.
-Each PoC scenario builds its own agent image (see `examples/math-poc/`).
+# Math PoC Agents
 
 ## qa_agent.py
 
-Minimal QA agent: reads `AGL_TASK_INPUT`, makes one LLM call, prints the result.
+Minimal QA agent for math problems:
 
-- Uses `openai` SDK (built-in retry on 503)
-- Does NOT import agl-lite — proves language-agnostic contract
-- Supports `CRASH_ON_FIRST=1` env var for K8s retry testing
+1. Reads `AGL_TASK_INPUT` (JSON dict with `question` field)
+2. Builds prompt: "You're a helpful math assistant... put answer in `\boxed{answer}`"
+3. Calls LLM via `OPENAI_BASE_URL` (openai SDK, auto-retry on 503)
+4. Parses `\boxed{answer}` from response
+5. Posts `agent_output` event to `AGL_EVENT_URL` with extracted answer
 
-## react_agent.py
+Does NOT import agl-lite — proves language-agnostic contract.
 
-Placeholder for future multi-turn agent with tool-use loop.
+### Environment variables
+
+| Var | Source | Purpose |
+|-----|--------|---------|
+| `AGL_TASK_INPUT` | Controller | JSON dict with `question` field |
+| `OPENAI_BASE_URL` | Controller | Points to agl-lite gateway |
+| `OPENAI_API_KEY` | Controller (from Secret) | Auth key for gateway |
+| `AGL_EVENT_URL` | Controller | URL to post agent_output events |
+| `CRASH_ON_FIRST` | Optional | If "1", crash on first attempt (retry testing) |
+
+### Reserved event types
+
+| Type | Producer | Data |
+|------|----------|------|
+| `model_request` | Gateway (auto) | `{request, response, server}` |
+| `agent_output` | Agent | `{answer, raw_response}` |
+| `reward` | Algorithm | `{value, ground_truth, agent_answer}` |

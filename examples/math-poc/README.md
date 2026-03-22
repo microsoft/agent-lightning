@@ -13,10 +13,15 @@ End-to-end demonstration of agl-lite with a mock model server (mockai) and GSM8K
 
 ## How it works
 
-- **Agent** (`qa_agent.py`): reads `AGL_TASK_INPUT`, calls LLM via `OPENAI_BASE_URL`, prints response
+- **Agent** (`qa_agent.py`): reads `AGL_TASK_INPUT`, builds prompt with `\boxed{}` format instruction, calls LLM via `OPENAI_BASE_URL`, parses `\boxed{answer}` from response, posts `agent_output` event with extracted answer
 - **Model server** (mockai, echo mode): returns the user message verbatim
-- **Reward**: algorithm embeds correct/wrong answers in prompts, parses echoed response, compares to ground truth
+- **Algorithm** (`mock_rl_loop.py`): retrieves `agent_output` events, compares answer to ground truth, posts `reward` events
 - **Dataset**: 30 GSM8K problems in `data/gsm8k_sample.jsonl`
+
+Event flow per rollout:
+```
+model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm)
+```
 
 ## Quick start
 
