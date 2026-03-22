@@ -60,15 +60,29 @@ def load_dataset() -> list[dict]:
 
 
 def build_tasks(dataset: list[dict], batch_size: int, offset: int = 0) -> list[dict]:
-    """Build task inputs — sequential from dataset, deterministic.
+    """Build task inputs with embedded \\boxed{} answers for mockai echo mode.
 
-    No randomness — fully reproducible. Each iteration uses the next slice.
+    Mockai echoes the last user message, so we embed \\boxed{answer} in the
+    question text. The agent's parser extracts it as the "model response".
+
+    Alternating pattern: even index → correct answer, odd index → wrong answer.
+    This gives deterministic, reproducible mixed rewards (no randomness).
     """
+    WRONG_ANSWER = "WRONG"
     tasks = []
     for i in range(batch_size):
         idx = (offset + i) % len(dataset)
         item = dataset[idx]
-        tasks.append({"input": item["question"], "ground_truth": item["answer"]})
+        correct = i % 2 == 0  # even=correct, odd=wrong
+        boxed_value = item["answer"] if correct else WRONG_ANSWER
+        # Append \boxed{} to question so mockai echo returns it
+        augmented_input = item["question"] + f"\n\\boxed{{{boxed_value}}}"
+        tasks.append({
+            "input": augmented_input,
+            "ground_truth": item["answer"],
+            "expect_correct": correct,
+            "boxed_value": boxed_value,
+        })
     return tasks
 
 
@@ -120,8 +134,9 @@ async def run_iteration(
     log(f"  Tasks ({len(tasks)}):")
     for i, t in enumerate(tasks):
         q_preview = t["input"][:60] + "..." if len(t["input"]) > 60 else t["input"]
-        log(f"    [{i}] Q: {q_preview}")
-        log(f"         A: {t['ground_truth']}")
+        tag = "✓" if t["expect_correct"] else "✗"
+        log(f"    [{i}] {tag} Q: {q_preview}")
+        log(f"         A: {t['ground_truth']}, boxed: {t['boxed_value']}")
 
     # Enqueue rollouts
     requests = [
@@ -155,6 +170,7 @@ async def run_iteration(
     agent_output_count = 0
     reward_count = 0
     versions_seen = set()
+    assertion_failures = []
 
     log(f"  Collecting events and computing rewards:")
     for rollout in succeeded:
@@ -181,21 +197,36 @@ async def run_iteration(
             attempt_id = event.attempt_id
             break
 
-        # Find ground truth
+        # Find ground truth and expected pattern
         matching_task = next(
             (t for t in tasks if t["input"] == rollout.input),
             None,
         )
         gt = matching_task["ground_truth"] if matching_task else "?"
+        expect_correct = matching_task["expect_correct"] if matching_task else None
+        boxed_value = matching_task["boxed_value"] if matching_task else "?"
 
         # Compute reward
         reward = 1.0 if agent_answer and agent_answer.strip() == gt.strip() else 0.0
         total_reward += reward
 
+        # Assert agent extracted the embedded boxed value
+        expected_reward = 1.0 if expect_correct else 0.0
+        answer_ok = agent_answer is not None and agent_answer.strip() == boxed_value.strip()
+        reward_ok = reward == expected_reward
+
         q_preview = str(rollout.input)[:40] + "..." if len(str(rollout.input)) > 40 else str(rollout.input)
-        log(f"    {rollout.rollout_id}:")
+        tag = "✓" if expect_correct else "✗"
+        log(f"    {rollout.rollout_id}: [{tag}]")
         log(f"      events: {len(mr_events)} model_request, {len(ao_events)} agent_output")
-        log(f"      agent_answer={agent_answer!r}, ground_truth={gt!r}, reward={reward}")
+        log(f"      boxed={boxed_value!r}, agent_answer={agent_answer!r}, ground_truth={gt!r}")
+        log(f"      reward={reward} (expected={expected_reward})")
+        if not answer_ok:
+            log(f"      ⚠ ANSWER MISMATCH: expected boxed_value={boxed_value!r}, got {agent_answer!r}")
+            assertion_failures.append(f"{rollout.rollout_id}: answer {agent_answer!r} != boxed {boxed_value!r}")
+        if not reward_ok:
+            log(f"      ⚠ REWARD MISMATCH: expected {expected_reward}, got {reward}")
+            assertion_failures.append(f"{rollout.rollout_id}: reward {reward} != expected {expected_reward}")
 
         # Post reward event
         if attempt_id:
@@ -213,11 +244,21 @@ async def run_iteration(
                 log(f"      WARNING: failed to post reward: {e}")
 
     avg_reward = total_reward / len(succeeded) if succeeded else 0.0
+    expect_correct_count = sum(1 for t in tasks if t["expect_correct"])
+    expect_wrong_count = len(tasks) - expect_correct_count
+    expected_avg = expect_correct_count / len(tasks) if tasks else 0.0
 
     log(f"  --- Iteration {iteration} Summary ---")
     log(f"  Events: {model_request_count} model_request, {agent_output_count} agent_output, {reward_count} reward")
     log(f"  Versions seen: {sorted(versions_seen)}")
+    log(f"  Pattern: {expect_correct_count} correct + {expect_wrong_count} wrong → expected avg={expected_avg:.2f}")
     log(f"  Average reward: {avg_reward:.2f}")
+    if assertion_failures:
+        log(f"  ⚠ Assertion failures ({len(assertion_failures)}):")
+        for f in assertion_failures:
+            log(f"    - {f}")
+    else:
+        log(f"  ✅ All assertions passed")
 
     return {
         "iteration": iteration,
@@ -228,6 +269,7 @@ async def run_iteration(
         "rewards": reward_count,
         "versions": versions_seen,
         "avg_reward": avg_reward,
+        "assertion_failures": assertion_failures,
     }
 
 
@@ -318,6 +360,11 @@ async def main() -> None:
         for r in results:
             log(f"  Iter {r['iteration']}: reward={r['avg_reward']:.2f}, versions={sorted(r['versions'])}")
 
+        # Collect assertion failures
+        all_assertion_failures = []
+        for r in results:
+            all_assertion_failures.extend(r.get("assertion_failures", []))
+
         # --- Verify ---
         checks = []
         checks.append(("Rollouts succeeded", total_succeeded >= BATCH_SIZE, f"{total_succeeded}/{BATCH_SIZE * NUM_ITERATIONS}"))
@@ -326,6 +373,7 @@ async def main() -> None:
         checks.append(("reward events", total_rw > 0, str(total_rw)))
         checks.append(("Version 1 seen", 1 in all_versions, str(all_versions)))
         checks.append(("Version 2 seen", 2 in all_versions, str(all_versions)))
+        checks.append(("Answer assertions", len(all_assertion_failures) == 0, f"{len(all_assertion_failures)} failures"))
 
         log(f"")
         log(f"  Checks:")
