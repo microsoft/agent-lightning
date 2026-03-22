@@ -17,9 +17,13 @@
 
 - [x] **Phase 0**: Schemas, state transitions, project skeleton (Pydantic models, dev tooling)
 - [x] **Phase 1**: In-memory store — rollouts (batch), events, resources, models, archive. 156 tests.
-- [x] **Phase 2**: HTTP API — FastAPI app, auth, all store routes, gateway (config/router/proxy), CLI, streaming SSE. 
+- [x] **Phase 2**: HTTP API — FastAPI app, auth, all store routes, gateway (config/router/proxy with wildcard + list-based routes), CLI, streaming SSE.
 - [x] **Phase 3**: K8s controller — Python client, job builder, reconciler (create/watch/cancel/crash-recovery), CLI. 254 tests total.
-- [ ] **Deferred**: kr8s adapter (`Kr8sClient`) — moved to Phase 4a.
+- [x] **Phase 4a.1**: Kr8s adapter — real K8s client implementing K8sClient protocol. 9 integration tests against minikube.
+- [x] **Phase 4a.2**: `agl-client` CLI — separate entrypoint for API consumers (rollouts, events, models, resources, health). 7 tests.
+- [x] **Phase 4a.3**: Deploy structure — Dockerfile, K8s manifests, deploy.sh, build_images.sh, .env config.
+- [x] **Phase 4a.4**: Example agents — qa_agent.py (openai SDK, CRASH_ON_FIRST support, no agl-lite import).
+- [x] **Phase 4a.4b**: Refactor job_defaults → job_template (raw K8s pod spec, no typed schema, name-matched container overrides in RolloutConfig). 271 tests total.
 
 ---
 
@@ -49,101 +53,6 @@
 | 16 | **Namespace**: Manifests omit `metadata.namespace`. Setup script applies with `-n $AGL_K8S_NAMESPACE` from `.env`. Works for any namespace. |
 | 17 | **Phase 4a topology**: All-in-K8s (agl-lite serve, controller, mockai as Deployments). Only algorithm script runs on host (via port-forward). Avoids host↔K8s bridging complexity. |
 | 18 | **Deploy scripts**: Bash for deploy (`scripts/deploy.sh` — reads .env, creates namespace/secret/configmap/manifests, waits) and image builds (`scripts/build_images.sh`). PoC orchestration in `examples/math-poc/run.py` (Python — needs port-forward lifecycle, AglLiteClient). |
-
-### 4a.1 Kr8s adapter (`agl_lite/controller/kr8s_adapter.py`) [completed]
-- [x] Implement `Kr8sClient` satisfying the `K8sClient` protocol in reconciler
-- [x] Methods: create_job, delete_job, get_job, list_jobs, list_pods, watch_jobs
-- [x] Wire into `agl-lite controller` CLI entrypoint
-- [x] 9 integration tests against real minikube (create, get, delete, list, watch, complete, fail)
-
-### 4a.2 Client CLI (`agl-client`) [completed]
-- [x] Separate entrypoint: `agl-client` (not a subcommand of `agl-lite`)
-- [x] `agl-lite` = infra operator (serve, controller). `agl-client` = API consumer (rollouts, events, models, resources).
-- [x] Typer app in `agl_lite/client_cli.py`, registered as `agl-client` in pyproject.toml
-- [x] Subcommands: `rollouts list/get/cancel`, `events list`, `models list/register/delete/delete-all`, `resources get/latest/add`, `health`
-- [x] Reads `AGL_LITE_URL` and `AGL_KEY` from env
-- [x] 7 integration tests against real FastAPI server (subprocess CLI calls)
-
-### 4a.3 Deploy and examples structure [completed]
-
-`deploy/` = infrastructure (any agl-lite setup). `examples/` = task-specific (agents, PoC scenarios).
-
-```
-deploy/
-├── agl-lite/                    # HTTP service (store + gateway)
-│   ├── Dockerfile               # python:3.12-slim + uv + pip install .[controller]
-│   ├── k8s.yaml                 # Deployment + Service (mounts ConfigMap, env from Secret)
-│   └── README.md
-├── controller/                  # K8s reconciler (reuses agl-lite image)
-│   ├── k8s.yaml                 # Deployment (mounts ConfigMap, env from Secret)
-│   ├── rbac.yaml                # ServiceAccount + Role + RoleBinding
-│   └── README.md
-├── .env.example                 # secrets + bootstrap: AGL_KEY, AGL_K8S_NAMESPACE
-├── config.example.yaml          # structured non-secret config: serve, controller, agl_lite_url
-└── README.md                    # deploy overview + ordering guide
-```
-
-Setup script creates K8s resources from `.env` + `config.yaml`:
-- `source deploy/.env`
-- `kubectl create namespace $AGL_K8S_NAMESPACE`
-- `kubectl -n $AGL_K8S_NAMESPACE create secret generic agl-lite-keys --from-literal=AGL_KEY="$AGL_KEY"` (never on disk)
-- `kubectl -n $AGL_K8S_NAMESPACE create configmap agl-lite-config --from-file=config.yaml=deploy/config.yaml`
-- `kubectl apply -n $AGL_K8S_NAMESPACE -f deploy/...` (manifests omit namespace, mount ConfigMap as volume)
-
-```
-examples/
-├── agents/
-│   └── python/                  # Python agent source (reusable templates)
-│       ├── qa_agent.py          # simplest: 1 LLM call
-│       ├── react_agent.py       # multi-turn: tool loop
-│       └── README.md
-├── math-poc/                    # Full PoC: mock RL iterations on CPU
-│   ├── mock_rl_loop.py          # algorithm script (runs on host)
-│   ├── Dockerfile.agent         # agent image for this PoC (copies agents, adds data/tools)
-│   ├── k8s-mockai.yaml          # mockai Deployment+Service (PoC-specific)
-│   ├── run.sh                   # one-command: setup + run + verify
-│   └── README.md                # how to run this PoC end-to-end
-└── README.md
-```
-
-### 4a.4 Example agents (`examples/agents/python/`) [completed]
-- [x] `qa_agent.py` — read `AGL_TASK_INPUT`, one LLM call via openai SDK, print result
-- [ ] `react_agent.py` — placeholder for future (multi-turn tool loop)
-- [x] `CRASH_ON_FIRST=1` env var support (marker file so only first attempt crashes)
-- [x] Uses `openai` SDK (max_retries=5 for 503 handling). Does NOT import agl-lite.
-- [x] Pure source code — no Dockerfile here
-
-### 4a.4b Refactor: `job_defaults` → `job_template` (raw K8s spec) [completed]
-
-**Blocking**: must complete before 4a.5 (math-poc needs `imagePullPolicy: Never`).
-
-**Problem**: Current `JobDefaults` is a typed schema with ad-hoc named fields + `overrides` escape hatch. Three-layer merge (hardcoded → job_defaults → rolloutconfig) is confusing. Adding new K8s fields (e.g., `imagePullPolicy`) requires schema changes.
-
-**Solution**: Replace `JobDefaults` with `job_template` — a raw K8s pod spec dict loaded from a YAML file. No schema, no validation at store level. Any valid K8s field just works.
-
-Changes:
-- [ ] `agl_lite/schemas/resources.py` — remove `JobDefaults` typed schema. Reserved key becomes `job_template` (raw dict, opaque to store).
-- [ ] `agl_lite/schemas/rollout.py` — add `overrides: dict[str, Any]` to `RolloutConfig`. Named fields target `agent` container. `overrides.containers` enables name-matched merge into other containers.
-- [ ] `agl_lite/controller/job_builder.py` — simplify: start from `job_template` (raw pod spec), deep-merge `rollout.config.overrides` (with name-matched container merge), then inject named fields (image, command, env vars) into `agent` container + controller fields (namespace, labels, secrets).
-- [ ] `agl_lite/controller/reconciler.py` — distinguish K8s rejection errors: invalid spec → `terminal_failed` with error message; resource shortage (HTTP 403/409 from K8s) → stay `queuing`, retry.
-- [ ] `examples/math-poc/job-template.yaml` — example template file for math-poc.
-- [ ] Update tests for all changed modules.
-
-Error handling in controller:
-- **Invalid spec** (K8s 422 Unprocessable Entity): controller marks rollout `terminal_failed` with K8s error message → user sees what's wrong
-- **Resource shortage** (pod stays Pending, or K8s 403 Forbidden): controller keeps rollout in `queuing` → retry when resources available
-- Store does NOT validate `job_template` or `overrides` — they are opaque dicts
-
-Merge order:
-```
-job_template (raw K8s, from file, infra team)
-  ↓ deep merge
-rollout.config.overrides (raw K8s, per-rollout, researcher, optional)
-  ↓ inject
-rollout.config named fields (image, command, env_vars, timeout, max_retries)
-  ↓ inject
-controller fields (namespace, labels, gateway env vars, secret refs)
-```
 
 ### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [discuss]
 - [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
