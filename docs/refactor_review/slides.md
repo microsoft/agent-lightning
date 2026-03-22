@@ -612,11 +612,16 @@ containers:
 
 </div>
 
+<div class="mt-4 px-3 bg-blue-50 rounded border border-blue-200">
+
+💡 Any valid K8s pod spec fields work — nodeSelector, tolerations, volumes, init containers. The store doesn't validate it — K8s does at Job creation.
+
+</div>
+
 </div>
 <div>
 
-#### Multi-container: Coding tasks (agent + scorer sidecar)
-
+#### Multi-container: Coding tasks 
 <div class="compact-code-block">
 
 ```yaml
@@ -645,20 +650,14 @@ volumes:
 </div>
 </div>
 
-<div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
-
-💡 Any valid K8s pod spec fields work — nodeSelector, tolerations, volumes, init containers. The store doesn't validate it — K8s does at Job creation.
-
-</div>
-
 ---
 
 # Job Template: Merge Flow
 
 The controller merges `job_template` with per-rollout config at Job creation time.
 
-<div class="grid grid-cols-2 gap-6 mt-2">
-<div>
+<div class="grid grid-cols-3 gap-6 mt-2">
+<div class="col-span-2">
 
 #### How the merge works
 
@@ -667,13 +666,7 @@ The controller merges `job_template` with per-rollout config at Job creation tim
 1. **`job_template`** provides the base pod spec (from resources snapshot)
 2. **Controller injects** into the container named `agent`: env vars (`OPENAI_BASE_URL`, `AGL_TASK_INPUT`, etc.)
 3. **`rollout.config`** can override per-rollout: image, command, extra env vars
-4. **`rollout.config.overrides`** can patch other containers by name (e.g., swap scorer image per task)
-
-</div>
-
-<div class="mt-4 p-3 bg-green-50 rounded border border-green-200">
-
-✅ **Infra team** owns the template. **Researcher** sets `rollout.config`. Separation of concerns.
+4. **`rollout.config.overrides`** can patch other containers by name (e.g., swap scorer image per task) (*Backlog*)
 
 </div>
 
@@ -702,6 +695,12 @@ job_template (raw pod spec, from YAML)
 </div>
 
 </div>
+</div>
+
+<div class="mt-4 p-3 bg-green-50 rounded border border-green-200">
+
+✅ **Researcher** can focus on what changes per rollout (image, command, env) in `rollout.config`. **Controller** handles the merge and injects the rest. Separation of concerns.
+
 </div>
 
 ---
