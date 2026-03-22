@@ -9,7 +9,9 @@ This router provides read access for the algorithm to query collected events.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from typing import Any
+
+from fastapi import APIRouter, Query, Request
 from fastapi.exceptions import HTTPException
 
 from agl_lite.schemas.errors import NotFoundError
@@ -23,6 +25,62 @@ def _get_store(request: Request) -> InMemoryStore:
     return request.app.state.store
 
 
+def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
+    """Extract prompt_token_ids and response_token_ids from a model_request event.
+
+    Handles both streaming (response is list of SSE chunks) and non-streaming
+    (response is a single dict) formats from vLLM.
+    """
+    resp = data.get("response")
+    prompt_token_ids: list[int] = []
+    response_token_ids: list[int] = []
+
+    if isinstance(resp, list):
+        # Streaming: gather from SSE chunks
+        for chunk in resp:
+            if not prompt_token_ids and chunk.get("prompt_token_ids"):
+                prompt_token_ids = chunk["prompt_token_ids"]
+            choices = chunk.get("choices", [])
+            if choices:
+                tids = choices[0].get("token_ids")
+                if tids:
+                    response_token_ids.extend(tids)
+    elif isinstance(resp, dict):
+        # Non-streaming
+        prompt_token_ids = resp.get("prompt_token_ids", [])
+        choices = resp.get("choices", [])
+        if choices:
+            response_token_ids = choices[0].get("token_ids", [])
+
+    srv = data.get("server", {})
+    return {
+        "prompt_token_ids": prompt_token_ids,
+        "response_token_ids": response_token_ids,
+        "server": {"model": srv.get("model"), "version": srv.get("version")},
+    }
+
+
+def _trim_reward(data: dict[str, Any]) -> dict[str, Any]:
+    """Keep only the scalar value from a reward event."""
+    return {"value": data.get("value")}
+
+
+def _to_triplet_format(event: Event) -> Event:
+    """Trim event data for triplet consumption.
+
+    - model_request: extract prompt_token_ids + response_token_ids only
+    - reward: keep only the scalar value
+    - other event types: pass through unchanged
+    """
+    if event.event_type == "model_request":
+        trimmed = _trim_model_request(event.data)
+        return event.model_copy(update={"data": trimmed})
+    elif event.event_type == "reward":
+        trimmed = _trim_reward(event.data)
+        return event.model_copy(update={"data": trimmed})
+    return event
+
+
 @router.get("/events", response_model=list[Event])
 async def query_events(
     request: Request,
@@ -31,11 +89,12 @@ async def query_events(
     event_type: str | None = None,
     limit: int = 1000,
     offset: int = 0,
+    format: str | None = Query(None, description="Set to 'triplet' to trim events for RL training"),
 ) -> list[Event]:
     """Query events for a rollout. Smart attempt_id resolution if not specified."""
     store = _get_store(request)
     try:
-        return store.query_events(
+        events = store.query_events(
             rollout_id=rollout_id,
             attempt_id=attempt_id,
             event_type=event_type,
@@ -44,3 +103,6 @@ async def query_events(
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+    if format == "triplet":
+        events = [_to_triplet_format(e) for e in events]
+    return events

@@ -148,6 +148,131 @@ class TestEvents:
         resp = client.get("/api/events?rollout_id=nonexistent", headers=auth_headers)
         assert resp.status_code == 404
 
+    def test_triplet_format_streaming(self, client: TestClient, auth_headers: dict):
+        """format=triplet trims model_request to prompt/response token_ids."""
+        r = _enqueue(client, auth_headers)
+        rid = r["rollout_id"]
+
+        # Post a model_request event with streaming response (list of SSE chunks)
+        client.post(
+            f"/rollout/{rid}/attempt/pod-1/events",
+            json={
+                "event_type": "model_request",
+                "data": {
+                    "request": {"model": "m", "messages": [{"role": "user", "content": "hi"}], "return_token_ids": True},
+                    "response": [
+                        {"choices": [{"delta": {"content": "Hello"}, "token_ids": [10, 20]}], "prompt_token_ids": [1, 2, 3]},
+                        {"choices": [{"delta": {"content": " world"}, "token_ids": [30]}]},
+                    ],
+                    "server": {"model": "m", "version": 1, "endpoint": "http://vllm:8000/v1"},
+                },
+            },
+            headers=auth_headers,
+        )
+        # Post a reward event
+        client.post(
+            f"/rollout/{rid}/attempt/pod-1/events",
+            json={"event_type": "reward", "data": {"value": 0.85, "message": "correct"}},
+            headers=auth_headers,
+        )
+
+        # Query with format=triplet
+        resp = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1&format=triplet", headers=auth_headers)
+        assert resp.status_code == 200
+        events = resp.json()
+        assert len(events) == 2
+
+        mr = events[0]
+        assert mr["event_type"] == "model_request"
+        assert mr["data"]["prompt_token_ids"] == [1, 2, 3]
+        assert mr["data"]["response_token_ids"] == [10, 20, 30]
+        assert mr["data"]["server"] == {"model": "m", "version": 1}
+        # Full request/response should be stripped
+        assert "request" not in mr["data"]
+        assert "response" not in mr["data"]
+        assert "endpoint" not in mr["data"].get("server", {})
+
+        rw = events[1]
+        assert rw["event_type"] == "reward"
+        assert rw["data"] == {"value": 0.85}
+        # Message stripped
+        assert "message" not in rw["data"]
+
+    def test_triplet_format_non_streaming(self, client: TestClient, auth_headers: dict):
+        """format=triplet works for non-streaming (dict) response."""
+        r = _enqueue(client, auth_headers)
+        rid = r["rollout_id"]
+
+        client.post(
+            f"/rollout/{rid}/attempt/pod-1/events",
+            json={
+                "event_type": "model_request",
+                "data": {
+                    "request": {"model": "m", "messages": []},
+                    "response": {
+                        "choices": [{"message": {"content": "hi"}, "token_ids": [100, 200]}],
+                        "prompt_token_ids": [5, 6],
+                    },
+                    "server": {"model": "m", "version": 2, "endpoint": "http://vllm:8000/v1"},
+                },
+            },
+            headers=auth_headers,
+        )
+
+        resp = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1&format=triplet", headers=auth_headers)
+        events = resp.json()
+        assert len(events) == 1
+        assert events[0]["data"]["prompt_token_ids"] == [5, 6]
+        assert events[0]["data"]["response_token_ids"] == [100, 200]
+
+    def test_triplet_format_no_token_ids(self, client: TestClient, auth_headers: dict):
+        """format=triplet returns empty lists when token_ids are absent."""
+        r = _enqueue(client, auth_headers)
+        rid = r["rollout_id"]
+
+        client.post(
+            f"/rollout/{rid}/attempt/pod-1/events",
+            json={
+                "event_type": "model_request",
+                "data": {
+                    "request": {"model": "m", "messages": []},
+                    "response": [{"choices": [{"delta": {"content": "hello"}}]}],
+                    "server": {"model": "m", "version": 1, "endpoint": "http://x"},
+                },
+            },
+            headers=auth_headers,
+        )
+
+        resp = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1&format=triplet", headers=auth_headers)
+        events = resp.json()
+        assert events[0]["data"]["prompt_token_ids"] == []
+        assert events[0]["data"]["response_token_ids"] == []
+
+    def test_no_format_returns_full_events(self, client: TestClient, auth_headers: dict):
+        """Without format=triplet, events are returned in full."""
+        r = _enqueue(client, auth_headers)
+        rid = r["rollout_id"]
+
+        client.post(
+            f"/rollout/{rid}/attempt/pod-1/events",
+            json={
+                "event_type": "model_request",
+                "data": {
+                    "request": {"model": "m", "messages": [{"role": "user", "content": "hi"}]},
+                    "response": [{"choices": [{"delta": {"content": "x"}}]}],
+                    "server": {"model": "m", "version": 1, "endpoint": "http://x"},
+                },
+            },
+            headers=auth_headers,
+        )
+
+        resp = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth_headers)
+        events = resp.json()
+        # Full data preserved
+        assert "request" in events[0]["data"]
+        assert "response" in events[0]["data"]
+        assert events[0]["data"]["request"]["messages"] == [{"role": "user", "content": "hi"}]
+
 
 # --- Archive ---
 
