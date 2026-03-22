@@ -58,7 +58,11 @@ def post_event(event_type: str, data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="QA agent for math problems")
-    parser.add_argument("--model", default="mock-llm", help="Model name to use")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("AGL_MODEL_NAME", "mock-llm"),
+        help="Model name to use (default: $AGL_MODEL_NAME or mock-llm)",
+    )
     args = parser.parse_args()
 
     # --- Crash-on-first support (for K8s retry testing) ---

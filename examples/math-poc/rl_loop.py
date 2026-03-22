@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Mock RL loop — demonstrates the full agl-lite lifecycle with mockai.
+"""RL loop — real inference with vLLM on GSM8K math problems.
 
-Two iterations with a weight update between them:
-  Iter 1: register resources + model (v1) → enqueue batch → poll → retrieve → rewards
-  Weight update: deregister model → re-register (v2, same endpoint)
-  Iter 2: enqueue batch → poll → retrieve → rewards → verify version=2 in events
+Single iteration (model frozen in Phase 4b):
+  Register resources + model (v1) → enqueue batch → poll → retrieve → rewards
+
+The agent calls a real LLM (e.g., Qwen2.5-1.5B-Instruct) via the gateway.
+Reward = 1.0 if the model's \\boxed{answer} matches ground truth numerically.
 
 Event flow per rollout:
   model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm)
@@ -13,7 +14,9 @@ Usage:
     export AGL_LITE_URL=http://localhost:8080
     export AGL_KEY=<your-key>
     export AGL_K8S_NAMESPACE=<namespace>
-    python examples/math-poc/mock_rl_loop.py
+    export AGL_MODEL_NAME=Qwen/Qwen2.5-1.5B-Instruct
+    export AGL_MODEL_ENDPOINT=http://host.minikube.internal:8010/v1
+    python examples/math-poc/rl_loop.py
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -33,20 +37,20 @@ from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.schemas.api import EnqueueRolloutRequest, PostEventRequest, RegisterModelRequest
 from agl_lite.schemas.rollout import RolloutStatus
 
-# --- Config ---
+# --- Config (from env, set by run.sh from deploy/.env) ---
 
-MOCKAI_MODEL = os.environ.get("AGL_MODEL_NAME", "mock-llm")
+MODEL_NAME = os.environ.get("AGL_MODEL_NAME", "Qwen/Qwen2.5-1.5B-Instruct")
 BATCH_SIZE = int(os.environ.get("AGL_BATCH_SIZE", "5"))
-NUM_ITERATIONS = int(os.environ.get("AGL_NUM_ITERATIONS", "2"))
-POLL_INTERVAL = 3
-MAX_POLL_TIME = 180
+NUM_ITERATIONS = int(os.environ.get("AGL_NUM_ITERATIONS", "1"))
+POLL_INTERVAL = 5  # real inference is slower
+MAX_POLL_TIME = 300  # 5 min — real models take longer
 
 DATA_DIR = Path(__file__).parent / "data"
 TEMPLATE_PATH = Path(__file__).parent / "job-template.yaml"
 
 
 def log(msg: str) -> None:
-    """Print a log message without timestamp (reproducible output)."""
+    """Print a log message without timestamp (reproducible structure)."""
     print(msg, flush=True)
 
 
@@ -59,30 +63,54 @@ def load_dataset() -> list[dict]:
     return items
 
 
-def build_tasks(dataset: list[dict], batch_size: int, offset: int = 0) -> list[dict]:
-    """Build task inputs with embedded \\boxed{} answers for mockai echo mode.
+def normalize_number(s: str) -> float | None:
+    """Try to parse a string as a number, handling common formats.
 
-    Mockai echoes the last user message, so we embed \\boxed{answer} in the
-    question text. The agent's parser extracts it as the "model response".
-
-    Alternating pattern: even index → correct answer, odd index → wrong answer.
-    This gives deterministic, reproducible mixed rewards (no randomness).
+    Handles: "18", "18.0", "18.00", "$18", "18,000", "1,234.56", "-5"
+    Returns None if unparseable.
     """
-    WRONG_ANSWER = "WRONG"
+    if not s:
+        return None
+    # Strip whitespace, $, commas
+    cleaned = s.strip().replace(",", "").replace("$", "").replace("%", "")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def compute_reward(agent_answer: str | None, ground_truth: str) -> tuple[float, str]:
+    """Compute reward by numeric comparison.
+
+    Returns (reward, reason).
+    """
+    if agent_answer is None:
+        return 0.0, "no answer extracted"
+
+    agent_num = normalize_number(agent_answer)
+    gt_num = normalize_number(ground_truth)
+
+    if agent_num is None:
+        return 0.0, f"agent answer not numeric: {agent_answer!r}"
+    if gt_num is None:
+        return 0.0, f"ground truth not numeric: {ground_truth!r}"
+
+    if abs(agent_num - gt_num) < 1e-6:
+        return 1.0, "correct"
+    else:
+        return 0.0, f"wrong: {agent_num} != {gt_num}"
+
+
+def build_tasks(dataset: list[dict], batch_size: int, offset: int = 0) -> list[dict]:
+    """Build task inputs — plain questions for real model inference.
+
+    No \\boxed{} embedding — the model generates its own answer.
+    """
     tasks = []
     for i in range(batch_size):
         idx = (offset + i) % len(dataset)
         item = dataset[idx]
-        correct = i % 2 == 0  # even=correct, odd=wrong
-        boxed_value = item["answer"] if correct else WRONG_ANSWER
-        # Append \boxed{} to question so mockai echo returns it
-        augmented_input = item["question"] + f"\n\\boxed{{{boxed_value}}}"
-        tasks.append({
-            "input": augmented_input,
-            "ground_truth": item["answer"],
-            "expect_correct": correct,
-            "boxed_value": boxed_value,
-        })
+        tasks.append({"input": item["question"], "ground_truth": item["answer"]})
     return tasks
 
 
@@ -119,40 +147,37 @@ async def run_iteration(
     resources_id: str,
     dataset: list[dict],
     iteration: int,
-    expected_version: int,
+    model_version: int,
 ) -> dict:
     """Run one batch of rollouts, collect agent outputs, compute and post rewards."""
     log(f"")
     log(f"{'='*60}")
-    log(f"  ITERATION {iteration} (expected model version={expected_version})")
+    log(f"  ITERATION {iteration} (model version={model_version})")
     log(f"{'='*60}")
 
-    # Build tasks (deterministic: iteration 1 uses items 0-4, iteration 2 uses 5-9)
+    # Build tasks
     task_offset = (iteration - 1) * BATCH_SIZE
     tasks = build_tasks(dataset, BATCH_SIZE, offset=task_offset)
 
     log(f"  Tasks ({len(tasks)}):")
     for i, t in enumerate(tasks):
-        q_preview = t["input"][:60] + "..." if len(t["input"]) > 60 else t["input"]
-        tag = "✓" if t["expect_correct"] else "✗"
-        log(f"    [{i}] {tag} Q: {q_preview}")
-        log(f"         A: {t['ground_truth']}, boxed: {t['boxed_value']}")
+        q_preview = t["input"][:70] + "..." if len(t["input"]) > 70 else t["input"]
+        log(f"    [{i}] Q: {q_preview}")
+        log(f"         GT: {t['ground_truth']}")
 
     # Enqueue rollouts
     requests = [
         EnqueueRolloutRequest(
             resources_id=resources_id,
             input=t["input"],
-            config={"environment_variables": {"AGL_MODEL_NAME": MOCKAI_MODEL}},
+            config={"environment_variables": {"AGL_MODEL_NAME": MODEL_NAME}},
         )
         for t in tasks
     ]
     rollouts = await client.enqueue_rollouts(requests)
     rollout_ids = [r.rollout_id for r in rollouts]
 
-    log(f"  Enqueued {len(rollout_ids)} rollouts:")
-    for i, r in enumerate(rollouts):
-        log(f"    [{i}] {r.rollout_id} → {r.status.value}")
+    log(f"  Enqueued {len(rollout_ids)} rollouts")
 
     # Wait for completion
     log(f"  Polling for completion...")
@@ -170,11 +195,11 @@ async def run_iteration(
     agent_output_count = 0
     reward_count = 0
     versions_seen = set()
-    assertion_failures = []
+    structural_failures = []
 
     first_mr_logged = False
 
-    log(f"  Collecting events and computing rewards:")
+    log(f"  Results:")
     for rollout in succeeded:
         events = await client.get_events(rollout.rollout_id)
 
@@ -191,50 +216,43 @@ async def run_iteration(
             if v is not None:
                 versions_seen.add(v)
 
-        # --- Validate model_request event structure ---
+        # --- Log first model_request event in detail ---
         for event in mr_events:
             d = event.data
             req = d.get("request", {})
             resp = d.get("response")
             srv = d.get("server", {})
 
-            # Print the first model_request event in full detail
             if not first_mr_logged:
                 log(f"")
                 log(f"  ── First model_request event (sample) ──")
-                log(f"    rollout:  {rollout.rollout_id}")
-                log(f"    attempt:  {event.attempt_id}")
-                log(f"    server:   model={srv.get('model')}, version={srv.get('version')}, endpoint={srv.get('endpoint')}")
+                log(f"    server:   model={srv.get('model')}, version={srv.get('version')}")
                 log(f"    request.model:    {req.get('model')}")
                 log(f"    request.stream:   {req.get('stream')}")
                 log(f"    request.messages: {len(req.get('messages', []))} messages")
-                for i, msg in enumerate(req.get("messages", [])):
-                    role = msg.get("role", "?")
-                    content_preview = str(msg.get("content", ""))[:60]
-                    log(f"      [{i}] {role}: {content_preview}...")
-                if isinstance(resp, list):
+                if isinstance(resp, list) and resp:
+                    # Reassemble streamed content
+                    assembled = ""
+                    for chunk in resp:
+                        choices = chunk.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            assembled += delta.get("content", "")
                     log(f"    response: {len(resp)} SSE chunks (streaming)")
-                    if resp:
-                        log(f"      first chunk: {json.dumps(resp[0], indent=None)[:120]}...")
-                        # Reassemble content from chunks
-                        assembled = ""
-                        for chunk in resp:
-                            choices = chunk.get("choices", [])
-                            if choices:
-                                delta = choices[0].get("delta", {})
-                                assembled += delta.get("content", "")
-                        log(f"      assembled content ({len(assembled)} chars): {assembled[:80]}...")
+                    log(f"      content ({len(assembled)} chars):")
+                    # Print first 300 chars of LLM reasoning
+                    for line in assembled[:300].split("\n"):
+                        log(f"        {line}")
+                    if len(assembled) > 300:
+                        log(f"        ...")
                 elif isinstance(resp, dict):
-                    log(f"    response: non-streaming (dict)")
                     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    log(f"      content ({len(content)} chars): {content[:80]}...")
-                else:
-                    log(f"    response: {type(resp).__name__}")
+                    log(f"    response: non-streaming, {len(content)} chars")
                 log(f"  ── end sample ──")
                 log(f"")
                 first_mr_logged = True
 
-            # Structural assertions on every model_request
+            # Structural checks on every model_request
             has_request = "request" in d
             has_response = "response" in d
             has_server = "server" in d
@@ -243,7 +261,6 @@ async def run_iteration(
             has_stream = "stream" in req
             is_streaming = req.get("stream") is True
             has_version = "version" in srv and srv["version"] is not None
-            resp_is_list = isinstance(resp, list)  # streaming → list of chunks
             resp_nonempty = bool(resp)
 
             checks = [
@@ -255,13 +272,12 @@ async def run_iteration(
                 ("has stream flag", has_stream),
                 ("stream=True", is_streaming),
                 ("has version in server", has_version),
-                ("response is list (SSE chunks)", resp_is_list),
                 ("response non-empty", resp_nonempty),
             ]
             for check_name, ok in checks:
                 if not ok:
-                    assertion_failures.append(
-                        f"{rollout.rollout_id}: model_request check failed: {check_name}"
+                    structural_failures.append(
+                        f"{rollout.rollout_id}: model_request: {check_name}"
                     )
 
         # Get agent answer
@@ -272,36 +288,19 @@ async def run_iteration(
             attempt_id = event.attempt_id
             break
 
-        # Find ground truth and expected pattern
+        # Find ground truth
         matching_task = next(
             (t for t in tasks if t["input"] == rollout.input),
             None,
         )
         gt = matching_task["ground_truth"] if matching_task else "?"
-        expect_correct = matching_task["expect_correct"] if matching_task else None
-        boxed_value = matching_task["boxed_value"] if matching_task else "?"
 
-        # Compute reward
-        reward = 1.0 if agent_answer and agent_answer.strip() == gt.strip() else 0.0
+        # Compute reward (numeric comparison)
+        reward, reason = compute_reward(agent_answer, gt)
         total_reward += reward
 
-        # Assert agent extracted the embedded boxed value
-        expected_reward = 1.0 if expect_correct else 0.0
-        answer_ok = agent_answer is not None and agent_answer.strip() == boxed_value.strip()
-        reward_ok = reward == expected_reward
-
-        q_preview = str(rollout.input)[:40] + "..." if len(str(rollout.input)) > 40 else str(rollout.input)
-        tag = "✓" if expect_correct else "✗"
-        log(f"    {rollout.rollout_id}: [{tag}]")
-        log(f"      events: {len(mr_events)} model_request, {len(ao_events)} agent_output")
-        log(f"      boxed={boxed_value!r}, agent_answer={agent_answer!r}, ground_truth={gt!r}")
-        log(f"      reward={reward} (expected={expected_reward})")
-        if not answer_ok:
-            log(f"      ⚠ ANSWER MISMATCH: expected boxed_value={boxed_value!r}, got {agent_answer!r}")
-            assertion_failures.append(f"{rollout.rollout_id}: answer {agent_answer!r} != boxed {boxed_value!r}")
-        if not reward_ok:
-            log(f"      ⚠ REWARD MISMATCH: expected {expected_reward}, got {reward}")
-            assertion_failures.append(f"{rollout.rollout_id}: reward {reward} != expected {expected_reward}")
+        tag = "✓" if reward > 0 else "✗"
+        log(f"    {rollout.rollout_id}: [{tag}] answer={agent_answer!r}, gt={gt!r} → {reason}")
 
         # Post reward event
         if attempt_id:
@@ -311,7 +310,7 @@ async def run_iteration(
                     attempt_id,
                     PostEventRequest(
                         event_type="reward",
-                        data={"value": reward, "ground_truth": gt, "agent_answer": agent_answer},
+                        data={"value": reward, "ground_truth": gt, "agent_answer": agent_answer, "reason": reason},
                     ),
                 )
                 reward_count += 1
@@ -319,21 +318,19 @@ async def run_iteration(
                 log(f"      WARNING: failed to post reward: {e}")
 
     avg_reward = total_reward / len(succeeded) if succeeded else 0.0
-    expect_correct_count = sum(1 for t in tasks if t["expect_correct"])
-    expect_wrong_count = len(tasks) - expect_correct_count
-    expected_avg = expect_correct_count / len(tasks) if tasks else 0.0
 
+    log(f"")
     log(f"  --- Iteration {iteration} Summary ---")
+    log(f"  Rollouts: {len(succeeded)} succeeded, {len(failed)} failed")
     log(f"  Events: {model_request_count} model_request, {agent_output_count} agent_output, {reward_count} reward")
     log(f"  Versions seen: {sorted(versions_seen)}")
-    log(f"  Pattern: {expect_correct_count} correct + {expect_wrong_count} wrong → expected avg={expected_avg:.2f}")
-    log(f"  Average reward: {avg_reward:.2f}")
-    if assertion_failures:
-        log(f"  ⚠ Assertion failures ({len(assertion_failures)}):")
-        for f in assertion_failures:
+    log(f"  Average reward: {avg_reward:.2f} ({int(total_reward)}/{len(succeeded)} correct)")
+    if structural_failures:
+        log(f"  ⚠ Structural failures ({len(structural_failures)}):")
+        for f in structural_failures:
             log(f"    - {f}")
     else:
-        log(f"  ✅ All assertions passed")
+        log(f"  ✅ All structural checks passed")
 
     return {
         "iteration": iteration,
@@ -344,7 +341,8 @@ async def run_iteration(
         "rewards": reward_count,
         "versions": versions_seen,
         "avg_reward": avg_reward,
-        "assertion_failures": assertion_failures,
+        "total_reward": total_reward,
+        "structural_failures": structural_failures,
     }
 
 
@@ -352,13 +350,13 @@ async def main() -> None:
     base_url = os.environ.get("AGL_LITE_URL", "http://localhost:8080")
     agl_key = os.environ.get("AGL_KEY")
     namespace = os.environ.get("AGL_K8S_NAMESPACE", "agl")
+    model_endpoint = os.environ["AGL_MODEL_ENDPOINT"]  # required for vllm mode
 
-    model_endpoint = os.environ.get("AGL_MODEL_ENDPOINT") or f"http://mockai.{namespace}.svc.cluster.local:5002/v1"
-
-    log(f"=== Math PoC — Mock RL Loop ===")
+    log(f"=== Math PoC — RL Loop (vLLM) ===")
     log(f"  agl-lite:  {base_url}")
-    log(f"  model:     {MOCKAI_MODEL} → {model_endpoint}")
+    log(f"  model:     {MODEL_NAME} → {model_endpoint}")
     log(f"  namespace: {namespace}")
+    log(f"  batch:     {BATCH_SIZE}, iterations: {NUM_ITERATIONS}")
 
     client = AglLiteClient(base_url=base_url, agl_key=agl_key)
 
@@ -369,50 +367,27 @@ async def main() -> None:
         with open(TEMPLATE_PATH) as f:
             job_template = yaml.safe_load(f)
         log(f"  Job template: {TEMPLATE_PATH.name}")
-        log(f"    containers: {[c['name'] for c in job_template.get('containers', [])]}")
 
         res = await client.add_resources({"job_template": job_template})
         resources_id = res.resources_id
         log(f"  Resources registered: {resources_id}")
 
         dataset = load_dataset()
-        log(f"  Dataset loaded: {len(dataset)} problems from {DATA_DIR.name}/")
+        log(f"  Dataset loaded: {len(dataset)} problems")
 
-        # --- Register model server (v1) ---
+        # --- Register model server ---
         log(f"")
         log(f"--- Register model server (v1) ---")
         await client.register_models([
-            RegisterModelRequest(model=MOCKAI_MODEL, endpoint=model_endpoint, version=1),
+            RegisterModelRequest(model=MODEL_NAME, endpoint=model_endpoint, version=1),
         ])
-        log(f"  {MOCKAI_MODEL} → {model_endpoint} (version=1)")
+        log(f"  {MODEL_NAME} → {model_endpoint} (version=1)")
 
-        # --- Iteration 1 ---
+        # --- Run iterations ---
         results = []
-        r1 = await run_iteration(client, resources_id, dataset, iteration=1, expected_version=1)
-        results.append(r1)
-
-        # --- Weight update: v1 → v2 ---
-        log(f"")
-        log(f"{'='*60}")
-        log(f"  WEIGHT UPDATE: v1 → v2")
-        log(f"{'='*60}")
-
-        log(f"  Deregistering model '{MOCKAI_MODEL}'...")
-        await client.delete_model(MOCKAI_MODEL)
-        log(f"  Model pool empty — gateway returns 503 for new requests")
-
-        log(f"  Simulating weight loading (2s)...")
-        await asyncio.sleep(2)
-
-        log(f"  Re-registering model (v2)...")
-        await client.register_models([
-            RegisterModelRequest(model=MOCKAI_MODEL, endpoint=model_endpoint, version=2),
-        ])
-        log(f"  {MOCKAI_MODEL} → {model_endpoint} (version=2)")
-
-        # --- Iteration 2 ---
-        r2 = await run_iteration(client, resources_id, dataset, iteration=2, expected_version=2)
-        results.append(r2)
+        for i in range(1, NUM_ITERATIONS + 1):
+            r = await run_iteration(client, resources_id, dataset, iteration=i, model_version=1)
+            results.append(r)
 
         # --- Final Summary ---
         log(f"")
@@ -424,31 +399,30 @@ async def main() -> None:
         total_mr = sum(r["model_requests"] for r in results)
         total_ao = sum(r["agent_outputs"] for r in results)
         total_rw = sum(r["rewards"] for r in results)
+        total_correct = sum(r["total_reward"] for r in results)
         all_versions = set()
+        all_structural = []
         for r in results:
             all_versions.update(r["versions"])
+            all_structural.extend(r.get("structural_failures", []))
 
         log(f"  Iterations: {len(results)}")
         log(f"  Rollouts: {total_succeeded} succeeded, {total_failed} failed")
         log(f"  Events: {total_mr} model_request, {total_ao} agent_output, {total_rw} reward")
-        log(f"  Versions seen: {sorted(all_versions)}")
+        log(f"  Accuracy: {int(total_correct)}/{total_succeeded} = {total_correct/total_succeeded:.1%}" if total_succeeded else "  Accuracy: N/A")
         for r in results:
-            log(f"  Iter {r['iteration']}: reward={r['avg_reward']:.2f}, versions={sorted(r['versions'])}")
-
-        # Collect assertion failures
-        all_assertion_failures = []
-        for r in results:
-            all_assertion_failures.extend(r.get("assertion_failures", []))
+            log(f"  Iter {r['iteration']}: reward={r['avg_reward']:.2f} ({int(r['total_reward'])}/{r['succeeded']})")
 
         # --- Verify ---
         checks = []
-        checks.append(("Rollouts succeeded", total_succeeded >= BATCH_SIZE, f"{total_succeeded}/{BATCH_SIZE * NUM_ITERATIONS}"))
+        checks.append(("Rollouts succeeded", total_succeeded > 0, f"{total_succeeded}/{total_succeeded + total_failed}"))
         checks.append(("model_request events", total_mr > 0, str(total_mr)))
         checks.append(("agent_output events", total_ao > 0, str(total_ao)))
         checks.append(("reward events", total_rw > 0, str(total_rw)))
         checks.append(("Version 1 seen", 1 in all_versions, str(all_versions)))
-        checks.append(("Version 2 seen", 2 in all_versions, str(all_versions)))
-        checks.append(("Answer assertions", len(all_assertion_failures) == 0, f"{len(all_assertion_failures)} failures"))
+        checks.append(("Structural checks", len(all_structural) == 0, f"{len(all_structural)} failures"))
+        # Sanity: at least some rewards should be non-zero (model should get easy ones right)
+        checks.append(("Some correct answers", total_correct > 0, f"{int(total_correct)} correct"))
 
         log(f"")
         log(f"  Checks:")
@@ -461,9 +435,9 @@ async def main() -> None:
 
         log(f"")
         if all_ok:
-            log(f"  ✅ Math PoC completed successfully!")
+            log(f"  ✅ Math PoC (vLLM) completed successfully!")
         else:
-            log(f"  ❌ Math PoC had failures — check above")
+            log(f"  ❌ Math PoC (vLLM) had failures — check above")
             sys.exit(1)
 
     finally:

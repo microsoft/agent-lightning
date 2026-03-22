@@ -20,7 +20,7 @@ Everything runs on a single machine with minikube. No GPU required.
 │                                                   │
 │  agent pods        (Jobs)        ← created per    │
 │                                    rollout        │
-└──────────────────────┬───────────────────────────-┘
+└──────────────────────┬────────────────────────────┘
                        │ port-forward :8080
                        ▼
 ┌─ host ────────────────────────────────────────────┐
@@ -37,8 +37,9 @@ Everything runs on a single machine with minikube. No GPU required.
 
 ### vLLM mode (Phase 4b — GPU)
 
-vLLM runs on the host with GPU access. Minikube pods reach it via
-`host.minikube.internal`.
+vLLM runs on the host as a Docker container with GPU access. agl-lite infra
+runs in minikube. Agent pods reach vLLM through the gateway, which forwards
+to `host.minikube.internal`.
 
 ```
 ┌─ minikube ────────────────────────────────────────┐
@@ -49,20 +50,24 @@ vLLM runs on the host with GPU access. Minikube pods reach it via
 │  agent pods        (Jobs)   ─── gateway ──────────┼──┐
 │                                                   │  │
 └──────────────────────┬────────────────────────────┘  │
-                       │ port-forward :8080            │
+                       │ port-forward :8080             │
                        ▼                               ▼
 ┌─ host ────────────────────────────────────────────┐
 │  rl_loop.py        ← algorithm (enqueue, reward)  │
-│  vLLM :8001        ← Qwen2.5-1.5B-Instruct        │
-│                      (4× A6000, real inference)   │
+│                                                   │
+│  vLLM (Docker)     ← Qwen2.5-1.5B-Instruct       │
+│   :8010              real inference on GPU         │
+│   (vllm/vllm-openai:latest)                      │
 └───────────────────────────────────────────────────┘
 ```
 
-- **vLLM** generates real math reasoning with `\boxed{}` answers.
-- **Reward**: parse model's `\boxed{answer}`, compare to ground truth numerically.
-- **No mockai** needed — real model server registered directly.
-- **Model is frozen** in Phase 4b (no actual weight updates). Version bump is
-  metadata-only to validate the tracking path.
+- **vLLM** runs via Docker (`vllm/vllm-openai:latest`) with NVIDIA GPU access.
+  Started separately with `scripts/start_vllm.sh`.
+- **Agent** sends `stream=True` requests. Gateway captures all SSE chunks as
+  `model_request` events, then forwards to the agent.
+- **Reward**: parse model's `\boxed{answer}`, compare to ground truth
+  numerically (handles `18` vs `18.0`, `$18`, `18,000`, etc.).
+- **Model is frozen** in Phase 4b — no actual weight updates.
 
 ---
 
@@ -78,7 +83,7 @@ model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm
 |-------|--------|------|
 | `model_request` | gateway (auto) | `{request, response (SSE chunks), server: {model, version, endpoint}}` |
 | `agent_output` | agent pod | `{answer, raw_response}` |
-| `reward` | algorithm | `{value, ground_truth, agent_answer}` |
+| `reward` | algorithm | `{value, ground_truth, agent_answer, reason}` |
 
 ---
 
@@ -87,23 +92,21 @@ model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm
 ### Prerequisites
 
 - minikube running (`minikube status`)
-- For vLLM mode: NVIDIA GPU with vLLM installed
+- For vLLM mode: Docker + `nvidia-container-toolkit`
 
 ### 1. Configure
 
 ```bash
-# Mock mode (CPU-only, deterministic):
-cp examples/math-poc/.env.mockai.example deploy/.env
+# Pick one:
+cp examples/math-poc/.env.mockai.example deploy/.env   # mock (CPU-only)
+cp examples/math-poc/.env.vllm.example deploy/.env     # vLLM (GPU)
 
-# OR vLLM mode (real GPU inference):
-cp examples/math-poc/.env.vllm.example deploy/.env
-
-# API key (set once, used by all components)
+# API key
 export AGL_KEY=$(openssl rand -hex 32)
 ```
 
-Each `.env` file is self-contained — infrastructure settings, model server
-config, and experiment parameters all in one place.
+Each `.env` file is self-contained — infrastructure, model server, and
+experiment settings all in one place. Just copy and go.
 
 ### 2. Run (mock mode)
 
@@ -111,24 +114,33 @@ config, and experiment parameters all in one place.
 examples/math-poc/run.sh
 ```
 
+Builds images, deploys to minikube, runs 2-iteration RL loop, verifies results.
+Logs saved to `examples/math-poc/logs/<timestamp>/`.
+
 ### 3. Run (vLLM mode)
 
 ```bash
-# Start vLLM on host (separate terminal)
-vllm serve Qwen/Qwen2.5-1.5B-Instruct --port 8001 --host 0.0.0.0
+# Start vLLM (once, runs in background)
+scripts/start_vllm.sh
 
-# Run (uses settings from deploy/.env)
+# Run experiment (repeatable)
 examples/math-poc/run.sh
+
+# Stop vLLM when done
+scripts/start_vllm.sh --stop
 ```
 
-### 4. Verify
+### 4. Verify (mock mode)
 
-Compare your output against the reference:
+Compare against the reference output:
+
 ```bash
-# Redact rollout IDs from your log
 sed -E 's/[0-9a-f]{32}/<rollout-id>/g' examples/math-poc/logs/*/mock_rl_loop.log \
   | diff - examples/math-poc/reference_output.log
 ```
+
+For vLLM mode, results are non-deterministic (real model inference), but the
+log structure, event types, and checks should all pass.
 
 ---
 
@@ -136,15 +148,15 @@ sed -E 's/[0-9a-f]{32}/<rollout-id>/g' examples/math-poc/logs/*/mock_rl_loop.log
 
 | File | Purpose |
 |------|---------|
-| `mock_rl_loop.py` | Mock algorithm — deterministic E2E test with mockai |
-| `rl_loop.py` | Real algorithm — GSM8K with vLLM (Phase 4b) |
-| `agents/qa_agent.py` | Agent — LLM call + `\boxed{}` parsing (streaming) |
+| `mock_rl_loop.py` | Mock algorithm — deterministic E2E test (mockai echo mode) |
+| `rl_loop.py` | Real algorithm — GSM8K with vLLM (numeric reward) |
+| `agents/qa_agent.py` | Agent — streaming LLM call + `\boxed{}` parsing |
 | `job-template.yaml` | K8s pod spec for agent Jobs |
 | `Dockerfile.agent` | Agent container image |
 | `k8s-mockai.yaml` | Mockai deployment + service (mock mode only) |
 | `data/gsm8k_sample.jsonl` | 30 GSM8K problems with ground truth |
-| `.env.mockai.example` | Complete config for mock mode → copy to `deploy/.env` |
-| `.env.vllm.example` | Complete config for vLLM mode → copy to `deploy/.env` |
+| `.env.mockai.example` | Complete config for mock mode → `cp` to `deploy/.env` |
+| `.env.vllm.example` | Complete config for vLLM mode → `cp` to `deploy/.env` |
 | `run.sh` | One-command: build → deploy → run → verify → collect logs |
 | `reference_output.log` | Expected output (mock mode, redacted IDs) |
 | `logs/` | Per-run logs (gitignored) |
@@ -153,12 +165,17 @@ sed -E 's/[0-9a-f]{32}/<rollout-id>/g' examples/math-poc/logs/*/mock_rl_loop.log
 
 ## Environment details
 
-Our development environment:
+Our development/test environment:
 
 | Component | Spec |
 |-----------|------|
-| Host | 128 CPU, 995 GB RAM, 4× NVIDIA RTX A6000 (48 GB each) |
-| minikube | Docker driver, single node, no GPU passthrough |
-| vLLM | Host-side, one A6000, `Qwen/Qwen2.5-1.5B-Instruct` |
-| K8s namespace | `agl-test` (configurable via `deploy/.env`) |
-| Agent pods | CPU-only (run inside minikube, reach vLLM via `host.minikube.internal`) |
+| **Host** | 128 CPU, 995 GB RAM, 4× NVIDIA RTX A6000 (48 GB each) |
+| **Minikube** | Docker driver, single node, no GPU passthrough |
+| **vLLM** | Docker container on host, GPU 0, `Qwen/Qwen2.5-1.5B-Instruct` |
+| **Docker image** | `vllm/vllm-openai:latest` (bundles CUDA runtime) |
+| **K8s namespace** | `agl-test` (configurable via `deploy/.env`) |
+| **Agent pods** | CPU-only in minikube, reach vLLM via `host.minikube.internal:8010` |
+
+Note: pip-installing vLLM on the host failed due to triton/gcc compilation
+issues with CUDA 13.0. The Docker image works reliably and is the recommended
+approach.
