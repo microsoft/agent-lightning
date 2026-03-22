@@ -65,5 +65,6 @@ echo ""
 echo "=== Running mock RL loop ==="
 export AGL_LITE_URL=http://localhost:8080
 export AGL_K8S_NAMESPACE="$NS"
+export AGL_KEY
 
 uv run python examples/math-poc/mock_rl_loop.py

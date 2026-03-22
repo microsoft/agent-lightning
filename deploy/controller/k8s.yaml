@@ -19,7 +19,15 @@ spec:
         - name: controller
           image: agl-lite:dev
           imagePullPolicy: Never
-          command: ["agl-lite", "controller"]
+          command:
+            - "agl-lite"
+            - "controller"
+            - "--agl-lite-url"
+            - "$(AGL_LITE_URL)"
+            - "--namespace"
+            - "$(AGL_K8S_NAMESPACE)"
+            - "--secret-name"
+            - "$(AGL_SECRET_NAME)"
           env:
             - name: AGL_KEY
               valueFrom:
