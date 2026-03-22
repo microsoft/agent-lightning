@@ -22,8 +22,6 @@ Design Review · March 2026
 
 # Agenda
 
-<v-clicks>
-
 ### 1. What is agl-lite — three design choices
 
 ### 2. Architecture overview
@@ -34,9 +32,9 @@ Design Review · March 2026
 
 ### 5. VERL integration
 
-### 6. Status & collaboration
+### 6. Deployment & demo
 
-</v-clicks>
+### 7. Status & next steps
 
 ---
 layout: section
@@ -51,17 +49,13 @@ layout: section
 
 # Three Design Choices
 
-<v-clicks>
-
 **1. Self-owned request gateway** — a purpose-built LLM reverse proxy that captures all request-response data transparently as it flows through
 
 **2. Gateway-level data capture** — instead of instrumenting agents, the gateway records request-response pairs during transfer and stores them as events — the proxy *is* the instrumentation
 
 **3. Kubernetes-native agent runner** — K8s Jobs as the execution unit, pod UIDs as attempt IDs, Job lifecycle as the retry mechanism
 
-</v-clicks>
-
-<div class="mt-6 p-3 bg-blue-50 rounded border border-blue-200" v-click>
+<div class="mt-6 p-3 bg-blue-50 rounded border border-blue-200">
 
 💡 **A natural consequence of (3):** since K8s owns retry, timeout, and scheduling, the data store and rollout state machine become much simpler — the store focuses purely on data, not execution control.
 
@@ -84,7 +78,7 @@ layout: section
 
 # High-Level Architecture
 
-<img src="../images/lite_arch.excalidraw.svg" class="mx-auto" style="max-height: 360px;" alt="agl-lite architecture: Compute Backend (green), AGL-Lite service (blue), Agent Runner on K8s (red)" />
+![agl-lite architecture](../images/lite_arch.excalidraw.svg)
 
 <!--
 Three groups connected only by HTTP.
@@ -151,7 +145,7 @@ layout: section
 # Part 3
 ## Deep Dive — Gateway
 
-*Transparent proxy, model routing, weight updates*
+*Transparent proxy, agent contract, model routing, weight updates*
 
 ---
 
@@ -210,6 +204,68 @@ Agent ◄──chunk──chunk──chunk──[DONE]──◄ Gateway ◄─�
 
 </div>
 </div>
+</div>
+
+---
+
+# Agent Contract: Language-Agnostic
+
+Agents don't import agl-lite. They're containers that read env vars and call an OpenAI endpoint.
+
+<div class="grid grid-cols-2 gap-6 mt-2">
+<div>
+
+<div class="compact-code-block">
+
+```python
+# Python agent — no agl-lite import
+import os, json, openai
+
+task = json.loads(os.environ["AGL_TASK_INPUT"])
+client = openai.OpenAI()  # reads OPENAI_BASE_URL
+
+resp = client.chat.completions.create(
+    model="gpt-4.1",  # gateway routes to vLLM
+    messages=[{"role": "user",
+               "content": task["prompt"]}],
+)
+# Gateway captures this call automatically
+```
+
+</div>
+</div>
+<div>
+
+<div class="compact-code-block">
+
+```javascript
+// JavaScript agent — same contract
+const task = JSON.parse(
+  process.env.AGL_TASK_INPUT);
+
+const resp = await fetch(
+  `${process.env.OPENAI_BASE_URL}` +
+    `/chat/completions`,
+  { method: "POST",
+    headers: { Authorization:
+      `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: "gpt-4.1",
+      messages: [{ role: "user",
+                   content: task.prompt }],
+    })
+  }
+);
+```
+
+</div>
+</div>
+</div>
+
+<div class="mt-2 p-3 bg-green-50 rounded border border-green-200">
+
+✅ Any language, any framework, any OpenAI-compatible SDK. No base class, no agl-lite dependency.
+
 </div>
 
 ---
@@ -338,8 +394,11 @@ layout: section
 <div class="compact-text">
 
 - Ordered list per `(rollout_id, attempt_id)`
-- **Two reserved types**: `model_request` (auto-captured by gateway), `reward` (training signal)
-- **Everything else**: opaque pass-through — users define their own event types freely
+- **Three reserved event types:**
+  - `model_request` — auto-captured by gateway
+  - `agent_output` — reported by the agent (no enforced schema)
+  - `reward` — training signal from the algorithm
+- Everything else: opaque pass-through — users define freely
 - Insertion order = temporal order (single-threaded asyncio)
 
 </div>
@@ -348,12 +407,11 @@ layout: section
 
 ```python
 class Event:
-    event_type: str       # "model_request", "reward",
-                          # or any user-defined string
+    event_type: str     # reserved or user-defined
     rollout_id: str
-    attempt_id: str       # = K8s pod UID
+    attempt_id: str     # = K8s pod UID
     timestamp: float
-    data: Dict            # type-specific payload
+    data: Dict          # type-specific payload
 ```
 
 </div>
@@ -366,18 +424,30 @@ class Event:
 <div class="compact-code-block">
 
 ```
-[0]  model_request  (auto-captured by gateway)
-[1]  tool_result    (user-defined — runner reports)
-[2]  model_request  (auto-captured by gateway)
-[3]  action         (user-defined — agent submits)
-[4]  reward         (environment scores: 0.85)
+[0]  model_request  (auto — gateway captured)
+[1]  agent_output   (agent reports its answer)
+[2]  reward         (algorithm scores: 0.85)
 ```
 
 </div>
 
-<div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+A multi-turn agent might produce:
 
-💡 **agl-lite is a data pipe.** It stores and delivers events without restricting schema. Only `model_request` and `reward` have well-known structure. Users extend freely.
+<div class="compact-code-block">
+
+```
+[0]  model_request  (turn 1 — auto)
+[1]  tool_result    (user-defined — runner)
+[2]  model_request  (turn 2 — auto)
+[3]  agent_output   (agent's final answer)
+[4]  reward         (score: 0.85)
+```
+
+</div>
+
+<div class="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
+
+💡 **agl-lite is a data pipe.** It stores and delivers events without restricting schema. Users extend freely with their own event types.
 
 </div>
 
@@ -451,7 +521,7 @@ queuing ──→ running ──→ succeeded
 
 # Controller: Reconciliation Pattern
 
-The controller is the bridge between the store and K8s. It's the **only component that writes rollout status transitions**.
+The controller bridges the store and K8s — the **only component that writes rollout status transitions**.
 
 <div class="grid grid-cols-2 gap-6 mt-2">
 <div>
@@ -505,7 +575,7 @@ env:
 
 <div class="compact-text mt-2">
 
-On retry, K8s creates a new pod → new `POD_UID` → `OPENAI_BASE_URL` and `AGL_EVENT_URL` automatically point to a fresh attempt partition.
+On retry, K8s creates a new pod → new `POD_UID` → URLs automatically point to a fresh attempt partition.
 
 </div>
 
@@ -669,77 +739,144 @@ for batch in dataset:
 </div>
 
 ---
+layout: section
+---
 
-# Agent Contract: Language-Agnostic
+# Part 6
+## Deployment & Demo
 
-Agents don't import agl-lite. They're containers that read env vars and call an OpenAI endpoint.
+*Math PoC on minikube with real vLLM*
 
-<div class="grid grid-cols-2 gap-6 mt-2">
-<div>
+---
 
-<div class="compact-code-block">
+# Math PoC: GSM8K with Qwen2.5-1.5B-Instruct
 
-```python
-# Python agent — no agl-lite import
-import os, json, openai
-
-task = json.loads(os.environ["AGL_TASK_INPUT"])
-client = openai.OpenAI()  # reads OPENAI_BASE_URL
-
-resp = client.chat.completions.create(
-    model="gpt-4.1",  # gateway routes to vLLM
-    messages=[{"role": "user",
-               "content": task["prompt"]}],
-)
-# Gateway captures this call automatically
-```
-
-</div>
-</div>
-<div>
+The `examples/math-poc/` demonstrates the full loop: enqueue tasks → agents solve via vLLM → algorithm scores.
 
 <div class="compact-code-block">
 
-```javascript
-// JavaScript agent — same contract
-const task = JSON.parse(
-  process.env.AGL_TASK_INPUT);
-
-const resp = await fetch(
-  `${process.env.OPENAI_BASE_URL}` +
-    `/chat/completions`,
-  { method: "POST",
-    headers: { Authorization:
-      `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-4.1",
-      messages: [{ role: "user",
-                   content: task.prompt }],
-    })
-  }
-);
+```
+┌─ minikube ────────────────────────────────────────┐
+│                                                   │
+│  agl-controller    (Deployment)  ← creates Jobs   │
+│                                                   │
+│  agent pods        (Jobs)   ─── OPENAI_BASE_URL ──┼──┐
+│                                                   │  │
+└───────────────────────────────────────────────────┘  │
+                                                       │ host.minikube.internal:8080
+                                                       ▼
+┌─ host ────────────────────────────────────────────┐
+│  agl-lite serve    (process :8080)                │
+│    └─ gateway ──→ vLLM (localhost:8010)            │
+│                                                   │
+│  rl_loop.py        ← algorithm (localhost:8080)   │
+│  vLLM (Docker, GPU 0)  ← Qwen2.5-1.5B-Instruct  │
+└───────────────────────────────────────────────────┘
 ```
 
 </div>
+
+<div class="compact-text mt-2">
+
+- **Agent pods** in minikube reach agl-lite on host via `host.minikube.internal:8080`
+- **Gateway → vLLM** is `localhost:8010` — no cross-network hop
+- Gateway config injects `return_token_ids: true` into all requests
+- Each rollout produces 3 events: `model_request` (auto) → `agent_output` (agent) → `reward` (algorithm)
+
 </div>
+
+---
+
+# Math PoC: Results
+
+<div class="grid grid-cols-2 gap-6">
+<div>
+
+#### Event flow per rollout
+
+<div class="compact-table">
+
+| Event | Source | Content |
+|-------|--------|---------|
+| `model_request` | gateway (auto) | request, SSE response, token IDs, server version |
+| `agent_output` | agent pod | parsed answer, raw LLM response |
+| `reward` | algorithm | score, ground truth, comparison |
+
 </div>
 
-<div class="mt-2 p-3 bg-green-50 rounded border border-green-200">
+#### Run output (5 GSM8K problems)
 
-✅ Any language, any framework, any OpenAI-compatible SDK. No base class, no agl-lite dependency.
+<div class="compact-code-block-xs">
 
+```
+ITERATION 1 (model version=1)
+  [0] Q: Janet's ducks lay 16 eggs...  GT: 18
+      → Agent: 18  ✅ reward=1.0
+  [1] Q: A robe takes 2 bolts...       GT: 3
+      → Agent: 2   ❌ reward=0.0
+  [2] Q: Josh decides to try flipping.. GT: 70000
+      → Agent: 70000 ✅ reward=1.0
+  ...
+  Batch reward: 5/5 correct (1.000)
+```
+
+</div>
+
+</div>
+<div>
+
+#### Two modes available
+
+<div class="compact-text">
+
+**Mock mode** (CPU-only, no GPU):
+- Echo server returns input verbatim
+- Deterministic rewards (assertion-checked)
+- Good for CI and development
+
+**vLLM mode** (GPU):
+- Qwen2.5-1.5B-Instruct on GPU 0
+- Real inference, real token IDs
+- 5/5 correct on tested batch
+
+</div>
+
+#### Getting started
+
+<div class="compact-code-block-xs">
+
+```bash
+# Clone, sync, test
+git clone <repo> && cd agl-lite
+uv sync && uv run pytest  # 284 tests, ~10s
+
+# Mock mode (CPU)
+cp examples/math-poc/.env.mockai.example \
+   deploy/.env
+./examples/math-poc/run.sh
+
+# vLLM mode (GPU)
+cp examples/math-poc/.env.vllm.example \
+   deploy/.env
+./scripts/start_vllm.sh
+./examples/math-poc/run.sh
+```
+
+</div>
+
+</div>
 </div>
 
 ---
 layout: section
 ---
 
-# Part 6
-## Status & Collaboration
+# Part 7
+## Status & Next Steps
 
 ---
 
-# Current Status
+# Current Status & Next Steps
 
 <div class="grid grid-cols-2 gap-6">
 <div>
@@ -782,41 +919,6 @@ layout: section
 
 </div>
 </div>
-</div>
-
----
-
-# How You Can Help
-
-<div class="grid grid-cols-2 gap-6 mt-4">
-<div class="border-2 border-blue-300 rounded-lg p-4 bg-blue-50">
-  <div class="text-lg font-bold text-blue-700 mb-2">🔬 Researchers</div>
-  <div class="compact-text">
-
-  - Try the Math PoC with your own tasks
-  - Test agent implementations against the gateway
-  - Validate triplet format for your training needs
-  - Report edge cases in multimodal / multi-turn agents
-
-  </div>
-</div>
-<div class="border-2 border-purple-300 rounded-lg p-4 bg-purple-50">
-  <div class="text-lg font-bold text-purple-700 mb-2">🛠️ Engineers</div>
-  <div class="compact-text">
-
-  - Review the architecture doc (`docs/design/0_architecture.md`)
-  - Test K8s controller with your cluster setup
-  - Contribute persistent store backends
-  - Help with CI/CD and deployment automation
-
-  </div>
-</div>
-</div>
-
-<div class="mt-6 p-3 bg-green-50 rounded border border-green-200">
-
-✅ **Getting started:** `git clone` → `uv sync` → `uv run pytest` (284 tests, ~10s). Math PoC runs on minikube. See `examples/math-poc/README.md`.
-
 </div>
 
 ---
