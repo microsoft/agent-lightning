@@ -149,15 +149,24 @@ class AglLiteClient:
         *,
         attempt_id: str | None = None,
         event_type: str | None = None,
+        format: str | None = None,
         limit: int = 1000,
         offset: int = 0,
     ) -> list[Event]:
-        """Query events for a rollout."""
+        """Query events for a rollout.
+
+        Args:
+            format: Set to "triplet" to trim events for RL training
+                    (model_request → prompt/response token_ids only,
+                     reward → scalar value only).
+        """
         params: dict[str, Any] = {"rollout_id": rollout_id, "limit": limit, "offset": offset}
         if attempt_id:
             params["attempt_id"] = attempt_id
         if event_type:
             params["event_type"] = event_type
+        if format:
+            params["format"] = format
         resp = await self._client.get("/api/events", params=params)
         self._raise_for_status(resp)
         return [Event.model_validate(e) for e in resp.json()]
