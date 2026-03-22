@@ -64,6 +64,32 @@ echo ""
 echo "=== Deploying agl-lite infra ==="
 scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"
 
+# --- Apply gateway config (vllm mode) ---
+if [ "$MODE" = "vllm" ]; then
+    GATEWAY_CONFIG="$SCRIPT_DIR/gateway-config.yaml"
+    if [ -f "$GATEWAY_CONFIG" ]; then
+        echo ""
+        echo "=== Applying gateway config ==="
+        kubectl -n "$NS" create configmap agl-gateway-config \
+            --from-file=gateway-config.yaml="$GATEWAY_CONFIG" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>&1 | tee -a "$LOG_DIR/deploy.log"
+        # Patch agl-lite deployment to mount gateway config and add --gateway-config flag
+        kubectl -n "$NS" patch deployment agl-lite --type=json -p='[
+          {"op": "add", "path": "/spec/template/spec/volumes", "value": [
+            {"name": "gateway-config", "configMap": {"name": "agl-gateway-config"}}
+          ]},
+          {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts", "value": [
+            {"name": "gateway-config", "mountPath": "/etc/agl-lite", "readOnly": true}
+          ]},
+          {"op": "replace", "path": "/spec/template/spec/containers/0/command", "value": [
+            "agl-lite", "serve", "--host", "0.0.0.0", "--port", "8080",
+            "--gateway-config", "/etc/agl-lite/gateway-config.yaml"
+          ]}
+        ]' 2>&1 | tee -a "$LOG_DIR/deploy.log"
+        kubectl -n "$NS" rollout status deployment/agl-lite --timeout=60s 2>&1 | tee -a "$LOG_DIR/deploy.log"
+    fi
+fi
+
 # --- Deploy mockai (mock mode only) ---
 if [ "$MODE" = "mock" ]; then
     echo ""

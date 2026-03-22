@@ -120,7 +120,7 @@ class TestProxyNonStreaming:
         assert len(events) == 1
         event = events[0]
         assert event["event_type"] == "model_request"
-        assert event["data"]["request"]["model"] == "gpt-4"  # original model
+        assert event["data"]["request"]["model"] == "qwen-7b"  # prepared (rewritten) model
         assert event["data"]["server"]["model"] == "qwen-7b"
         assert event["data"]["server"]["endpoint"] == "http://mock:8000/v1"
 
@@ -214,7 +214,7 @@ class TestProxyStreaming:
         event = events[0]
         assert event["event_type"] == "model_request"
         assert event["data"]["request"]["stream"] is True
-        assert event["data"]["request"]["model"] == "gpt-4"  # original
+        assert event["data"]["request"]["model"] == "qwen-7b"  # prepared (rewritten) model
         assert event["data"]["server"]["model"] == "qwen-7b"
 
         # Response should be the list of parsed SSE data chunks (3 chunks, not [DONE]).

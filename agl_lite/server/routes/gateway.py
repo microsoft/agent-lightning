@@ -64,8 +64,6 @@ async def llm_proxy(rollout_id: str, attempt_id: str, path: str, request: Reques
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in request body") from None
 
-    original_body = body.copy()
-
     # Extract model from body.
     model_in = body.get("model", "")
     if not model_in:
@@ -93,5 +91,5 @@ async def llm_proxy(rollout_id: str, attempt_id: str, path: str, request: Reques
         store=store,
         rollout_id=rollout_id,
         attempt_id=attempt_id,
-        original_body=original_body,
+        original_body=prepared_body,  # capture what was actually sent to model server
     )

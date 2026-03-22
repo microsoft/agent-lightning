@@ -229,15 +229,23 @@ async def run_iteration(
                 log(f"    server:   model={srv.get('model')}, version={srv.get('version')}")
                 log(f"    request.model:    {req.get('model')}")
                 log(f"    request.stream:   {req.get('stream')}")
+                log(f"    request.return_token_ids: {req.get('return_token_ids')}")
                 log(f"    request.messages: {len(req.get('messages', []))} messages")
                 if isinstance(resp, list) and resp:
-                    # Reassemble streamed content
+                    # Reassemble streamed content and token_ids
                     assembled = ""
+                    all_token_ids: list[int] = []
+                    prompt_token_ids = None
                     for chunk in resp:
                         choices = chunk.get("choices", [])
                         if choices:
                             delta = choices[0].get("delta", {})
                             assembled += delta.get("content", "")
+                            chunk_tids = choices[0].get("token_ids")
+                            if chunk_tids:
+                                all_token_ids.extend(chunk_tids)
+                        if chunk.get("prompt_token_ids") and not prompt_token_ids:
+                            prompt_token_ids = chunk["prompt_token_ids"]
                     log(f"    response: {len(resp)} SSE chunks (streaming)")
                     log(f"      content ({len(assembled)} chars):")
                     # Print first 300 chars of LLM reasoning
@@ -245,12 +253,38 @@ async def run_iteration(
                         log(f"        {line}")
                     if len(assembled) > 300:
                         log(f"        ...")
+                    log(f"      prompt_token_ids: {len(prompt_token_ids)} tokens" if prompt_token_ids else "      prompt_token_ids: None")
+                    log(f"      response token_ids: {len(all_token_ids)} tokens" if all_token_ids else "      response token_ids: None")
+                    if prompt_token_ids:
+                        log(f"        first 10: {prompt_token_ids[:10]}")
+                    if all_token_ids:
+                        log(f"        first 10: {all_token_ids[:10]}")
                 elif isinstance(resp, dict):
                     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
                     log(f"    response: non-streaming, {len(content)} chars")
+                    resp_tids = resp.get("choices", [{}])[0].get("token_ids")
+                    prompt_tids = resp.get("prompt_token_ids")
+                    log(f"      prompt_token_ids: {len(prompt_tids)} tokens" if prompt_tids else "      prompt_token_ids: None")
+                    log(f"      response token_ids: {len(resp_tids)} tokens" if resp_tids else "      response token_ids: None")
                 log(f"  ── end sample ──")
                 log(f"")
                 first_mr_logged = True
+
+            # --- Check for token_ids in response ---
+            has_token_ids = False
+            if isinstance(resp, list):
+                for chunk in resp:
+                    choices = chunk.get("choices", [])
+                    if choices and choices[0].get("token_ids"):
+                        has_token_ids = True
+                        break
+                    if chunk.get("prompt_token_ids"):
+                        has_token_ids = True
+                        break
+            elif isinstance(resp, dict):
+                c = resp.get("choices", [{}])[0]
+                if c.get("token_ids") or resp.get("prompt_token_ids"):
+                    has_token_ids = True
 
             # Structural checks on every model_request
             has_request = "request" in d
@@ -273,6 +307,8 @@ async def run_iteration(
                 ("stream=True", is_streaming),
                 ("has version in server", has_version),
                 ("response non-empty", resp_nonempty),
+                ("return_token_ids in request", req.get("return_token_ids") is True),
+                ("token_ids in response", has_token_ids),
             ]
             for check_name, ok in checks:
                 if not ok:
