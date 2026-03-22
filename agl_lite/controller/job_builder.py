@@ -35,7 +35,14 @@ def build_job_spec(
     template = copy.deepcopy(job_template) if job_template else {}
 
     # --- Start from template as pod spec ---
-    pod_spec: dict[str, Any] = template.get("spec", {}) if "spec" in template else copy.deepcopy(template)
+    # Template can be:
+    #   - Direct pod spec: {"containers": [...], "nodeSelector": {...}, ...}
+    #   - Wrapped: {"spec": {"containers": [...], ...}}
+    # Detect and extract.
+    if "spec" in template and "containers" not in template:
+        pod_spec = copy.deepcopy(template["spec"])
+    else:
+        pod_spec = copy.deepcopy(template)
 
     # Ensure restartPolicy is Never (controller requirement).
     pod_spec.setdefault("restartPolicy", "Never")

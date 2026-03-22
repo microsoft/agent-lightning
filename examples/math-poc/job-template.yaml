@@ -1,0 +1,16 @@
+# K8s Pod spec for math-poc agent jobs.
+# See https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
+#
+# The controller injects into the "agent" container:
+#   image, command (from RolloutConfig)
+#   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, etc. (auto)
+#
+# Everything else here is the pod environment — edit as needed.
+
+containers:
+  - name: agent
+    imagePullPolicy: Never          # minikube local images
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"

@@ -54,7 +54,7 @@
 | 17 | **Phase 4a topology**: All-in-K8s (agl-lite serve, controller, mockai as Deployments). Only algorithm script runs on host (via port-forward). Avoids host↔K8s bridging complexity. |
 | 18 | **Deploy scripts**: Bash for deploy (`scripts/deploy.sh` — reads .env, creates namespace/secret/configmap/manifests, waits) and image builds (`scripts/build_images.sh`). PoC orchestration in `examples/math-poc/run.py` (Python — needs port-forward lifecycle, AglLiteClient). |
 
-### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [discuss]
+### 4a.5 Math PoC — mock RL loop (`examples/math-poc/`) [ongoing]
 - [ ] `mock_rl_loop.py` — Python script, runs on host, uses `AglLiteClient`
 - [ ] `Dockerfile.agent` — agent image for this PoC (COPY agents from `../agents/python/`, add any data/tools)
 - [ ] `k8s-mockai.yaml` — mockai Deployment + Service (PoC-specific, not infra)
