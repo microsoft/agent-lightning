@@ -17,8 +17,7 @@ if [[ "${1:-}" == "--math-poc" || "${1:-}" == "all" ]]; then
     if [ -f "$REPO_ROOT/examples/math-poc/Dockerfile.agent" ]; then
         echo "=== Building math-agent:dev ==="
         minikube image build -t math-agent:dev \
-            -f "$REPO_ROOT/examples/math-poc/Dockerfile.agent" \
-            "$REPO_ROOT/examples"
+            "$REPO_ROOT/examples/math-poc"
     fi
 fi
 

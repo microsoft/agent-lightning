@@ -1,11 +1,11 @@
 # Agent image for math-poc.
-# Build context: examples/ (parent dir)
-#   minikube image build -t math-agent:dev -f examples/math-poc/Dockerfile.agent examples/
+# Build context: examples/math-poc/
+#   minikube image build -t math-agent:dev examples/math-poc/
 
 FROM python:3.12-slim
 
 RUN pip install --no-cache-dir openai
 
-COPY agents/python/qa_agent.py /app/qa_agent.py
+COPY agents/qa_agent.py /app/qa_agent.py
 
 WORKDIR /app
