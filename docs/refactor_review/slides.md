@@ -70,6 +70,12 @@ The store simplification falls out of choice 3.
 -->
 
 ---
+
+# Interface Summary
+
+<img src="/lite-api.jpg" alt="summary of agl-lite api" class="shadow rounded">
+
+---
 layout: section
 ---
 
