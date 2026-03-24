@@ -40,6 +40,7 @@ verl = [
 
 gepa = [
   "gepa",
+  "dspy",
 ]
 weave = [
   "weave>=0.52.22",
