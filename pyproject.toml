@@ -17,7 +17,7 @@ dependencies = [
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
   "opentelemetry-exporter-otlp>=1.35",
-  "litellm[proxy]>=1.74",
+  "litellm[proxy]>=1.74, <=1.82.6",                      # For LiteLLM tests. Upper bound pinned: versions 1.82.7+ compromised in supply chain attack.",
   "pydantic>=2.11",
   "openai",
   "rich",
@@ -109,7 +109,7 @@ torch-stable = [
   # Similar issues with vLLM 0.11.2 and 0.12.0
   "vllm>=0.10.2,!=0.11.1,!=0.11.2,!=0.12.0",
   # LiteLLM can then be upgraded with new vLLM
-  "litellm[proxy]>=1.78",
+  "litellm[proxy]>=1.78, <=1.82.6",                      # For LiteLLM tests. Upper bound pinned: versions 1.82.7+ compromised in supply chain attack.",
 ]
 torch-legacy = [
   {include-group = "core-legacy"},
