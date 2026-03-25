@@ -53,6 +53,115 @@ Not on the critical path — the happy-path lifecycle is fully validated. Add wh
 
 ---
 
+## SWE-bench Example (`examples/swe_bench`) [discuss]
+
+**Goal**: Add an end-to-end SWE-bench example that uses agl-lite to orchestrate coding
+agents (Claude Code, mini-swe-agent, etc.) solving SWE-bench tasks inside official SWE-bench
+Docker containers, with a reward function that evaluates patches by running golden tests.
+
+### Key Design Decisions to Discuss
+
+#### (A) Container image strategy
+SWE-bench provides per-instance Docker images (`swebench/sweb.eval.x86_64.<instance_id>:latest`).
+In the math-poc, we use a single `math-agent:dev` image. For SWE-bench, the `job_template`
+needs per-rollout image overrides via the existing `config.overrides` mechanism on `EnqueueRolloutRequest`.
+
+**Proposal**: The algorithm script maps `instance_id → docker image tag` and passes the image
+as a per-rollout override:
+```python
+EnqueueRolloutRequest(
+    resources_id=resources_id,
+    input=json.dumps({"instance_id": ..., "problem_statement": ...}),
+    config={
+        "overrides": {
+            "containers": [{"name": "agent", "image": f"swebench/sweb.eval.x86_64.{instance_id}:latest"}]
+        },
+        "environment_variables": {"AGL_CODING_AGENT": "claude_code"}
+    }
+)
+```
+
+#### (B) Coding agent scripts (pluggable)
+Each coding agent has an install + run script under `examples/swe_bench/agents/`:
+- `agents/claude_code/install.sh` — install claude CLI
+- `agents/claude_code/run.sh` — launch claude code with the problem statement
+- `agents/mini_swe_agent/install.sh` — `pip install mini-swe-agent` (or inline)
+- `agents/mini_swe_agent/run.sh` — launch the agent
+
+A shared entrypoint script `agents/entrypoint.sh` reads `AGL_CODING_AGENT` env var
+and dispatches to the right agent's install + run scripts. After the agent finishes,
+the entrypoint does `git diff HEAD` to capture the patch and posts it as an `agent_output` event.
+
+#### (C) Mountable files (e.g., `CLAUDE.md`)
+Files like `CLAUDE.md` (system prompt / instructions for claude code) live in
+`examples/swe_bench/agents/claude_code/CLAUDE.md`. These are baked into the agent
+image via a ConfigMap or directly into the entrypoint script (copy to `/testbed/CLAUDE.md`).
+
+**Proposal**: Use a ConfigMap mounted into the job container. The `job_template` references it,
+and the entrypoint copies relevant files to `/testbed/` before running the agent.
+
+#### (D) Reward function — separate evaluation container
+After the agent produces a patch (`agent_output` event with `data.patch`), the reward function in
+the algorithm script:
+1. Retrieves the patch from the `agent_output` event
+2. Starts a **new** container with the **same** SWE-bench Docker image
+3. Applies the patch (`git apply`)
+4. Runs the golden test script (from `swebench.harness.test_spec.make_test_spec`)
+5. Grades pass/fail using `swebench.harness.grading.get_eval_report`
+6. Posts a `reward` event (1.0 = resolved, 0.0 = not resolved)
+
+This reuses the evaluation logic from the original `swebench_utils/evaluation.py` but runs
+on the **algorithm host** (not in K8s). The algorithm host needs Docker access.
+
+**Alternative**: Run evaluation as a second K8s job. But this adds complexity and the algorithm
+host already has Docker (for vLLM). Keep it simple — evaluate on host.
+
+#### (E) Algorithm script structure
+Similar to `rl_loop.py` in math-poc, but adapted for SWE-bench:
+- `rl_loop.py`: register resources → load dataset → enqueue batch → poll → retrieve patches → evaluate → post rewards
+- Uses vLLM as backend (gateway proxies LLM calls with `return_token_ids`)
+- Configurable coding agent via env var
+- Dataset: `swebench_samples.jsonl` (small subset) or full SWE-bench via `--dataset-path`
+
+### Files to Create
+
+```
+examples/swe_bench/
+├── README.md                          # setup + usage docs
+├── rl_loop.py                         # algorithm script (enqueue, poll, evaluate, reward)
+├── gateway-config.yaml                # same as math-poc (inject return_token_ids)
+├── job-template.yaml                  # K8s pod spec for SWE-bench agent jobs
+├── swebench_samples.jsonl             # small dataset for smoke testing
+├── evaluation/
+│   ├── __init__.py
+│   └── evaluate.py                    # reward function: apply patch → run tests → grade
+├── agents/
+│   ├── entrypoint.sh                  # shared entrypoint: dispatch to agent, capture patch
+│   ├── claude_code/
+│   │   ├── install.sh                 # install claude CLI
+│   │   ├── run.sh                     # run claude code on the problem
+│   │   └── CLAUDE.md                  # system instructions for claude code
+│   └── mini_swe_agent/
+│       ├── install.sh                 # install mini-swe-agent
+│       └── run.sh                     # run mini-swe-agent on the problem
+├── run.sh                             # one-command E2E runner
+├── .env.vllm.example                  # env config for vLLM mode
+└── Dockerfile.agent                   # NOT needed — uses SWE-bench images directly
+```
+
+### Open Questions
+
+1. **Image pull policy**: SWE-bench images are large (~2-10GB). Should we pre-pull them?
+   minikube can't easily pull from Docker Hub in CI. For local dev, `imagePullPolicy: IfNotPresent`.
+2. **ConfigMap vs bake-in**: For `CLAUDE.md` and agent scripts — ConfigMap is more flexible but
+   adds deploy complexity. Alternative: the entrypoint downloads them from a URL or they're
+   passed as env vars (for small files).
+3. **Evaluation timeout**: SWE-bench tests can take 5-30 min. Need `activeDeadlineSeconds` tuning.
+4. **Dataset format**: Should we use the same JSONL format as the original example, or simplify
+   to just `instance_id` + `problem_statement`?
+
+---
+
 ## Phase 5: VERL Algorithm Integration
 
 **Goal**: Connect VERL's PPO training loop to agl-lite as the data pipe. agl-lite handles
