@@ -156,4 +156,4 @@ export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-1}"
 # --- Run algorithm ---
 echo ""
 echo "=== Running RL loop ($MODE) ==="
-uv run python examples/math-poc/rl_loop_v2.py 2>&1 | tee "$LOG_DIR/rl_loop.log"
+uv run python examples/math-poc/rl_loop.py 2>&1 | tee "$LOG_DIR/rl_loop.log"
