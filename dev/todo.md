@@ -232,6 +232,240 @@ examples/swe_bench/
    `grade.py` re-implements the minimal log parsing (~30 lines of regex). The algorithm
    passes `FAIL_TO_PASS` and `PASS_TO_PASS` test lists via `AGL_EVAL_META` env var.
 
+**Update (volume-based grading)**: Instead of grading inside the container, the container
+writes test output + patch to a shared volume. The **algorithm side** (which has `swebench`
+installed for `make_test_spec`) calls the official `get_eval_report()` to grade. This keeps
+grading 100% official and removes the need for `grade.py` in the container. See the
+Task Controller architecture below.
+
+---
+
+## Task Controller Architecture — separating task-agnostic from task-specific [discuss]
+
+**Goal**: Make the algorithm/trainer layer task-agnostic. The trainer only sees sample
+indices and gets back `DataProto` (padded tensors). All task-specific logic — dataset
+parsing, rollout configuration, Docker image selection, reward computation — lives in
+a **Task Controller** that sits between the trainer and agl-lite.
+
+### Problem: current daemon mixes concerns
+
+The current `AglLiteDaemon` (and original `AgentModeDaemon`) mixes:
+
+| Concern | Task-agnostic? | Current location |
+|---------|---------------|-----------------|
+| Register model servers | ✅ | `_async_set_up` |
+| Parse dataset rows → rollout input | ❌ task-specific | `_async_set_up` (inlines data directly) |
+| Build `EnqueueRolloutRequest` (image, env, command) | ❌ task-specific | `_async_set_up` (generic config) |
+| Poll rollouts until done | ✅ | `_async_run_until_finished` |
+| Fetch events + build triplets | ✅ | `_async_validate_data` |
+| Compute reward from events | ❌ task-specific | Currently outside daemon (agent posts reward) |
+| Triplets → padded tensors → DataProto | ✅ | `get_train_data_batch` |
+| Metrics computation | ✅ | `get_test_metrics` |
+
+For math-poc, task-specific logic is trivial (just pass the question). For SWE-bench,
+it's complex (image selection, eval_script generation, grading). Mixing them in the
+daemon creates a new daemon subclass per task — bad for maintainability.
+
+### Proposed architecture: Task Controller
+
+```
+Trainer (VERL PPO)           Task Controller              agl-lite
+─────────────────           ─────────────────              ─────────
+                            (task-specific)                (task-agnostic)
+
+set_up(indices) ──────→     prepare_rollouts(indices):
+                              load dataset[indices]
+                              for each instance:
+                                make_test_spec → eval_script
+                                build image tag
+                                build env vars
+                              return rollout_requests     ──→  enqueue_rollouts
+
+run_until_done() ─────→     (passthrough)                 ──→  poll rollouts
+
+get_rewards() ────────→     compute_rewards():
+                              for each rollout:
+                                read test_log from volume
+                                get_eval_report(test_spec)     (official swebench)
+                              return {rollout_id: reward}
+                              post reward events          ──→  POST /events
+
+get_train_batch() ────→     (passthrough to daemon)       ──→  GET /events?format=triplet
+                            triplets → padded tensors
+                            return DataProto
+```
+
+### Interface design
+
+```python
+class TaskController(ABC):
+    """Task-specific bridge between trainer and agl-lite."""
+
+    @abstractmethod
+    def prepare_rollouts(
+        self, data: Dict[str, Any], is_train: bool = True
+    ) -> List[EnqueueRolloutRequest]:
+        """Convert dataset batch → rollout requests.
+
+        Task-specific: chooses image, builds input, sets env vars,
+        generates eval scripts, etc.
+
+        Args:
+            data: batch from dataloader (dict of lists, e.g.,
+                  {"question": [...], "instance_id": [...], ...})
+            is_train: whether this is a training or validation batch
+        """
+        ...
+
+    @abstractmethod
+    def compute_rewards(
+        self, rollout_ids: List[str], volume_path: Path
+    ) -> Dict[str, float]:
+        """Grade completed rollouts.
+
+        Task-specific: reads test logs from volume, runs official grading,
+        returns reward per rollout.
+        """
+        ...
+
+    # Optional hooks
+    def on_setup(self, model_name: str, server_addresses: List[str]) -> None:
+        """Called once before rollouts — register extra resources, etc."""
+        pass
+
+    def on_teardown(self) -> None:
+        """Called after each iteration — cleanup."""
+        pass
+
+
+class SWEBenchController(TaskController):
+    """SWE-bench specific: image selection, eval_script gen, official grading."""
+
+    def __init__(self, dataset_path: str, namespace: str = "swebench"):
+        self.instances = load_dataset(dataset_path)
+        self.namespace = namespace
+
+    def prepare_rollouts(self, data, is_train=True):
+        requests = []
+        indices = data["index"]  # or however the dataloader provides sample IDs
+        for idx in indices:
+            instance = self.instances[idx]
+            spec = make_test_spec(instance, namespace=self.namespace)
+            safe_id = instance["instance_id"].lower().replace("__", "_1776_")
+            requests.append(EnqueueRolloutRequest(
+                input={"instance_id": instance["instance_id"],
+                       "problem_statement": instance["problem_statement"]},
+                config={
+                    "image": f"{self.namespace}/sweb.eval.x86_64.{safe_id}:latest",
+                    "environment_variables": {
+                        "AGL_EVAL_SCRIPT": spec.eval_script,
+                        "AGL_EVAL_META": json.dumps({
+                            "FAIL_TO_PASS": spec.FAIL_TO_PASS,
+                            "PASS_TO_PASS": spec.PASS_TO_PASS,
+                            "repo": instance["repo"],
+                        }),
+                    },
+                    "timeout": 5400,  # 90 min
+                },
+            ))
+        return requests
+
+    def compute_rewards(self, rollout_ids, volume_path):
+        rewards = {}
+        for rid in rollout_ids:
+            log_path = volume_path / rid / "test_output.txt"
+            instance_id = self._rollout_to_instance[rid]
+            instance = self.instances_by_id[instance_id]
+            spec = make_test_spec(instance, namespace=self.namespace)
+            patch_path = volume_path / rid / "patch.diff"
+            prediction = {
+                "instance_id": instance_id,
+                "model_patch": patch_path.read_text() if patch_path.exists() else "",
+                "model_name_or_path": "agl-lite",
+            }
+            report = get_eval_report(spec, prediction, str(log_path),
+                                     include_tests_status=True)
+            rewards[rid] = 1.0 if report[instance_id]["resolved"] else 0.0
+        return rewards
+
+
+class MathController(TaskController):
+    """Math (GSM8K) — trivial: pass question, numeric reward."""
+
+    def prepare_rollouts(self, data, is_train=True):
+        return [EnqueueRolloutRequest(
+            input=q,
+            config={"image": "math-agent:dev"},
+        ) for q in data["question"]]
+
+    def compute_rewards(self, rollout_ids, volume_path):
+        # Read agent_output events, compare with ground truth
+        rewards = {}
+        for rid, gt in zip(rollout_ids, self._ground_truths):
+            answer = ...  # read from event or volume
+            rewards[rid] = 1.0 if answer == gt else 0.0
+        return rewards
+```
+
+### Modified daemon (task-agnostic)
+
+```python
+class AglLiteDaemon:
+    """Task-agnostic daemon. Delegates task-specific logic to TaskController."""
+
+    def __init__(self, task_controller: TaskController, ...):
+        self.task_controller = task_controller
+        # ... same tensor construction config as before
+
+    async def _async_set_up(self, data, server_addresses, is_train):
+        # 1. Register models (task-agnostic)
+        await self.client.register_models(...)
+
+        # 2. Delegate rollout creation to task controller (task-specific)
+        requests = self.task_controller.prepare_rollouts(data, is_train)
+        created = await self.client.enqueue_rollouts(requests)
+        ...
+
+    async def _async_compute_rewards(self):
+        # Delegate reward computation to task controller (task-specific)
+        rewards = self.task_controller.compute_rewards(
+            rollout_ids=list(self._completed_rollouts.keys()),
+            volume_path=self.volume_path,
+        )
+        # Post reward events (task-agnostic)
+        for rid, reward in rewards.items():
+            await self.client.post_event(rid, ...,
+                PostEventRequest(event_type="reward", data={"value": reward}))
+
+    def get_train_data_batch(self, ...):
+        # Unchanged — pure tensor construction (task-agnostic)
+        ...
+```
+
+### What changes vs current design
+
+| Current | Proposed |
+|---------|----------|
+| Daemon receives `data: Dict[str, Any]` (raw batch) | Same, but delegates to TaskController |
+| Daemon inlines rollout construction | TaskController.prepare_rollouts() |
+| Reward posted by agent container or algorithm | TaskController.compute_rewards() reads volume |
+| New task = modify daemon or algorithm script | New task = new TaskController (small, focused) |
+| Grading in container (needs grade.py) | Grading on algorithm host (official tools) |
+
+### Why this is a differentiation point
+
+1. **Clean separation**: Algorithm researchers write TaskControllers (dataset + reward).
+   Infrastructure engineers maintain the daemon + agl-lite. They never touch each other's code.
+2. **Composable**: Same trainer config works for math, SWE-bench, coding, web browsing —
+   just swap the TaskController.
+3. **Official grading**: TaskController.compute_rewards() can use *any* official evaluation
+   tool (swebench harness, HumanEval, MATH, etc.) without polluting the daemon or container.
+4. **Volume-based artifacts**: Test logs, patches, agent traces all persist on volume.
+   TaskController reads them for grading. Reproducible, debuggable.
+5. **Compared to Agent Lightning**: Their daemon is monolithic — task logic, proxy server,
+   adapter, tensor construction all in one 1154-line class. We factor it into 3 clean layers:
+   TaskController (~100 lines per task) + Daemon (~300 lines, task-agnostic) + agl-lite (HTTP API).
+
 ---
 
 ## Phase 5: VERL Algorithm Integration
