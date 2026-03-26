@@ -114,78 +114,84 @@ kubectl create configmap swe-agent-scripts --from-file=agents/ -n $NS
 > **Open question for later**: for large files or binary assets, a PVC or init container
 > downloading from a URL may be better. ConfigMap is fine for scripts + markdown.
 
-#### (D) Reward function — evaluation inside K8s containers
+#### (D) Reward function — single-container agent + evaluation
 
-All computation runs on K8s (not the algorithm host). This is the principled approach:
-the algorithm host only orchestrates via HTTP; Docker access is not required.
+Everything runs in **one container per rollout**. No second rollout needed.
 
-**How swebench evaluation works** (traced from `swebench.harness`):
+**Why this works** (traced from `swebench.harness`):
 
-1. `make_test_spec(instance)` → `TestSpec` with `eval_script` (a bash script)
-2. `eval_script` does: reset tests to base_commit → apply `test_patch` (golden tests
-   from the dataset) → run test command → revert tests
-3. The eval script runs inside the **same SWE-bench Docker image** (it has the repo,
-   conda env, dependencies pre-installed)
-4. Test output is captured → `get_eval_report()` parses the log → resolves pass/fail
+1. `make_test_spec(instance)` → `TestSpec` with `eval_script` (~2KB bash script)
+2. `eval_script` only touches **test files** (from `test_patch`), not source files:
+   - `git checkout {base_commit} {test_files}` — reset only files in `test_patch`
+   - `git apply test_patch` — apply golden tests
+   - run test command (e.g., `pytest`)
+   - `git checkout {base_commit} {test_files}` — revert test files
+3. The agent's source code modifications are **untouched** by `eval_script`
+4. `get_eval_report()` just parses test output text — no Docker SDK, pure string matching
+5. `eval_script` is self-contained (conda env, repo, deps all pre-installed in SWE-bench image)
+6. `make_test_spec()` only needs the dataset instance — not the agent's output.
+   So `eval_script` can be **pre-generated** before the agent runs.
 
-**Key insight**: `eval_script` is a self-contained bash script. `get_eval_report()` just
-parses a text log. Both can run anywhere — no Docker SDK needed for grading.
+**Single-container flow** — the entrypoint does everything:
 
-**Approach — two-phase per rollout**:
+```bash
+# entrypoint.sh (runs inside SWE-bench Docker image at /testbed)
+# Phase 1: Agent
+parse AGL_CODING_AGENT → install agent → run agent (modifies /testbed source)
+git diff HEAD → capture patch → post agent_output event
 
-Phase 1 (agent job, already in K8s):
-- Coding agent solves the problem → posts `agent_output` with `data.patch`
-
-Phase 2 (evaluation, algorithm-side):
-- Algorithm retrieves the patch from `agent_output` event
-- Algorithm generates `eval_script` using `make_test_spec(instance)` (Python call, no Docker)
-- Algorithm generates a self-contained evaluator shell script that:
-  (a) applies the model patch (`git apply`)
-  (b) runs the eval_script
-  (c) captures test output
-  (d) posts a `reward` event (parse test output inline or use a small Python grading script)
-- Algorithm enqueues a **second rollout** (evaluator job) using the same SWE-bench image,
-  with the evaluator script passed via env var or ConfigMap
-
-```
-Algorithm                          K8s
-─────────                          ───
-1. enqueue agent rollout     →     agent job runs, posts agent_output(patch)
-2. poll until succeeded      ←
-3. get_events(agent_output)  ←
-4. generate eval_script      (local Python: make_test_spec → eval_script)
-5. enqueue evaluator rollout →     evaluator job: git apply + eval_script + post reward
-6. poll until succeeded      ←
-7. get_events(reward)        ←     reward=1.0 or 0.0
+# Phase 2: Evaluate (same container, agent's changes still in working tree)
+run eval_script (pre-generated, passed via env var AGL_EVAL_SCRIPT)
+  → resets test files → applies golden tests → runs pytest → reverts test files
+capture test output → parse for PASS/FAIL → compute reward → post reward event
 ```
 
-The evaluator job reuses the same K8s machinery. No Docker on algorithm host.
+**Data flow**:
+```
+Algorithm (rl_loop.py)                     K8s container
+──────────────────────                     ──────────────
+1. make_test_spec(instance) → eval_script  (pre-generate, ~2KB)
+2. enqueue rollout with:              →    entrypoint.sh:
+     image: swebench/<instance>              1. install + run coding agent
+     env: AGL_EVAL_SCRIPT=<script>           2. git diff → post agent_output(patch)
+          AGL_EVAL_META=<FAIL_TO_PASS,...>    3. run eval_script → capture test log
+     input: problem_statement                4. parse log → post reward event
+3. poll until succeeded               ←
+4. get_events(reward)                 ←    reward=1.0 or 0.0
+```
 
-**Evaluator script strategy**: The algorithm creates a wrapper script that:
-- Takes the patch (passed as `AGL_TASK_INPUT` or env var)
-- Applies it with `git apply` (with fallbacks like `git apply --reject`, `patch -p1`)
-- Runs the eval_script (generated by `make_test_spec`)
-- Parses test output for PASS/FAIL markers
-- Posts reward event to `AGL_EVENT_URL`
+**Grading inside the container**: The entrypoint includes a small inline grading
+function (or a Python script mounted via ConfigMap). The grading logic from
+`swebench.harness.grading` is just regex-based log parsing (~30 lines):
+- Extract text between `>>>>> Start Test Output` and `>>>>> End Test Output`
+- Parse pytest output lines for PASSED/FAILED status
+- Check FAIL_TO_PASS tests all pass, PASS_TO_PASS tests still pass → resolved
+- Post reward event (1.0 or 0.0) to `AGL_EVENT_URL`
 
-This can be a Python script (`evaluator.py`) mounted via ConfigMap that imports
-a minimal grading function (re-implemented from `get_eval_report` without the Docker
-SDK dependency, just log parsing).
+The `FAIL_TO_PASS` and `PASS_TO_PASS` test lists are passed via env var (`AGL_EVAL_META`)
+so the grading script knows which tests to check.
+
+**Advantages over two-phase approach**:
+- No second rollout — simpler algorithm, fewer K8s jobs, no patch-passing problem
+- No need for Docker on algorithm host
+- Evaluation runs in the exact environment where the agent made changes
+- One timeout covers agent + evaluation (can still be generous, e.g., 60 min)
 
 #### (E) Algorithm script structure
 
-Similar to math-poc `rl_loop.py`:
+Similar to math-poc `rl_loop.py`, but simpler than two-phase since evaluation
+happens inside the agent container:
 ```
 rl_loop.py:
   1. register resources (job_template, ConfigMap setup)
   2. load dataset (swebench_samples.jsonl or full SWE-bench)
   3. register model server (vLLM endpoint)
   4. for each batch:
-     a. map instances → agent rollouts (per-instance image, coding agent config)
-     b. enqueue agent rollouts → poll → collect agent_output events (patches)
-     c. for each patch: generate eval_script → enqueue evaluator rollout
-     d. poll evaluator rollouts → collect reward events
-     e. aggregate results (resolved rate, etc.)
+     a. for each instance: make_test_spec → eval_script + FAIL_TO_PASS/PASS_TO_PASS
+     b. enqueue rollouts (per-instance image, eval_script in env, coding agent config)
+     c. poll until all done
+     d. get_events → collect reward events (posted by container) + agent_output (patches)
+     e. aggregate results (resolved rate, patches for training data)
 ```
 
 ### Files to Create
@@ -193,19 +199,13 @@ rl_loop.py:
 ```
 examples/swe_bench/
 ├── README.md                          # setup + usage docs
-├── rl_loop.py                         # algorithm script (enqueue, poll, evaluate, reward)
+├── rl_loop.py                         # algorithm script (enqueue, poll, collect results)
 ├── gateway-config.yaml                # same as math-poc (inject return_token_ids)
 ├── job-template.yaml                  # K8s pod spec — generic, image overridden per rollout
-├── eval-job-template.yaml             # K8s pod spec for evaluator jobs (or reuse job-template)
 ├── swebench_samples.jsonl             # small dataset for smoke testing
-├── evaluation/
-│   ├── __init__.py
-│   ├── eval_script_gen.py             # wraps make_test_spec → eval_script generation
-│   └── grading.py                     # standalone log parser (from swebench.harness.grading,
-│                                      #   no Docker SDK dep — just parses test output text)
 ├── agents/
-│   ├── entrypoint.sh                  # shared entrypoint: dispatch to agent, capture patch
-│   ├── evaluator.py                   # evaluator script: apply patch + run eval + post reward
+│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → reward (all in one)
+│   ├── grade.py                       # minimal grading script (~30 lines, parses test log)
 │   ├── claude_code/
 │   │   ├── install.sh                 # install claude CLI
 │   │   ├── run.sh                     # run claude code on the problem
@@ -219,23 +219,18 @@ examples/swe_bench/
 
 ### Remaining Open Questions
 
-1. **Evaluation timeout**: SWE-bench tests can take 5-30 min. Need `activeDeadlineSeconds`
-   tuning for evaluator jobs (separate from agent job timeout).
+1. **Timeout budget**: Agent + evaluation share one `activeDeadlineSeconds`. Agent may take
+   30-60 min, evaluation 5-30 min. Default to 90 min? Configurable via env var.
 2. **Dataset format**: Use full SWE-bench JSONL format (same fields as original example)
-   so `make_test_spec` works directly. The `input` field sent to agent can be a subset
-   (instance_id + problem_statement); the full instance data stays in the algorithm.
-3. **Evaluator passing mechanism**: The eval_script + model patch need to reach the evaluator
-   container. Options:
-   - (a) `AGL_TASK_INPUT` env var (JSON with patch + eval_script) — simple but eval_script can
-     be large (multi-KB bash). K8s env var limit is 1MB, so usually fine.
-   - (b) ConfigMap per evaluation batch — more robust for large scripts but adds K8s API calls.
-   - (c) Evaluator fetches patch from agl-lite API (knows rollout_id of agent run) — cleanest
-     but requires evaluator to call agl-lite API.
+   so `make_test_spec` works directly. The `input` field sent to agent is a subset
+   (instance_id + problem_statement); eval_script and test metadata passed via env vars.
+3. **eval_script size in env var**: Typical eval_script is ~2KB. K8s env var limit is 1MB.
+   Safe for all SWE-bench instances. If any edge case exceeds, fall back to ConfigMap.
 4. **ConfigMap creation for agent scripts**: `run.sh` creates the ConfigMap from `agents/`
    directory. Need to handle updates (delete + recreate) and namespace.
-5. **Evaluator as second rollout vs sidecar**: Current design uses a second rollout (separate
-   K8s Job). Alternative: evaluator runs as a sidecar or post-hook in the agent job, but
-   this couples agent and evaluation lifecycle. Keep them separate for now.
+5. **Grading without swebench package**: The container doesn't have `swebench` installed.
+   `grade.py` re-implements the minimal log parsing (~30 lines of regex). The algorithm
+   passes `FAIL_TO_PASS` and `PASS_TO_PASS` test lists via `AGL_EVAL_META` env var.
 
 ---
 
