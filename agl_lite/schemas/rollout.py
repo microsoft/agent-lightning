@@ -78,14 +78,13 @@ class RolloutMetadata(BaseModel):
     """Algorithm + hook facing context. Not sent to container.
 
     Algorithm control fields help the daemon/trainer reconstruct batch structure.
-    The ``data`` field holds the raw dataset content for hooks to use in grading.
-    Extra fields are allowed for task-specific extensions.
+    Extra fields are allowed (``extra="allow"``) for hooks to stash task-specific
+    context (e.g., ground_truth for grading in ``on_succeeded``).
     """
 
     batch_idx: int | None = None
     sample_idx_in_batch: int | None = None
     trial_idx_in_group: int | None = None
-    data: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"extra": "allow"}
 

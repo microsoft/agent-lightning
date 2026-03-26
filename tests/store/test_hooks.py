@@ -19,15 +19,14 @@ from agl_lite.store.memory import InMemoryStore
 
 
 class TransformHooks(RolloutHooks):
-    """on_enqueue: move raw input into metadata.data, set config."""
+    """on_enqueue: set config, stash ground_truth in metadata."""
 
     def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
         raw = request.input if isinstance(request.input, dict) else {}
         if request.metadata is None:
             request.metadata = {}
         if isinstance(request.metadata, dict):
-            request.metadata["data"] = dict(raw)
-        request.input = raw.get("question", request.input)  # agent sees question only
+            request.metadata["ground_truth"] = raw.get("ground_truth", "")
         request.config = request.config or RolloutConfig(image="")
         request.config.image = "test-agent:dev"
         request.config.environment_variables["INJECTED"] = "true"
@@ -35,10 +34,15 @@ class TransformHooks(RolloutHooks):
 
 
 class RewardHooks(RolloutHooks):
-    """on_succeeded: compute reward from metadata.data + events, post reward event."""
+    """on_succeeded: compute reward from rollout.input + events, post reward event."""
 
     def on_succeeded(self, rollout: Any, events: dict[str, list[Any]], store: InMemoryStore) -> None:
-        gt = rollout.metadata.data.get("ground_truth", "")
+        # ground_truth can come from rollout.input or metadata (stashed by on_enqueue)
+        gt = ""
+        if isinstance(rollout.input, dict):
+            gt = rollout.input.get("ground_truth", "")
+        elif hasattr(rollout.metadata, "ground_truth"):
+            gt = rollout.metadata.ground_truth
         # Find agent answer from events.
         answer = None
         for attempt_events in events.values():
@@ -75,10 +79,10 @@ class TestOnEnqueue:
                 input={"question": "What is 2+2?", "ground_truth": "4"},
             )
         ])
-        # input should be the question string (transformed by hook)
-        assert rollout.input == "What is 2+2?"
-        # metadata.data should have the full dataset row
-        assert rollout.metadata.data == {"question": "What is 2+2?", "ground_truth": "4"}
+        # input stays as the raw dataset row (hook no longer transforms it)
+        assert rollout.input == {"question": "What is 2+2?", "ground_truth": "4"}
+        # metadata should have ground_truth stashed by hook (extra field)
+        assert rollout.metadata.ground_truth == "4"
         # config should be set by hook
         assert rollout.config.image == "test-agent:dev"
         assert rollout.config.environment_variables["INJECTED"] == "true"
@@ -112,7 +116,7 @@ class TestOnSucceeded:
         [rollout] = store.enqueue_rollouts([
             EnqueueRolloutRequest(
                 input="What is 2+2?",
-                metadata={"data": {"ground_truth": "4"}},
+                metadata={"ground_truth": "4"},
             )
         ])
         rid = rollout.rollout_id
@@ -138,7 +142,7 @@ class TestOnSucceeded:
         [rollout] = store.enqueue_rollouts([
             EnqueueRolloutRequest(
                 input="What is 2+2?",
-                metadata={"data": {"ground_truth": "4"}},
+                metadata={"ground_truth": "4"},
             )
         ])
         rid = rollout.rollout_id
