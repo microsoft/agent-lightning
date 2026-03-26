@@ -7,6 +7,7 @@ of the agent's \\boxed{answer} with the ground truth.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from agl_lite.hooks import RolloutHooks
@@ -25,6 +26,10 @@ class MathVllmHooks(RolloutHooks):
         if request.config is None:
             request.config = RolloutConfig(image="")
         request.config.environment_variables["AGL_TASK_INPUT"] = json.dumps(question)
+        # Pass model name so agent knows which model to call
+        model_name = os.environ.get("AGL_MODEL_NAME", "")
+        if model_name:
+            request.config.environment_variables.setdefault("AGL_MODEL_NAME", model_name)
 
         return request
 

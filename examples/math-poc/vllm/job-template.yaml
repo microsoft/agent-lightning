@@ -1,11 +1,16 @@
-# K8s Pod spec for math-poc agent jobs.
-# See https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
+# K8s Pod spec for math-poc agent jobs (vLLM mode).
 #
 # The controller injects into the "agent" container:
-#   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_MODEL_NAME, etc.
+#   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_EVENT_URL, etc.
+#   AGL_TASK_INPUT is set by the on_enqueue hook.
 #
-# image and command are fixed for this PoC — all rollouts share them.
-# The agent reads AGL_MODEL_NAME from env (set by the algorithm via run.sh).
+# hostAliases resolves host.minikube.internal for agent pods
+# (minikube Docker driver doesn't inject this automatically into pods).
+
+hostAliases:
+  - ip: "192.168.49.1"
+    hostnames:
+      - "host.minikube.internal"
 
 containers:
   - name: agent
