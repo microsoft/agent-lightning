@@ -331,8 +331,9 @@ scripts/deploy.sh                      # --controller-only, CoreDNS auto-patch (
 2. ~~**eval_script size in env var**~~: **Resolved** — verified 1.6–8.3 KB across samples,
    `AGL_EVAL_META` maxes ~50 KB. K8s limit 1 MB total — safe for all instances.
 
-3. **ConfigMap vs PVC for agent scripts**: ConfigMap is fine for shell scripts + markdown.
-   For large files or binary assets, switch to PVC or init container download.
+3. ~~**ConfigMap vs PVC for agent scripts**~~: **Resolved** — use ConfigMap for initial
+   implementation. Fine for shell scripts + markdown. Switch to PVC later if needed
+   for large files or binary assets.
 
 4. **Image availability**: SWE-bench images must be pre-built. Need documentation on
    how to build them (`python -m swebench.harness.docker_build ...`). For minikube,
