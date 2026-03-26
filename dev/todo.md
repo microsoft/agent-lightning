@@ -248,7 +248,7 @@ grades using official swebench tools. See the Store Hooks architecture below.
 
 ---
 
-## Store Hooks — task-specific logic in the server [ready]
+## Store Hooks — task-specific logic in the server [completed]
 
 **Goal**: Make the algorithm/trainer layer task-agnostic by moving task-specific logic
 (dataset parsing, rollout configuration, reward computation) into **hooks** that run
