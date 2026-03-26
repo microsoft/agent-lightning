@@ -69,25 +69,41 @@ Docker containers, with a reward function that evaluates patches by running gold
 
 ### Architecture Overview
 
-The SWE-bench example follows the same hooks pattern as math-poc:
-
 ```
-Algorithm (rl_loop.py)         Server (hooks.py)              K8s container
-─────────────────────          ────────────────               ──────────────
+Compute backend (host)              K8s cluster
+──────────────────────              ──────────────
+agl-lite server                     controller
+  + SWEBenchHooks                     ↕
+  + swebench package                agent pods (per-instance SWE-bench images)
+  + gateway → vLLM (internal)         ↕
+                                    agl-lite server (via cluster DNS or host.minikube.internal)
+vLLM instance(s)
+  (internal endpoints)
+```
+
+**Deployment**: agl-lite runs on the compute backend (`--controller-only` mode) because
+the gateway needs direct access to internal model server endpoints. On minikube,
+`deploy.sh` auto-patches CoreDNS so pods resolve `host.minikube.internal`.
+
+**Data flow**:
+```
+Algorithm (rl_loop.py)         Server hooks                   K8s container
+─────────────────────          ────────────                   ──────────────
 sends raw dataset rows    →    on_enqueue:                →   entrypoint.sh:
   input = full instance          set image per instance        1. install + run agent
-  metadata = {agent, ...}        generate eval_script          2. git diff → patch
+  metadata = {agent, ...}        generate eval_script          2. git diff → post patch
                                   set env vars                  3. run eval_script
-                                                                4. grade test output
-                                                                5. post events (patch + reward)
+                                                                4. post test_output artifact
 
 polls for completion      ←    on_succeeded:              ←   container exits 0
-gets events (reward)           (optional validation)
+gets events (reward)             read artifact (disk)
+                                 grade via swebench
+                                 post reward event
 ```
 
 **Key principle**: The algorithm (`rl_loop.py`) is task-agnostic — it only sends raw
-dataset rows as `input` and polls for results. All SWE-bench-specific logic lives in
-the hook (`on_enqueue`) and the container (`entrypoint.sh`).
+dataset rows as `input` and polls for results. SWE-bench-specific logic is split between
+the hook (image selection, eval setup, grading) and the container (agent execution, eval).
 
 ### Design Decisions
 
@@ -124,10 +140,10 @@ class SWEBenchHooks(RolloutHooks):
 This requires the `swebench` package installed on the server (via custom Dockerfile).
 `make_test_spec()` is CPU-only, ~ms per call — safe for sync hooks.
 
-#### (B) Container: single-container agent + evaluation + grading
+#### (B) Container: agent execution + evaluation (no grading)
 
-Everything runs in **one container per rollout**. The entrypoint does agent execution,
-evaluation, and grading in sequence:
+The container runs the coding agent and evaluation, then posts raw artifacts.
+**Grading happens in the hook**, not in the container.
 
 ```bash
 # entrypoint.sh (runs inside SWE-bench Docker image at /testbed)
@@ -135,15 +151,22 @@ evaluation, and grading in sequence:
 # Phase 1: Agent
 source /agl/agents/${AGL_CODING_AGENT}/install.sh
 source /agl/agents/${AGL_CODING_AGENT}/run.sh
+
+# Phase 2: Capture patch
 PATCH=$(git diff HEAD)
-curl -X POST "$AGL_EVENT_URL" -d '{"event_type":"agent_output","data":{"patch":"..."}}'
+curl -X POST "$AGL_EVENT_URL" \
+  -d '{"event_type":"agent_output","data":{"patch":"...","instance_id":"..."}}'
 
-# Phase 2: Evaluate
-echo "$AGL_EVAL_SCRIPT" > /tmp/eval.sh && bash /tmp/eval.sh > /tmp/test_output.txt 2>&1
+# Phase 3: Evaluate (run tests, capture output)
+echo "$AGL_EVAL_SCRIPT" > /tmp/eval.sh
+bash /tmp/eval.sh > /tmp/test_output.txt 2>&1
 
-# Phase 3: Grade (inline Python, ~30 lines)
-python3 /agl/grade.py  # reads /tmp/test_output.txt + AGL_EVAL_META → posts reward event
+# Phase 4: Post test output as artifact (large file, stored on disk by server)
+curl -X POST "$AGL_EVENT_URL" \
+  -d '{"event_type":"artifact","data":{"filename":"test_output.txt","content":"..."}}'
 ```
+
+The container does NOT grade — it posts the raw test output as an `artifact` event.
 
 **Why single-container works** (traced from `swebench.harness`):
 - `eval_script` only touches **test files** (from `test_patch`), not source files
@@ -151,23 +174,61 @@ python3 /agl/grade.py  # reads /tmp/test_output.txt + AGL_EVAL_META → posts re
 - `eval_script` is self-contained (conda env, repo, deps pre-installed in image)
 - `make_test_spec()` only needs the dataset instance, not agent output — pre-generated in hook
 
-**Why grade inside the container** (not in `on_succeeded` hook):
-- No shared volume needed — simpler K8s setup
-- Grading is just regex-based test log parsing (~30 lines), not the full `swebench` package
-- Container posts reward event directly via `AGL_EVENT_URL`
-- Consistent with math-poc pattern (agent posts `agent_output`, container is self-contained)
-- `on_succeeded` hook remains optional (validation/logging only)
+#### (C) Hook: `on_succeeded` — grading via official swebench tools
 
-**Grading logic** (`grade.py`, mounted via ConfigMap):
+The `on_succeeded` hook reads artifacts from disk and grades using official swebench:
+
 ```python
-# Parse test output for PASSED/FAILED status lines
-# Check: all FAIL_TO_PASS tests now pass, all PASS_TO_PASS tests still pass
-# Post reward event: 1.0 (resolved) or 0.0 (not resolved)
-```
-The `FAIL_TO_PASS` and `PASS_TO_PASS` test lists come from `AGL_EVAL_META` env var
-(set by hook from `make_test_spec()`).
+def on_succeeded(self, rollout, events, store):
+    # 1. Read test output from artifact (written to disk by store)
+    artifact_path = self._find_artifact(events, "test_output.txt")
+    test_log = Path(artifact_path).read_text()   # ~μs, local disk
 
-#### (C) Coding agent scripts (pluggable)
+    # 2. Reconstruct TestSpec from rollout.input
+    test_spec = make_test_spec(rollout.input)
+
+    # 3. Extract patch from agent_output event
+    patch = self._extract_patch(events)
+
+    # 4. Grade using official swebench
+    report = get_eval_report(
+        test_spec=test_spec,
+        prediction={"instance_id": ..., "model_patch": patch, ...},
+        test_log_path=artifact_path,
+        include_tests_status=True,
+    )
+    resolved = report[instance_id]["resolved"]
+
+    # 5. Post reward event
+    store.add_event(rollout.rollout_id, attempt_id, "reward", {
+        "value": 1.0 if resolved else 0.0,
+        "resolved": resolved,
+        "instance_id": instance_id,
+    })
+```
+
+**Why grade in the hook** (not in the container):
+- Uses official `get_eval_report()` — credible, maintained, no reimplementation
+- Grading logic is testable Python, not bash
+- Container stays simple: just run agent + eval + post artifacts
+- `swebench` package only needed on server, not baked into every SWE-bench image
+
+#### (D) Artifact events — large file handling
+
+Test output logs can be large (100KB–10MB). Storing them in-memory as regular events
+would bloat the store. Instead, `artifact` is a special event type:
+
+- **Store handling**: When `event_type == "artifact"`, the store writes
+  `data["content"]` to disk (`<artifact_dir>/<rollout_id>/<filename>`) and replaces
+  the event data with a lightweight reference (`{filename, path, size}`).
+- **Hook access**: `on_succeeded` reads artifacts from disk (fits sync constraint).
+- **Archiving**: Artifact content is skipped when archiving to JSONL. The files
+  persist on disk alongside the archive. (Details deferred to backlog.)
+
+Implementation: ~15 lines in `InMemoryStore.add_event()`, configurable via
+`--artifact-dir` (default: `/data/agl-artifacts/`).
+
+#### (E) Coding agent scripts (pluggable)
 
 Each coding agent has `install.sh` + `run.sh` under `agents/<name>/`:
 - `agents/claude_code/` — install claude CLI, run with problem statement + CLAUDE.md
@@ -194,7 +255,7 @@ volumes:
       defaultMode: 0755
 ```
 
-#### (D) Container image — per-rollout via hook
+#### (F) Container image — per-rollout via hook
 
 Each SWE-bench instance needs its own Docker image (`sweb.eval.x86_64.<id>:latest`).
 The hook sets `config.image` per-rollout; the job template provides everything else.
@@ -205,7 +266,7 @@ daemon. For production, push to a container registry.
 
 Future optimization: Epoch AI's trimmed images, DaemonSet pre-pull, or init containers.
 
-#### (E) Algorithm script (`rl_loop.py`)
+#### (G) Algorithm script (`rl_loop.py`)
 
 Task-agnostic, same structure as math-poc:
 
@@ -224,7 +285,7 @@ for batch in batches(dataset, batch_size):
     ]
     enqueue(rollouts)
     poll_until_done()
-    events = get_events()  # reward events already posted by container
+    events = get_events()  # reward events posted by on_succeeded hook
     # aggregate: resolved rate, patches for training data
 ```
 
@@ -237,7 +298,7 @@ It just sends raw dataset rows and reads reward events.
 examples/swe_bench/
 ├── README.md                          # setup + usage docs
 ├── rl_loop.py                         # algorithm script (task-agnostic)
-├── hooks.py                           # SWEBenchHooks (on_enqueue: image + eval_script)
+├── hooks.py                           # SWEBenchHooks (on_enqueue + on_succeeded)
 ├── Dockerfile.server                  # agl-lite + swebench package + hooks.py
 ├── gateway-config.yaml                # inject return_token_ids for vLLM
 ├── job-template.yaml                  # K8s pod spec — generic, image overridden by hook
@@ -245,8 +306,7 @@ examples/swe_bench/
 ├── run.sh                             # one-command E2E runner
 ├── swebench_samples.jsonl             # small dataset for smoke testing
 ├── agents/
-│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → grade → events
-│   ├── grade.py                       # minimal log parser (~30 lines)
+│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → post artifacts
 │   ├── claude_code/
 │   │   ├── install.sh                 # install claude CLI
 │   │   ├── run.sh                     # run claude code
@@ -254,6 +314,13 @@ examples/swe_bench/
 │   └── mini_swe_agent/
 │       ├── install.sh                 # install mini-swe-agent
 │       └── run.sh                     # run mini-swe-agent
+```
+
+Core changes needed:
+```
+agl_lite/store/memory.py               # artifact event handling (~15 lines)
+agl_lite/server/config.py              # --artifact-dir setting
+scripts/deploy.sh                      # --controller-only, CoreDNS auto-patch (done)
 ```
 
 ### Open Questions
@@ -271,9 +338,12 @@ examples/swe_bench/
    how to build them (`python -m swebench.harness.docker_build ...`). For minikube,
    build inside minikube's Docker daemon.
 
-5. **`swebench` package on server**: The hook calls `make_test_spec()`, requiring the
-   `swebench` pip package. Custom `Dockerfile.server` extends base agl-lite image.
-   The package is pure Python (~10MB), no GPU dependencies.
+5. **`swebench` package on server**: The hook calls `make_test_spec()` and
+   `get_eval_report()`, requiring the `swebench` pip package. Custom `Dockerfile.server`
+   extends base agl-lite image. The package is pure Python (~10MB), no GPU dependencies.
+
+6. **Artifact archiving**: Artifact files persist on disk but are skipped in JSONL archive.
+   Future work: configurable retention, cleanup policy, S3/GCS upload. (Backlog.)
 
 ---
 

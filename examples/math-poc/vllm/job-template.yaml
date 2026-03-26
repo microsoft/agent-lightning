@@ -3,14 +3,6 @@
 # The controller injects into the "agent" container:
 #   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_EVENT_URL, etc.
 #   AGL_TASK_INPUT is set by the on_enqueue hook.
-#
-# hostAliases resolves host.minikube.internal for agent pods
-# (minikube Docker driver doesn't inject this automatically into pods).
-
-hostAliases:
-  - ip: "192.168.49.1"
-    hostnames:
-      - "host.minikube.internal"
 
 containers:
   - name: agent
