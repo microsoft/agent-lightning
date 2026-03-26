@@ -6,7 +6,6 @@ No I/O, no K8s API calls. Easy to unit test.
 from __future__ import annotations
 
 import copy
-import json
 from typing import Any
 
 from agl_lite.controller.config import ControllerSettings
@@ -133,7 +132,6 @@ def build_job_spec(
         },
         {"name": "OPENAI_BASE_URL", "value": f"{gateway_base}/v1"},
         {"name": "ANTHROPIC_BASE_URL", "value": f"{gateway_base}/v1"},
-        {"name": "AGL_TASK_INPUT", "value": json.dumps(rollout.input)},
         {"name": "AGL_EVENT_URL", "value": event_url},
     ]
 

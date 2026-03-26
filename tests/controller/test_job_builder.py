@@ -135,7 +135,6 @@ class TestEnvVarInjection:
 
         assert "$(AGL_POD_UID)" in env_map["OPENAI_BASE_URL"]["value"]
         assert env_map["OPENAI_BASE_URL"]["value"].endswith("/v1")
-        assert json.loads(env_map["AGL_TASK_INPUT"]["value"]) == {"task": "code"}
         assert "/events" in env_map["AGL_EVENT_URL"]["value"]
 
     def test_user_env_vars(self, settings):
@@ -155,7 +154,7 @@ class TestEnvVarInjection:
         container = job["spec"]["template"]["spec"]["containers"][0]
         env_map = {e["name"]: e for e in container["env"]}
         assert "FROM_TEMPLATE" in env_map
-        assert "AGL_TASK_INPUT" in env_map
+        assert "AGL_EVENT_URL" in env_map
 
 
 class TestCommandAndImage:
