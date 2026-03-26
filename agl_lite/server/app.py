@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 
 from agl_lite.gateway.config import GatewayConfig, load_config
 from agl_lite.gateway.router import GatewayRouter
+from agl_lite.hooks import RolloutHooks, load_hooks
 from agl_lite.server.auth import build_auth_dependency
 from agl_lite.server.config import ServerSettings
 from agl_lite.server.routes import archive, events, gateway, models, resources, rollouts
@@ -27,7 +28,13 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     if not settings.agl_key:
         log.warning("AGL_KEY not set — authentication disabled. Do not use in production.")
 
-    store = InMemoryStore()
+    # Load rollout lifecycle hooks (optional).
+    hooks: RolloutHooks | None = None
+    if settings.hooks:
+        hooks = load_hooks(settings.hooks)
+        log.info("Rollout hooks loaded", hooks_class=type(hooks).__name__, path=settings.hooks)
+
+    store = InMemoryStore(hooks=hooks)
     verify_key = build_auth_dependency(settings.agl_key)
 
     # Load gateway config.
