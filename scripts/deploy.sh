@@ -160,7 +160,7 @@ kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/k8s.yaml"
 # 6. Minikube connectivity fix (--controller-only mode only)
 #    Pods need to resolve host.minikube.internal to reach the external server.
 #    CoreDNS doesn't read the node's /etc/hosts, so we patch it.
-if [ "$CONTROLLER_ONLY" = true ]; then
+if [ "$CONTROLLER_ONLY" = true ] && echo "$AGL_LITE_URL" | grep -q "host.minikube.internal"; then
     ensure_minikube_host_dns
 fi
 
