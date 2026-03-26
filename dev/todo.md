@@ -519,7 +519,7 @@ get_train_data_batch()
 
 ---
 
-## Math-poc restructuring with hooks [ongoing]
+## Math-poc restructuring with hooks [completed]
 
 **Goal**: Restructure `examples/math-poc` to use Store Hooks, unify the two rl_loop
 scripts into one, and organize mode-specific files into subfolders.
