@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from agl_lite.schemas.rollout import RolloutConfig, RolloutStatus
+from agl_lite.schemas.rollout import RolloutConfig, RolloutMetadata, RolloutStatus
 
 # --- Rollout API ---
 
@@ -14,9 +14,9 @@ from agl_lite.schemas.rollout import RolloutConfig, RolloutStatus
 class EnqueueRolloutRequest(BaseModel):
     """Single rollout enqueue."""
 
-    input: Any  # task payload (string, dict, or any JSON-serializable value)
+    input: Any  # raw dataset content from algorithm (read by hooks, NOT sent to container)
     config: RolloutConfig | None = None
-    metadata: dict[str, Any] | None = None  # hook-facing context (e.g., ground_truth, grading info). Not sent to container.
+    metadata: RolloutMetadata | dict[str, Any] | None = None  # algorithm control indexes + hook context
     resources_id: str | None = None
 
 

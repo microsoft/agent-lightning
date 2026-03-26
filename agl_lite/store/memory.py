@@ -29,6 +29,7 @@ from agl_lite.schemas.rollout import (
     VALID_TRANSITIONS,
     Rollout,
     RolloutConfig,
+    RolloutMetadata,
     RolloutStatus,
 )
 
@@ -72,7 +73,7 @@ class InMemoryStore:
                 rollout_id=rollout_id,
                 input=req.input,
                 config=req.config or RolloutConfig(image=""),
-                metadata=req.metadata or {},
+                metadata=RolloutMetadata(**(req.metadata if isinstance(req.metadata, dict) else req.metadata.model_dump() if req.metadata else {})),
                 resources_id=req.resources_id,
                 created_at=now,
                 updated_at=now,

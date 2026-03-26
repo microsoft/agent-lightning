@@ -74,6 +74,22 @@ class RolloutConfig(BaseModel):
     overrides: dict[str, Any] = Field(default_factory=dict)
 
 
+class RolloutMetadata(BaseModel):
+    """Algorithm + hook facing context. Not sent to container.
+
+    Algorithm control fields help the daemon/trainer reconstruct batch structure.
+    The ``data`` field holds the raw dataset content for hooks to use in grading.
+    Extra fields are allowed for task-specific extensions.
+    """
+
+    batch_idx: int | None = None
+    sample_idx_in_batch: int | None = None
+    trial_idx_in_group: int | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"extra": "allow"}
+
+
 class Rollout(BaseModel):
     """Unit of work. Lifecycle managed by the K8s controller."""
 
@@ -81,9 +97,9 @@ class Rollout(BaseModel):
     status: RolloutStatus = RolloutStatus.QUEUING
     cancel_requested: bool = False
 
-    input: Any  # task payload (delivered as AGL_TASK_INPUT env var, json-encoded)
+    input: Any  # raw dataset content from algorithm (read by hooks, NOT sent to container)
     config: RolloutConfig
-    metadata: dict[str, Any] = Field(default_factory=dict)  # hook-facing context (e.g., original dataset row, grading info). Not sent to container.
+    metadata: RolloutMetadata = Field(default_factory=RolloutMetadata)
     resources_id: str | None = None  # links to immutable resource snapshot
 
     # Set by controller during lifecycle.
