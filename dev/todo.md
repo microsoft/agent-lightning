@@ -61,7 +61,7 @@ Not on the critical path — the happy-path lifecycle is fully validated. Add wh
 
 ---
 
-## SWE-bench Example (`examples/swe_bench`) [ready]
+## SWE-bench Example (`examples/swe_bench`) [ongoing]
 
 **Goal**: Add an end-to-end SWE-bench example that uses agl-lite to orchestrate coding
 agents (Claude Code, mini-swe-agent, etc.) solving SWE-bench tasks inside official SWE-bench

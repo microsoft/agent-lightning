@@ -49,13 +49,14 @@ class InMemoryStore:
       models:    dict[model, dict[endpoint, ModelServer]]  (nested)
     """
 
-    def __init__(self, hooks: RolloutHooks | None = None) -> None:
+    def __init__(self, hooks: RolloutHooks | None = None, artifact_dir: str = "") -> None:
         self._rollouts: dict[str, Rollout] = {}
         self._events: dict[str, dict[str, list[Event]]] = {}
         self._resources: dict[str, ResourcesUpdate] = {}
         self._latest_resources_id: str | None = None
         self._models: dict[str, dict[str, ModelServer]] = {}
         self._hooks = hooks
+        self._artifact_dir = Path(artifact_dir) if artifact_dir else Path("/tmp/agl-artifacts")
 
     # ── Rollout management ───────────────────────────────────────────
 
@@ -203,9 +204,18 @@ class InMemoryStore:
     # ── Event storage ────────────────────────────────────────────────
 
     def add_event(self, rollout_id: str, attempt_id: str, event_type: str, data: dict[str, Any]) -> Event:
-        """Append a single event. Raises NotFoundError if rollout doesn't exist."""
+        """Append a single event. Raises NotFoundError if rollout doesn't exist.
+
+        Artifact events (event_type == "artifact") are handled specially:
+        the ``content`` field is written to disk and replaced with a
+        lightweight reference (``path``, ``filename``, ``size``).
+        """
         if rollout_id not in self._rollouts:
             raise NotFoundError("Rollout", rollout_id)
+
+        # Artifact: write content to disk, replace data with reference.
+        if event_type == "artifact" and "content" in data:
+            data = self._persist_artifact(rollout_id, data)
 
         event = Event(
             event_type=event_type,
@@ -220,6 +230,19 @@ class InMemoryStore:
             rid_events[attempt_id] = []
         rid_events[attempt_id].append(event)
         return event
+
+    def _persist_artifact(self, rollout_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Write artifact content to disk, return reference dict."""
+        content = data["content"]
+        filename = data.get("filename", "artifact.bin")
+        artifact_path = self._artifact_dir / rollout_id / filename
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(content, encoding="utf-8")
+        return {
+            "filename": filename,
+            "path": str(artifact_path),
+            "size": len(content),
+        }
 
     def query_events(
         self,

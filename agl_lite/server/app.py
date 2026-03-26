@@ -34,7 +34,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         hooks = load_hooks(settings.hooks)
         log.info("Rollout hooks loaded", hooks_class=type(hooks).__name__, path=settings.hooks)
 
-    store = InMemoryStore(hooks=hooks)
+    store = InMemoryStore(hooks=hooks, artifact_dir=settings.artifact_dir)
     verify_key = build_auth_dependency(settings.agl_key)
 
     # Load gateway config.

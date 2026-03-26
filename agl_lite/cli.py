@@ -14,6 +14,7 @@ def serve(
     port: int = typer.Option(8080, help="Bind port"),
     gateway_config: str = typer.Option("", help="Path to gateway YAML config"),
     hooks: str = typer.Option("", help="Path to Python module with RolloutHooks subclass"),
+    artifact_dir: str = typer.Option("", help="Directory for artifact files (default: /tmp/agl-artifacts)"),
 ) -> None:
     """Start the agl-lite HTTP service (store + gateway)."""
     import os
@@ -25,7 +26,7 @@ def serve(
     from agl_lite.server.app import create_app
     from agl_lite.server.config import ServerSettings
 
-    settings = ServerSettings(host=host, port=port, gateway_config=gateway_config, hooks=hooks)
+    settings = ServerSettings(host=host, port=port, gateway_config=gateway_config, hooks=hooks, artifact_dir=artifact_dir)
     application = create_app(settings)
     uvicorn.run(application, host=host, port=port, workers=1)
 
