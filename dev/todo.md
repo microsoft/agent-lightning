@@ -61,7 +61,7 @@ Not on the critical path — the happy-path lifecycle is fully validated. Add wh
 
 ---
 
-## SWE-bench Example (`examples/swe_bench`) [discuss]
+## SWE-bench Example (`examples/swe_bench`) [ready]
 
 **Goal**: Add an end-to-end SWE-bench example that uses agl-lite to orchestrate coding
 agents (Claude Code, mini-swe-agent, etc.) solving SWE-bench tasks inside official SWE-bench
@@ -328,8 +328,8 @@ scripts/deploy.sh                      # --controller-only, CoreDNS auto-patch (
 1. **Timeout budget**: Agent + evaluation share one `activeDeadlineSeconds`. Agent may take
    30–60 min, evaluation 5–30 min. Default 90 min? Configurable via `AGL_TIMEOUT` env var.
 
-2. **eval_script size in env var**: Typical ~2KB, K8s limit 1MB. Safe for all instances.
-   If edge cases exceed, fall back to ConfigMap mount.
+2. ~~**eval_script size in env var**~~: **Resolved** — verified 1.6–8.3 KB across samples,
+   `AGL_EVAL_META` maxes ~50 KB. K8s limit 1 MB total — safe for all instances.
 
 3. **ConfigMap vs PVC for agent scripts**: ConfigMap is fine for shell scripts + markdown.
    For large files or binary assets, switch to PVC or init container download.
@@ -338,9 +338,9 @@ scripts/deploy.sh                      # --controller-only, CoreDNS auto-patch (
    how to build them (`python -m swebench.harness.docker_build ...`). For minikube,
    build inside minikube's Docker daemon.
 
-5. **`swebench` package on server**: The hook calls `make_test_spec()` and
-   `get_eval_report()`, requiring the `swebench` pip package. Custom `Dockerfile.server`
-   extends base agl-lite image. The package is pure Python (~10MB), no GPU dependencies.
+5. ~~**`swebench` package on server**~~: **Resolved** — package is 0.9 MB, pure Python.
+   `make_test_spec()` is pure CPU (~ms, no Docker/network calls).
+   `get_eval_report()` reads from file path via `open()`. Both safe for sync hooks.
 
 6. **Artifact archiving**: Artifact files persist on disk but are skipped in JSONL archive.
    Future work: configurable retention, cleanup policy, S3/GCS upload. (Backlog.)
