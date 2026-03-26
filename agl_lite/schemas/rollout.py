@@ -83,6 +83,7 @@ class Rollout(BaseModel):
 
     input: Any  # task payload (delivered as AGL_TASK_INPUT env var, json-encoded)
     config: RolloutConfig
+    metadata: dict[str, Any] = Field(default_factory=dict)  # hook-facing context (e.g., original dataset row, grading info). Not sent to container.
     resources_id: str | None = None  # links to immutable resource snapshot
 
     # Set by controller during lifecycle.

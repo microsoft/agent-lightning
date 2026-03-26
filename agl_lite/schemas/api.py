@@ -16,6 +16,7 @@ class EnqueueRolloutRequest(BaseModel):
 
     input: Any  # task payload (string, dict, or any JSON-serializable value)
     config: RolloutConfig | None = None
+    metadata: dict[str, Any] | None = None  # hook-facing context (e.g., ground_truth, grading info). Not sent to container.
     resources_id: str | None = None
 
 

@@ -61,6 +61,7 @@ class InMemoryStore:
                 rollout_id=rollout_id,
                 input=req.input,
                 config=req.config or RolloutConfig(image=""),
+                metadata=req.metadata or {},
                 resources_id=req.resources_id,
                 created_at=now,
                 updated_at=now,
