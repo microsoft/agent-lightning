@@ -1,44 +1,46 @@
 #!/bin/bash
-# Run the math-poc end-to-end on minikube.
+# Run the math-poc end-to-end.
+#
+# Usage:
+#   examples/math-poc/run.sh [mock|vllm]   # default: vllm
 #
 # Topology:
 #   mock mode: all services in minikube (agl-lite, controller, mockai, agents)
 #   vllm mode: agl-lite + vLLM on host, controller + agents in minikube
 #
-# Usage:
-#   cp examples/math-poc/.env.mockai.example deploy/.env   # or .env.vllm.example
-#   export AGL_KEY=$(openssl rand -hex 32)
-#   examples/math-poc/run.sh
-#
 # Prerequisites:
 #   - minikube running
-#   - deploy/.env configured (copy from examples/math-poc/.env.*.example)
 #   - AGL_KEY set in environment
-#   - For vLLM mode: vLLM serving on host (see .env.vllm.example)
+#   - For vLLM mode: vLLM serving on host (scripts/start_vllm.sh)
 #
 # Logs are saved to examples/math-poc/logs/<timestamp>/
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+MODE="${1:-vllm}"
+MODE_DIR="$SCRIPT_DIR/$MODE"
 
 cd "$REPO_ROOT"
 
+# --- Validate mode ---
+if [ ! -d "$MODE_DIR" ]; then
+    echo "ERROR: Unknown mode '$MODE'. Available: mock, vllm"
+    exit 1
+fi
+
 # --- Setup log directory ---
-LOG_DIR="$SCRIPT_DIR/logs/$(date +%Y%m%d-%H%M%S)"
+LOG_DIR="$SCRIPT_DIR/logs/$(date +%Y%m%d-%H%M%S)-$MODE"
 mkdir -p "$LOG_DIR"
 echo "=== Logs → $LOG_DIR ==="
 
 # --- Load config ---
-if [ ! -f deploy/.env ]; then
-    echo "ERROR: deploy/.env not found. Run one of:"
-    echo "  cp examples/math-poc/.env.mockai.example deploy/.env"
-    echo "  cp examples/math-poc/.env.vllm.example deploy/.env"
+if [ ! -f "$MODE_DIR/.env.example" ]; then
+    echo "ERROR: $MODE_DIR/.env.example not found"
     exit 1
 fi
-source deploy/.env
+source "$MODE_DIR/.env.example"
 NS="${AGL_K8S_NAMESPACE:?AGL_K8S_NAMESPACE not set}"
-MODE="${AGL_MODEL_MODE:-mock}"
 
 if [ -z "${AGL_KEY:-}" ]; then
     echo "ERROR: AGL_KEY not set. Run: export AGL_KEY=\$(openssl rand -hex 32)"
@@ -66,11 +68,9 @@ scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
 # --- Deploy K8s infra ---
 echo ""
 if [ "$MODE" = "vllm" ]; then
-    # vLLM mode: only controller in K8s, agl-lite runs on host
     echo "=== Deploying controller to K8s (agl-lite will run on host) ==="
     scripts/deploy.sh --no-serve 2>&1 | tee "$LOG_DIR/deploy.log"
 else
-    # Mock mode: everything in K8s
     echo "=== Deploying agl-lite infra to K8s ==="
     scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"
 fi
@@ -79,7 +79,7 @@ fi
 if [ "$MODE" = "mock" ]; then
     echo ""
     echo "=== Deploying mockai ==="
-    kubectl apply -n "$NS" -f examples/math-poc/k8s-mockai.yaml 2>&1 | tee -a "$LOG_DIR/deploy.log"
+    kubectl apply -n "$NS" -f "$MODE_DIR/k8s-mockai.yaml" 2>&1 | tee -a "$LOG_DIR/deploy.log"
     kubectl -n "$NS" wait --for=condition=available deployment/mockai --timeout=120s 2>&1 | tee -a "$LOG_DIR/deploy.log"
 fi
 
@@ -87,20 +87,19 @@ fi
 SERVE_PID=""
 PF_PID=""
 
+GATEWAY_CONFIG="$MODE_DIR/gateway-config.yaml"
+HOOKS_PATH="${AGL_HOOKS:-}"
+
 if [ "$MODE" = "vllm" ]; then
-    # vLLM mode: start agl-lite on host
-    GATEWAY_CONFIG="$SCRIPT_DIR/gateway-config.yaml"
     SERVE_CMD=(uv run agl-lite serve --host 0.0.0.0 --port 8080)
-    if [ -f "$GATEWAY_CONFIG" ]; then
-        SERVE_CMD+=(--gateway-config "$GATEWAY_CONFIG")
-    fi
+    [ -f "$GATEWAY_CONFIG" ] && SERVE_CMD+=(--gateway-config "$GATEWAY_CONFIG")
+    [ -n "$HOOKS_PATH" ] && SERVE_CMD+=(--hooks "$HOOKS_PATH")
     echo ""
     echo "=== Starting agl-lite serve on host ==="
     echo "  ${SERVE_CMD[*]}"
     AGL_KEY="$AGL_KEY" "${SERVE_CMD[@]}" > "$LOG_DIR/agl-lite.log" 2>&1 &
     SERVE_PID=$!
 
-    # Wait for agl-lite to be ready
     for i in $(seq 1 30); do
         if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then
             echo "  agl-lite ready"
@@ -114,7 +113,6 @@ if [ "$MODE" = "vllm" ]; then
         sleep 1
     done
 else
-    # Mock mode: port-forward to K8s agl-lite
     echo ""
     echo "=== Starting port-forward ==="
     kubectl -n "$NS" port-forward svc/agl-lite 8080:8080 &
@@ -122,7 +120,7 @@ else
     sleep 2
 fi
 
-# Cleanup on exit — collect logs
+# Cleanup on exit
 cleanup() {
     echo ""
     echo "=== Collecting K8s logs ==="
@@ -140,12 +138,6 @@ cleanup() {
     echo "=== Cleanup ==="
     [ -n "$PF_PID" ] && kill $PF_PID 2>/dev/null || true
     [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
-    if [ -n "$SERVE_PID" ]; then
-        echo "agl-lite serve stopped."
-    else
-        echo "Port-forward stopped."
-    fi
-    echo "Cluster resources left running."
     echo "Logs saved to: $LOG_DIR"
     echo "To tear down: scripts/deploy.sh --cleanup"
 }
@@ -159,15 +151,9 @@ export AGL_MODEL_MODE="$MODE"
 export AGL_MODEL_NAME="${AGL_MODEL_NAME:-mock-llm}"
 export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
 export AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}"
-export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-2}"
-export AGL_VLLM_PORT="${AGL_VLLM_PORT:-8010}"
+export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-1}"
 
 # --- Run algorithm ---
 echo ""
-if [ "$MODE" = "mock" ]; then
-    echo "=== Running mock RL loop ==="
-    uv run python examples/math-poc/mock_rl_loop.py 2>&1 | tee "$LOG_DIR/mock_rl_loop.log"
-else
-    echo "=== Running RL loop (vLLM) ==="
-    uv run python examples/math-poc/rl_loop.py 2>&1 | tee "$LOG_DIR/rl_loop.log"
-fi
+echo "=== Running RL loop ($MODE) ==="
+uv run python examples/math-poc/rl_loop_v2.py 2>&1 | tee "$LOG_DIR/rl_loop.log"
