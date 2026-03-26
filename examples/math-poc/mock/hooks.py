@@ -16,7 +16,6 @@ from agl_lite.schemas.rollout import Rollout, RolloutConfig
 from agl_lite.store.memory import InMemoryStore
 
 WRONG_ANSWER = "WRONG"
-MODEL_NAME = "mock-llm"
 
 
 class MathMockHooks(RolloutHooks):
@@ -26,7 +25,7 @@ class MathMockHooks(RolloutHooks):
         question = raw.get("question", "")
         ground_truth = raw.get("answer", "")
 
-        # Read sample index from metadata
+        # Read sample index from metadata for alternating pattern
         meta = request.metadata
         idx = 0
         if isinstance(meta, dict):
@@ -39,28 +38,19 @@ class MathMockHooks(RolloutHooks):
         boxed_value = ground_truth if correct else WRONG_ANSWER
         augmented = question + f"\n\\boxed{{{boxed_value}}}"
 
-        # Stash grading context in metadata
-        if meta is None:
-            request.metadata = {"ground_truth": ground_truth, "expect_correct": correct, "boxed_value": boxed_value}
-        elif isinstance(meta, dict):
-            meta["ground_truth"] = ground_truth
-            meta["expect_correct"] = correct
-            meta["boxed_value"] = boxed_value
-        else:
-            meta.ground_truth = ground_truth  # type: ignore[attr-defined]
-            meta.expect_correct = correct  # type: ignore[attr-defined]
-            meta.boxed_value = boxed_value  # type: ignore[attr-defined]
-
-        # Set agent-facing config
-        request.config = request.config or RolloutConfig(image="")
-        request.config.image = request.config.image or "math-agent:dev"
+        # Set agent-facing task input (image, command, etc. come from job-template)
+        if request.config is None:
+            request.config = RolloutConfig(image="")
         request.config.environment_variables["AGL_TASK_INPUT"] = json.dumps(augmented)
-        request.config.environment_variables.setdefault("AGL_MODEL_NAME", MODEL_NAME)
 
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
-        gt = getattr(rollout.metadata, "ground_truth", "")
+        # Read ground_truth directly from rollout.input
+        gt = ""
+        if isinstance(rollout.input, dict):
+            gt = rollout.input.get("answer", "")
+
         answer = self._extract_answer(events)
         reward = 1.0 if answer and answer.strip() == str(gt).strip() else 0.0
 

@@ -7,7 +7,6 @@ of the agent's \\boxed{answer} with the ground truth.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from agl_lite.hooks import RolloutHooks
@@ -21,27 +20,20 @@ class MathVllmHooks(RolloutHooks):
     def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
         raw = request.input if isinstance(request.input, dict) else {}
         question = raw.get("question", "")
-        ground_truth = raw.get("answer", "")
 
-        # Stash ground_truth in metadata for on_succeeded
-        meta = request.metadata
-        if meta is None:
-            request.metadata = {"ground_truth": ground_truth}
-        elif isinstance(meta, dict):
-            meta["ground_truth"] = ground_truth
-        else:
-            meta.ground_truth = ground_truth  # type: ignore[attr-defined]
-
-        # Set agent-facing config
-        request.config = request.config or RolloutConfig(image="")
-        request.config.image = request.config.image or "math-agent:dev"
+        # Set agent-facing task input (image, command, etc. come from job-template)
+        if request.config is None:
+            request.config = RolloutConfig(image="")
         request.config.environment_variables["AGL_TASK_INPUT"] = json.dumps(question)
-        # AGL_MODEL_NAME comes from .env → run.sh → config.environment_variables
 
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
-        gt = getattr(rollout.metadata, "ground_truth", "")
+        # Read ground_truth directly from rollout.input
+        gt = ""
+        if isinstance(rollout.input, dict):
+            gt = rollout.input.get("answer", "")
+
         answer = self._extract_answer(events)
         reward, reason = self._compute_reward(answer, str(gt))
 

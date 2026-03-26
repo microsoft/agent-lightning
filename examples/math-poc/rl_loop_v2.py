@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Unified RL loop — task-agnostic orchestration for math-poc.
+"""Unified RL loop -- task-agnostic orchestration for math-poc.
 
-Sends raw dataset rows as rollout input. Hooks handle task-specific logic:
-  - on_enqueue: prepare agent config (image, AGL_TASK_INPUT, model name)
-  - on_succeeded: extract answer, compute reward, post reward event
+Algorithm contract -- for each rollout, the algorithm only sets:
+  - input:        raw dataset row (full JSONL content, e.g., {"question": ..., "answer": ...})
+  - resources_id: link to the registered resource snapshot (job_template, etc.)
+  - metadata:     algorithm control indexes (batch_idx, sample_idx_in_batch, etc.)
 
-Works with both mock and vLLM modes — the mode is determined by which
+Everything else is handled by hooks loaded into the agl-lite server:
+  - on_enqueue:   reads input, sets config.environment_variables.AGL_TASK_INPUT.
+                  Image, command, resources etc. come from job-template defaults.
+  - on_succeeded: reads rollout.input for ground_truth, extracts answer from events,
+                  computes reward, posts reward event to store.
+
+Works with both mock and vLLM modes -- the mode is determined by which
 hooks module is loaded into agl-lite serve.
 
 Usage:
@@ -13,7 +20,7 @@ Usage:
     export AGL_KEY=<your-key>
     export AGL_MODEL_NAME=<model>
     export AGL_MODEL_ENDPOINT=<endpoint>
-    python examples/math-poc/rl_loop.py
+    python examples/math-poc/rl_loop_v2.py
 """
 
 from __future__ import annotations
@@ -110,11 +117,11 @@ async def run_iteration(
         log(f"    [{i}] Q: {q}")
         log(f"         GT: {item['answer']}")
 
-    # Enqueue rollouts — raw dataset rows as input, hooks transform them
+    # Enqueue rollouts -- algorithm only sets input, resources_id, metadata
     requests = [
         EnqueueRolloutRequest(
             resources_id=resources_id,
-            input=item,  # full JSONL row → hook reads and transforms
+            input=item,  # full JSONL row -- hooks read and transform
             metadata={"batch_idx": iteration, "sample_idx_in_batch": i},
         )
         for i, item in enumerate(batch)
@@ -131,7 +138,7 @@ async def run_iteration(
 
     log(f"  Completed: {len(succeeded)} succeeded, {len(failed)} failed")
     for r in failed:
-        log(f"    FAILED: {r.rollout_id} — {r.error_message}")
+        log(f"    FAILED: {r.rollout_id} -- {r.error_message}")
 
     # Collect results from events (rewards already posted by hooks)
     total_reward = 0.0
@@ -154,7 +161,7 @@ async def run_iteration(
             gt = rw.data.get("ground_truth", "?")
             answer = rw.data.get("agent_answer", "?")
             reason = rw.data.get("reason", "")
-            tag = "✓" if reward > 0 else "✗"
+            tag = "+" if reward > 0 else "-"
             detail = reason if reason else f"answer={answer!r}, gt={gt!r}"
             log(f"    {rollout.rollout_id}: [{tag}] {detail}")
         else:
@@ -184,7 +191,7 @@ async def main() -> None:
     agl_key = os.environ.get("AGL_KEY")
     mode = os.environ.get("AGL_MODEL_MODE", "vllm")
 
-    log(f"=== Math PoC — RL Loop ({mode}) ===")
+    log(f"=== Math PoC -- RL Loop ({mode}) ===")
     log(f"  agl-lite:  {base_url}")
     log(f"  model:     {MODEL_NAME}")
     if MODEL_ENDPOINT:
@@ -216,7 +223,7 @@ async def main() -> None:
             await client.register_models([
                 RegisterModelRequest(model=MODEL_NAME, endpoint=MODEL_ENDPOINT, version=1),
             ])
-            log(f"  {MODEL_NAME} → {MODEL_ENDPOINT} (version=1)")
+            log(f"  {MODEL_NAME} -> {MODEL_ENDPOINT} (version=1)")
 
         # --- Run iterations ---
         results = []
@@ -249,16 +256,16 @@ async def main() -> None:
         log(f"  Checks:")
         all_ok = True
         for name, passed, detail in checks:
-            status = "✅" if passed else "❌"
-            log(f"    {status} {name}: {detail}")
+            status = "PASS" if passed else "FAIL"
+            log(f"    [{status}] {name}: {detail}")
             if not passed:
                 all_ok = False
 
         log(f"")
         if all_ok:
-            log(f"  ✅ Math PoC ({mode}) completed successfully!")
+            log(f"  Math PoC ({mode}) completed successfully!")
         else:
-            log(f"  ❌ Math PoC ({mode}) had failures — check above")
+            log(f"  Math PoC ({mode}) had failures -- check above")
             sys.exit(1)
 
     finally:

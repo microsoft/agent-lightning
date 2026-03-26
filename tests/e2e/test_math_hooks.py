@@ -28,7 +28,8 @@ class TestMathMockHooks:
         result = hooks.on_enqueue(req)
         task_input = json.loads(result.config.environment_variables["AGL_TASK_INPUT"])
         assert "\\boxed{4}" in task_input
-        assert result.config.image == "math-agent:dev"
+        # image NOT set by hook — comes from job-template
+        assert result.input == {"question": "What is 2+2?", "answer": "4"}
 
     def test_on_enqueue_odd_wrong(self, hooks) -> None:
         req = EnqueueRolloutRequest(
@@ -94,8 +95,10 @@ class TestMathVllmHooks:
         )
         result = hooks.on_enqueue(req)
         task_input = json.loads(result.config.environment_variables["AGL_TASK_INPUT"])
-        assert task_input == "What is 2+2?"  # plain, no boxed
+        assert task_input == "What is 2+2?"
         assert "boxed" not in task_input
+        # input unchanged — hooks read from it in on_succeeded
+        assert result.input == {"question": "What is 2+2?", "answer": "4"}
 
     def test_on_succeeded_numeric_correct(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
