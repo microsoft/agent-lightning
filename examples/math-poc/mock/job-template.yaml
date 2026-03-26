@@ -1,0 +1,18 @@
+# K8s Pod spec for math-poc agent jobs.
+# See https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
+#
+# The controller injects into the "agent" container:
+#   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_MODEL_NAME, etc.
+#
+# image and command are fixed for this PoC — all rollouts share them.
+# The agent reads AGL_MODEL_NAME from env (set by the algorithm via run.sh).
+
+containers:
+  - name: agent
+    image: math-agent:dev
+    command: ["python", "/app/qa_agent.py"]
+    imagePullPolicy: Never
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
