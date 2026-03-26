@@ -199,13 +199,14 @@ rl_loop.py:
 ```
 examples/swe_bench/
 ├── README.md                          # setup + usage docs
-├── rl_loop.py                         # algorithm script (enqueue, poll, collect results)
+├── rl_loop.py                         # algorithm script (task-agnostic, enqueue + poll + tensors)
+├── hooks.py                           # SWE-bench store hooks (on_enqueue + on_succeeded)
+├── Dockerfile.server                  # agl-lite + swebench + hooks.py
 ├── gateway-config.yaml                # same as math-poc (inject return_token_ids)
-├── job-template.yaml                  # K8s pod spec — generic, image overridden per rollout
+├── job-template.yaml                  # K8s pod spec — generic, image overridden by hook
 ├── swebench_samples.jsonl             # small dataset for smoke testing
 ├── agents/
-│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → reward (all in one)
-│   ├── grade.py                       # minimal grading script (~30 lines, parses test log)
+│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → write to volume
 │   ├── claude_code/
 │   │   ├── install.sh                 # install claude CLI
 │   │   ├── run.sh                     # run claude code on the problem
@@ -215,6 +216,14 @@ examples/swe_bench/
 │       └── run.sh                     # run mini-swe-agent on the problem
 ├── run.sh                             # one-command E2E runner
 └── .env.vllm.example                  # env config for vLLM mode
+```
+
+Also needed in `agl_lite/` core:
+```
+agl_lite/
+├── hooks.py                           # RolloutHooks base class (ABC)
+├── store/memory.py                    # updated: hook integration points
+└── server/app.py                      # updated: --hooks CLI flag, load module
 ```
 
 ### Remaining Open Questions
@@ -232,20 +241,19 @@ examples/swe_bench/
    `grade.py` re-implements the minimal log parsing (~30 lines of regex). The algorithm
    passes `FAIL_TO_PASS` and `PASS_TO_PASS` test lists via `AGL_EVAL_META` env var.
 
-**Update (volume-based grading)**: Instead of grading inside the container, the container
-writes test output + patch to a shared volume. The **algorithm side** (which has `swebench`
-installed for `make_test_spec`) calls the official `get_eval_report()` to grade. This keeps
-grading 100% official and removes the need for `grade.py` in the container. See the
-Task Controller architecture below.
+**Update (hooks-in-server)**: Instead of grading inside the container or on a separate
+algorithm host, task-specific logic runs as **store hooks** inside the agl-lite server.
+The container writes test output + patch to a shared volume. The hook reads them and
+grades using official swebench tools. See the Store Hooks architecture below.
 
 ---
 
-## Task Controller Architecture — separating task-agnostic from task-specific [discuss]
+## Store Hooks — task-specific logic in the server [discuss]
 
-**Goal**: Make the algorithm/trainer layer task-agnostic. The trainer only sees sample
-indices and gets back `DataProto` (padded tensors). All task-specific logic — dataset
-parsing, rollout configuration, Docker image selection, reward computation — lives in
-a **Task Controller** that sits between the trainer and agl-lite.
+**Goal**: Make the algorithm/trainer layer task-agnostic by moving task-specific logic
+(dataset parsing, rollout configuration, reward computation) into **hooks** that run
+inside the agl-lite server process. Users customize behavior by writing a Python module
+and patching it into the agl-lite Docker image.
 
 ### Problem: current daemon mixes concerns
 
@@ -262,122 +270,184 @@ The current `AglLiteDaemon` (and original `AgentModeDaemon`) mixes:
 | Triplets → padded tensors → DataProto | ✅ | `get_train_data_batch` |
 | Metrics computation | ✅ | `get_test_metrics` |
 
-For math-poc, task-specific logic is trivial (just pass the question). For SWE-bench,
-it's complex (image selection, eval_script generation, grading). Mixing them in the
-daemon creates a new daemon subclass per task — bad for maintainability.
+### Solution: hooks as store pre-processors
 
-### Proposed architecture: Task Controller
+Task-specific logic runs as **synchronous hooks inside the store**, called at two
+lifecycle points. Since the store is single-threaded (all methods are sync `def`,
+called from `async def` route handlers on one event loop), hooks execute atomically —
+no reader can see intermediate state while a hook is running.
 
-```
-Trainer (VERL PPO)           Task Controller              agl-lite
-─────────────────           ─────────────────              ─────────
-                            (task-specific)                (task-agnostic)
-
-set_up(indices) ──────→     prepare_rollouts(indices):
-                              load dataset[indices]
-                              for each instance:
-                                make_test_spec → eval_script
-                                build image tag
-                                build env vars
-                              return rollout_requests     ──→  enqueue_rollouts
-
-run_until_done() ─────→     (passthrough)                 ──→  poll rollouts
-
-get_rewards() ────────→     compute_rewards():
-                              for each rollout:
-                                read test_log from volume
-                                get_eval_report(test_spec)     (official swebench)
-                              return {rollout_id: reward}
-                              post reward events          ──→  POST /events
-
-get_train_batch() ────→     (passthrough to daemon)       ──→  GET /events?format=triplet
-                            triplets → padded tensors
-                            return DataProto
-```
-
-### Interface design
+#### Hook interface
 
 ```python
-class TaskController(ABC):
-    """Task-specific bridge between trainer and agl-lite."""
+class RolloutHooks(ABC):
+    """Task-specific hooks. Loaded by agl-lite server at startup."""
 
-    @abstractmethod
-    def prepare_rollouts(
-        self, data: Dict[str, Any], is_train: bool = True
-    ) -> List[EnqueueRolloutRequest]:
-        """Convert dataset batch → rollout requests.
+    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+        """Pre-processor: transform rollout request before it enters the store.
 
-        Task-specific: chooses image, builds input, sets env vars,
-        generates eval scripts, etc.
+        Called for each request in enqueue_rollouts(), BEFORE the rollout is persisted.
+        If this raises, the rollout is never created and the API returns an error.
 
-        Args:
-            data: batch from dataloader (dict of lists, e.g.,
-                  {"question": [...], "instance_id": [...], ...})
-            is_train: whether this is a training or validation batch
+        Use cases:
+        - Map instance_id → Docker image tag
+        - Generate eval_script from dataset
+        - Inject task-specific env vars
         """
+        return request  # default: passthrough
+
+    def on_succeeded(self, rollout: Rollout, events: dict, store: InMemoryStore) -> None:
+        """Post-transition hook: called when rollout transitions to SUCCEEDED.
+
+        Runs synchronously inside update_rollout(), after the transition is committed.
+        Since the store is single-threaded, no reader can interleave — the transition
+        and this hook are atomic from any external observer's perspective.
+
+        Use cases:
+        - Read test output from volume → grade with official tools → post reward event
+        - Parse agent output → compute numeric reward → post reward event
+        """
+        pass  # default: no-op
+
+    def on_failed(self, rollout: Rollout, store: InMemoryStore) -> None:
+        """Post-transition hook: called when rollout transitions to TERMINAL_FAILED."""
+        pass  # default: no-op
+```
+
+#### Store integration
+
+```python
+# store/memory.py
+class InMemoryStore:
+    def __init__(self, hooks: RolloutHooks | None = None):
+        self._hooks = hooks
         ...
 
-    @abstractmethod
-    def compute_rewards(
-        self, rollout_ids: List[str], volume_path: Path
-    ) -> Dict[str, float]:
-        """Grade completed rollouts.
+    def enqueue_rollouts(self, requests):
+        results = []
+        for req in requests:
+            # Pre-processor: transform request before persist
+            if self._hooks:
+                req = self._hooks.on_enqueue(req)
 
-        Task-specific: reads test logs from volume, runs official grading,
-        returns reward per rollout.
-        """
-        ...
+            rollout = Rollout(rollout_id=..., input=req.input, config=req.config, ...)
+            self._rollouts[rollout_id] = rollout
+            results.append(rollout)
+        return results
 
-    # Optional hooks
-    def on_setup(self, model_name: str, server_addresses: List[str]) -> None:
-        """Called once before rollouts — register extra resources, etc."""
-        pass
+    def update_rollout(self, rollout_id, req):
+        rollout = self.get_rollout(rollout_id)
+        old_status = rollout.status
+        # ... validate transition, apply update ...
+        self._rollouts[rollout_id] = updated
 
-    def on_teardown(self) -> None:
-        """Called after each iteration — cleanup."""
-        pass
+        # Post-transition hooks — still inside the sync method,
+        # no reader can interleave (single-threaded event loop)
+        if self._hooks and updated.status != old_status:
+            events = self._events.get(rollout_id, {})
+            if updated.status == RolloutStatus.SUCCEEDED:
+                self._hooks.on_succeeded(updated, events, self)
+                # hook may call self.add_event(..., "reward", ...)
+                # reward is in the store before this method returns
+            elif updated.status == RolloutStatus.TERMINAL_FAILED:
+                self._hooks.on_failed(updated, self)
 
+        return updated
+```
 
-class SWEBenchController(TaskController):
-    """SWE-bench specific: image selection, eval_script gen, official grading."""
+#### Why atomicity is free
 
-    def __init__(self, dataset_path: str, namespace: str = "swebench"):
-        self.instances = load_dataset(dataset_path)
+The store is single-threaded by design (see `docs/dev_guidelines.md § Concurrency Model`):
+
+- Store methods are plain `def` (synchronous) — no `await`, no yield points
+- Route handlers are `async def` on one event loop — only one can execute store
+  code at a time
+- Hooks run inside store methods — same synchronous block
+
+So when `on_succeeded` fires and posts a reward event:
+1. No other request can read from the store during this time
+2. When the method returns, the rollout is SUCCEEDED **and** the reward event exists
+3. The daemon never sees SUCCEEDED without a reward
+
+No flags (`reward_pending`), no intermediate states, no race conditions. If we ever
+move to async hooks or multi-worker, we can add a `reward_pending` flag then —
+it's a backward-compatible addition. For the sync single-threaded store, pre-processors
+are sufficient.
+
+#### Constraints on hooks
+
+Hooks must be **fast and synchronous** (no `await`, no blocking network calls):
+- Volume reads: local disk, ~μs for KB files ✅
+- `make_test_spec()`: pure Python, ~1ms ✅
+- `get_eval_report()`: regex parsing of test log, ~1-5ms ✅
+- Network calls to external APIs: ❌ (would block event loop)
+
+If a hook needs async I/O in the future, we'd run it via `run_in_executor()` and
+add the `reward_pending` flag. But the volume-based pattern avoids this entirely.
+
+### User workflow: custom Docker image
+
+```dockerfile
+# Dockerfile.swebench
+FROM agl-lite:latest
+RUN pip install swebench
+COPY hooks.py /app/hooks/
+```
+
+```bash
+# Launch:
+agl-lite serve --hooks /app/hooks/hooks.py
+# or via env var:
+AGL_HOOKS_MODULE=/app/hooks/hooks.py agl-lite serve
+```
+
+Server loads the module at startup, instantiates the hooks class, passes it to the store.
+
+### Example: SWE-bench hooks
+
+```python
+# hooks.py — mounted into agl-lite container
+from agl_lite.hooks import RolloutHooks
+
+class SWEBenchHooks(RolloutHooks):
+    def __init__(self, dataset_path, volume_path, namespace="swebench"):
+        self.instances = {inst["instance_id"]: inst for inst in load_dataset(dataset_path)}
+        self.volume_path = Path(volume_path)
         self.namespace = namespace
 
-    def prepare_rollouts(self, data, is_train=True):
-        requests = []
-        indices = data["index"]  # or however the dataloader provides sample IDs
-        for idx in indices:
-            instance = self.instances[idx]
-            spec = make_test_spec(instance, namespace=self.namespace)
-            safe_id = instance["instance_id"].lower().replace("__", "_1776_")
-            requests.append(EnqueueRolloutRequest(
-                input={"instance_id": instance["instance_id"],
-                       "problem_statement": instance["problem_statement"]},
-                config={
-                    "image": f"{self.namespace}/sweb.eval.x86_64.{safe_id}:latest",
-                    "environment_variables": {
-                        "AGL_EVAL_SCRIPT": spec.eval_script,
-                        "AGL_EVAL_META": json.dumps({
-                            "FAIL_TO_PASS": spec.FAIL_TO_PASS,
-                            "PASS_TO_PASS": spec.PASS_TO_PASS,
-                            "repo": instance["repo"],
-                        }),
-                    },
-                    "timeout": 5400,  # 90 min
-                },
-            ))
-        return requests
+    def on_enqueue(self, request):
+        """Map instance_id → Docker image + eval_script."""
+        instance_id = request.input.get("instance_id") if isinstance(request.input, dict) else None
+        if not instance_id or instance_id not in self.instances:
+            return request  # passthrough for non-SWE-bench rollouts
 
-    def compute_rewards(self, rollout_ids, volume_path):
-        rewards = {}
-        for rid in rollout_ids:
-            log_path = volume_path / rid / "test_output.txt"
-            instance_id = self._rollout_to_instance[rid]
-            instance = self.instances_by_id[instance_id]
-            spec = make_test_spec(instance, namespace=self.namespace)
-            patch_path = volume_path / rid / "patch.diff"
+        instance = self.instances[instance_id]
+        spec = make_test_spec(instance, namespace=self.namespace)
+        safe_id = instance_id.lower().replace("__", "_1776_")
+
+        config = request.config or {}
+        config["image"] = f"{self.namespace}/sweb.eval.x86_64.{safe_id}:latest"
+        config.setdefault("environment_variables", {}).update({
+            "AGL_EVAL_SCRIPT": spec.eval_script,
+        })
+        request.config = config
+        return request
+
+    def on_succeeded(self, rollout, events, store):
+        """Grade using official swebench harness."""
+        instance_id = rollout.input.get("instance_id") if isinstance(rollout.input, dict) else None
+        if not instance_id or instance_id not in self.instances:
+            return
+
+        instance = self.instances[instance_id]
+        spec = make_test_spec(instance, namespace=self.namespace)
+
+        log_path = self.volume_path / rollout.rollout_id / "test_output.txt"
+        patch_path = self.volume_path / rollout.rollout_id / "patch.diff"
+
+        if not log_path.exists():
+            reward = 0.0
+        else:
             prediction = {
                 "instance_id": instance_id,
                 "model_patch": patch_path.read_text() if patch_path.exists() else "",
@@ -385,86 +455,67 @@ class SWEBenchController(TaskController):
             }
             report = get_eval_report(spec, prediction, str(log_path),
                                      include_tests_status=True)
-            rewards[rid] = 1.0 if report[instance_id]["resolved"] else 0.0
-        return rewards
+            reward = 1.0 if report[instance_id]["resolved"] else 0.0
 
-
-class MathController(TaskController):
-    """Math (GSM8K) — trivial: pass question, numeric reward."""
-
-    def prepare_rollouts(self, data, is_train=True):
-        return [EnqueueRolloutRequest(
-            input=q,
-            config={"image": "math-agent:dev"},
-        ) for q in data["question"]]
-
-    def compute_rewards(self, rollout_ids, volume_path):
-        # Read agent_output events, compare with ground truth
-        rewards = {}
-        for rid, gt in zip(rollout_ids, self._ground_truths):
-            answer = ...  # read from event or volume
-            rewards[rid] = 1.0 if answer == gt else 0.0
-        return rewards
+        # Post reward event — happens atomically before update_rollout returns
+        attempt_id = rollout.succeeded_attempt_id or "unknown"
+        store.add_event(rollout.rollout_id, attempt_id, "reward", {"value": reward})
 ```
 
-### Modified daemon (task-agnostic)
+### Example: Math hooks (trivial)
 
 ```python
-class AglLiteDaemon:
-    """Task-agnostic daemon. Delegates task-specific logic to TaskController."""
-
-    def __init__(self, task_controller: TaskController, ...):
-        self.task_controller = task_controller
-        # ... same tensor construction config as before
-
-    async def _async_set_up(self, data, server_addresses, is_train):
-        # 1. Register models (task-agnostic)
-        await self.client.register_models(...)
-
-        # 2. Delegate rollout creation to task controller (task-specific)
-        requests = self.task_controller.prepare_rollouts(data, is_train)
-        created = await self.client.enqueue_rollouts(requests)
-        ...
-
-    async def _async_compute_rewards(self):
-        # Delegate reward computation to task controller (task-specific)
-        rewards = self.task_controller.compute_rewards(
-            rollout_ids=list(self._completed_rollouts.keys()),
-            volume_path=self.volume_path,
-        )
-        # Post reward events (task-agnostic)
-        for rid, reward in rewards.items():
-            await self.client.post_event(rid, ...,
-                PostEventRequest(event_type="reward", data={"value": reward}))
-
-    def get_train_data_batch(self, ...):
-        # Unchanged — pure tensor construction (task-agnostic)
-        ...
+class MathHooks(RolloutHooks):
+    def on_succeeded(self, rollout, events, store):
+        """Agent already posted reward — no-op needed."""
+        pass  # math agent posts its own reward via AGL_EVENT_URL
 ```
 
-### What changes vs current design
+### Impact on daemon and architecture
 
-| Current | Proposed |
-|---------|----------|
-| Daemon receives `data: Dict[str, Any]` (raw batch) | Same, but delegates to TaskController |
-| Daemon inlines rollout construction | TaskController.prepare_rollouts() |
-| Reward posted by agent container or algorithm | TaskController.compute_rewards() reads volume |
-| New task = modify daemon or algorithm script | New task = new TaskController (small, focused) |
-| Grading in container (needs grade.py) | Grading on algorithm host (official tools) |
+The daemon becomes fully task-agnostic:
+
+```
+Trainer (VERL PPO)           agl-lite server (with hooks)
+─────────────────           ─────────────────────────────
+set_up_data_and_server()
+  → POST /api/rollouts       → on_enqueue hook transforms each request
+                                (image, eval_script, env vars)
+                              → rollouts persisted to store
+
+run_until_all_finished()
+  → poll GET /api/rollouts    → controller creates K8s jobs
+                              → jobs complete
+                              → PATCH {status: succeeded}
+                              → on_succeeded hook grades + posts reward
+                                (atomic — reward is in store before response)
+
+get_train_data_batch()
+  → GET /api/events           → returns events (with reward already there)
+  → triplets → tensors → DataProto
+```
+
+| Current | With hooks |
+|---------|-----------|
+| Daemon receives raw data, builds rollout config | Daemon sends raw data, hook builds config |
+| Reward posted by container or algorithm script | Hook posts reward atomically on completion |
+| New task = modify daemon + algorithm script | New task = write hooks.py + build Docker image |
+| Task deps (swebench) in algorithm process | Task deps in server container (user-built image) |
+| Daemon is task-aware (~500 lines) | Daemon is task-agnostic (~300 lines) |
 
 ### Why this is a differentiation point
 
-1. **Clean separation**: Algorithm researchers write TaskControllers (dataset + reward).
-   Infrastructure engineers maintain the daemon + agl-lite. They never touch each other's code.
-2. **Composable**: Same trainer config works for math, SWE-bench, coding, web browsing —
-   just swap the TaskController.
-3. **Official grading**: TaskController.compute_rewards() can use *any* official evaluation
-   tool (swebench harness, HumanEval, MATH, etc.) without polluting the daemon or container.
-4. **Volume-based artifacts**: Test logs, patches, agent traces all persist on volume.
-   TaskController reads them for grading. Reproducible, debuggable.
-5. **Compared to Agent Lightning**: Their daemon is monolithic — task logic, proxy server,
-   adapter, tensor construction all in one 1154-line class. We factor it into 3 clean layers:
-   TaskController (~100 lines per task) + Daemon (~300 lines, task-agnostic) + agl-lite (HTTP API).
+1. **Simplest possible user interface**: write one Python file with 2 methods, build a
+   Docker image. No separate processes, no webhook infra, no polling for rewards.
+2. **Atomicity for free**: single-threaded sync store means hooks + transitions are
+   indivisible. No race conditions, no flags, no intermediate states.
+3. **Official grading on the hot path**: `get_eval_report()` runs inside the hook with
+   full access to the store. Results are immediately available — zero extra round trips.
+4. **Composable**: same daemon, same trainer config for any task. Just swap the Docker image.
+5. **Compared to Agent Lightning**: their 1154-line monolithic daemon becomes:
+   - hooks.py (~50-100 lines per task, user-written)
+   - daemon (~300 lines, task-agnostic, maintained by infra)
+   - agl-lite server (HTTP API + hook integration)
 
 ---
 
