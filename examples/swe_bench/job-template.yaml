@@ -1,0 +1,31 @@
+# K8s Pod spec for SWE-bench agent jobs.
+#
+# Image is overridden per-rollout by the hook (sweb.eval.x86_64.<id>:latest).
+# The entrypoint runs agent → eval → post artifacts.
+#
+# Agent scripts are mounted from a ConfigMap (created by run.sh).
+
+containers:
+  - name: agent
+    image: placeholder  # overridden by hook per rollout
+    command: ["bash", "/agl/agents/entrypoint.sh"]
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+      limits:
+        memory: "4Gi"
+    volumeMounts:
+      - name: agent-scripts
+        mountPath: /agl/agents
+        readOnly: true
+
+volumes:
+  - name: agent-scripts
+    configMap:
+      name: swe-agent-scripts
+      defaultMode: 0755
+
+# 90 minutes timeout for agent + evaluation.
+activeDeadlineSeconds: 5400

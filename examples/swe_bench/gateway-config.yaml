@@ -1,0 +1,9 @@
+# Gateway config for SWE-bench example.
+#
+# Routes model requests through the agl-lite gateway to the model server.
+# Injects return_token_ids for RL training data capture.
+
+routes:
+  - model: "*"
+    inject_params:
+      return_token_ids: true
