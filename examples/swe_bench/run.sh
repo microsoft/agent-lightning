@@ -49,12 +49,10 @@ kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "$NS" delete configmap swe-agent-scripts --ignore-not-found
 kubectl -n "$NS" create configmap swe-agent-scripts \
     --from-file=entrypoint.sh="$SCRIPT_DIR/agents/entrypoint.sh" \
-    --from-file=mini_swe_agent/install.sh="$SCRIPT_DIR/agents/mini_swe_agent/install.sh" \
-    --from-file=mini_swe_agent/run.sh="$SCRIPT_DIR/agents/mini_swe_agent/run.sh" \
-    --from-file=mini_swe_agent/agent.py="$SCRIPT_DIR/agents/mini_swe_agent/agent.py" \
     --from-file=claude_code/install.sh="$SCRIPT_DIR/agents/claude_code/install.sh" \
     --from-file=claude_code/run.sh="$SCRIPT_DIR/agents/claude_code/run.sh" \
-    --from-file=claude_code/CLAUDE.md="$SCRIPT_DIR/agents/claude_code/CLAUDE.md"
+    --from-file=claude_code/CLAUDE.md="$SCRIPT_DIR/agents/claude_code/CLAUDE.md" \
+    --from-file=claude_code/handle_hook.sh="$SCRIPT_DIR/agents/claude_code/handle_hook.sh"
 echo "  ConfigMap swe-agent-scripts created"
 
 # --- Deploy infrastructure ---

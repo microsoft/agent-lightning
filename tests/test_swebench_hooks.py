@@ -93,7 +93,7 @@ class TestOnEnqueue:
             os.environ.pop("AGL_CODING_AGENT", None)
             req = EnqueueRolloutRequest(input=swe_instance)
             result = hook.on_enqueue(req)
-        assert result.config.environment_variables["AGL_CODING_AGENT"] == "mini_swe_agent"
+        assert result.config.environment_variables["AGL_CODING_AGENT"] == "claude_code"
 
     def test_rejects_missing_instance_id(self, hooks) -> None:
         hook = hooks.SWEBenchHooks()

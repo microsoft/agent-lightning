@@ -17,7 +17,7 @@
 set -euo pipefail
 
 AGENT_DIR="/agl/agents"
-AGENT_NAME="${AGL_CODING_AGENT:-mini_swe_agent}"
+AGENT_NAME="${AGL_CODING_AGENT:-claude_code}"
 
 echo "=== SWE-bench Agent Entrypoint ==="
 echo "  Agent: $AGENT_NAME"

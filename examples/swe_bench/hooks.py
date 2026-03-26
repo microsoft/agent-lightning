@@ -50,7 +50,7 @@ class SWEBenchHooks(RolloutHooks):
                 "PASS_TO_PASS": test_spec.PASS_TO_PASS,
                 "instance_id": instance_id,
             }),
-            "AGL_CODING_AGENT": os.environ.get("AGL_CODING_AGENT", "mini_swe_agent"),
+            "AGL_CODING_AGENT": os.environ.get("AGL_CODING_AGENT", "claude_code"),
         })
 
         return request

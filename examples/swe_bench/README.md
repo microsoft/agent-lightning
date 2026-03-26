@@ -26,15 +26,14 @@ vLLM (code model)                       2. git diff → post patch
 4. Hook `on_succeeded`: reads test output from disk, grades via `get_eval_report()`
 5. Algorithm reads reward events (resolved/not resolved)
 
-## Coding Agents
+## Coding Agent
 
-Two agents included:
+Uses **Claude Code** (via the Claude CLI) as the coding agent. The agent receives
+the problem statement, explores the repository, and attempts to fix the bug.
 
-- **`mini_swe_agent`** — lightweight Python agent using OpenAI tool_use API.
-  Good for testing and OSS models. Not production-quality.
-- **`claude_code`** — uses the Claude Code CLI. Requires Claude API access.
-
-Set `AGL_CODING_AGENT=mini_swe_agent` or `AGL_CODING_AGENT=claude_code` in your env.
+Configuration via `AGL_CODING_AGENT=claude_code` (default). To add a new agent,
+create `agents/<name>/install.sh` + `agents/<name>/run.sh` and update `run.sh`
+to include the files in the ConfigMap.
 
 ## Prerequisites
 
@@ -82,14 +81,11 @@ examples/swe_bench/
 ├── swebench_samples.jsonl  # 5 sample instances for testing
 └── agents/
     ├── entrypoint.sh       # Shared entrypoint: agent → eval → post artifacts
-    ├── claude_code/        # Claude Code agent scripts
-    │   ├── install.sh
-    │   ├── run.sh
-    │   └── CLAUDE.md
-    └── mini_swe_agent/     # Mini SWE agent scripts
+    └── claude_code/        # Claude Code agent scripts
         ├── install.sh
         ├── run.sh
-        └── agent.py
+        ├── handle_hook.sh
+        └── CLAUDE.md
 ```
 
 ## Configuration
@@ -98,7 +94,7 @@ Key environment variables (set in `deploy/.env`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AGL_CODING_AGENT` | Agent to use (`mini_swe_agent`, `claude_code`) | `mini_swe_agent` |
+| `AGL_CODING_AGENT` | Agent to use (`claude_code`) | `claude_code` |
 | `AGL_MODEL_NAME` | Model name for the agent | — |
 | `AGL_MODEL_ENDPOINT` | vLLM endpoint URL | — |
 | `AGL_BATCH_SIZE` | Instances per batch | `5` |
