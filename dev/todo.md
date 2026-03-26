@@ -519,6 +519,63 @@ get_train_data_batch()
 
 ---
 
+## Math-poc restructuring with hooks [ongoing]
+
+**Goal**: Restructure `examples/math-poc` to use Store Hooks, unify the two rl_loop
+scripts into one, and organize mode-specific files into subfolders.
+
+### Changes
+
+1. **Unified `rl_loop.py`** (~200 lines): task-agnostic orchestration. Registers
+   resources + model, enqueues raw dataset rows as `input`, polls, fetches events
+   (rewards already posted by hooks), logs results. No `build_tasks`, no `compute_reward`.
+
+2. **Mode subfolders** (`mock/`, `vllm/`): each contains mode-specific files:
+   - `hooks.py` — `MathMockHooks` / `MathVllmHooks`
+   - `.env.example` — mode config
+   - `gateway-config.yaml` — param injection (vllm only needs `return_token_ids`)
+   - `job-template.yaml` — pod spec (could differ per mode)
+
+3. **`run.sh`** takes mode argument: `run.sh [mock|vllm]` (default: `vllm`).
+   Reads `.env.example` from the mode subfolder. Passes `--hooks` to `agl-lite serve`.
+
+4. **Hook responsibilities**:
+   - `on_enqueue`: set `config.image`, `config.environment_variables.AGL_TASK_INPUT`
+     (question text for mock with `\boxed{}` embedding, plain question for vllm),
+     `AGL_MODEL_NAME`, stash `ground_truth` in `metadata`.
+   - `on_succeeded`: extract answer from `agent_output` event, compare with
+     `ground_truth` (from `metadata` or `rollout.input`), post reward event.
+
+5. **Shared files** stay at top level: `agents/`, `data/`, `Dockerfile.agent`, `README.md`.
+
+### Files
+
+```
+examples/math-poc/
+├── rl_loop.py                 # unified (replaces mock_rl_loop.py + rl_loop.py)
+├── run.sh                     # run.sh [mock|vllm]
+├── README.md
+├── Dockerfile.agent
+├── agents/
+│   ├── qa_agent.py
+│   └── README.md
+├── data/
+│   └── gsm8k_sample.jsonl
+├── mock/
+│   ├── hooks.py               # MathMockHooks
+│   ├── .env.example
+│   ├── gateway-config.yaml
+│   ├── job-template.yaml
+│   └── k8s-mockai.yaml
+└── vllm/
+    ├── hooks.py               # MathVllmHooks
+    ├── .env.example
+    ├── gateway-config.yaml
+    └── job-template.yaml
+```
+
+---
+
 ## Phase 5: VERL Algorithm Integration
 
 **Goal**: Connect VERL's PPO training loop to agl-lite as the data pipe. agl-lite handles
