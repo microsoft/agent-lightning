@@ -155,9 +155,13 @@ if [ "$CONTROLLER_ONLY" = false ]; then
 fi
 
 echo "--- Deploying controller ---"
+# Annotate the deployment with a hash of the secret + configmap so that
+# changes to either trigger a rolling update automatically.
+CONFIG_HASH=$(echo "${AGL_KEY}${AGL_LITE_URL}" | sha256sum | cut -c1-16)
 kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/k8s.yaml"
-# Restart controller to pick up any secret/configmap changes.
-kubectl -n "$NS" rollout restart deployment/agl-controller 2>/dev/null || true
+kubectl -n "$NS" patch deployment agl-controller \
+    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"agl-lite/config-hash\":\"$CONFIG_HASH\"}}}}}" \
+    >/dev/null 2>&1 || true
 
 # 6. Minikube connectivity fix (--controller-only mode only)
 #    Pods need to resolve host.minikube.internal to reach the external server.
