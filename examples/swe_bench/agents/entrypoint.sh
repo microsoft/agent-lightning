@@ -58,6 +58,7 @@ if [ -n "$AGL_EVENT_URL" ]; then
 
     curl -sf -X POST "$AGL_EVENT_URL" \
         -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${AGL_KEY:-${OPENAI_API_KEY:-}}" \
         -d "{\"event_type\":\"agent_output\",\"data\":{\"patch\":${PATCH_JSON},\"instance_id\":\"${INSTANCE_ID}\",\"patch_size\":${PATCH_SIZE}}}" \
         || echo "WARNING: Failed to post agent_output event"
 fi
@@ -86,6 +87,7 @@ if [ -n "$AGL_EVENT_URL" ] && [ -f "$TEST_OUTPUT_FILE" ]; then
 
     curl -sf -X POST "$AGL_EVENT_URL" \
         -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${AGL_KEY:-${OPENAI_API_KEY:-}}" \
         -d "{\"event_type\":\"artifact\",\"data\":{\"filename\":\"test_output.txt\",\"content\":${TEST_CONTENT}}}" \
         || echo "WARNING: Failed to post test_output artifact"
 fi
