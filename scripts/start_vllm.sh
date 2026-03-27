@@ -4,7 +4,17 @@
 # Usage:
 #   scripts/start_vllm.sh                           # defaults
 #   scripts/start_vllm.sh --model Qwen/Qwen2.5-7B-Instruct --gpu 1
+#   scripts/start_vllm.sh --tool-call-parser hermes  # enable tool use
 #   scripts/start_vllm.sh --stop                     # stop and remove
+#
+# Tool use (required for coding agents like Claude Code):
+#   Claude Code sends tool_choice: "auto" in API requests. vLLM rejects
+#   this unless started with --enable-auto-tool-choice --tool-call-parser.
+#   The parser must match the model's tool call format:
+#     - Qwen2.5 family: hermes
+#     - Llama 3.1+:     llama3_json
+#     - Mistral:        mistral
+#   See: https://docs.vllm.ai/en/latest/features/tool_calling.html
 #
 # Requires: docker, nvidia-container-toolkit
 set -euo pipefail
@@ -15,6 +25,7 @@ PORT="${AGL_VLLM_PORT:-8010}"
 GPU="${AGL_VLLM_GPU:-0}"
 MAX_MODEL_LEN="${AGL_VLLM_MAX_MODEL_LEN:-2048}"
 GPU_MEM_UTIL="${AGL_VLLM_GPU_MEM_UTIL:-0.2}"
+TOOL_CALL_PARSER="${AGL_VLLM_TOOL_CALL_PARSER:-}"
 CONTAINER_NAME="agl-vllm"
 
 # Parse args
@@ -25,6 +36,7 @@ while [[ $# -gt 0 ]]; do
         --gpu) GPU="$2"; shift 2 ;;
         --max-model-len) MAX_MODEL_LEN="$2"; shift 2 ;;
         --gpu-mem) GPU_MEM_UTIL="$2"; shift 2 ;;
+        --tool-call-parser) TOOL_CALL_PARSER="$2"; shift 2 ;;
         --stop)
             echo "Stopping $CONTAINER_NAME..."
             docker stop "$CONTAINER_NAME" 2>/dev/null || true
@@ -46,6 +58,19 @@ echo "  Port:     $PORT (host) → 8000 (container)"
 echo "  GPU:      $GPU"
 echo "  Max len:  $MAX_MODEL_LEN"
 echo "  GPU mem:  $GPU_MEM_UTIL"
+if [ -n "$TOOL_CALL_PARSER" ]; then
+    echo "  Tools:    enabled (parser: $TOOL_CALL_PARSER)"
+fi
+
+# Build vLLM args
+VLLM_ARGS=(
+    --model "$MODEL"
+    --max-model-len "$MAX_MODEL_LEN"
+    --gpu-memory-utilization "$GPU_MEM_UTIL"
+)
+if [ -n "$TOOL_CALL_PARSER" ]; then
+    VLLM_ARGS+=(--enable-auto-tool-choice --tool-call-parser "$TOOL_CALL_PARSER")
+fi
 
 docker run -d --name "$CONTAINER_NAME" \
     --gpus "\"device=$GPU\"" \
@@ -54,9 +79,7 @@ docker run -d --name "$CONTAINER_NAME" \
     -e HF_HOME=/root/.cache/huggingface \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     vllm/vllm-openai:latest \
-    --model "$MODEL" \
-    --max-model-len "$MAX_MODEL_LEN" \
-    --gpu-memory-utilization "$GPU_MEM_UTIL"
+    "${VLLM_ARGS[@]}"
 
 echo ""
 echo "Waiting for vLLM to be ready..."
