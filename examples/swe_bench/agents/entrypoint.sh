@@ -3,13 +3,12 @@
 #
 # Runs inside the official SWE-bench Docker image at /testbed.
 # Dispatches to the agent specified by AGL_CODING_AGENT env var,
-# then runs eval_script, grades, posts reward, and archives outputs.
+# then runs eval_script, and hands off to grade.py for reporting.
 #
 # Output flow:
-#   1. All outputs written to local OUTPUT_DIR first
-#   2. grade.py reads from OUTPUT_DIR, posts reward event
+#   1. All outputs written to OUTPUT_DIR (patch.diff, test_output.txt)
+#   2. grade.py posts agent_output event, grades, posts reward event
 #   3. Shell copies OUTPUT_DIR → ARTIFACT_DIR for archival
-#   4. agent_output event reports artifact_path (relative to ARTIFACT_ROOT)
 #
 # Expected env vars (set by hook via on_enqueue):
 #   AGL_TASK_INPUT      — problem statement
@@ -49,7 +48,6 @@ cd /testbed
 # ── Phase 1: Install + run the coding agent ──────────────────────
 echo "--- Phase 1: Agent ---"
 
-# Agent scripts are mounted flat: <agent_name>--<script>.sh
 if [ -f "$AGENT_DIR/${AGENT_NAME}--install.sh" ]; then
     echo "Installing agent: $AGENT_NAME"
     bash "$AGENT_DIR/${AGENT_NAME}--install.sh"
@@ -67,80 +65,35 @@ fi
 # ── Phase 2: Capture patch ───────────────────────────────────────
 echo "--- Phase 2: Capture patch ---"
 
-PATCH_FILE="$OUTPUT_DIR/patch.diff"
-git -c core.fileMode=false diff HEAD > "$PATCH_FILE" 2>/dev/null || echo -n "" > "$PATCH_FILE"
-PATCH_SIZE=$(wc -c < "$PATCH_FILE")
-echo "Patch size: $PATCH_SIZE bytes"
+git -c core.fileMode=false diff HEAD > "$OUTPUT_DIR/patch.diff" 2>/dev/null || true
+echo "Patch size: $(wc -c < "$OUTPUT_DIR/patch.diff") bytes"
 
 # ── Phase 3: Run eval_script ─────────────────────────────────────
 echo "--- Phase 3: Evaluate ---"
 
-TEST_OUTPUT_FILE="$OUTPUT_DIR/test_output.txt"
-
 if [ -n "${AGL_EVAL_SCRIPT:-}" ]; then
     echo "$AGL_EVAL_SCRIPT" > /tmp/eval.sh
     chmod +x /tmp/eval.sh
-    # Run eval script, capture output (allow failure — we just capture the log).
-    bash /tmp/eval.sh > "$TEST_OUTPUT_FILE" 2>&1 || true
-    echo "Test output: $(wc -c < "$TEST_OUTPUT_FILE") bytes"
+    bash /tmp/eval.sh > "$OUTPUT_DIR/test_output.txt" 2>&1 || true
+    echo "Test output: $(wc -c < "$OUTPUT_DIR/test_output.txt") bytes"
 else
     echo "WARNING: No AGL_EVAL_SCRIPT set, skipping evaluation"
-    echo "No eval script provided" > "$TEST_OUTPUT_FILE"
+    echo "No eval script provided" > "$OUTPUT_DIR/test_output.txt"
 fi
 
-# ── Phase 4: Grade + post reward ─────────────────────────────────
-echo "--- Phase 4: Grade + Reward ---"
+# ── Phase 4: Report + Grade ──────────────────────────────────────
+echo "--- Phase 4: Report + Grade ---"
 
-# Install swebench for grading (~0.9MB, pure Python).
 python3 -m pip install swebench -q 2>/dev/null || python3 -m pip install swebench 2>&1 | tail -1
 
-python3 /agl/agents/grade.py "$TEST_OUTPUT_FILE"
+python3 /agl/agents/grade.py "$OUTPUT_DIR" "${ROLLOUT_ID}/${ATTEMPT_ID}"
 
-# ── Phase 5: Archive outputs + post agent_output event ───────────
+# ── Phase 5: Archive outputs ─────────────────────────────────────
 echo "--- Phase 5: Archive ---"
 
-# Copy local outputs to shared volume.
 mkdir -p "$ARTIFACT_DIR"
 cp -r "$OUTPUT_DIR"/. "$ARTIFACT_DIR"/ 2>/dev/null \
     && echo "Archived outputs to $ARTIFACT_DIR" \
     || echo "WARNING: Failed to archive outputs (volume not mounted?)"
-
-# Post agent_output event with patch summary and artifact path.
-if [ -n "${AGL_EVENT_URL:-}" ]; then
-    INSTANCE_ID=$(echo "${AGL_EVAL_META:-{}}" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('instance_id',''))" 2>/dev/null || echo "")
-    REL_PATH="${ROLLOUT_ID}/${ATTEMPT_ID}"
-
-    # Read patch content for the event (may be large, pipe via stdin).
-    PATCH_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < "$PATCH_FILE")
-
-    python3 -c "
-import json, os, sys, urllib.request
-
-payload = json.dumps({
-    'event_type': 'agent_output',
-    'data': {
-        'patch': json.loads(sys.argv[1]),
-        'instance_id': sys.argv[2],
-        'patch_size': int(sys.argv[3]),
-        'artifact_path': sys.argv[4],
-    },
-}).encode()
-
-req = urllib.request.Request(
-    os.environ['AGL_EVENT_URL'],
-    data=payload,
-    headers={
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {os.environ.get(\"AGL_KEY\", os.environ.get(\"OPENAI_API_KEY\", \"\"))}',
-    },
-    method='POST',
-)
-try:
-    urllib.request.urlopen(req, timeout=30)
-except Exception as e:
-    print(f'WARNING: Failed to post agent_output event: {e}')
-" "$PATCH_JSON" "$INSTANCE_ID" "$PATCH_SIZE" "$REL_PATH" \
-    || echo "WARNING: Failed to post agent_output event"
-fi
 
 echo "=== Entrypoint complete ==="

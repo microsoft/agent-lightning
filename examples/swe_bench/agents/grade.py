@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""SWE-bench grading and reward posting.
+"""SWE-bench grading and event reporting.
 
-Grades test output using official swebench get_eval_report(),
-posts a reward event to the agl-lite server.
+Reads outputs from a local directory, posts agent_output event
+(patch summary), then grades test output and posts reward event.
 
 Usage:
-    python3 grade.py <test_output_path>
+    python3 grade.py <output_dir> <artifact_path>
+
+Arguments:
+    output_dir     — local directory containing patch.diff and test_output.txt
+    artifact_path  — relative path (rollout_id/attempt_id) for artifact location
 
 Expected env vars:
     AGL_EVAL_META   — JSON with instance_id, repo, version, FAIL_TO_PASS, PASS_TO_PASS
@@ -16,8 +20,48 @@ Expected env vars:
 import json
 import os
 import sys
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
+
+
+def post_event(event_type: str, data: dict) -> None:
+    """Post an event to the agl-lite server."""
+    event_url = os.environ.get("AGL_EVENT_URL", "")
+    if not event_url:
+        print(f"WARNING: AGL_EVENT_URL not set, skipping {event_type} event")
+        return
+
+    api_key = os.environ.get("AGL_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    payload = json.dumps({"event_type": event_type, "data": data}).encode()
+
+    req = urllib.request.Request(
+        event_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+
+    try:
+        urllib.request.urlopen(req, timeout=30)
+    except Exception as e:
+        print(f"WARNING: Failed to post {event_type} event: {e}")
+
+
+def report_agent_output(output_dir: Path, artifact_path: str, instance_id: str) -> None:
+    """Post agent_output event with patch content and artifact path."""
+    patch_file = output_dir / "patch.diff"
+    patch = patch_file.read_text() if patch_file.exists() else ""
+
+    post_event("agent_output", {
+        "patch": patch,
+        "instance_id": instance_id,
+        "patch_size": len(patch),
+        "artifact_path": artifact_path,
+    })
 
 
 def grade(test_output_path: str, eval_meta: dict) -> dict:
@@ -63,62 +107,36 @@ def grade(test_output_path: str, eval_meta: dict) -> dict:
         return {"reward": 0.0, "resolved": False, "reason": f"grading error: {e}"}
 
 
-def post_reward(result: dict) -> None:
-    """Post reward event to agl-lite server."""
-    import urllib.request
-
-    event_url = os.environ.get("AGL_EVENT_URL", "")
-    if not event_url:
-        print("WARNING: AGL_EVENT_URL not set, skipping reward post")
-        return
-
-    api_key = os.environ.get("AGL_KEY") or os.environ.get("OPENAI_API_KEY", "")
-    eval_meta = json.loads(os.environ.get("AGL_EVAL_META", "{}"))
-    instance_id = eval_meta.get("instance_id", "")
-
-    payload = json.dumps({
-        "event_type": "reward",
-        "data": {
-            "value": result["reward"],
-            "resolved": result["resolved"],
-            "instance_id": instance_id,
-            "reason": result["reason"],
-        },
-    }).encode()
-
-    req = urllib.request.Request(
-        event_url,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
-
-    try:
-        urllib.request.urlopen(req, timeout=30)
-    except Exception as e:
-        print(f"WARNING: Failed to post reward event: {e}")
-
-
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: grade.py <test_output_path>", file=sys.stderr)
+    if len(sys.argv) < 3:
+        print("Usage: grade.py <output_dir> <artifact_path>", file=sys.stderr)
         sys.exit(1)
 
-    test_output_path = sys.argv[1]
+    output_dir = Path(sys.argv[1])
+    artifact_path = sys.argv[2]
 
     eval_meta_raw = os.environ.get("AGL_EVAL_META", "")
-    if not eval_meta_raw or not Path(test_output_path).exists():
+    eval_meta = json.loads(eval_meta_raw) if eval_meta_raw else {}
+    instance_id = eval_meta.get("instance_id", "")
+
+    # 1. Report agent output (patch summary + artifact path).
+    report_agent_output(output_dir, artifact_path, instance_id)
+
+    # 2. Grade test output and post reward.
+    test_output_path = output_dir / "test_output.txt"
+    if not eval_meta or not test_output_path.exists():
         print("Skipping grading: no test output or eval meta")
         result = {"reward": 0.0, "resolved": False, "reason": "no test output or eval meta"}
     else:
-        eval_meta = json.loads(eval_meta_raw)
-        result = grade(test_output_path, eval_meta)
+        result = grade(str(test_output_path), eval_meta)
 
     print(f"Grade: reward={result['reward']} resolved={result['resolved']} reason={result['reason']}")
-    post_reward(result)
+    post_event("reward", {
+        "value": result["reward"],
+        "resolved": result["resolved"],
+        "instance_id": instance_id,
+        "reason": result["reason"],
+    })
 
 
 if __name__ == "__main__":
