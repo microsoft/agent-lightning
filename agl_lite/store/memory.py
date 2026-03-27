@@ -56,7 +56,7 @@ class InMemoryStore:
         self._latest_resources_id: str | None = None
         self._models: dict[str, dict[str, ModelServer]] = {}
         self._hooks = hooks
-        self._artifact_dir = Path(artifact_dir) if artifact_dir else Path("/tmp/agl-artifacts")
+        self._artifact_dir = Path(artifact_dir) if artifact_dir else Path("artifacts")
 
     # ── Rollout management ───────────────────────────────────────────
 

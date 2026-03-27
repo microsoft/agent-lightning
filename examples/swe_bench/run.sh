@@ -104,7 +104,6 @@ AGL_CODING_AGENT="$AGL_CODING_AGENT" \
     --host 0.0.0.0 --port 8080 \
     --gateway-config "$SCRIPT_DIR/gateway-config.yaml" \
     --hooks "$SCRIPT_DIR/hooks.py" \
-    --artifact-dir "/tmp/agl-artifacts" \
     > /tmp/agl-lite-swebench.log 2>&1 &
 SERVER_PID=$!
 

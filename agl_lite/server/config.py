@@ -13,6 +13,6 @@ class ServerSettings(BaseSettings):
     agl_key: str = ""  # AGL_KEY — shared API key; empty = auth disabled
     gateway_config: str = ""  # path to gateway YAML config; empty = no routes (passthrough only)
     hooks: str = ""  # path to Python module with RolloutHooks subclass; empty = no hooks
-    artifact_dir: str = ""  # directory for artifact files; empty = /tmp/agl-artifacts
+    artifact_dir: str = ""  # directory for artifact files; empty = ./artifacts
 
     model_config = {"env_prefix": ""}
