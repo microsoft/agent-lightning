@@ -133,6 +133,7 @@ def build_job_spec(
         {"name": "OPENAI_BASE_URL", "value": f"{gateway_base}/v1"},
         {"name": "ANTHROPIC_BASE_URL", "value": gateway_base},
         {"name": "AGL_EVENT_URL", "value": event_url},
+        {"name": "AGL_ROLLOUT_ID", "value": rollout.rollout_id},
     ]
 
     # User-specified env vars from rollout config.

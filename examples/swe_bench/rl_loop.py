@@ -6,11 +6,11 @@ Algorithm contract — for each rollout, the algorithm only sets:
   - resources_id: link to the registered resource snapshot (job_template)
   - metadata:     algorithm control indexes (batch_idx, sample_idx_in_batch)
 
-Everything else is handled by hooks loaded into the agl-lite server:
-  - on_enqueue:   reads input, sets per-instance Docker image, generates eval_script,
-                  injects env vars (AGL_TASK_INPUT, AGL_EVAL_SCRIPT, AGL_EVAL_META)
-  - on_succeeded: reads test_output artifact from disk, grades using official
-                  swebench get_eval_report(), posts reward event
+Everything else is handled by hooks and the container:
+  - on_enqueue hook: reads input, sets per-instance Docker image, generates eval_script,
+                     injects env vars (AGL_TASK_INPUT, AGL_EVAL_SCRIPT, AGL_EVAL_META)
+  - container:       runs agent, evaluates, grades via official swebench tools,
+                     posts small reward event, archives test log to hostPath
 
 Usage:
     export AGL_LITE_URL=http://localhost:8080
@@ -138,7 +138,7 @@ async def run_iteration(
     for r in failed:
         log(f"    FAILED: {r.rollout_id} -- {r.error_message}")
 
-    # Collect results from events (rewards posted by on_succeeded hook)
+    # Collect results from events (rewards posted by container grading)
     resolved_count = 0
     total_rollouts = len(succeeded) + len(failed)
 

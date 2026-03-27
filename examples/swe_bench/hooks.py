@@ -3,19 +3,17 @@
 on_enqueue:  set per-instance Docker image, generate eval_script,
              inject env vars (AGL_TASK_INPUT, AGL_EVAL_SCRIPT, AGL_EVAL_META).
 
-on_succeeded: read test_output artifact from disk, grade using official
-              swebench get_eval_report(), post reward event.
+on_succeeded / on_failed: post zero-reward fallback if container didn't post one.
+  Grading is done in the container using official swebench tools.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 from typing import Any
 
-from swebench.harness.grading import get_eval_report
-from swebench.harness.test_spec.test_spec import TestSpec, make_test_spec
+from swebench.harness.test_spec.test_spec import make_test_spec
 
 from agl_lite.hooks import RolloutHooks
 from agl_lite.schemas.api import EnqueueRolloutRequest
@@ -49,6 +47,8 @@ class SWEBenchHooks(RolloutHooks):
                 "FAIL_TO_PASS": test_spec.FAIL_TO_PASS,
                 "PASS_TO_PASS": test_spec.PASS_TO_PASS,
                 "instance_id": instance_id,
+                "repo": instance.get("repo", ""),
+                "version": instance.get("version", ""),
             }),
             "AGL_CODING_AGENT": os.environ.get("AGL_CODING_AGENT", "claude_code"),
         })
@@ -56,52 +56,20 @@ class SWEBenchHooks(RolloutHooks):
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
-        instance = rollout.input
-        if not isinstance(instance, dict):
-            return
-        instance_id = instance.get("instance_id", "")
+        """Post fallback reward if container didn't post one."""
+        if self._has_reward_event(events):
+            return  # Container already posted reward — nothing to do.
 
-        # 1. Extract patch from agent_output event.
-        patch = self._extract_patch(events)
+        instance_id = ""
+        if isinstance(rollout.input, dict):
+            instance_id = rollout.input.get("instance_id", "")
 
-        # 2. Find test_output artifact (written to disk by store).
-        artifact_path = self._find_artifact(events, "test_output.txt")
-
-        # 3. Grade using official swebench tools.
-        reward = 0.0
-        resolved = False
-        reason = "no artifact"
-
-        if artifact_path and Path(artifact_path).exists():
-            try:
-                test_spec = make_test_spec(instance)
-                prediction = {
-                    "instance_id": instance_id,
-                    "model_patch": patch or "",
-                    "model_name_or_path": "agl-lite",
-                }
-                report = get_eval_report(
-                    test_spec=test_spec,
-                    prediction=prediction,
-                    test_log_path=artifact_path,
-                    include_tests_status=True,
-                )
-                resolved = report.get(instance_id, {}).get("resolved", False)
-                reward = 1.0 if resolved else 0.0
-                reason = "resolved" if resolved else "not resolved"
-            except Exception as e:
-                reason = f"grading error: {e}"
-        elif patch is None:
-            reason = "no patch"
-
-        # 4. Post reward event.
         attempt_id = rollout.succeeded_attempt_id or "unknown"
         store.add_event(rollout.rollout_id, attempt_id, "reward", {
-            "value": reward,
-            "resolved": resolved,
+            "value": 0.0,
+            "resolved": False,
             "instance_id": instance_id,
-            "patch_size": len(patch) if patch else 0,
-            "reason": reason,
+            "reason": "no reward event from container",
         })
 
     def on_failed(self, rollout: Rollout, store: InMemoryStore) -> None:
@@ -117,19 +85,10 @@ class SWEBenchHooks(RolloutHooks):
         })
 
     @staticmethod
-    def _extract_patch(events: dict[str, list[Any]]) -> str | None:
-        """Extract patch from the latest agent_output event."""
+    def _has_reward_event(events: dict[str, list[Any]]) -> bool:
+        """Check if any attempt has a reward event."""
         for attempt_events in events.values():
             for evt in attempt_events:
-                if evt.event_type == "agent_output" and "patch" in evt.data:
-                    return evt.data["patch"]
-        return None
-
-    @staticmethod
-    def _find_artifact(events: dict[str, list[Any]], filename: str) -> str | None:
-        """Find artifact file path by filename."""
-        for attempt_events in events.values():
-            for evt in attempt_events:
-                if evt.event_type == "artifact" and evt.data.get("filename") == filename:
-                    return evt.data.get("path")
-        return None
+                if evt.event_type == "reward":
+                    return True
+        return False

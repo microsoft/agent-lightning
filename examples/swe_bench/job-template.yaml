@@ -1,9 +1,10 @@
 # K8s Pod spec for SWE-bench agent jobs.
 #
 # Image is overridden per-rollout by the hook (sweb.eval.x86_64.<id>:latest).
-# The entrypoint runs agent → eval → post artifacts.
+# The entrypoint runs agent → eval → grade → post reward → archive logs.
 #
 # Agent scripts are mounted from a ConfigMap (created by run.sh).
+# Test logs are archived to a hostPath volume for debugging.
 
 containers:
   - name: agent
@@ -20,12 +21,18 @@ containers:
       - name: agent-scripts
         mountPath: /agl/agents
         readOnly: true
+      - name: artifacts
+        mountPath: /data/artifacts
 
 volumes:
   - name: agent-scripts
     configMap:
       name: swe-agent-scripts
       defaultMode: 0755
+  - name: artifacts
+    hostPath:
+      path: /data/agl-artifacts
+      type: DirectoryOrCreate
 
-# 90 minutes timeout for agent + evaluation.
+# 90 minutes timeout for agent + evaluation + grading.
 activeDeadlineSeconds: 5400
