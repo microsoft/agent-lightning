@@ -41,8 +41,7 @@ def grade(test_output_path: str, eval_meta: dict) -> dict:
     try:
         from swebench.harness.grading import get_eval_report
     except ImportError:
-        os.system("pip install swebench -q")
-        from swebench.harness.grading import get_eval_report
+        raise ImportError("swebench not installed — run: python3 -m pip install swebench")
 
     prediction = {
         "instance_id": instance_id,
