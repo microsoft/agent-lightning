@@ -140,10 +140,11 @@ class SWEBenchHooks(RolloutHooks):
 This requires the `swebench` package installed on the server (via custom Dockerfile).
 `make_test_spec()` is CPU-only, ~ms per call — safe for sync hooks.
 
-#### (B) Container: agent execution + evaluation (no grading)
+#### (B) Container: agent execution + evaluation + grading
 
-The container runs the coding agent and evaluation, then posts raw artifacts.
-**Grading happens in the hook**, not in the container.
+The container runs the full pipeline: coding agent, evaluation, and grading.
+It posts a small reward event via HTTP. Large artifacts (test logs) are written
+to a hostPath volume for debugging — they never flow through the HTTP API.
 
 ```bash
 # entrypoint.sh (runs inside SWE-bench Docker image at /testbed)
@@ -161,12 +162,20 @@ curl -X POST "$AGL_EVENT_URL" \
 echo "$AGL_EVAL_SCRIPT" > /tmp/eval.sh
 bash /tmp/eval.sh > /tmp/test_output.txt 2>&1
 
-# Phase 4: Post test output as artifact (large file, stored on disk by server)
-curl -X POST "$AGL_EVENT_URL" \
-  -d '{"event_type":"artifact","data":{"filename":"test_output.txt","content":"..."}}'
+# Phase 4: Grade using official swebench tools
+pip install swebench  # ~0.9MB, pure Python
+python3 grade.py      # calls get_eval_report(), posts reward event
+
+# Phase 5: Archive test log to shared volume (debugging only)
+cp /tmp/test_output.txt /data/artifacts/${AGL_ROLLOUT_ID}/test_output.txt
 ```
 
-The container does NOT grade — it posts the raw test output as an `artifact` event.
+**Why grade in the container** (not in the hook):
+- Container already has the test output in memory — no round-trip
+- Avoids pushing large artifacts (100KB–10MB) through the HTTP API
+- Hook stays lightweight — no file I/O, no remote filesystem access
+- Still uses official `get_eval_report()` — credible, maintained
+- Only a small reward event (~200B) flows through HTTP
 
 **Why single-container works** (traced from `swebench.harness`):
 - `eval_script` only touches **test files** (from `test_patch`), not source files
@@ -174,59 +183,39 @@ The container does NOT grade — it posts the raw test output as an `artifact` e
 - `eval_script` is self-contained (conda env, repo, deps pre-installed in image)
 - `make_test_spec()` only needs the dataset instance, not agent output — pre-generated in hook
 
-#### (C) Hook: `on_succeeded` — grading via official swebench tools
+#### (C) Hook: `on_succeeded` — lightweight post-processing
 
-The `on_succeeded` hook reads artifacts from disk and grades using official swebench:
+With grading moved to the container, `on_succeeded` is trivial or empty.
+The reward event is already posted by the container. The hook may do lightweight
+aggregation or validation if needed, but performs no file I/O.
 
-```python
-def on_succeeded(self, rollout, events, store):
-    # 1. Read test output from artifact (written to disk by store)
-    artifact_path = self._find_artifact(events, "test_output.txt")
-    test_log = Path(artifact_path).read_text()   # ~μs, local disk
+#### (D) Artifact storage — hostPath volume for debugging
 
-    # 2. Reconstruct TestSpec from rollout.input
-    test_spec = make_test_spec(rollout.input)
+Test output logs can be large (100KB–10MB). Instead of flowing through the HTTP
+API (which hit shell argument limits and bloats the store), they are written
+directly to a hostPath volume shared between agent pods.
 
-    # 3. Extract patch from agent_output event
-    patch = self._extract_patch(events)
-
-    # 4. Grade using official swebench
-    report = get_eval_report(
-        test_spec=test_spec,
-        prediction={"instance_id": ..., "model_patch": patch, ...},
-        test_log_path=artifact_path,
-        include_tests_status=True,
-    )
-    resolved = report[instance_id]["resolved"]
-
-    # 5. Post reward event
-    store.add_event(rollout.rollout_id, attempt_id, "reward", {
-        "value": 1.0 if resolved else 0.0,
-        "resolved": resolved,
-        "instance_id": instance_id,
-    })
+```yaml
+# job-template.yaml
+volumes:
+  - name: artifacts
+    hostPath:
+      path: /data/agl-artifacts
+      type: DirectoryOrCreate
+containers:
+  - name: agent
+    volumeMounts:
+      - name: artifacts
+        mountPath: /data/artifacts
 ```
 
-**Why grade in the hook** (not in the container):
-- Uses official `get_eval_report()` — credible, maintained, no reimplementation
-- Grading logic is testable Python, not bash
-- Container stays simple: just run agent + eval + post artifacts
-- `swebench` package only needed on server, not baked into every SWE-bench image
+The server does NOT read these files. They exist purely for debugging and archival
+(e.g., `kubectl exec`, node filesystem browsing, log aggregation pipelines).
 
-#### (D) Artifact events — large file handling
-
-Test output logs can be large (100KB–10MB). Storing them in-memory as regular events
-would bloat the store. Instead, `artifact` is a special event type:
-
-- **Store handling**: When `event_type == "artifact"`, the store writes
-  `data["content"]` to disk (`<artifact_dir>/<rollout_id>/<filename>`) and replaces
-  the event data with a lightweight reference (`{filename, path, size}`).
-- **Hook access**: `on_succeeded` reads artifacts from disk (fits sync constraint).
-- **Archiving**: Artifact content is skipped when archiving to JSONL. The files
-  persist on disk alongside the archive. (Details deferred to backlog.)
-
-Implementation: ~15 lines in `InMemoryStore.add_event()`, configurable via
-`--artifact-dir` (default: `/data/agl-artifacts/`).
+The store's `artifact` event type is removed — no large payloads through the API.
+The only events posted by the container are:
+- `agent_output`: small JSON with patch and instance_id (~10KB)
+- `reward`: small JSON with value, resolved, instance_id (~200B)
 
 #### (E) Coding agent scripts (pluggable)
 
@@ -306,7 +295,7 @@ examples/swe_bench/
 ├── run.sh                             # one-command E2E runner
 ├── swebench_samples.jsonl             # small dataset for smoke testing
 ├── agents/
-│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → post artifacts
+│   ├── entrypoint.sh                  # shared entrypoint: agent → eval → grade → archive
 │   ├── claude_code/
 │   │   ├── install.sh                 # install claude CLI
 │   │   ├── run.sh                     # run claude code
@@ -318,15 +307,35 @@ examples/swe_bench/
 
 Core changes needed:
 ```
-agl_lite/store/memory.py               # artifact event handling (~15 lines)
-agl_lite/server/config.py              # --artifact-dir setting
 scripts/deploy.sh                      # --controller-only, CoreDNS auto-patch (done)
 ```
 
+### E2E Status
+
+Infrastructure verified working:
+- [x] Gateway proxies Claude Code → vLLM (Anthropic `/v1/messages` API, model name rewrite)
+- [x] vLLM tool support (`--enable-auto-tool-choice --tool-call-parser hermes`)
+- [x] `ANTHROPIC_BASE_URL` set without `/v1` suffix (SDK appends `/v1/messages`)
+- [x] Auth headers on event POSTs from container
+- [x] Namespace cleanup before each run
+- [x] ConfigMap for agent scripts (flat key naming)
+- [x] CoreDNS patch for `host.minikube.internal`
+- [x] Agent pod runs, Claude Code iterates (22 API calls, 0 errors)
+- [x] Patch captured (10KB), rollout succeeds
+
+Remaining:
+- [ ] Move grading into container (install swebench, call `get_eval_report()`, post reward event)
+- [ ] Remove artifact event posting from entrypoint (replace with hostPath write)
+- [ ] Add hostPath volume to job-template.yaml for test log archival
+- [ ] Simplify `on_succeeded` hook (remove file I/O, grading logic)
+- [ ] Remove artifact event support from store (no longer needed)
+- [ ] Verify full E2E with grading (reward event posted by container)
+
 ### Open Questions
 
-1. **Timeout budget**: Agent + evaluation share one `activeDeadlineSeconds`. Agent may take
-   30–60 min, evaluation 5–30 min. Default 90 min? Configurable via `AGL_TIMEOUT` env var.
+1. **Timeout budget**: Agent + evaluation + grading share one `activeDeadlineSeconds`.
+   Agent may take 30–60 min, evaluation 5–30 min, grading ~seconds.
+   Default 90 min? Configurable via `AGL_TIMEOUT` env var.
 
 2. ~~**eval_script size in env var**~~: **Resolved** — verified 1.6–8.3 KB across samples,
    `AGL_EVAL_META` maxes ~50 KB. K8s limit 1 MB total — safe for all instances.
@@ -339,12 +348,12 @@ scripts/deploy.sh                      # --controller-only, CoreDNS auto-patch (
    how to build them (`python -m swebench.harness.docker_build ...`). For minikube,
    build inside minikube's Docker daemon.
 
-5. ~~**`swebench` package on server**~~: **Resolved** — package is 0.9 MB, pure Python.
-   `make_test_spec()` is pure CPU (~ms, no Docker/network calls).
-   `get_eval_report()` reads from file path via `open()`. Both safe for sync hooks.
+5. ~~**`swebench` package on server**~~: ~~Resolved~~ **Revised** — `swebench` package
+   now installed in the container (not the server). `make_test_spec()` still runs in
+   the hook (`on_enqueue`). `get_eval_report()` runs in the container.
 
-6. **Artifact archiving**: Artifact files persist on disk but are skipped in JSONL archive.
-   Future work: configurable retention, cleanup policy, S3/GCS upload. (Backlog.)
+6. ~~**Artifact archiving**~~: **Resolved** — artifacts written to hostPath volume for
+   debugging only. Not part of the data flow. No artifact events in the store.
 
 ---
 
