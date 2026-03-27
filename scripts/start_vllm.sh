@@ -26,6 +26,7 @@ GPU="${AGL_VLLM_GPU:-0}"
 MAX_MODEL_LEN="${AGL_VLLM_MAX_MODEL_LEN:-}"
 GPU_MEM_UTIL="${AGL_VLLM_GPU_MEM_UTIL:-0.2}"
 TOOL_CALL_PARSER="${AGL_VLLM_TOOL_CALL_PARSER:-hermes}"
+TENSOR_PARALLEL="${AGL_VLLM_TENSOR_PARALLEL:-}"
 CONTAINER_NAME="agl-vllm"
 
 # Parse args
@@ -37,6 +38,7 @@ while [[ $# -gt 0 ]]; do
         --max-model-len) MAX_MODEL_LEN="$2"; shift 2 ;;
         --gpu-mem) GPU_MEM_UTIL="$2"; shift 2 ;;
         --tool-call-parser) TOOL_CALL_PARSER="$2"; shift 2 ;;
+        --tensor-parallel) TENSOR_PARALLEL="$2"; shift 2 ;;
         --stop)
             echo "Stopping $CONTAINER_NAME..."
             docker stop "$CONTAINER_NAME" 2>/dev/null || true
@@ -60,6 +62,9 @@ echo "  GPU mem:  $GPU_MEM_UTIL"
 if [ -n "$MAX_MODEL_LEN" ]; then
     echo "  Max len:  $MAX_MODEL_LEN"
 fi
+if [ -n "$TENSOR_PARALLEL" ]; then
+    echo "  TP:       $TENSOR_PARALLEL"
+fi
 if [ -n "$TOOL_CALL_PARSER" ]; then
     echo "  Tools:    enabled (parser: $TOOL_CALL_PARSER)"
 fi
@@ -71,6 +76,9 @@ VLLM_ARGS=(
 )
 if [ -n "$MAX_MODEL_LEN" ]; then
     VLLM_ARGS+=(--max-model-len "$MAX_MODEL_LEN")
+fi
+if [ -n "$TENSOR_PARALLEL" ]; then
+    VLLM_ARGS+=(--tensor-parallel-size "$TENSOR_PARALLEL")
 fi
 if [ -n "$TOOL_CALL_PARSER" ]; then
     VLLM_ARGS+=(--enable-auto-tool-choice --tool-call-parser "$TOOL_CALL_PARSER")

@@ -83,12 +83,16 @@ fi
 echo "--- Phase 4: Post artifacts ---"
 
 if [ -n "$AGL_EVENT_URL" ] && [ -f "$TEST_OUTPUT_FILE" ]; then
-    TEST_CONTENT=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < "$TEST_OUTPUT_FILE")
-
-    curl -sf -X POST "$AGL_EVENT_URL" \
+    # Build JSON payload via Python and pipe to curl (avoids shell arg length limits for large files).
+    python3 -c "
+import json, sys
+content = open('$TEST_OUTPUT_FILE').read()
+payload = json.dumps({'event_type': 'artifact', 'data': {'filename': 'test_output.txt', 'content': content}})
+sys.stdout.write(payload)
+" | curl -sf -X POST "$AGL_EVENT_URL" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${AGL_KEY:-${OPENAI_API_KEY:-}}" \
-        -d "{\"event_type\":\"artifact\",\"data\":{\"filename\":\"test_output.txt\",\"content\":${TEST_CONTENT}}}" \
+        --data-binary @- \
         || echo "WARNING: Failed to post test_output artifact"
 fi
 
