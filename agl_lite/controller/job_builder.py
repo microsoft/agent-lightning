@@ -131,7 +131,7 @@ def build_job_spec(
             "valueFrom": {"secretKeyRef": {"name": settings.secret_name, "key": "AGL_KEY", "optional": True}},
         },
         {"name": "OPENAI_BASE_URL", "value": f"{gateway_base}/v1"},
-        {"name": "ANTHROPIC_BASE_URL", "value": f"{gateway_base}/v1"},
+        {"name": "ANTHROPIC_BASE_URL", "value": gateway_base},
         {"name": "AGL_EVENT_URL", "value": event_url},
     ]
 
