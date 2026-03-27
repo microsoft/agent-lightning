@@ -156,8 +156,6 @@ fi
 
 echo "--- Deploying controller ---"
 kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/k8s.yaml"
-# Restart controller to pick up any secret/configmap changes.
-kubectl -n "$NS" rollout restart deployment/agl-controller 2>/dev/null || true
 
 # 6. Minikube connectivity fix (--controller-only mode only)
 #    Pods need to resolve host.minikube.internal to reach the external server.
