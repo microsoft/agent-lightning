@@ -23,7 +23,7 @@ set -euo pipefail
 MODEL="${AGL_MODEL_NAME:-Qwen/Qwen2.5-1.5B-Instruct}"
 PORT="${AGL_VLLM_PORT:-8010}"
 GPU="${AGL_VLLM_GPU:-0}"
-MAX_MODEL_LEN="${AGL_VLLM_MAX_MODEL_LEN:-2048}"
+MAX_MODEL_LEN="${AGL_VLLM_MAX_MODEL_LEN:-}"
 GPU_MEM_UTIL="${AGL_VLLM_GPU_MEM_UTIL:-0.2}"
 TOOL_CALL_PARSER="${AGL_VLLM_TOOL_CALL_PARSER:-}"
 CONTAINER_NAME="agl-vllm"
@@ -56,8 +56,10 @@ echo "=== Starting vLLM ==="
 echo "  Model:    $MODEL"
 echo "  Port:     $PORT (host) → 8000 (container)"
 echo "  GPU:      $GPU"
-echo "  Max len:  $MAX_MODEL_LEN"
 echo "  GPU mem:  $GPU_MEM_UTIL"
+if [ -n "$MAX_MODEL_LEN" ]; then
+    echo "  Max len:  $MAX_MODEL_LEN"
+fi
 if [ -n "$TOOL_CALL_PARSER" ]; then
     echo "  Tools:    enabled (parser: $TOOL_CALL_PARSER)"
 fi
@@ -65,9 +67,11 @@ fi
 # Build vLLM args
 VLLM_ARGS=(
     --model "$MODEL"
-    --max-model-len "$MAX_MODEL_LEN"
     --gpu-memory-utilization "$GPU_MEM_UTIL"
 )
+if [ -n "$MAX_MODEL_LEN" ]; then
+    VLLM_ARGS+=(--max-model-len "$MAX_MODEL_LEN")
+fi
 if [ -n "$TOOL_CALL_PARSER" ]; then
     VLLM_ARGS+=(--enable-auto-tool-choice --tool-call-parser "$TOOL_CALL_PARSER")
 fi
