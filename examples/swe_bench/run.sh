@@ -41,6 +41,22 @@ echo "  Namespace: $NS"
 echo "  Model: ${AGL_MODEL_NAME:-not set}"
 echo "  Agent: $AGL_CODING_AGENT"
 
+# --- Clean up previous run ---
+echo ""
+echo "--- Cleanup previous run ---"
+pkill -f "agl-lite serve" 2>/dev/null || true
+if kubectl get namespace "$NS" >/dev/null 2>&1; then
+    echo "  Deleting namespace $NS..."
+    kubectl delete namespace "$NS" --wait --timeout=60s 2>/dev/null || \
+        kubectl delete namespace "$NS" --force --grace-period=0 2>/dev/null || true
+    # Wait until fully gone
+    for i in $(seq 1 15); do
+        kubectl get namespace "$NS" >/dev/null 2>&1 || break
+        sleep 2
+    done
+fi
+echo "  Clean"
+
 # --- Check vLLM availability ---
 if [ -n "${AGL_MODEL_ENDPOINT:-}" ]; then
     # Extract host:port from endpoint URL (e.g., http://localhost:8010/v1 → localhost:8010)
