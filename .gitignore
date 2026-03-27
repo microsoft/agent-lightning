@@ -214,4 +214,4 @@ __marimo__/
 .vscode/examples/math-poc/logs/
 
 # some sites building
-public
+publicartifacts/
