@@ -5,7 +5,7 @@ Grades test output using official swebench get_eval_report(),
 posts a reward event to the agl-lite server.
 
 Usage:
-    python3 grade.py <test_output_path> <patch_size>
+    python3 grade.py <test_output_path>
 
 Expected env vars:
     AGL_EVAL_META   — JSON with instance_id, repo, version, FAIL_TO_PASS, PASS_TO_PASS
@@ -63,7 +63,7 @@ def grade(test_output_path: str, eval_meta: dict) -> dict:
         return {"reward": 0.0, "resolved": False, "reason": f"grading error: {e}"}
 
 
-def post_reward(result: dict, patch_size: int) -> None:
+def post_reward(result: dict) -> None:
     """Post reward event to agl-lite server."""
     import urllib.request
 
@@ -82,7 +82,6 @@ def post_reward(result: dict, patch_size: int) -> None:
             "value": result["reward"],
             "resolved": result["resolved"],
             "instance_id": instance_id,
-            "patch_size": patch_size,
             "reason": result["reason"],
         },
     }).encode()
@@ -105,11 +104,10 @@ def post_reward(result: dict, patch_size: int) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: grade.py <test_output_path> [patch_size]", file=sys.stderr)
+        print("Usage: grade.py <test_output_path>", file=sys.stderr)
         sys.exit(1)
 
     test_output_path = sys.argv[1]
-    patch_size = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
     eval_meta_raw = os.environ.get("AGL_EVAL_META", "")
     if not eval_meta_raw or not Path(test_output_path).exists():
@@ -120,7 +118,7 @@ def main() -> None:
         result = grade(test_output_path, eval_meta)
 
     print(f"Grade: reward={result['reward']} resolved={result['resolved']} reason={result['reason']}")
-    post_reward(result, patch_size)
+    post_reward(result)
 
 
 if __name__ == "__main__":

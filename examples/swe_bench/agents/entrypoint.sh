@@ -94,7 +94,7 @@ echo "--- Phase 4: Grade + Reward ---"
 # Install swebench for grading (~0.9MB, pure Python).
 python3 -m pip install swebench -q 2>/dev/null || python3 -m pip install swebench 2>&1 | tail -1
 
-python3 /agl/agents/grade.py "$TEST_OUTPUT_FILE" "$PATCH_SIZE"
+python3 /agl/agents/grade.py "$TEST_OUTPUT_FILE"
 
 # ── Phase 5: Archive outputs + post agent_output event ───────────
 echo "--- Phase 5: Archive ---"
