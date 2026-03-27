@@ -9,7 +9,7 @@
 #   - SWE-bench Docker images pre-built for the sample instances
 #   - deploy/.env configured (copy from examples/swe_bench/.env.example)
 #   - AGL_KEY exported
-#   - vLLM running on host (or model server accessible)
+#   - vLLM running on host with a code-capable model
 
 set -euo pipefail
 
@@ -33,19 +33,52 @@ if [ -z "${AGL_KEY:-}" ]; then
     exit 1
 fi
 
+export AGL_MODEL_NAME="${AGL_MODEL_NAME:-}"
+export AGL_CODING_AGENT="${AGL_CODING_AGENT:-claude_code}"
+
 echo "=== SWE-bench Example ==="
 echo "  Namespace: $NS"
 echo "  Model: ${AGL_MODEL_NAME:-not set}"
-echo "  Agent: ${AGL_CODING_AGENT:-mini_swe_agent}"
+echo "  Agent: $AGL_CODING_AGENT"
+
+# --- Check vLLM availability ---
+if [ -n "${AGL_MODEL_ENDPOINT:-}" ]; then
+    # Extract host:port from endpoint URL (e.g., http://localhost:8010/v1 → localhost:8010)
+    VLLM_HOST_PORT=$(echo "$AGL_MODEL_ENDPOINT" | sed 's|https\?://||' | sed 's|/.*||')
+    echo ""
+    echo "--- Checking model server ---"
+    echo "  Endpoint: $AGL_MODEL_ENDPOINT"
+
+    if ! curl -sf "http://${VLLM_HOST_PORT}/v1/models" > /dev/null 2>&1; then
+        echo "ERROR: Model server not reachable at $VLLM_HOST_PORT"
+        echo "  Start vLLM: scripts/start_vllm.sh"
+        exit 1
+    fi
+
+    # Check that the expected model is served
+    if [ -n "$AGL_MODEL_NAME" ]; then
+        SERVED_MODELS=$(curl -sf "http://${VLLM_HOST_PORT}/v1/models" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(' '.join(m['id'] for m in data.get('data', [])))
+" 2>/dev/null || echo "")
+        if echo "$SERVED_MODELS" | grep -qF "$AGL_MODEL_NAME"; then
+            echo "  ✓ Model '$AGL_MODEL_NAME' available"
+        else
+            echo "  WARNING: Model '$AGL_MODEL_NAME' not found in served models: $SERVED_MODELS"
+            echo "  The gateway will route requests to '$AGL_MODEL_NAME' but vLLM may reject them."
+        fi
+    fi
+    echo "  ✓ Model server reachable"
+fi
 
 # --- Create ConfigMap for agent scripts ---
 echo ""
 echo "--- Creating agent scripts ConfigMap ---"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 
-# Create ConfigMap from the agents/ directory.
 # kubectl create configmap doesn't support nested dirs directly,
-# so we flatten the files with path-based keys.
+# so we specify files with path-based keys.
 kubectl -n "$NS" delete configmap swe-agent-scripts --ignore-not-found
 kubectl -n "$NS" create configmap swe-agent-scripts \
     --from-file=entrypoint.sh="$SCRIPT_DIR/agents/entrypoint.sh" \
@@ -63,11 +96,6 @@ echo "--- Deploying infrastructure ---"
 # --- Start agl-lite server on host ---
 echo ""
 echo "--- Starting agl-lite server ---"
-
-# Build server image with swebench hooks if running in-cluster.
-# For --controller-only mode, run directly on host.
-export AGL_MODEL_NAME="${AGL_MODEL_NAME:-}"
-export AGL_CODING_AGENT="${AGL_CODING_AGENT:-mini_swe_agent}"
 
 AGL_KEY="$AGL_KEY" \
 AGL_MODEL_NAME="$AGL_MODEL_NAME" \
