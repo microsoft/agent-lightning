@@ -17,8 +17,8 @@ export PATH="$HOME/.local/bin:$PATH"
 export IS_SANDBOX=1
 
 # Copy CLAUDE.md project instructions if available.
-if [ -f /agl/agents/claude_code/CLAUDE.md ]; then
-    cp /agl/agents/claude_code/CLAUDE.md /testbed/CLAUDE.md
+if [ -f /agl/agents/claude_code--CLAUDE.md ]; then
+    cp /agl/agents/claude_code--CLAUDE.md /testbed/CLAUDE.md
 fi
 
 PROBLEM="${AGL_TASK_INPUT:-}"

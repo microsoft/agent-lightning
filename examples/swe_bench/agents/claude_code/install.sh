@@ -28,7 +28,7 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 export IS_SANDBOX=1
 
 # Set up hook logging (captures tool use events for debugging).
-cp /agl/agents/claude_code/handle_hook.sh /tmp/handle_hook.sh
+cp /agl/agents/claude_code--handle_hook.sh /tmp/handle_hook.sh
 chmod +x /tmp/handle_hook.sh
 
 # Write Claude settings with hook config.

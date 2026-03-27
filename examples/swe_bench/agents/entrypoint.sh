@@ -28,16 +28,18 @@ cd /testbed
 # ── Phase 1: Install + run the coding agent ──────────────────────
 echo "--- Phase 1: Agent ---"
 
-if [ -f "$AGENT_DIR/$AGENT_NAME/install.sh" ]; then
+# Agent scripts are mounted flat: <agent_name>--<script>.sh
+if [ -f "$AGENT_DIR/${AGENT_NAME}--install.sh" ]; then
     echo "Installing agent: $AGENT_NAME"
-    bash "$AGENT_DIR/$AGENT_NAME/install.sh"
+    bash "$AGENT_DIR/${AGENT_NAME}--install.sh"
 fi
 
-if [ -f "$AGENT_DIR/$AGENT_NAME/run.sh" ]; then
+if [ -f "$AGENT_DIR/${AGENT_NAME}--run.sh" ]; then
     echo "Running agent: $AGENT_NAME"
-    bash "$AGENT_DIR/$AGENT_NAME/run.sh" || echo "WARNING: Agent exited with code $?"
+    bash "$AGENT_DIR/${AGENT_NAME}--run.sh" || echo "WARNING: Agent exited with code $?"
 else
-    echo "ERROR: No run.sh found for agent $AGENT_NAME"
+    echo "ERROR: No run script found for agent $AGENT_NAME"
+    echo "  Expected: $AGENT_DIR/${AGENT_NAME}--run.sh"
     exit 1
 fi
 

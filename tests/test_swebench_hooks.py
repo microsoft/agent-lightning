@@ -60,7 +60,7 @@ class TestOnEnqueue:
         hook = hooks.SWEBenchHooks()
         req = EnqueueRolloutRequest(input=swe_instance)
         result = hook.on_enqueue(req)
-        assert result.config.image == "sweb.eval.x86_64.astropy_1776_astropy-12907:latest"
+        assert result.config.image == "swebench/sweb.eval.x86_64.astropy_1776_astropy-12907:latest"
 
     def test_sets_env_vars(self, hooks, swe_instance: dict) -> None:
         hook = hooks.SWEBenchHooks()

@@ -36,7 +36,7 @@ class SWEBenchHooks(RolloutHooks):
         safe_id = instance_id.lower().replace("__", "_1776_")
         if request.config is None:
             request.config = RolloutConfig(image="")
-        request.config.image = f"sweb.eval.x86_64.{safe_id}:latest"
+        request.config.image = f"swebench/sweb.eval.x86_64.{safe_id}:latest"
 
         # 2. Generate eval_script via swebench (pure CPU, ~ms).
         test_spec = make_test_spec(instance)
