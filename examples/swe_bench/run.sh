@@ -98,6 +98,7 @@ kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "$NS" delete configmap swe-agent-scripts --ignore-not-found
 kubectl -n "$NS" create configmap swe-agent-scripts \
     --from-file=entrypoint.sh="$SCRIPT_DIR/agents/entrypoint.sh" \
+    --from-file=grade.py="$SCRIPT_DIR/agents/grade.py" \
     --from-file=claude_code--install.sh="$SCRIPT_DIR/agents/claude_code/install.sh" \
     --from-file=claude_code--run.sh="$SCRIPT_DIR/agents/claude_code/run.sh" \
     --from-file=claude_code--CLAUDE.md="$SCRIPT_DIR/agents/claude_code/CLAUDE.md" \
