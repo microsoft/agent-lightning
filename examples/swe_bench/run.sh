@@ -105,6 +105,39 @@ kubectl -n "$NS" create configmap swe-agent-scripts \
     --from-file=claude_code--handle_hook.sh="$SCRIPT_DIR/agents/claude_code/handle_hook.sh"
 echo "  ConfigMap swe-agent-scripts created"
 
+# --- Mount artifact directory (minikube only) ---
+# hostPath inside minikube's VM is not on the host machine.
+# minikube mount creates a bidirectional mount so artifacts are accessible.
+ARTIFACT_HOST_DIR="${AGL_ARTIFACT_DIR:-$REPO_ROOT/artifacts}"
+ARTIFACT_VM_DIR="/data/agl-artifacts"
+PIP_CACHE_VM_DIR="/data/pip-cache"
+mkdir -p "$ARTIFACT_HOST_DIR"
+
+if command -v minikube &>/dev/null && minikube status --format='{{.Host}}' 2>/dev/null | grep -q Running; then
+    echo ""
+    echo "--- Mounting shared volumes ---"
+    # Kill any existing mounts.
+    pkill -f "minikube mount.*${ARTIFACT_VM_DIR}" 2>/dev/null || true
+    sleep 1
+
+    # Artifact directory — host ↔ VM.
+    minikube mount "${ARTIFACT_HOST_DIR}:${ARTIFACT_VM_DIR}" &>/dev/null &
+    MOUNT_PID=$!
+    sleep 2
+    if kill -0 $MOUNT_PID 2>/dev/null; then
+        echo "  Artifacts: $ARTIFACT_HOST_DIR → $ARTIFACT_VM_DIR (PID: $MOUNT_PID)"
+    else
+        echo "  WARNING: minikube mount failed — artifacts only accessible via 'minikube ssh'"
+        MOUNT_PID=""
+    fi
+
+    # Pip cache — ensure dir exists in VM (no host mount needed, just persist across pods).
+    minikube ssh "sudo mkdir -p ${PIP_CACHE_VM_DIR}" 2>/dev/null
+    echo "  Pip cache: $PIP_CACHE_VM_DIR (in VM)"
+else
+    MOUNT_PID=""
+fi
+
 # --- Deploy infrastructure ---
 echo ""
 echo "--- Deploying infrastructure ---"
@@ -159,5 +192,10 @@ echo ""
 echo "--- Cleanup ---"
 kill $SERVER_PID 2>/dev/null || true
 echo "  Server stopped"
+if [ -n "${MOUNT_PID:-}" ]; then
+    kill $MOUNT_PID 2>/dev/null || true
+    echo "  Artifact mount stopped"
+fi
+echo "  Artifacts: $ARTIFACT_HOST_DIR"
 
 exit $EXIT_CODE
