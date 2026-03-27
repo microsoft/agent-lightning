@@ -134,6 +134,7 @@ def build_job_spec(
         {"name": "ANTHROPIC_BASE_URL", "value": gateway_base},
         {"name": "AGL_EVENT_URL", "value": event_url},
         {"name": "AGL_ROLLOUT_ID", "value": rollout.rollout_id},
+        {"name": "AGL_ATTEMPT_ID", "value": "$(AGL_POD_UID)"},
     ]
 
     # User-specified env vars from rollout config.

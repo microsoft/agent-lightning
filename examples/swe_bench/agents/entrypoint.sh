@@ -19,7 +19,7 @@
 # Expected env vars (set by controller):
 #   AGL_EVENT_URL       — URL to post events
 #   AGL_ROLLOUT_ID      — rollout ID
-#   AGL_POD_UID         — pod UID (used as attempt ID)
+#   AGL_ATTEMPT_ID      — attempt ID (unique per retry)
 #   OPENAI_BASE_URL     — LLM proxy URL
 #   OPENAI_API_KEY      — API key
 
@@ -35,7 +35,7 @@ mkdir -p "$OUTPUT_DIR"
 # Final artifact path: ARTIFACT_ROOT / rollout_id / attempt_id
 ARTIFACT_ROOT="/data/artifacts"
 ROLLOUT_ID="${AGL_ROLLOUT_ID:-unknown}"
-ATTEMPT_ID="${AGL_POD_UID:-unknown}"
+ATTEMPT_ID="${AGL_ATTEMPT_ID:-unknown}"
 ARTIFACT_DIR="${ARTIFACT_ROOT}/${ROLLOUT_ID}/${ATTEMPT_ID}"
 
 echo "=== SWE-bench Agent Entrypoint ==="
