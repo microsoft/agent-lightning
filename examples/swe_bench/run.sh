@@ -110,12 +110,11 @@ echo "  ConfigMap swe-agent-scripts created"
 # minikube mount creates a bidirectional mount so artifacts are accessible.
 ARTIFACT_HOST_DIR="${AGL_ARTIFACT_DIR:-$REPO_ROOT/artifacts}"
 ARTIFACT_VM_DIR="/data/agl-artifacts"
-PIP_CACHE_VM_DIR="/data/pip-cache"
 mkdir -p "$ARTIFACT_HOST_DIR"
 
 if command -v minikube &>/dev/null && minikube status --format='{{.Host}}' 2>/dev/null | grep -q Running; then
     echo ""
-    echo "--- Mounting shared volumes ---"
+    echo "--- Mounting artifact directory ---"
     # Kill any existing mounts.
     pkill -f "minikube mount.*${ARTIFACT_VM_DIR}" 2>/dev/null || true
     sleep 1
@@ -125,15 +124,11 @@ if command -v minikube &>/dev/null && minikube status --format='{{.Host}}' 2>/de
     MOUNT_PID=$!
     sleep 2
     if kill -0 $MOUNT_PID 2>/dev/null; then
-        echo "  Artifacts: $ARTIFACT_HOST_DIR → $ARTIFACT_VM_DIR (PID: $MOUNT_PID)"
+        echo "  Mounted: $ARTIFACT_HOST_DIR → $ARTIFACT_VM_DIR (PID: $MOUNT_PID)"
     else
         echo "  WARNING: minikube mount failed — artifacts only accessible via 'minikube ssh'"
         MOUNT_PID=""
     fi
-
-    # Pip cache — ensure dir exists in VM (no host mount needed, just persist across pods).
-    minikube ssh "sudo mkdir -p ${PIP_CACHE_VM_DIR}" 2>/dev/null
-    echo "  Pip cache: $PIP_CACHE_VM_DIR (in VM)"
 else
     MOUNT_PID=""
 fi
