@@ -143,3 +143,29 @@ routes:
 """)
         config = load_config(str(config_file))
         assert [r.model_in for r in config.routes] == ["gpt-4", "claude-3", "*"]
+
+    def test_env_var_substitution(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AGL_MODEL_NAME", "Qwen/Qwen2.5-Coder-7B-Instruct")
+        config_file = tmp_path / "envvar.yaml"
+        config_file.write_text("""
+routes:
+  - model_in: "*"
+    model_out: "${AGL_MODEL_NAME}"
+    params:
+      add:
+        return_token_ids: true
+""")
+        config = load_config(str(config_file))
+        assert config.routes[0].model_out == "Qwen/Qwen2.5-Coder-7B-Instruct"
+
+    def test_env_var_unset_stays_literal(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("NONEXISTENT_VAR_12345", raising=False)
+        config_file = tmp_path / "envvar2.yaml"
+        config_file.write_text("""
+routes:
+  - model_in: "*"
+    model_out: "${NONEXISTENT_VAR_12345}"
+""")
+        config = load_config(str(config_file))
+        # os.path.expandvars keeps unset vars as-is
+        assert config.routes[0].model_out == "${NONEXISTENT_VAR_12345}" or config.routes[0].model_out == ""

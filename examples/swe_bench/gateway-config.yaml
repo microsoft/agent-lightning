@@ -1,9 +1,14 @@
 # Gateway config for SWE-bench example.
 #
-# Routes model requests through the agl-lite gateway to the model server.
-# Injects return_token_ids for RL training data capture.
+# Routes all model requests to the backend model specified by AGL_MODEL_NAME.
+# Claude Code sends requests with its own model names (e.g., claude-sonnet-4-20250514),
+# which get rewritten to the actual vLLM backend model.
+#
+# ${AGL_MODEL_NAME} is resolved from environment at config load time.
 
 routes:
-  - model: "*"
-    inject_params:
-      return_token_ids: true
+  - model_in: "*"
+    model_out: "${AGL_MODEL_NAME}"
+    params:
+      add:
+        return_token_ids: true

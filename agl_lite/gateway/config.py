@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -67,8 +68,14 @@ def load_config(path: str) -> GatewayConfig:
       - model_in: "*" matches any model name not matched by earlier rules.
       - model_out: "*" means keep the original model name (passthrough).
       - Order matters: first match wins. Put specific rules before wildcards.
+
+    Environment variable substitution:
+      - ``${VAR_NAME}`` in any value is replaced with the env var's value.
+      - Example: ``model_out: "${AGL_MODEL_NAME}"`` resolves at load time.
     """
-    raw = yaml.safe_load(Path(path).read_text())
+    raw_text = Path(path).read_text()
+    raw_text = os.path.expandvars(raw_text)
+    raw = yaml.safe_load(raw_text)
     if not raw or "routes" not in raw:
         return GatewayConfig()
 
