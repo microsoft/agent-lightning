@@ -324,11 +324,11 @@ Infrastructure verified working:
 - [x] Patch captured (10KB), rollout succeeds
 
 Remaining:
-- [ ] Move grading into container (install swebench, call `get_eval_report()`, post reward event)
-- [ ] Remove artifact event posting from entrypoint (replace with hostPath write)
-- [ ] Add hostPath volume to job-template.yaml for test log archival
-- [ ] Simplify `on_succeeded` hook (remove file I/O, grading logic)
-- [ ] Remove artifact event support from store (no longer needed)
+- [x] Move grading into container (install swebench, call `get_eval_report()`, post reward event)
+- [x] Remove artifact event posting from entrypoint (replace with hostPath write)
+- [x] Add hostPath volume to job-template.yaml for test log archival
+- [x] Simplify `on_succeeded` hook (remove file I/O, grading logic)
+- [ ] Remove artifact event support from store (no longer needed by SWE-bench, keep if useful generally)
 - [ ] Verify full E2E with grading (reward event posted by container)
 
 ### Open Questions
