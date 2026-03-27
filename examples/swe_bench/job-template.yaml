@@ -23,6 +23,8 @@ containers:
         readOnly: true
       - name: artifacts
         mountPath: /data/artifacts
+      - name: pip-cache
+        mountPath: /root/.cache/pip
 
 volumes:
   - name: agent-scripts
@@ -32,6 +34,10 @@ volumes:
   - name: artifacts
     hostPath:
       path: /data/agl-artifacts
+      type: DirectoryOrCreate
+  - name: pip-cache
+    hostPath:
+      path: /data/pip-cache
       type: DirectoryOrCreate
 
 # 90 minutes timeout for agent + evaluation + grading.
