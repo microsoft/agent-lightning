@@ -1,0 +1,1402 @@
+# agl-lite Architecture: From Agent Lightning to Minimal Workable Version
+
+This document captures a comprehensive understanding of the original Agent Lightning architecture and maps out how each component is simplified, replaced, or removed in agl-lite.
+
+---
+
+## 1. Original Agent Lightning Architecture
+
+### 1.1 Core Loop
+
+Agent Lightning is built on three main components in a coordinated loop:
+
+```
+Algorithm ──enqueue_rollout──▶ LightningStore ──dequeue_rollout──▶ Runner
+    ▲                              │                                  │
+    │                         (spans, resources,                      │
+    │                          attempts, workers)                     │
+    │                              │                                  │
+    └──query_spans + learn─────────┘◀──────add_span + update_attempt──┘
+```
+
+- **Algorithm**: The "brain" — decides tasks, learns from results, updates resources (model weights, prompts).
+- **Runner**: The "worker" — executes rollouts, runs the agent, records spans.
+- **LightningStore**: Central database + message queue — single source of truth.
+
+### 1.2 Data Types
+
+| Type | Description |
+|------|-------------|
+| **Rollout** | Unit of work. Lifecycle: `queuing → preparing → running → succeeded/failed/cancelled/requeuing` |
+| **Attempt** | Single execution of a rollout. Supports retries: `preparing → running → succeeded/failed/timeout/unresponsive` |
+| **Span** | Structured trace event (LLM call, tool invocation, reward). Ordered by monotonic `sequence_id` per attempt. Based on OpenTelemetry. |
+| **Resource** | Versioned named bundles (prompt templates, model checkpoints, proxy URLs) |
+| **Triplet** | `(prompt, response, reward)` — fundamental RL learning unit extracted from spans |
+| **Worker** | Runner instance metadata (heartbeat, status, current assignment) |
+| **Dataset** | Collection of incomplete rollouts (tasks) for the agent to process |
+
+### 1.3 Supporting Components
+
+| Component | Role | Key Dependencies |
+|-----------|------|------------------|
+| **Tracer** | Instruments agent code, captures OpenTelemetry spans, ships to Store | `opentelemetry-sdk`, `agentops` |
+| **Adapter** | Transforms raw spans → algorithm-consumable formats (e.g., `TracerTraceToTriplet` → RL triplets) | OpenTelemetry span format |
+| **LLM Proxy** | LiteLLM-based reverse proxy between agent and LLM backends; instruments server-side, manages model swaps, URL routing | `litellm`, `fastapi`, OpenTelemetry |
+| **Trainer** | High-level orchestrator wiring all components | All of the above |
+| **Hook** | User callbacks at lifecycle points (`on_rollout_start/end`, `on_trace_start/end`) | — |
+| **ExecutionStrategy** | Controls how algorithm/runner bundles are placed (shared-memory vs. client-server) | `multiprocessing`, `asyncio` |
+| **LitAgent** | Base class for user-defined agents. `rollout(task, resources, rollout) → RolloutRawResult` | — |
+
+### 1.4 Store Architecture
+
+Three layers:
+
+1. **Collections Layer** — Low-level CRUD primitives (`Collection`, `Queue`, `KeyValue`). Backends: InMemory, MongoDB.
+2. **Store Layer** — `CollectionBasedLightningStore` builds on collections with business logic (status transitions, watchdog health checks, retry policies).
+3. **Wrappers** — `LightningStoreThreaded` (mutex thread safety), `LightningStoreServer/Client` (HTTP multi-process).
+
+Key store responsibilities:
+- Task queue (`enqueue_rollout` / `dequeue_rollout`)
+- Rollout + attempt lifecycle management (status transitions, retries via watchdog)
+- Span ingest + ordering (monotonic `sequence_id`)
+- Resource versioning
+- Worker telemetry
+
+### 1.5 LLM Proxy Internals
+
+The proxy is a LiteLLM-based FastAPI server with:
+- **RolloutAttemptMiddleware**: Rewrites `/rollout/{rid}/attempt/{aid}/v1/chat/completions` → `/v1/chat/completions`, injects `x-rollout-id`, `x-attempt-id`, `x-sequence-id` headers.
+- **StreamConversionMiddleware**: Converts streaming → non-streaming for better OTEL capture.
+- **LightningSpanExporter**: Buffers OTEL spans, flushes subtrees to the store.
+- **LightningOpenTelemetry**: LiteLLM callback that wires OTEL export.
+
+### 1.6 Execution Strategies
+
+- **SharedMemoryExecutionStrategy**: Algorithm + runners as threads in one process. Good for debugging.
+- **ClientServerExecutionStrategy**: Algorithm process hosts `LightningStoreServer` (HTTP API). Runners connect via `LightningStoreClient`. Supports multi-process scaling.
+
+### 1.7 VERL Integration (RL Example)
+
+The VERL algorithm:
+1. Launches a vLLM chat completion endpoint
+2. Registers it in the LLM Proxy → Store as resource
+3. Enqueues rollouts from dataset
+4. Runners dequeue, execute agents against the proxy endpoint
+5. Proxy + tracer capture spans → Store
+6. Algorithm queries spans, adapter converts to triplets → FSDP training loop
+7. Model weights updated → repeat
+
+---
+
+## 2. agl-lite Simplification Plan
+
+### 2.1 What Changes
+
+| # | Original | agl-lite Replacement | Rationale |
+|---|----------|---------------------|-----------|
+| 1 | **LiteLLM** proxy for LLM routing | **Self-owned request gateway** | Remove heavy dependency; simpler proxy that records traffic |
+| 2 | **OpenTelemetry** stack (spans, tracers, exporters, instrumentation) | **Gateway records request-response pairs** during transfer | Eliminate OTEL complexity; the gateway *is* the instrumentation |
+| 3 | **Span-based** trajectory format | **Sequence of events** (`model_request`, `reward`, + open user-defined types) | Much simpler data model; no span trees, no sequence_id allocation. Only two reserved types; everything else is opaque pass-through. |
+| 4 | **In-process** execution strategies + watchdog retry | **Kubernetes** as default runner (`minikube` for single machine) | Offload scheduling, retry, timeout to K8s controller; deployment topology is flexible |
+
+### 2.2 What Stays (Conceptually)
+
+| Concept | agl-lite Form |
+|---------|---------------|
+| Algorithm ↔ Store ↔ Runner loop | Same decoupled architecture |
+| Rollout / Attempt lifecycle | Simplified states (K8s manages retry/timeout) |
+| Resource versioning | Same concept for prompts and config. Model endpoints moved to dedicated model server registry with version tracking. |
+| Adapter pattern | Simplified — filters events by type (`model_request`, `reward`) instead of parsing OTEL spans |
+| Agent abstraction | Language-agnostic: any program that consumes Gateway endpoint via environment variables (OAI-compatible `base_url`) |
+| Store API | Simplified subset (event-based, no span sequence_id, no watchdog, no OTEL conversion) |
+
+### 2.3 What Gets Removed
+
+| Component | Reason |
+|-----------|--------|
+| `agentlightning.tracer.*` (AgentOps, OTEL, Weave tracers) | Gateway replaces all tracing |
+| `agentlightning.instrumentation.*` (LiteLLM, vLLM, AgentOps hooks) | No longer needed |
+| `agentlightning.llm_proxy` (LiteLLM-based proxy) | Replaced by self-owned gateway |
+| `agentlightning.semconv` (OTEL semantic conventions) | No OTEL |
+| `agentlightning.utils.otel`, `agentlightning.utils.otlp` | No OTEL |
+| `LightningSpanExporter`, `LightningOpenTelemetry` | No OTEL |
+| `SharedMemoryExecutionStrategy`, `ClientServerExecutionStrategy` | K8s replaces execution strategies |
+| `LightningStoreServer` / `LightningStoreClient` | Store communication redesigned for K8s |
+| `LightningStoreThreaded` | K8s pods are isolated; no shared-memory threading model |
+| Watchdog (timeout/unresponsive detection in Store) | K8s liveness/readiness probes + controller |
+| Span `sequence_id` allocation | No OTEL spans to order |
+| `RolloutAttemptMiddleware` URL rewriting | Gateway handles routing natively |
+| Legacy/compat code (`TrainerLegacy`, `RolloutLegacy`, `fit_v0`) | Clean slate |
+| `LitAgent` base class, Python agent SDK | Agents are now language-agnostic containers; no base class needed |
+
+---
+
+## 3. agl-lite Target Architecture
+
+### 3.1 High-Level Overview
+
+![agl-lite Target Architecture](../images/lite_arch.excalidraw.svg)
+
+The architecture is organized into three logical groups. **No strong assumption is made about their co-location** — they communicate only through well-defined APIs (HTTP/gRPC), so each group can live in the same K8s cluster, in separate clusters, or even across cloud boundaries.
+
+- **Compute Backend** (green) — Inference Servers (vLLMs) and Training Engine (Megatron/PyTorch). This is a **prerequisite managed by the user**; agl-lite does not own or deploy it. The compute backend may be in the same K8s cluster as agent runner, in a separate but network-accessible cluster, or provided by a remote fine-tuning service. Training engine pushes updated weights to inference servers.
+- **AGL-Lite** (blue) — A single service combining the Gateway (agl-router) and the Data Store. The Gateway sits between inference servers and agent runners, recording all request-response traffic into the Store. The Store feeds trajectory data back to the training engine. One endpoint, one deployment. AGL-Lite can be deployed in the same K8s cluster as the Agent Runner, or co-located with the Compute Backend — in either case it only needs to **expose its API** to the Agent Runner.
+- **Agent Runner** (red) — Kubernetes-based. A K8S Controller manages agent Pods. Pods make LLM calls through the agl-lite Gateway. The runner only needs network access to the agl-lite Service endpoint; it does not need direct access to the Compute Backend.
+
+### 3.2 Component Mapping
+
+| agl-lite Component | Responsibility |
+|--------------------|----------------|
+| **agl-lite Service** | Single HTTP service combining Gateway (LLM reverse proxy with model-version-aware routing, event auto-capture) and Store (rollout queue, event storage, model server registry, resource versioning). **In-process store** — gateway validates rollout existence and writes events via synchronous dict lookups (nanoseconds, no I/O, no race conditions). One deployment, one endpoint. |
+| **Runner** | K8s Job or Deployment. Each pod runs one agent container. Only requires network access to the agl-lite Service endpoint. |
+| **Algorithm** | The learning loop. Enqueues rollouts, queries trajectories, runs learning (RL, prompt tuning, etc.), updates resources. Typically co-located with the Compute Backend (training engine). Talks to the agl-lite Service API. |
+| **Agent** | Any LLM-consuming program — written in any language or framework. The only contract is env vars: `OPENAI_BASE_URL` + `OPENAI_API_KEY` (for OpenAI SDK), `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` (for Anthropic SDK), `AGL_TASK_INPUT` (task payload), and optionally `AGL_EVENT_URL` (reporting events). All SDK env vars point to the same gateway URL and same key. Packaged into a container image. No base class or SDK required. |
+| **K8s Controller** | Custom controller or operator managing rollout lifecycle: retry on pod failure, timeout via `activeDeadlineSeconds`, scaling runner pods. Lives in the same K8s cluster as the runner. Talks to the agl-lite Service API. |
+
+### 3.3 Simplified Data Model
+
+#### ID Generation and Flow
+
+| ID | Generated by | Mechanism |
+|----|-------------|-----------|
+| `rollout_id` | **Store** | UUID, created when Algorithm calls `enqueue_rollout()`. Passed to the K8s controller, which injects it as an env var into the agent pod. |
+| `attempt_id` | **K8s** (implicitly) | Every pod K8s creates has a unique `metadata.uid` (UUID). Exposed to the container via the [Downward API](https://kubernetes.io/docs/concepts/workloads/pods/downward-api/). On retry, K8s creates a new pod with a new UID — no custom ID generation needed. |
+
+The K8s controller composes the Gateway URL from these IDs and injects it as the agent's `OPENAI_BASE_URL`:
+
+```yaml
+# Job template (simplified)
+env:
+  - name: ROLLOUT_ID
+    value: "R1"                      # set by K8s controller from Store
+  - name: POD_UID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid      # K8s generates a unique UID per pod
+  - name: AGL_LITE_URL
+    value: "http://agl-lite:8080"    # single service endpoint
+  - name: OPENAI_BASE_URL
+    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+  - name: OPENAI_API_KEY             # OpenAI SDK sends as Authorization: Bearer header
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGL_KEY
+  - name: ANTHROPIC_BASE_URL         # Anthropic SDK — same gateway URL
+    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+  - name: ANTHROPIC_API_KEY          # Anthropic SDK sends as x-api-key header
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGL_KEY
+  - name: AGL_TASK_INPUT             # task payload (JSON-serialized rollout.input)
+    value: '{"prompt": "Write a sort function", "test_cases": [...]}'
+  - name: AGL_EVENT_URL              # for explicit event posting (rewards, etc.)
+    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
+```
+
+The agent uses whichever SDK it wants — OpenAI, Anthropic, or any framework. All env vars point to the same gateway URL and same key:
+```
+OPENAI_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
+OPENAI_API_KEY=ak_xxx...              # OpenAI SDK sends as Authorization: Bearer
+ANTHROPIC_BASE_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/v1
+ANTHROPIC_API_KEY=ak_xxx...           # Anthropic SDK sends as x-api-key header
+AGL_TASK_INPUT={"prompt": "Write a sort function", "test_cases": [...]}
+AGL_EVENT_URL=http://agl-lite:8080/rollout/R1/attempt/a1b2c3d4-e5f6-7890/events
+```
+
+#### Attempt as a data tag, not an entity
+
+In the original Agent Lightning, `Attempt` was a full entity with its own status lifecycle (`preparing → running → succeeded/failed/timeout/unresponsive`), health checks, and watchdog management. In agl-lite, **attempt is not an entity in the Store** — it is purely a **partitioning tag** on request records, derived from the K8s pod UID. The Store does not track attempt status; K8s owns the pod lifecycle.
+
+This means:
+- No attempt table in the Store
+- No attempt status transitions
+- No attempt health checks or watchdog
+- Records are simply tagged with `(rollout_id, attempt_id)` for clean separation
+
+On retry, the data stays clean because each pod has a distinct UID:
+```
+Pod #1 (uid=aaa): rollout=R1, attempt=aaa → [req1, req2, req3] → pod crashes
+Pod #2 (uid=bbb): rollout=R1, attempt=bbb → [req1', req2', req3', req4'] → succeeds
+```
+
+Store contents — no mixing, no ambiguity:
+```
+(R1, aaa, seq=1), (R1, aaa, seq=2), (R1, aaa, seq=3)         ← failed run
+(R1, bbb, seq=1), (R1, bbb, seq=2), (R1, bbb, seq=3), (R1, bbb, seq=4)  ← success
+```
+
+Even in rare node-partition scenarios (two pods briefly running for the same rollout), each pod writes to its own `attempt_id` partition — data never collides.
+
+The Algorithm queries the successful attempt's records for training. Failed attempt data remains available for debugging and observability.
+
+#### Event-based Trajectory
+
+agl-lite is a **data pipe**, not a schema enforcer. The trajectory is a sequence of **events**. Only two event types have well-known structure — `model_request` (which the Gateway must create) and `reward` (which the Algorithm must consume for training). Everything else is opaque pass-through: a dict with a `type` field, stored and delivered as-is. Users define their own event types and consume them in their own algorithms.
+
+```python
+class Event:
+    """Single event in a trajectory. The universal unit of data in agl-lite."""
+    event_type: str             # "model_request", "reward", or any user-defined string
+    rollout_id: str
+    attempt_id: str             # = K8s pod UID
+    timestamp: float            # assigned by store at write time
+    data: Dict                  # event-type-specific payload (see below)
+```
+
+Events are identified by their **position in the list** (insertion order), not by a separate ID. No explicit `sequence` field — ordering is an emergent property of the storage backend:
+- **In-memory**: list index in a **nested dict** `rid → aid → list[Event]` (single-threaded asyncio guarantees temporal insertion order). The nested structure makes listing attempts for a rollout O(1) — just read the inner dict keys — and archive/purge O(1) — `del store[rid]` removes everything.
+- **SQLite**: ROWID auto-increment (single writer, WAL mode)
+- **PostgreSQL**: SERIAL/IDENTITY primary key
+
+The API returns events in insertion order. Consumers use array position if they need an index.
+
+**Reserved event types** (agl-lite understands these):
+
+```python
+# event_type = "model_request"
+# Created automatically by the Gateway on every LLM call.
+{
+    "server": {                     # which server actually handled the request
+        "model": "qwen-7b",        # model_out (after routing)
+        "endpoint": "http://vllm-0:8000/v1",
+        "version": 42,             # training step of this specific server
+    },
+    "request": {                    # original request body (as sent by agent, no headers)
+        "model": "gpt-4.1",        # model_in (before routing)
+        "messages": [...],
+        "temperature": 0.7,
+    },
+    "response": {                   # full response body from model server (no headers)
+        "choices": [...],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50, ...},
+    },
+    "latency_ms": 1234.5,
+    "status": "ok",                 # "ok", "client_disconnected", "stream_error"
+}
+
+# event_type = "reward"
+# Reported by the environment, evaluator, or runner.
+{
+    "value": 0.85,                  # scalar reward (required)
+    "message": "all tests passed",  # optional human-readable explanation
+}
+```
+
+**User-defined event types** (agl-lite stores and delivers, but does not interpret):
+
+```python
+# event_type = "tool_result" (user-defined example)
+{"tool_name": "execute_code", "output": "hello\n", "exit_code": 0}
+
+# event_type = "observation" (user-defined example)
+{"content": "Task: Write a function that...", "source": "environment"}
+
+# event_type = "my_custom_metric" (user-defined example)
+{"score": 42, "details": {...}}
+```
+
+The Store stores all events identically — it does not validate `data` payloads beyond the common fields (`event_type`, `rollout_id`, `attempt_id`, `timestamp`, `data`).
+
+#### Trajectory
+
+```python
+class Trajectory:
+    """Complete trajectory for one rollout attempt — a sequence of events."""
+    rollout_id: str
+    attempt_id: str             # = K8s pod UID
+    events: List[Event]         # ordered by sequence, mixed event types
+```
+
+All event types are stored in a single ordered list per `(rollout_id, attempt_id)`, preserving temporal ordering:
+
+```
+[0]  model_request   (agent calls LLM)
+[1]  tool_result     (runner reports tool output)     ← user-defined type
+[2]  model_request   (agent sends tool result to LLM)
+[3]  action          (agent submits answer)           ← user-defined type
+[4]  reward          (environment scores: 0.85)
+```
+
+<a name="concurrent-requests"></a>
+**Note on concurrent requests**: Tool-use agents may fire multiple LLM calls in parallel. Each concurrent request is an independent stream through the gateway. Insertion order for concurrent completions is arbitrary (whichever coroutine resumes first in the event loop). This is a **storage ordering** for pagination and replay, not a causal ordering. Use `timestamp` for approximate causal information when needed.
+
+#### How events are produced
+
+| Source | Event types | Mechanism |
+|--------|------------|-----------|
+| **Gateway** | `model_request` | Auto-captured on every proxied LLM call. Agent is unaware. |
+| **Runner / Environment** | `reward`, plus any user-defined types | Explicit HTTP POST to Gateway event endpoint (see Section 3.4). These are agl-lite-aware components. |
+| **Agent** (optional) | Any user-defined types | If the agent *chooses* to report events, it can POST to an optional event URL (`AGL_EVENT_URL` env var). But this is never required. |
+
+#### Rollout Record
+
+```python
+class RolloutStatus(str, Enum):
+    QUEUING = "queuing"                 # in Store queue, no Job yet
+    RUNNING = "running"                 # Job exists, execution in progress (including between retries)
+    SUCCEEDED = "succeeded"             # terminal — one attempt completed successfully
+    TERMINAL_FAILED = "terminal_failed" # terminal — all retries exhausted or deadline exceeded
+    CANCELLED = "cancelled"             # terminal — user requested cancellation
+
+class Rollout:
+    rollout_id: str
+    status: RolloutStatus
+    cancel_requested: bool              # flag set by user, read by controller
+    
+    input: Dict                         # task description (delivered as AGL_TASK_INPUT env var)
+    config: RolloutConfig               # algorithm-facing Job config (see below)
+    resources_id: Optional[str] = None   # links to immutable resource snapshot (job_template, prompts, etc.)
+    
+    # Set by controller during lifecycle
+    job_name: Optional[str]             # K8s Job name (set on Job creation)
+    succeeded_attempt_id: Optional[str] # pod UID of successful attempt (set on success)
+    error_message: Optional[str]        # error info (set on terminal_failed)
+    
+    # Concurrency control
+    version: int                        # incremented on every update (informational)
+    
+    created_at: float
+    updated_at: float
+
+class RolloutConfig:
+    """Algorithm-facing config. Describes the containerized task.
+    K8s-specific infra details (resources, nodeSelector, etc.) come from
+    the controller's job defaults (from resources snapshot) — the algorithm
+    never sees infra-level K8s details like nodeSelector or tolerations."""
+    
+    # Required — describe the container
+    image: str                          # agent container image
+    command: List[str] = []             # entrypoint override, e.g., ["python", "solve.py"]
+    environment_variables: Dict[str, str] = {}  # extra env vars (beyond OPENAI_*, ANTHROPIC_*, AGL_TASK_INPUT, AGL_EVENT_URL)
+    mount: List[Mount] = []             # volume mounts (datasets, tools, configs)
+    
+    # Optional — execution policy
+    timeout: Optional[int] = None       # seconds
+    max_retries: Optional[int] = None   # retry count
+    overrides: Optional[dict] = None    # per-rollout K8s overrides (e.g., other container images)
+
+class Mount:
+    name: str                           # volume name
+    mount_path: str                     # path inside container, e.g., "/data"
+    source: str                         # host path, PVC name, or ConfigMap name
+    read_only: bool = True
+```
+
+**Reserved resource types**: The controller looks for specific keys in resource snapshots:
+
+| Key | Used by | Purpose |
+|-----|---------|---------|
+| `job_template` | K8s Controller | Raw K8s pod spec (any valid K8s fields). Loaded from a YAML file, stored as an opaque dict. No typed schema — the store does not validate it. The controller uses it as the base pod spec, injects RolloutConfig into the `agent` container, and wraps in Job metadata. See [Job template](#job-template) for merge logic and examples. |
+
+All other keys are user-defined and opaque to agl-lite (prompts, eval configs, etc.).
+
+`cancel_requested` is a separate flag rather than a status because:
+- User expresses **intent** (set flag) without knowing the current execution state
+- Controller **executes** (deletes Job, updates status) in its own reconciliation loop
+- No invalid status transition — the flag can be set whenever status is non-terminal
+
+#### Rollout State Machine
+
+```
+queuing ──[controller creates Job]──────────→ running
+   │                                            │  │
+   │                                            │  ├──[Job Complete]──→ succeeded
+   │                                            │  │                    (final)
+   ├──[Job creation failed]──→ terminal_failed  │  │
+   │                           (final)          │  ├──[Job Failed]───→ terminal_failed
+   │                                            │  │                    (final)
+   │                                            │  │
+   ├──[cancel + no Job]─────→ cancelled         │  └──[cancel]───────→ cancelled
+   │                          (final)           │                       (final)
+   │                                            │
+   └────────────────────────────────────────────┘
+          (cancel_requested can be set while queuing or running)
+```
+
+**Valid transitions (Store-enforced):**
+
+| From | To | Trigger |
+|------|----|---------|
+| `queuing` | `running` | Controller: Job created successfully |
+| `queuing` | `terminal_failed` | Controller: Job creation failed (quota, invalid image, etc.) |
+| `queuing` | `cancelled` | Controller: `cancel_requested` is true, no Job exists |
+| `running` | `succeeded` | Controller: Job has `Complete` condition |
+| `running` | `terminal_failed` | Controller: Job has `Failed` condition (BackoffLimitExceeded, DeadlineExceeded) |
+| `running` | `cancelled` | Controller: `cancel_requested` is true, Job deleted |
+
+**Store-enforced invariants:**
+- `succeeded`, `terminal_failed`, `cancelled` are **final** — no transitions out, Store rejects any attempt
+- `running → queuing` is **rejected** — no going backwards
+- `cancel_requested` can only be set to `true` when status is `queuing` or `running`; setting it on a terminal rollout returns an error
+
+#### Store API
+
+```python
+class Store:
+    # Rollout management
+    async def enqueue_rollout(input, config, resources_id=None) -> Rollout
+    async def update_rollout(rollout_id, **updates) -> Rollout
+        # Partial update — only provided fields are changed.
+        # Validates state transition if `status` is included.
+        # Raises: InvalidTransitionError
+    async def cancel_rollout(rollout_id) -> Rollout
+        # Sets cancel_requested=True. Rejects if already terminal.
+    async def query_rollouts(ids=None, status_in=None, cancel_requested=None,
+                             limit=None, offset=None) -> List[Rollout]
+        # When ids provided, returns exactly those rollouts (batch fetch).
+        # Other filters (status_in, etc.) can combine with ids or work standalone.
+    
+    # Event storage (nested dict: rid → aid → list[Event], insertion order = temporal order)
+    async def add_event(event: Event) -> Event
+    async def add_events(events: List[Event]) -> List[Event]
+    async def query_events(rollout_id, attempt_id=None,
+                           event_type=None, limit=None, offset=None) -> List[Event]
+        # Returns events in insertion order.
+        # attempt_id resolution when omitted:
+        #   1. If rollout.succeeded_attempt_id is set → use it
+        #   2. Otherwise → attempt with latest MIN(timestamp) from events
+        #   3. No events exist → return []
+    async def list_attempts(rollout_id) -> List[str]
+        # Returns attempt IDs for a rollout, derived from nested dict keys.
+        # Ordered by first event timestamp (earliest first).
+        # Included in GET /api/rollouts/{rid} response as "attempts" field.
+
+    # Resource management (prompts, config — not model endpoints)
+    async def add_resources(resources) -> ResourcesUpdate
+    async def get_latest_resources() -> Optional[ResourcesUpdate]
+    
+    # Data lifecycle
+    async def archive_rollouts(rollout_ids, backend=None) -> ArchiveResult
+        # 1. Reject if any rollout is non-terminal (400)
+        # 2. If backend specified: persist rollout + events to backend
+        # 3. Purge rollout records and all events from hot store
+    
+    # Model server management
+    def register_model(model, endpoint, version, token?) -> ModelServer
+    def list_models() -> List[ModelServer]
+    def get_model_pool(model) -> List[ModelServer]
+    def remove_model_servers(model, endpoints?) -> None
+    def remove_all_models() -> None
+```
+
+> **Deployment note**: The agl-lite Service is a single HTTP server. It does not assume it runs inside the same K8s cluster as the runner — it only needs to be network-reachable from the Agent Runner, the K8s Controller, and the Algorithm.
+
+### 3.4 Unified API Spec
+
+The Gateway (LLM proxy) and Store (data management) are combined into a **single HTTP service**. All paths are served by one endpoint. This eliminates the network hop between Gateway and Store on the hot path (every LLM request), and simplifies deployment to one service.
+
+#### Path layout
+
+| Method(s) | Path pattern | Function | Consumer |
+|---|---|---|---|
+| `POST` | `/rollout/{rid}/attempt/{aid}/v1/...` | **LLM reverse proxy** — forwards to model server, auto-captures `model_request` events. Supports both OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) formats. | Agent pods |
+| `POST` | `/rollout/{rid}/attempt/{aid}/events` | **Event ingestion** — accepts reward and user-defined events | Agent pods, runner, environment |
+| `POST` `GET` | `/api/rollouts` | **Rollout management** — enqueue, query (with batch ID support) | Algorithm, K8s controller |
+| `GET` `PATCH` | `/api/rollouts/{rid}` | **Single rollout** — get, partial update | K8s controller |
+| `POST` | `/api/rollouts/{rid}/cancel` | **Cancel rollout** — set cancel_requested flag | Algorithm, user |
+| `POST` | `/api/rollouts/archive` | **Data lifecycle** — archive and purge consumed rollouts (optional JSONL persistence) | Algorithm |
+| `POST` `GET` `DELETE` | `/api/models` | **Model server management** — register, list, remove inference servers | Algorithm / Compute Backend |
+| `DELETE` | `/api/models?endpoint=<url>` | **Remove single model server** by endpoint | Algorithm / Compute Backend |
+| `GET` | `/api/events` | **Event query** — by rollout/attempt/type, with smart attempt_id default | Algorithm |
+| `POST` `GET` | `/api/resources` | **Resource management** — add, get latest (prompts, config) | Algorithm |
+| `GET` | `/api/resources/{id}` | **Get resource snapshot** by ID | Algorithm |
+
+#### LLM proxy paths (agent-facing, transparent)
+
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/v1/chat/completions`** (OpenAI format)
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/v1/messages`** (Anthropic/Claude format)
+
+The agent calls this as a normal LLM endpoint (via `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`). The service:
+1. Parses `rollout_id` and `attempt_id` from the path prefix
+2. Validates `rollout_id` exists in the Store (in-process dict lookup, ~100ns). Returns 404 if not found — avoids wasting GPU inference on orphan requests.
+3. Parses `model` from the request body — this is the **model_in** name the agent uses
+4. Looks up the **gateway route config** for model_in → model_out mapping + parameter overrides
+5. Selects a model server from the model_out pool (round-robin). If model_in has no route config, uses model_in as model_out directly (passthrough).
+6. Rewrites the `model` field in the request body to model_out
+7. Applies **parameter adjustments** from the route config (add/drop/override)
+8. Forwards `POST /v1/chat/completions` (or `/v1/messages`) to the selected server, with optional `Authorization: Bearer <token>` if the server has a token configured
+9. Captures the complete request body + response body (no headers) as a `model_request` event, including the server's `model`, `endpoint`, and `version`
+10. Returns the LLM response to the agent
+
+**Gateway route config** is loaded at startup and defines model_in → model_out mapping + parameter adjustments:
+
+```yaml
+# gateway-config.yaml (loaded once at startup)
+routes:
+  - model_in: "gpt-4.1"              # what the agent sends
+    model_out: "qwen-7b"             # rewrite to this, select servers from this pool
+    params:
+      add:                            # added/overridden on every request
+        temperature: 0.7
+        max_tokens: 4096
+      drop:                           # removed from every request
+        - stream_options              # vLLM doesn't support this
+        - logprobs                    # save compute
+  - model_in: "claude-sonnet-4-20250514"      # Anthropic model alias
+    model_out: "qwen-7b"             # same backend
+    params:
+      add:
+        temperature: 0.9
+```
+
+- `model_in` with no matching route → passthrough (model_in used as model_out, no param adjustments)
+- `model_in: "*"` → wildcard catch-all, matches any model not matched by earlier rules
+- `model_out: "*"` → passthrough, keeps original model name but applies param adjustments
+- Routes are evaluated in list order — first match wins. Put specific rules before wildcards.
+- `add` fields are merged into the request body (override if key exists)
+- `drop` fields are removed from the request body
+- Applied **before** forwarding to the model server
+- Use case: normalize requests for backends that don't support all OpenAI params (vLLM, TGI), enforce training-time sampling parameters, map agent-friendly model names to actual model identifiers
+
+> **Note**: The event records **both** the original request (what the agent sent) and the adjusted request (what was actually forwarded). The `model_request` event `data` includes `request` (original body), `response` (model server response body), and `server` metadata (`{model, endpoint, version}`).
+
+The gateway handles both **non-streaming and streaming** requests transparently:
+
+**Non-streaming** (`stream: false` or absent): Gateway forwards the request, receives the full JSON response, writes one `model_request` event, and returns the response to the agent.
+
+**Streaming** (`stream: true`): Gateway tees the SSE stream — each chunk is forwarded to the agent immediately (preserving low-latency token delivery) while simultaneously buffered in memory. When the stream completes (`data: [DONE]`), the gateway assembles the full response from buffered chunks and writes one `model_request` event.
+
+```
+Agent ◄──chunk──chunk──chunk──[DONE]──◄ Gateway ◄──chunk──chunk──chunk──[DONE]──◄ Model Server
+                                          │
+                                     (buffer chunks)
+                                          │
+                                     stream complete
+                                          │
+                                          ▼
+                                    write model_request event
+                                    (full assembled response,
+                                     model_version, latency)
+```
+
+**Edge cases in streaming:**
+- **Client disconnect mid-stream**: Gateway continues reading from backend to capture complete data. Event written with `"status": "client_disconnected"`.
+- **Backend error mid-stream**: Event written with partial response and `"status": "stream_error"`.
+- **Sequence assignment**: Event appended to store at stream completion. Single-threaded asyncio guarantees temporal insertion order. Concurrent streams get ordered by whichever completes first.
+
+**Memory**: Each concurrent stream buffers one response. A 128K-context response ≈ 500KB. 100 concurrent streams ≈ 50MB. Bounded and manageable.
+
+**When no model servers are registered** (weight update in progress): returns **503 Service Unavailable** with `Retry-After` header. Standard OpenAI SDKs auto-retry on 503 with exponential backoff. The agent pod does not crash, so K8s Job retry count is unaffected. See [Model Server Management](#model-server-management) for the full weight update protocol.
+
+Any path under `/rollout/{rid}/attempt/{aid}/v1/...` is proxied. The agent is unaware of agl-lite.
+
+**`POST /rollout/{rollout_id}/attempt/{attempt_id}/events`**
+
+Accepts explicit events (reward, user-defined types). Body:
+```json
+{"event_type": "reward", "data": {"value": 0.85, "message": "all tests passed"}}
+```
+The service validates that `rollout_id` exists (in-process dict lookup, ~100ns), assigns `timestamp`, and appends to the event store in insertion order. Returns 404 if rollout not found — rejects orphan events early. Used by runners, environments, evaluators, and optionally by agents (via `AGL_EVENT_URL`).
+
+#### Concurrency and scaling
+
+The gateway is a single Python async process. The concurrency profile is excellent because the hot path (LLM proxy) is I/O-bound — each request waits seconds for LLM inference while the event loop serves other requests.
+
+**Contention analysis:**
+
+| Resource | Access pattern | Contention |
+|----------|---------------|------------|
+| Model server registry | Read every request, write once per weight update | Near zero (read-heavy, write-rare) |
+| Event store per `(rid, aid)` | Append per event, naturally partitioned by pod | Near zero (different agents never touch the same partition) |
+| Rollout records | Controller updates status, Algorithm enqueues | Low (not on hot path) |
+
+No locks needed on the hot path. Single-threaded asyncio serializes all writes naturally. The partition key `(rollout_id, attempt_id)` eliminates cross-agent contention entirely.
+
+**Concurrency estimates (single instance):**
+
+| Scale | Concurrent agents | Concurrent connections | Events/sec | Feasibility |
+|-------|-------------------|----------------------|------------|-------------|
+| Small | 50–100 | ~100 | ~5–10 | Trivial |
+| Medium | 500–1,000 | ~1,000 | ~50–100 | Comfortable |
+| Large | 2,000–5,000 | ~5,000 | ~200–500 | Fine with tuning (ulimit, memory) |
+| Very large | 10,000+ | ~10,000+ | ~1,000+ | Approaching single-instance limit |
+
+Assumptions: each agent makes sequential LLM calls averaging 5–20s, ~100KB memory per concurrent connection.
+
+**Bottleneck is never the gateway** — it's the LLM inference servers. A single async Python process comfortably handles 5,000+ concurrent proxy connections. Most RL training runs use 64–512 concurrent agents, well within the comfortable range.
+
+**Scaling beyond single instance** (future): stateless gateway instances behind a load balancer, with event ordering delegated to the DB backend (PostgreSQL SERIAL). See issue #005.
+
+#### Bulk data transfer
+
+The algorithm fetches trajectories for entire training batches (256–4096 rollouts). No batch endpoint needed — the algorithm fires concurrent `GET /api/events` calls via `asyncio.gather()`. With the single-process async gateway, concurrent requests are fast.
+
+**Data size per batch:**
+
+| Context size | Avg event | Events/rollout | Per rollout | 500 rollouts |
+|---|---|---|---|---|
+| Short (4K) | ~5KB | 10 | 50KB | 25MB |
+| Medium (32K) | ~50KB | 10 | 500KB | 250MB |
+| Long (128K) | ~500KB | 10 | 5MB | 2.5GB |
+
+**Case A — agl-lite colocated with Algorithm** (both in compute backend) — **MVP deployment**:
+Transfer is loopback. Even 2.5GB is ~2s. The only overhead is JSON serialization (~100MB/s in Python). **Not a bottleneck.** If serialization ever matters, switch to msgpack/protobuf (5–10x faster) — no architecture change needed. Shared memory is unnecessary: it would couple algorithm to the gateway process and break the API boundary for marginal gain.
+
+**Case B — agl-lite with K8s runner, Algorithm remote** (cross-cluster/region) — **future**:
+Raw transfer at 1 Gbps: 2.5GB = 20s per iteration. Two mitigations:
+
+1. **HTTP gzip compression** (always-on): LLM text/JSON compresses 5–10x. 2.5GB → 250–500MB → 2–4s. One line of FastAPI middleware.
+2. **Archive to shared storage**: For large batches, bypass the API entirely. The archive endpoint (`POST /api/rollouts/archive`) writes JSONL to shared storage (S3, NFS). Each side accesses storage locally:
+
+```
+Algorithm                     agl-lite (near K8s)          Shared Storage (S3/NFS)
+   │                              │                              │
+   │ POST /api/rollouts/archive   │                              │
+   │ {ids: [...], backend:        │                              │
+   │  {type:"jsonl",              │  ── write JSONL ──────────►  │
+   │   path:"s3://bucket/..."}}   │     (fast, near K8s)         │
+   │◄── 200 OK ──────────────────│                              │
+   │                              │                              │
+   │  ── read JSONL directly ──────────────────────────────────► │
+   │     (fast, near compute)                                    │
+```
+
+The archive feature thus serves dual purpose: **data lifecycle** (purge hot store) and **bulk export** (efficient cross-boundary transfer). No additional API needed.
+
+#### Store paths (management API)
+
+**Rollout management:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/rollouts` | Enqueue rollout(s). Body: single `{input, config?, resources_id?}` or batch `{config, resources_id?, rollouts: [{input, config?}, ...]}`. Batch-level `config` and `resources_id` apply to all rollouts; per-rollout fields override. Returns `Rollout` or `List[Rollout]` with status `queuing`. |
+| `GET` | `/api/rollouts` | Query rollouts. Params: `ids` (comma-separated for batch fetch), `status_in`, `cancel_requested`, `limit`, `offset`. Returns `List[Rollout]`. |
+| `GET` | `/api/rollouts/{rollout_id}` | Get a single rollout by ID. Returns `Rollout`. |
+| `PATCH` | `/api/rollouts/{rollout_id}` | Partial update. Body: any subset of `{status, job_name, succeeded_attempt_id, error_message}`. Only fields present in the body are applied. Validates state transitions when `status` is included. Used by K8s controller. |
+| `POST` | `/api/rollouts/{rollout_id}/cancel` | Set `cancel_requested=true`. Rejects if already terminal. Used by Algorithm or user. |
+
+**Event / trajectory access:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/events` | Query events. Params: `rollout_id`, `attempt_id?`, `event_type?`, `limit?`, `offset?`. Returned in insertion order (temporal). When `attempt_id` is omitted: uses `succeeded_attempt_id` if rollout succeeded, otherwise the most recently created attempt (derived from events). |
+
+Attempt listing is included in `GET /api/rollouts/{rid}` response as an `attempts: List[str]` field — the list of attempt IDs for that rollout, ordered by first event timestamp. No separate attempts endpoint needed.
+
+**Model server management:**
+
+```python
+class ModelServer:
+    model: str              # grouping key for routing — e.g., "qwen-7b"
+    endpoint: str           # e.g., "http://vllm-0:8000/v1"
+    version: int            # training step — per server (supports online RL rolling updates)
+    token: str | None       # optional auth token for gateway → model server
+    created_at: float
+```
+
+Store structure: `Dict[model, Dict[endpoint, ModelServer]]` — nested dict for efficient lookup by model.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/models` | Register model server(s). Body: `[{model, endpoint, version, token?}, ...]`. Upsert by `(model, endpoint)`. Returns flat `List[ModelServer]`. Gateway immediately starts routing to them. |
+| `GET` | `/api/models` | List all registered model servers (flat list). |
+| `DELETE` | `/api/models/{model}` | Remove servers for a model. Optional body: `{endpoints: [...]}` to remove specific servers. No body = remove entire model pool. Empty pool auto-deleted. |
+| `DELETE` | `/api/models` | Remove **all** servers. Gateway enters unavailable state — returns 503 to all new LLM requests until a server is registered. |
+
+#### Weight update protocol
+
+The model server API enables clean weight updates for synchronous RL, asynchronous RL, and online RL:
+
+**Sync RL** (stop-the-world):
+```
+                    Algorithm / Compute Backend                    agl-lite Gateway
+                    ───────────────────────────                    ────────────────
+ 1. Training step complete.
+ 2. DELETE /api/models/{model}                ──→   Model pool empty.
+                                                    New LLM requests for this model → 503 + Retry-After.
+                                                    In-flight requests complete normally.
+ 3. Kill old inference servers.
+ 4. Launch new servers with updated weights.
+ 5. Wait for servers to be ready.
+ 6. POST /api/models                          ──→   Servers registered with new version.
+    [{model: "qwen-7b",                             Routing resumes.
+      endpoint: "http://vllm-0:8000/v1",            Retrying agents succeed on next attempt.
+      version: 43},
+     {model: "qwen-7b",
+      endpoint: "http://vllm-1:8000/v1",
+      version: 43}]
+```
+
+**Online RL** (rolling update — no downtime):
+```
+ 1. Training step complete.
+ 2. For each server:
+    a. Stop server, load new weights, restart.
+    b. POST /api/models [{model: "qwen-7b", endpoint: "<this server>", version: 43}]
+       ──→ Upsert: this server now at v43, others still at v42.
+           Gateway keeps routing to available servers.
+ 3. Eventually all servers at v43.
+```
+
+**During the unavailable window** (steps 2–6):
+- Gateway returns `503 Service Unavailable` with `Retry-After: N` header (configurable, default 5s)
+- OpenAI-compatible SDKs (Python, JS, etc.) auto-retry on 503 with exponential backoff
+- The agent pod stays alive — no crash, no K8s Job retry consumed
+- When routing resumes, the next SDK retry succeeds transparently
+
+**Async RL implications**: In turn-level async RL, a single trajectory may span multiple weight updates. The gateway records `model_version` on every `model_request` event, so the algorithm knows which policy generated each response:
+
+```
+[0]  model_request  {model_version: 42, ...}   ← turn 1, policy v42
+[1]  tool_result    {...}
+[2]  model_request  {model_version: 42, ...}   ← turn 2, policy v42
+[3]  tool_result    {...}
+     ── weight update: v42 → v43 ──
+[4]  model_request  {model_version: 43, ...}   ← turn 3, policy v43
+[5]  reward         {value: 0.85}
+```
+
+This per-request version tracking is essential for:
+- **Importance sampling**: correct policy gradient when training data comes from multiple policy versions
+- **Off-policy correction**: adjusting gradients for stale data
+- **Training data filtering**: discarding or down-weighting data from very old versions
+- **Metrics**: tracking performance evolution across training steps
+
+**Resource management** (prompts, config — not model endpoints):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/resources` | Add a new resource snapshot. Body: `{resources}`. Returns `ResourcesUpdate` with generated ID. For prompt templates, evaluation configs, etc. |
+| `GET` | `/api/resources/latest` | Get the latest resource snapshot. |
+| `GET` | `/api/resources/{resources_id}` | Get a specific resource snapshot by ID. |
+
+**Data lifecycle (archive and purge):**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/rollouts/archive` | Archive and purge rollouts from hot store. Body: `{rollout_ids: [...], backend?: {type, ...}}`. See below. |
+
+The algorithm decides when data is no longer needed in hot storage. After consuming a batch of trajectories for training, it calls `archive` to free memory:
+
+```
+Algorithm                              agl-lite Store
+   │                                      │
+   │  GET /api/events (batch queries)     │
+   │◄─────────────────────────────────────│
+   │  [compute gradients, update model]   │
+   │                                      │
+   │  POST /api/rollouts/archive          │
+   │  {rollout_ids: [R1..R500],           │
+   │   backend: {type:"jsonl",            │
+   │             path:"/data/batch42.jsonl"}} │
+   │─────────────────────────────────────►│  persist to file, then purge from store
+   │  200 OK {archived: 500, purged: 500} │
+   │◄─────────────────────────────────────│
+```
+
+**Request body:**
+```json
+{
+    "rollout_ids": ["r1", "r2", "r3"],
+    "backend": {                          // optional — omit to just discard
+        "type": "jsonl",
+        "path": "/data/trajectories/batch_042.jsonl"
+    }
+}
+```
+
+**What gets archived** (one JSONL line per rollout — self-contained, replayable):
+```jsonl
+{"rollout": {"rollout_id":"r1","status":"succeeded",...}, "events": [{...},{...},...]}
+{"rollout": {"rollout_id":"r2","status":"succeeded",...}, "events": [{...},{...},...]}
+```
+
+**Backend options:**
+
+| Type | Description |
+|------|-------------|
+| *(omitted)* | Discard — delete from store, data is gone |
+| `jsonl` | Append rollouts + events to a local JSONL file (or mounted volume) |
+
+Future backends (pluggable via `ArchiveBackend` interface): S3, remote database, etc.
+
+**What gets purged from hot store:** all events for the specified rollouts (all attempts) and the rollout records themselves. Non-terminal rollouts in the list are rejected (400) — you cannot archive a running rollout.
+
+**Storage growth estimate:**
+- 1,000 rollouts × 10 events × 5KB/event = 50MB per training iteration
+- With 128K contexts: individual events up to 500KB → plan accordingly
+- Archive after each iteration to keep hot store bounded
+
+### 3.5 K8s Controller
+
+The K8s controller bridges the Store and K8s. It watches K8s Job status, creates Jobs for queued rollouts, handles cancellation, and syncs terminal status back to the Store. It is the **only component that writes rollout status transitions** (aside from `enqueue_rollout` which creates the initial `queuing` state and `cancel_rollout` which sets the `cancel_requested` flag).
+
+#### K8s resources
+
+| K8s Resource | agl-lite Role |
+|-------------|---------------|
+| **Deployment** | (Optional) agl-lite Service — if co-located with runner |
+| **Job** | Individual rollout execution (one pod per rollout, or batched) |
+| **Service** | Expose agl-lite Service to pods (or ExternalName/Ingress if remote) |
+| **ConfigMap/Secret** | agl-lite Service endpoint URL, algorithm resources (prompts, model endpoints) |
+
+#### Job naming and labeling
+
+Jobs use deterministic names to prevent duplicates and enable crash recovery:
+
+```yaml
+metadata:
+  name: agl-rollout-{rollout_id}       # deterministic — K8s rejects duplicates
+  labels:
+    agl-lite/rollout-id: {rollout_id}   # for label-based lookups
+```
+
+On creation failure due to `AlreadyExists`, the controller fetches the existing Job and proceeds.
+
+#### Job template
+
+The controller builds each Job spec by merging two layers:
+1. **`job_template`** from the rollout's resource snapshot (`resources_id` → `/api/resources/{id}`) — a raw K8s **pod spec** loaded from a YAML file, maintained by the infra team or researcher per experiment
+2. **`rollout.config`** — per-rollout config set by the algorithm (image, command, env vars, and optionally overrides for other containers)
+
+Resource snapshots are immutable — each POST creates a new snapshot with a new ID. A rollout references one `resources_id` that bundles everything it needs (job_template, prompts, eval config — all in one Dict). The controller deduplicates fetches within a reconcile cycle (a batch of 500 rollouts shares the same `resources_id` → fetched once). No invalidation logic needed — IDs never change.
+
+**Design principles:**
+- `job_template` is a **raw K8s pod spec** (any valid K8s field works, no typed schema, no validation at store level)
+- The controller owns one convention: inject into the container named **`agent`**
+- Other containers in the template are passed through unchanged
+- `RolloutConfig` named fields (image, command, env_vars) target the `agent` container
+- `RolloutConfig.overrides` provides per-rollout overrides, including for other containers via `overrides.containers` (name-matched merge)
+
+**Merge order:**
+```
+job_template (raw pod spec, from YAML file)
+  │
+  ├── Deep merge rollout.config.overrides (if any)
+  │     └── overrides.containers: name-matched merge into pod containers
+  │
+  ├── Inject into "agent" container:
+  │     ├── image (from rollout.config.image)
+  │     ├── command (from rollout.config.command)
+  │     ├── env vars (from rollout.config.environment_variables)
+  │     └── env vars (controller: gateway URLs, keys, task input)
+  │
+  └── Wrap in Job metadata:
+        ├── name, namespace, labels (controller)
+        ├── backoffLimit (from rollout.config.max_retries or template default)
+        ├── activeDeadlineSeconds (from rollout.config.timeout or template default)
+        └── ttlSecondsAfterFinished (controller setting)
+```
+
+**Example use cases:**
+
+*Simple (same image for all tasks — math, QA):*
+```yaml
+# job-template.yaml
+spec:
+  containers:
+    - name: agent
+      imagePullPolicy: Never
+      resources:
+        requests: {cpu: "100m", memory: "128Mi"}
+```
+
+*Multi-container (agent + scorer sidecar — coding tasks):*
+```yaml
+# job-template.yaml
+spec:
+  containers:
+    - name: agent
+      imagePullPolicy: Never
+      resources:
+        requests: {cpu: "1", memory: "2Gi"}
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+    - name: scorer
+      image: scorer:latest              # default, can be overridden per-rollout
+      command: ["python", "run_tests.py"]
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+  volumes:
+    - name: workspace
+      emptyDir: {}
+```
+
+*Per-task overrides for multiple containers (SWE-bench):*
+```python
+RolloutConfig(
+    image="repo-123-dev",                     # → agent container
+    command=["python", "solve.py"],           # → agent container
+    overrides={
+        "containers": [                       # name-matched merge
+            {"name": "scorer", "image": "repo-123-test"}
+        ]
+    }
+)
+```
+
+**Error handling:**
+The store does not validate `job_template` or `overrides` — they are opaque dicts. Validation happens when the controller submits the rendered Job to K8s:
+- **Invalid spec** (bad field names, schema errors): K8s rejects immediately → controller marks rollout as `terminal_failed` with the K8s error message
+- **Resource shortage** (insufficient CPU/memory/GPU, no matching nodes): K8s accepts the Job but the pod stays `Pending` → controller does NOT fail the rollout, K8s retries when resources become available
+
+Example generated Job (simple case):
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agl-rollout-R1
+  labels:
+    agl-lite/rollout-id: R1
+spec:
+  backoffLimit: 3                    # from rollout.config.max_retries
+  activeDeadlineSeconds: 600         # from rollout.config.timeout
+  ttlSecondsAfterFinished: 3600     # controller setting
+  template:
+    spec:                            # ← starts from job_template
+      restartPolicy: Never           # from template
+      nodeSelector:                  # from template
+        gpu: "a100"
+      serviceAccountName: agl-agent  # from template
+      containers:
+        - name: agent
+          image: my-agent:v2         # from rollout.config.image
+          imagePullPolicy: Never     # from template
+          command: ["python", "solve.py"]  # from rollout.config.command
+          resources:                 # from template
+            requests: {cpu: "500m", memory: "1Gi"}
+          env:
+            # controller injected (always present)
+            - name: ROLLOUT_ID
+              value: "R1"
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: AGL_LITE_URL
+              value: "http://agl-lite:8080"
+            - name: OPENAI_BASE_URL
+              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+            - name: OPENAI_API_KEY               # OpenAI SDK → Authorization: Bearer
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: AGL_KEY
+            - name: ANTHROPIC_BASE_URL           # Anthropic SDK — same gateway URL
+              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+            - name: ANTHROPIC_API_KEY            # Anthropic SDK → x-api-key
+              valueFrom:
+                secretKeyRef:
+                  name: agl-lite-keys
+                  key: AGL_KEY
+            - name: AGL_TASK_INPUT
+              value: '{"prompt": "Write a sort function", ...}'
+            - name: AGL_EVENT_URL
+              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
+            # algorithm extra env (from rollout.config.environment_variables)
+            - name: DEBUG
+              value: "1"
+          volumeMounts:              # from rollout.config.mount
+            - name: datasets
+              mountPath: /data
+              readOnly: true
+      volumes:                       # generated from rollout.config.mount
+        - name: datasets
+          persistentVolumeClaim:
+            claimName: datasets-pvc
+```
+
+On each retry, K8s creates a new pod with a new `metadata.uid`, so `OPENAI_BASE_URL` and `AGL_EVENT_URL` automatically point to a fresh attempt partition in the Gateway. `AGL_TASK_INPUT` stays the same across retries (same rollout, same task).
+
+#### Controller main loop
+
+The controller uses the standard K8s controller pattern — **watch + periodic reconciliation**:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Controller Main Loop                               │
+│                                                                       │
+│  1. WATCH: K8s Job events (label: agl-lite/rollout-id)               │
+│     → on any Job status change, reconcile that rollout                │
+│                                                                       │
+│  2. POLL Store: query rollouts in "queuing" or with cancel_requested  │
+│     → create Jobs for new queuing rollouts                            │
+│     → process cancellations                                           │
+│                                                                       │
+│  3. PERIODIC FULL RECONCILE (every N seconds):                        │
+│     → for each "queuing" rollout: ensure Job exists or create it      │
+│     → for each "running" rollout: check Job status, sync if needed    │
+│     → catches anything missed by watch/poll (crash recovery)          │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+#### Reconcile logic (per rollout)
+
+```python
+def reconcile(rollout: Rollout):
+    if rollout.status in (SUCCEEDED, TERMINAL_FAILED, CANCELLED):
+        # Final state. Ensure K8s Job is cleaned up (idempotent).
+        if rollout.job_name:
+            k8s.delete_job_if_exists(rollout.job_name)
+        return
+    
+    # ── Handle cancel first (takes priority) ──
+    if rollout.cancel_requested:
+        handle_cancel(rollout)
+        return
+    
+    # ── Normal lifecycle ──
+    if rollout.status == QUEUING:
+        handle_queuing(rollout)
+    elif rollout.status == RUNNING:
+        handle_running(rollout)
+
+
+def handle_cancel(rollout):
+    """Process cancel_requested flag."""
+    if rollout.status == QUEUING and rollout.job_name is None:
+        # No Job exists. Straight to cancelled.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED)
+        return
+    
+    if rollout.job_name is None:
+        # Running but no job_name? Shouldn't happen, but be safe.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED)
+        return
+    
+    job = k8s.get_job(rollout.job_name)
+    
+    if job is None:
+        # Job already gone. Mark cancelled.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED)
+        return
+    
+    # Job exists. Check if it already succeeded before we delete.
+    if job_has_condition(job, "Complete"):
+        # Success already happened. Honor success over cancel.
+        succeeded_pod_uid = find_succeeded_pod_uid(job)
+        store.update_rollout(rollout.rollout_id,
+            status=SUCCEEDED,
+            succeeded_attempt_id=succeeded_pod_uid)
+        k8s.delete_job(rollout.job_name)
+        return
+    
+    if job_has_condition(job, "Failed"):
+        # Job already failed on its own. User wanted cancel — mark cancelled,
+        # not terminal_failed. The intent was cancellation.
+        store.update_rollout(rollout.rollout_id,
+            status=CANCELLED)
+        k8s.delete_job(rollout.job_name)
+        return
+    
+    # Job is still active. Delete it.
+    # Foreground propagation: K8s deletes pods first, then Job.
+    k8s.delete_job(rollout.job_name, propagation="Foreground")
+    # Don't mark cancelled yet — Job is still terminating.
+    # On next reconciliation, get_job returns None → mark cancelled.
+    # This prevents a window where Store says "cancelled" but pods are
+    # still running and writing events.
+
+
+def handle_queuing(rollout):
+    """Create K8s Job for a queuing rollout."""
+    if rollout.job_name is not None:
+        # Job was already created (controller crashed after creation
+        # but before status update). Check its status.
+        job = k8s.get_job(rollout.job_name)
+        if job is not None:
+            store.update_rollout(rollout.rollout_id,
+                status=RUNNING, job_name=rollout.job_name)
+            return
+        # Job name set but Job gone? Something went wrong.
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message="Job not found during recovery")
+        return
+    
+    job_name = f"agl-rollout-{rollout.rollout_id}"
+    try:
+        k8s.create_job(make_job_spec(rollout, job_name))
+        store.update_rollout(rollout.rollout_id,
+            status=RUNNING, job_name=job_name)
+    except K8sAlreadyExistsError:
+        # Job exists (duplicate from previous attempt). Fetch and proceed.
+        store.update_rollout(rollout.rollout_id,
+            status=RUNNING, job_name=job_name)
+    except K8sError as e:
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message=f"Job creation failed: {e}")
+
+
+def handle_running(rollout):
+    """Sync K8s Job status to Store for a running rollout."""
+    job = k8s.get_job(rollout.job_name)
+    
+    if job is None:
+        # Job disappeared (manually deleted, namespace cleanup).
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message="K8s Job not found")
+        return
+    
+    conditions = {c.type: c for c in (job.status.conditions or [])}
+    
+    if "Complete" in conditions:
+        succeeded_pod_uid = find_succeeded_pod_uid(job)
+        store.update_rollout(rollout.rollout_id,
+            status=SUCCEEDED,
+            succeeded_attempt_id=succeeded_pod_uid)
+    elif "Failed" in conditions:
+        reason = conditions["Failed"].reason     # BackoffLimitExceeded, DeadlineExceeded
+        message = conditions["Failed"].message
+        store.update_rollout(rollout.rollout_id,
+            status=TERMINAL_FAILED,
+            error_message=f"{reason}: {message}")
+    # else: Job still active (running or between retries). No update needed.
+```
+
+All `update_rollout` calls are partial updates — only the fields included in the PATCH body are changed. State transition validation is enforced server-side. The controller is the sole writer for status transitions, so no locking is needed.
+
+#### Edge cases
+
+**Controller crash and recovery:**
+On restart, periodic full reconciliation scans all non-terminal rollouts and syncs them with K8s Job status. This is idempotent — if a Job exists, its status is checked; if it's gone, the rollout is marked `terminal_failed`. The deterministic Job name (`agl-rollout-{rollout_id}`) ensures the controller can always find the Job for a rollout.
+
+**Two controller instances (leader election gap):**
+Both read the same rollout, both try to update. State transition validation prevents invalid updates — e.g., if one controller already moved it to `succeeded`, the other's `PATCH {status: succeeded}` is a no-op (same state) or rejected (if trying a different transition). Single-threaded asyncio in the Store ensures no interleaving.
+
+**Store unavailable:**
+The K8s controller pattern naturally handles this: if `update_rollout` fails due to Store being unreachable, the event is requeued with exponential backoff. The Job keeps running regardless of Store availability. When the Store comes back, the controller retries. No data loss — K8s Job status is the durable record.
+
+**Job creation race (controller crash mid-creation):**
+Controller creates Job, crashes before calling `update_rollout`. On restart, it finds a `queuing` rollout. It tries to create `agl-rollout-{rollout_id}` — K8s returns `AlreadyExists`. Controller catches this, sets status to `running`. Idempotent.
+
+**Job deleted externally (`kubectl delete job`):**
+Periodic reconciliation finds a `running` rollout whose Job no longer exists. Marks `terminal_failed` with error "K8s Job not found".
+
+**Cancel + success race:**
+User sets `cancel_requested=true`. Controller reconciles and checks Job status before deleting. If Job already has `Complete` condition, **success wins** — the work was done and trajectory data is captured. Controller marks `succeeded` and cleans up the Job. Cancel is effectively a no-op in this case.
+
+**Cancel + failure race:**
+If `cancel_requested=true` and Job has `Failed` condition, controller marks `cancelled` (not `terminal_failed`) — user's intent was to cancel, and the failure is consistent with that intent.
+
+**Cancel during Job termination:**
+After the controller calls `k8s.delete_job(propagation="Foreground")`, the Job enters a terminating state. Pods receive SIGTERM, then SIGKILL after grace period (default 30s). The controller does **not** mark `cancelled` until the Job is fully gone (`get_job` returns None). This prevents a window where the Store says `cancelled` but pods are still running and writing events to the Gateway.
+
+**Node partition (two pods running):**
+Data stays clean — each pod writes to its own `attempt_id` partition (see Section 3.3). The Job stays `active` throughout, so rollout remains `running`. Only when the Job reaches a terminal condition does the controller update the Store. If both pods succeed, K8s Job (`completions=1`) terminates after the first; `succeeded_attempt_id` records whichever pod K8s considers the completion.
+
+**Algorithm queries stale status:**
+Inherent in async systems. The controller syncs within seconds in normal operation. Algorithm polls `GET /api/rollouts?ids=...` until terminal.
+
+**Rollout enqueued but controller is down:**
+Rollouts stay `queuing`. When the controller comes back, periodic reconciliation picks them up and creates Jobs. No data loss, just delay.
+
+### 3.6 Security
+
+#### API key authentication (MVP)
+
+Single shared API key (`AGL_KEY`) for all components. Stored in a K8s Secret so the controller can inject it into agent pods.
+
+```
+K8s Secret: agl-lite-keys
+┌─────────────────────────────────┐
+│ AGL_KEY: "agl_xxx..."           │  ← shared key for all components
+└─────────────────────────────────┘
+          │
+          ├── mount ──► agl-lite Service   (reads AGL_KEY for verification)
+          ├── mount ──► K8s Controller     (uses AGL_KEY for API calls; injects into Jobs)
+          └── mount ──► Algorithm          (uses AGL_KEY — or gets it from its own config)
+```
+
+**Agent key injection via SDK env vars**: The controller sets `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` to `AGL_KEY` in the Job env. Each SDK sends the key in its own header format:
+- OpenAI SDK → `Authorization: Bearer <key>`
+- Anthropic SDK → `x-api-key: <key>`
+
+The gateway checks both header formats. **Zero agent modification needed** — the agent uses whichever SDK it wants.
+
+```yaml
+# Controller injects into Job template
+env:
+  - name: OPENAI_API_KEY             # OpenAI SDK → Authorization: Bearer
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGL_KEY
+  - name: ANTHROPIC_API_KEY          # Anthropic SDK → x-api-key
+    valueFrom:
+      secretKeyRef:
+        name: agl-lite-keys
+        key: AGL_KEY
+```
+
+**No role-based access for MVP** — any valid key grants full access. Role-based restrictions can be added later by mapping keys to roles.
+
+#### K8s API access
+
+Only the K8s Controller needs K8s API access (to create/delete Jobs, watch Job status, read ConfigMaps/Secrets). It uses a ServiceAccount with scoped RBAC:
+
+```yaml
+# Controller ServiceAccount RBAC
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get"]
+```
+
+**agl-lite Service has zero K8s dependency.** It's a pure HTTP server. Keys come from Secret mount (pod volume) or environment variables — no K8s API calls. It can run anywhere: K8s pod, bare VM, Docker container.
+
+#### Production path (future)
+
+- Per-rollout scoped JWTs for agent pods (controller mints short-lived tokens)
+- mTLS between components
+- TLS termination at ingress for cross-boundary deployments
+- Rate limiting per role
+
+### 3.7 Adapter Simplification (Example)
+
+```python
+class TrajectoryAdapter:
+    """Convert trajectory events into algorithm-consumable format."""
+    
+    def adapt(self, trajectory: Trajectory) -> List[Triplet]:
+        """Extract (prompt, response, reward) triplets from a trajectory."""
+        model_events = [e for e in trajectory.events if e.event_type == "model_request"]
+        reward_events = [e for e in trajectory.events if e.event_type == "reward"]
+        total_reward = sum(r.data["value"] for r in reward_events) if reward_events else None
+        
+        return [Triplet(
+            prompt=e.data["request"]["messages"],
+            response=e.data["response"],
+            reward=total_reward,
+        ) for e in model_events]
+```
+
+The adapter only needs to understand `model_request` and `reward` — the two reserved types. User-defined event types (tool results, observations, custom metrics, etc.) are consumed by user-defined algorithm code, not the adapter.
+
+> **This is an example adapter** using episode-level reward (total reward assigned to every step). Real RL algorithms use different reward assignment strategies: per-step rewards, discounted rewards, advantage-based, token-level, etc. Users should implement their own adapter for their algorithm's needs.
+
+No OTEL span parsing, no parent-child tree reconstruction, no attribute unflattening.
+
+---
+
+## 4. API Change Summary: Agent Lightning → agl-lite
+
+### 4.1 Original Agent Lightning API Surface
+
+The original `LightningStore` has **25+ methods** across 6 domains:
+
+**Rollout management (8 methods):**
+`start_rollout`, `enqueue_rollout`, `enqueue_many_rollouts`, `dequeue_rollout`, `dequeue_many_rollouts`, `update_rollout`, `query_rollouts`, `get_rollout_by_id`, `wait_for_rollouts`
+
+**Attempt management (4 methods):**
+`start_attempt`, `update_attempt`, `query_attempts`, `get_latest_attempt`
+
+**Span management (5 methods):**
+`add_span`, `add_many_spans`, `add_otel_span`, `query_spans`, `get_next_span_sequence_id`, `get_many_span_sequence_ids`
+
+**Resource management (4 methods):**
+`add_resources`, `update_resources`, `query_resources`, `get_resources_by_id`, `get_latest_resources`
+
+**Worker management (3 methods):**
+`query_workers`, `get_worker_by_id`, `update_worker`
+
+**Meta (3):**
+`capabilities`, `statistics`, `otlp_traces_endpoint`
+
+**LLM Proxy** is a separate FastAPI server with:
+- `RolloutAttemptMiddleware` (URL rewriting `/rollout/{rid}/attempt/{aid}/v1/...` → `/v1/...` + header injection)
+- `StreamConversionMiddleware` (stream → non-stream for OTEL capture)
+- `MessageInspectionMiddleware`
+- `LightningSpanExporter` (OTEL span batching + flush to Store)
+- `LightningOpenTelemetry` (LiteLLM callback wiring)
+
+### 4.2 agl-lite API Surface
+
+A single HTTP service with **~18 endpoints** across 6 domains:
+
+**LLM proxy (2 paths, agent-facing):**
+
+| Path | Replaces |
+|------|----------|
+| `POST /rollout/{rid}/attempt/{aid}/v1/...` | `RolloutAttemptMiddleware` + `StreamConversionMiddleware` + `LightningSpanExporter` + LiteLLM proxy. One path does it all: proxy + auto-capture as event. Returns 503 during weight updates. |
+| `POST /rollout/{rid}/attempt/{aid}/events` | *New.* Explicit event reporting (reward, user-defined). No original equivalent — rewards were extracted from OTEL spans. |
+
+**Rollout management (5 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/rollouts` | `enqueue_rollout`, `enqueue_many_rollouts` (batch via JSON array body) |
+| `GET /api/rollouts` | `query_rollouts` + `wait_for_rollouts` (params: `ids` for batch fetch, `status_in`, `cancel_requested`, `limit`, `offset`). Waiting is client-side polling. |
+| `GET /api/rollouts/{rid}` | `get_rollout_by_id` |
+| `PATCH /api/rollouts/{rid}` | `update_rollout` — partial update, only provided fields changed. Validates state transitions. |
+| `POST /api/rollouts/{rid}/cancel` | *New.* Sets `cancel_requested` flag. Original used `update_rollout(status="cancelled")`. |
+
+**Model server management (4 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/models` | *New.* Register versioned inference server(s) — single or batch. Upsert by endpoint. Original stored model endpoints as generic resources. |
+| `GET /api/models` | *New.* List registered servers. |
+| `DELETE /api/models?endpoint=<url>` | *New.* Remove one server from routing by endpoint. |
+| `DELETE /api/models` | *New.* Remove all servers (weight update window). Gateway returns 503 until new servers registered. |
+
+**Event / trajectory (1 endpoint):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `GET /api/events` | `query_spans` (events replace spans; filterable by `event_type`, `attempt_id`). When `attempt_id` omitted, defaults to succeeded attempt or latest. |
+
+Attempt listing is folded into `GET /api/rollouts/{rid}` response (includes `attempts` field with ordered attempt IDs). Replaces `query_attempts` — no separate entity or endpoint needed.
+
+**Resource management (3 endpoints):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/resources` | `add_resources` (prompts, config — model endpoints moved to `/api/models`) |
+| `GET /api/resources/latest` | `get_latest_resources` |
+| `GET /api/resources/{id}` | `get_resources_by_id` |
+
+**Data lifecycle (1 endpoint):**
+
+| Endpoint | Replaces |
+|----------|----------|
+| `POST /api/rollouts/archive` | *New.* Algorithm-driven archive + purge. Replaces original's `eviction_threshold_bytes` / `safe_threshold_bytes` automatic eviction. Optional persistence to JSONL backend. |
+
+### 4.3 What's Removed and Why
+
+| Removed | Reason |
+|---------|--------|
+| `start_rollout` | No "start + first attempt" combo. K8s controller creates Jobs, pod UIDs are attempts. |
+| `dequeue_rollout`, `dequeue_many_rollouts` | No work queue pull. K8s controller polls Store for `queuing` rollouts and creates Jobs. |
+| `start_attempt`, `update_attempt`, `query_attempts` (as entity), `get_latest_attempt` | Attempt is a data tag (pod UID), not a managed entity. No attempt status machine. |
+| `add_span`, `add_many_spans`, `add_otel_span` | Replaced by `model_request` events (auto-captured) and `/events` endpoint. |
+| `get_next_span_sequence_id`, `get_many_span_sequence_ids` | No explicit sequence. Insertion order provides temporal ordering — guaranteed by single-threaded asyncio event loop + storage backend (list index / ROWID / SERIAL). |
+| `query_workers`, `get_worker_by_id`, `update_worker` | K8s manages pod/worker lifecycle. No worker telemetry in agl-lite. |
+| `wait_for_rollouts` | Client-side polling with `GET /api/rollouts?ids=...`. No server-side long-poll — avoids connection timeout issues and notification machinery. |
+| `update_resources` (in-place mutation) | Resources are immutable snapshots. Post a new one instead. |
+| `query_resources` (paginated search) | Simplified to `get latest` and `get by ID`. |
+| `capabilities`, `statistics`, `otlp_traces_endpoint` | No OTEL, no capability negotiation. Stats can be added later if needed. |
+| `RolloutAttemptMiddleware` | Path parsing is built into the unified service. |
+| `StreamConversionMiddleware` | Original forced `stream=false` to backend and re-streamed as fake SSE (OTEL couldn't handle real streams). agl-lite tees real streams — chunks forwarded to agent immediately, buffered for event capture. No latency penalty. |
+| `LightningSpanExporter` | No OTEL span batching. Events written directly to in-process Store. |
+| `LightningOpenTelemetry` callback | No LiteLLM, no OTEL callbacks. |
+
+### 4.4 What's New
+
+| New | Reason |
+|-----|--------|
+| **Model server registry** (`/api/models`) | First-class inference server management with version tracking. Original stored model endpoints as opaque resource blobs. Enables training-aware routing, weight update coordination, and async RL. |
+| **Algorithm-driven archive** (`/api/rollouts/archive`) | Explicit data lifecycle control. Algorithm archives consumed batches with optional persistence (JSONL, etc.). Replaces original's automatic byte-threshold eviction which risked deleting unconsumed data. |
+| **Parameter adjustment** (`add_params`, `drop_params`) | Static gateway config to normalize requests for backends (vLLM, TGI). Original relied on LiteLLM's `litellm_params` per model. Gateway records both original and adjusted params in events. |
+| **Weight update protocol** (DELETE all → 503 → POST new) | Clean coordination between training and inference. Gateway returns 503 during weight updates; SDKs auto-retry. No agent crashes, no K8s retry consumed. Emergent from CRUD — no special "update mode" API. |
+| **`model_version` in `model_request` events** | Per-request policy version tracking. Essential for importance sampling, off-policy correction, and training data filtering in async RL. |
+| `POST /rollout/{rid}/attempt/{aid}/events` | Explicit event ingestion (reward, user-defined types). Original had no direct event API — everything went through OTEL spans. |
+| `POST /api/rollouts/{rid}/cancel` | Explicit cancel with `cancel_requested` flag. Cleaner than overloading `update_rollout(status="cancelled")`. |
+| `cancel_requested` flag on Rollout | Separate intent from execution. Original used status directly. |
+| `version` on `Rollout` | Monotonically incrementing counter, bumped on every update. Informational — included in responses for debugging/observability. Not required in PATCH requests. Original relied on in-process thread locks or single-writer patterns. |
+| `succeeded_attempt_id` on Rollout | Directly links successful rollout to its trajectory data. Original required querying attempts to find the successful one. |
+| Open event types (`event_type: str`) | Extensible without schema changes. Original was locked to OTEL span format. |
+| Unified service (proxy + store) | Single deployment, in-process event capture on hot path. Original had separate LLM Proxy and Store Server. |

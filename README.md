@@ -1,15 +1,95 @@
-# Agl-lite: A Minimal Workable Version of Agent Lightning
+# agl-lite
 
-This project `agl-lite` which is a minimal workable version of the popular agentic rl project `Agent Lightning` (https://github.com/microsoft/agent-lightning). 
+**Minimal agentic RL infrastructure — a streamlined [Agent Lightning](https://github.com/microsoft/agent-lightning).**
 
-here are some key changes: 
-1. remove the dependency of `litellm` and build self-owned request gateway instead; 
-2. remove the dependency of `OpenTelemetry` and the whole stack built upon it, such as the tracers of agents; instead, use gateway to collect request-response data during transfer and record them into data store; 
-3. following (2), the organization of data is not based on span in opentelemetry, instead, the basic trajectory format is sequence of requests (with response);
-4. use `kubenetes` as the default agent runner (`minikube` for single machine), and move the retry control from data store to k8s controller, and simplify the rollout states
+agl-lite provides transparent LLM request capture, a rollout data store, and Kubernetes-native agent execution — all behind a single HTTP endpoint. Agents use standard OpenAI SDKs with zero instrumentation; the gateway captures everything automatically.
 
-## Instruction for Coding Agents
+## Architecture
 
-The architecture of `agl-lite` is described in the high-level architecture design doc in `docs/design/0_architecture.md`, you should read it to get the overall picture of the system. Since the document is quite long, you should first read the TOC by `grep`ing `##` in the markdown file, and then read the sections you are interested in.
+<p align="center">
+  <img src="docs/images/lite_arch.excalidraw.svg" alt="agl-lite architecture" width="800">
+</p>
 
-There are some local environment setup and configuration needed for this project refactoring in `.local/`. 
+Three groups connected only by HTTP:
+
+| Group | What it does | Managed by |
+|-------|-------------|------------|
+| **Compute Backend** | Model training (VERL/Megatron) + inference servers (vLLM) | User |
+| **agl-lite Service** | Gateway (LLM proxy + event capture) + Data Store (rollouts, events, models) | agl-lite |
+| **Agent Runner** | K8s controller + agent pods (any container, any language) | agl-lite + K8s |
+
+## Key Design Choices
+
+1. **Self-owned LLM gateway** — a purpose-built reverse proxy replaces litellm, capturing all request-response data transparently as it flows through
+2. **Gateway-level data capture** — instead of instrumenting agents with OpenTelemetry, the gateway records request-response pairs during transfer — the proxy *is* the instrumentation
+3. **K8s-native agent runner** — K8s Jobs as the execution unit, pod UIDs as attempt IDs, Job lifecycle as the retry mechanism — the store focuses purely on data, not execution control
+
+## Quick Start
+
+Run the math PoC — 30 GSM8K problems solved by Qwen2.5-1.5B-Instruct via vLLM:
+
+```bash
+# Prerequisites: minikube running, uv installed, GPU with nvidia-container-toolkit
+git clone https://github.com/<org>/agl-lite && cd agl-lite
+
+# Start vLLM inference server
+scripts/start_vllm.sh
+
+# Configure and run
+cp examples/math-poc/.env.vllm.example deploy/.env
+export AGL_KEY=$(openssl rand -hex 32)
+examples/math-poc/run.sh
+```
+
+This builds images, deploys the controller to minikube, starts agl-lite on the host, and runs a multi-iteration RL loop: enqueue tasks → agents solve via vLLM → gateway captures trajectories → algorithm scores answers. See the [Getting Started guide](docs/get_started.md) for the full setup walkthrough.
+
+## How Agents Work
+
+Agents are plain containers that read env vars and call an OpenAI-compatible endpoint. No agl-lite import, no base class — any language, any framework:
+
+```python
+import os, json, openai
+
+task = json.loads(os.environ["AGL_TASK_INPUT"])
+client = openai.OpenAI()  # reads OPENAI_BASE_URL automatically
+
+response = client.chat.completions.create(
+    model="gpt-4.1",  # gateway routes to your vLLM
+    messages=[{"role": "user", "content": task["prompt"]}],
+)
+# Gateway captures this call automatically — no instrumentation needed
+```
+
+The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `AGL_TASK_INPUT`, and `AGL_EVENT_URL`. See [What Happens Next](docs/get_started.md#what-happens-next) for details.
+
+## Examples
+
+| Example | Description | Mode |
+|---------|-------------|------|
+| [Math PoC](examples/math-poc/) | GSM8K problems with Qwen2.5-1.5B-Instruct | Mock (CPU) or vLLM (GPU) |
+| [SWE-bench](examples/swe_bench/) | Coding tasks with Claude Code agent | vLLM + per-instance Docker images |
+
+## Documentation
+
+| Section | Content |
+|---------|---------|
+| [Getting Started](docs/get_started.md) | Prerequisites, setup flow, first run |
+| [Architecture](docs/design/0_architecture.md) | Full system design — data models, API spec, components |
+| [K8s Controller](docs/design/1_k8s_controller.md) | Controller design and implementation details |
+| [Dev Guidelines](docs/dev_guidelines.md) | Code conventions, tooling, concurrency model |
+| [Deployment](deploy/README.md) | Docker builds, K8s manifests, configuration |
+
+## Project Status
+
+- **~3.5K lines** of source code, **333 tests** 
+- Gateway with route config, streaming proxy, and automatic event capture
+- In-memory store (rollouts, events, models, resources)
+- K8s controller with Job lifecycle management
+- Python client library (`AglLiteClient`) and CLI (`agl-client`)
+- VERL integration (`AglLiteDaemon`) with triplet format
+- Math PoC end-to-end (mock + real vLLM)
+- SWE-bench example with Claude Code
+
+## License
+
+TBD

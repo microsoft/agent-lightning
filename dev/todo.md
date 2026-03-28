@@ -457,13 +457,100 @@ HTTP API:                           AglLiteDaemon:
 
 ---
 
-## Phase 6: Polish
+## Phase 6: Documentation [ongoing]
+
+**Goal**: Create comprehensive user-facing documentation using mkdocs, organized for
+different audiences (new users, researchers, operators, contributors).
+
+### Structure
+
+```
+docs/
+├── index.md                          # Home — what is agl-lite, key design choices, quick links
+├── getting-started/
+│   ├── index.md                      # Overview of setup flow (the 7-step diagram)
+│   ├── prerequisites.md              # Docker, uv, Node.js, kubectl
+│   ├── minikube.md                   # Minikube setup
+│   └── quickstart.md                 # First run — math-poc vLLM mode
+├── concepts/
+│   ├── index.md                      # How agl-lite works (high-level, 3 groups diagram)
+│   ├── gateway.md                    # Transparent LLM proxy, model routing, param injection, event capture
+│   ├── store.md                      # Data model: rollouts, events, resources, model servers
+│   ├── controller.md                 # K8s reconciliation, Job lifecycle, attempt = pod UID
+│   ├── agent-contract.md             # Env vars, language-agnostic, no SDK dependency
+│   ├── data-model.md                 # Event types, trajectory format, triplet format
+│   └── weight-updates.md             # Weight update protocol (DELETE → re-POST cycle)
+├── user-guide/
+│   ├── deployment.md                 # deploy/ structure, .env config, build & deploy scripts
+│   ├── configuration.md              # Server settings, gateway YAML config, controller settings
+│   ├── writing-agents.md             # How to write an agent (Python, JS, any language)
+│   ├── running-experiments.md        # Enqueue rollouts, poll status, retrieve trajectories
+│   ├── hooks.md                      # RolloutHooks: on_enqueue, on_succeeded customization
+│   └── verl-integration.md           # AglLiteDaemon, training loop, triplet format
+├── examples/
+│   ├── math-poc.md                   # GSM8K end-to-end (mock + vLLM modes)
+│   └── swe-bench.md                  # SWE-bench with Claude Code agent
+├── reference/
+│   ├── api.md                        # Full REST API spec (all endpoints, request/response schemas)
+│   ├── cli.md                        # agl-lite serve, agl-lite controller, agl-client commands
+│   ├── schemas.md                    # Pydantic models: Rollout, Event, ModelServer, Resources
+│   ├── client-library.md             # AglLiteClient Python API
+│   └── gateway-config.md             # Route config YAML format (model_in/out, params add/drop)
+├── development/
+│   ├── guidelines.md                 # Code conventions, tooling, concurrency model
+│   ├── testing.md                    # Test structure, how to run, async conventions
+│   └── project-layout.md            # Source tree walkthrough
+└── design/
+    ├── architecture.md               # Full architecture doc (from 0_architecture.md)
+    └── k8s-controller.md             # Controller design details (from 1_k8s_controller.md)
+```
+
+### Source material mapping
+
+| Target | Source | Action |
+|--------|--------|--------|
+| `getting-started/prerequisites.md` | `docs/how-to/install_prerequisites.md` | Clean up, polish |
+| `getting-started/minikube.md` | `docs/how-to/install_minikube.md` | Clean up, polish |
+| `getting-started/quickstart.md` | `docs/get_started.md` | Rewrite for vLLM math-poc |
+| `concepts/*` | `docs/design/0_architecture.md` §1-3, slides | Extract user-facing concepts |
+| `user-guide/deployment.md` | `deploy/README.md`, `deploy/*/README.md` | Consolidate |
+| `user-guide/configuration.md` | `docs/dev_guidelines.md`, source code | Extract config reference |
+| `user-guide/hooks.md` | `dev/todo.md` Store Hooks section | Write from design notes |
+| `user-guide/verl-integration.md` | `dev/todo.md` Phase 5, slides | Write from design notes |
+| `examples/math-poc.md` | `examples/math-poc/README.md` | Polish, add to mkdocs |
+| `examples/swe-bench.md` | `examples/swe_bench/README.md` | Polish, add to mkdocs |
+| `reference/api.md` | `docs/design/0_architecture.md` §3.4 | Extract API spec |
+| `reference/cli.md` | `agl_lite/cli.py`, `agl_lite/client_cli.py` | Document from source |
+| `reference/schemas.md` | `agl_lite/schemas/*.py` | Document from source |
+| `reference/client-library.md` | `agl_lite/client.py` | Document from source |
+| `reference/gateway-config.md` | `agl_lite/gateway/config.py`, examples | Document from source |
+| `development/guidelines.md` | `docs/dev_guidelines.md` | Move as-is |
+| `development/testing.md` | `docs/dev_guidelines.md` Testing section | Extract |
+| `development/project-layout.md` | `docs/dev_guidelines.md` Project Layout | Extract |
+| `design/*` | `docs/design/0_architecture.md`, `1_k8s_controller.md` | Keep as-is |
+
+### Tasks
+
+- [x] **6.0**: Repo README rewrite — architecture SVG, vLLM quick start, agent snippet, examples table
+- [x] **6.0.1**: Move coding agent instructions to `AGENTS.md`
+- [x] **6.1**: mkdocs setup — `mkdocs.yml`, theme, nav structure, placeholder stubs, build verified [completed]
+- [ ] **6.2**: Getting Started section — prerequisites, minikube, quickstart [ready]
+- [x] **6.3**: Concepts section — gateway, store, controller, agent contract, data model, weight updates [completed]
+- [ ] **6.4**: User Guide section — deployment, configuration, writing agents, running experiments, hooks, VERL [backlog]
+- [ ] **6.5**: Examples section — math-poc, swe-bench [backlog]
+- [ ] **6.6**: Reference section — API, CLI, schemas, client library, gateway config [backlog]
+- [ ] **6.7**: Development section — guidelines, testing, project layout [backlog]
+- [ ] **6.8**: Design section — move existing design docs [backlog]
+- [ ] **6.9**: Clean up old docs structure (`docs/how-to/`, `docs/refactor_review/`) [backlog]
+
+---
+
+## Phase 7: Polish [backlog]
 
 - [ ] Structured logging (JSON, with rollout_id/attempt_id context)
 - [ ] Prometheus metrics (optional)
 - [ ] Docker images for agl-lite serve and controller
 - [ ] CI/CD pipeline
-- [ ] User documentation beyond get_started.md
 
 ---
 

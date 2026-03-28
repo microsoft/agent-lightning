@@ -1,0 +1,113 @@
+site_name: agl-lite
+site_description: Minimal agentic RL infrastructure — a streamlined Agent Lightning
+site_url: https://github.com/agent-lightning/agl-lite  # TODO: update when deployed
+repo_url: https://github.com/agent-lightning/agl-lite
+repo_name: agl-lite
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.integrate
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Prerequisites: getting-started/prerequisites.md
+    - Minikube Setup: getting-started/minikube.md
+    - Quick Start: getting-started/quickstart.md
+  - Concepts:
+    - concepts/index.md
+    - Gateway: concepts/gateway.md
+    - Data Store: concepts/store.md
+    - K8s Controller: concepts/controller.md
+    - Agent Contract: concepts/agent-contract.md
+    - Data Model: concepts/data-model.md
+    - Weight Updates: concepts/weight-updates.md
+  - User Guide:
+    - user-guide/deployment.md
+    - Configuration: user-guide/configuration.md
+    - Writing Agents: user-guide/writing-agents.md
+    - Running Experiments: user-guide/running-experiments.md
+    - Hooks: user-guide/hooks.md
+    - VERL Integration: user-guide/verl-integration.md
+  - Examples:
+    - examples/math-poc.md
+    - examples/swe-bench.md
+  - Reference:
+    - reference/api.md
+    - CLI: reference/cli.md
+    - Schemas: reference/schemas.md
+    - Client Library: reference/client-library.md
+    - Gateway Config: reference/gateway-config.md
+  - Development:
+    - development/guidelines.md
+    - Testing: development/testing.md
+    - Project Layout: development/project-layout.md
+  - Design:
+    - design/architecture.md
+    - K8s Controller: design/k8s-controller.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            heading_level: 3
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/<org>/agl-lite
