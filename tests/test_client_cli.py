@@ -36,7 +36,7 @@ def server():
 def _run_cli(*args: str, expect_ok: bool = True) -> str:
     """Run agl-client command and return stdout."""
     env = {
-        "AGL_LITE_URL": "http://127.0.0.1:18923",
+        "AGL_BASE_URL": "http://127.0.0.1:18923",
         "AGL_KEY": AGL_KEY,
         "PATH": "",  # will be overridden
     }
@@ -94,6 +94,6 @@ class TestClientCLI:
             [sys.executable, "-m", "agl_lite.client_cli", "events", "list"],
             capture_output=True,
             text=True,
-            env={**__import__("os").environ, "AGL_LITE_URL": "http://127.0.0.1:18923", "AGL_KEY": AGL_KEY},
+            env={**__import__("os").environ, "AGL_BASE_URL": "http://127.0.0.1:18923", "AGL_KEY": AGL_KEY},
         )
         assert result.returncode != 0

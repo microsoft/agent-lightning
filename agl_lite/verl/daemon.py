@@ -251,7 +251,7 @@ class AglLiteDaemon:
 
     def __init__(
         self,
-        agl_lite_url: str,
+        agl_base_url: str,
         agl_key: str,
         train_rollout_n: int,
         train_information: Dict[str, Any],
@@ -265,7 +265,7 @@ class AglLiteDaemon:
         trace_aggregator: Dict[str, Any] | None = None,
     ):
         # --- agl-lite connection (replaces store + proxy + adapter) ---
-        self.client = AglLiteClient(base_url=agl_lite_url, agl_key=agl_key)
+        self.client = AglLiteClient(base_url=agl_base_url, agl_key=agl_key)
         self.timeout_seconds = timeout_seconds
 
         # --- Training config ---

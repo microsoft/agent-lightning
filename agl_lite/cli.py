@@ -37,7 +37,7 @@ def serve(
 
 @app.command()
 def controller(
-    agl_lite_url: str = typer.Option("http://localhost:8000", help="agl-lite server URL"),
+    agl_base_url: str = typer.Option("http://localhost:8000", help="agl-lite server URL"),
     namespace: str = typer.Option("default", help="K8s namespace for agent Jobs"),
     secret_name: str = typer.Option("agl-api-keys", help="K8s Secret name with API keys"),
     poll_interval: int = typer.Option(10, help="Seconds between reconcile cycles"),
@@ -52,7 +52,7 @@ def controller(
     from agl_lite.controller.reconciler import Reconciler
 
     settings = ControllerSettings(
-        lite_url=agl_lite_url,
+        lite_url=agl_base_url,
         key=os.environ.get("AGL_KEY", ""),
         namespace=namespace,
         secret_name=secret_name,

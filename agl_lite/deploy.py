@@ -45,13 +45,13 @@ class DeployConfig(BaseModel):
     namespace: str = Field(description="Kubernetes namespace where agl-lite/controller resources are deployed.")
     mode: DeployMode = Field(description="Deployment mode: agl-in-k8s | agl-in-host | agl-external.")
 
-    pod_base_url: str | None = Field(
+    agl_base_url_pod: str | None = Field(
         default=None,
-        description="URL used by controller/agent pods to reach agl-lite. Required in some modes.",
+        description="agl-lite base URL as seen by controller/agent pods (pod-facing URL).",
     )
-    external_base_url: str | None = Field(
+    agl_base_url_external: str | None = Field(
         default=None,
-        description="External agl-lite URL (required when mode=agl-external).",
+        description="agl-lite base URL for external mode (used by both pods and host clients).",
     )
 
     host_serve: HostServeConfig = Field(default_factory=HostServeConfig)
@@ -59,7 +59,7 @@ class DeployConfig(BaseModel):
     server_runtime: ServerRuntimeConfig = Field(default_factory=ServerRuntimeConfig)
 
     wait_ready_timeout_seconds: int = Field(default=120, ge=1)
-    env_output_path: str = Field(default=".local/agl-lite.env")
+    local_state_dir: str = Field(default=".local", description="Directory for generated local state files (.env, pid, logs).")
 
     @field_validator("namespace")
     @classmethod
@@ -69,7 +69,7 @@ class DeployConfig(BaseModel):
             raise ValueError("namespace cannot be empty")
         return v
 
-    @field_validator("pod_base_url", "external_base_url")
+    @field_validator("agl_base_url_pod", "agl_base_url_external")
     @classmethod
     def _validate_http_url(cls, v: str | None) -> str | None:
         if v is None:
@@ -79,26 +79,28 @@ class DeployConfig(BaseModel):
             raise ValueError(f"invalid URL: {v}")
         return v
 
-    @field_validator("env_output_path")
+    @field_validator("local_state_dir")
     @classmethod
-    def _validate_env_output_path(cls, v: str) -> str:
+    def _validate_local_state_dir(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError("env_output_path cannot be empty")
+            raise ValueError("local_state_dir cannot be empty")
         return v
 
     @model_validator(mode="after")
     def _validate_mode_requirements(self) -> DeployConfig:
         if self.mode == DeployMode.IN_K8S:
-            if self.external_base_url is not None:
-                raise ValueError("external_base_url must be unset when mode=agl-in-k8s")
+            if self.agl_base_url_pod is not None:
+                raise ValueError("agl_base_url_pod must be unset when mode=agl-in-k8s (auto-derived)")
+            if self.agl_base_url_external is not None:
+                raise ValueError("agl_base_url_external must be unset when mode=agl-in-k8s")
         elif self.mode == DeployMode.IN_HOST:
-            if self.external_base_url is not None:
-                raise ValueError("external_base_url must be unset when mode=agl-in-host")
+            if self.agl_base_url_external is not None:
+                raise ValueError("agl_base_url_external must be unset when mode=agl-in-host")
         elif self.mode == DeployMode.EXTERNAL:
-            if not self.external_base_url:
-                raise ValueError("external_base_url is required when mode=agl-external")
-            if self.pod_base_url is not None:
-                raise ValueError("pod_base_url must be unset when mode=agl-external")
+            if not self.agl_base_url_external:
+                raise ValueError("agl_base_url_external is required when mode=agl-external")
+            if self.agl_base_url_pod is not None:
+                raise ValueError("agl_base_url_pod must be unset when mode=agl-external")
         return self
 
 
@@ -215,10 +217,10 @@ def deploy(config: str, cleanup: bool) -> None:
     cfg = _load_config(config_path)
     ns = cfg.namespace
 
-    host_state = repo_root / ".local"
-    pid_file = host_state / "agl-lite-serve.pid"
-    log_file = host_state / "agl-lite-serve.log"
-    env_out = (repo_root / cfg.env_output_path).resolve()
+    local_state_dir = (repo_root / cfg.local_state_dir).resolve()
+    pid_file = local_state_dir / "agl-lite-serve.pid"
+    log_file = local_state_dir / "agl-lite-serve.log"
+    env_out = local_state_dir / "agl-lite.env"
 
     if cleanup:
         typer.echo(f"=== Cleaning up namespace: {ns} ===")
@@ -238,30 +240,30 @@ def deploy(config: str, cleanup: bool) -> None:
         host_url = "http://127.0.0.1:8080"
 
     elif cfg.mode == DeployMode.IN_HOST:
-        if cfg.pod_base_url:
-            pod_url = cfg.pod_base_url
+        if cfg.agl_base_url_pod:
+            pod_url = cfg.agl_base_url_pod
         elif ctx == "minikube":
             pod_url = f"http://host.minikube.internal:{cfg.host_serve.port}"
         else:
             raise typer.BadParameter(
-                "mode=agl-in-host on non-minikube requires pod_base_url (pod-reachable host URL)."
+                "mode=agl-in-host on non-minikube requires agl_base_url_pod (pod-reachable host URL)."
             )
 
         if ctx != "minikube" and _host_is_localhost(pod_url):
-            raise typer.BadParameter(f"pod_base_url is not pod-reachable on remote cluster: {pod_url}")
+            raise typer.BadParameter(f"agl_base_url_pod is not pod-reachable on remote cluster: {pod_url}")
 
         pod_port = _port_from_url(pod_url)
         if pod_port is not None and pod_port != cfg.host_serve.port:
             raise typer.BadParameter(
-                f"pod_base_url port ({pod_port}) must match host_serve.port ({cfg.host_serve.port}) in agl-in-host mode"
+                f"agl_base_url_pod port ({pod_port}) must match host_serve.port ({cfg.host_serve.port}) in agl-in-host mode"
             )
 
         host_url = f"http://127.0.0.1:{cfg.host_serve.port}"
 
     else:
-        pod_url = cfg.external_base_url or ""
+        pod_url = cfg.agl_base_url_external or ""
         if _host_is_localhost(pod_url):
-            raise typer.BadParameter(f"external_base_url is not pod-reachable: {pod_url}")
+            raise typer.BadParameter(f"agl_base_url_external is not pod-reachable: {pod_url}")
         host_url = pod_url
 
     typer.echo(f"=== Mode: {cfg.mode.value} ===")
@@ -285,7 +287,7 @@ def deploy(config: str, cleanup: bool) -> None:
     cm_env: dict[str, str] = {
         "AGL_K8S_NAMESPACE": ns,
         "AGL_SECRET_NAME": SECRET_NAME,
-        "AGL_LITE_URL": pod_url,
+        "AGL_BASE_URL": pod_url,
         "AGL_POLL_INTERVAL": str(cfg.controller.poll_interval_seconds),
         "AGL_MAX_QUEUE_TIME": str(cfg.controller.max_queue_time_seconds),
     }
@@ -322,7 +324,7 @@ def deploy(config: str, cleanup: bool) -> None:
     _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-controller", f"--timeout={timeout}"])
 
     if cfg.mode == DeployMode.IN_HOST:
-        host_state.mkdir(parents=True, exist_ok=True)
+        local_state_dir.mkdir(parents=True, exist_ok=True)
         _stop_host_server(pid_file)
 
         cmd = [
@@ -364,13 +366,13 @@ def deploy(config: str, cleanup: bool) -> None:
         if not ready:
             raise RuntimeError(f"Host agl-lite server failed to become ready. See {log_file}")
 
-    env_out.parent.mkdir(parents=True, exist_ok=True)
+    local_state_dir.mkdir(parents=True, exist_ok=True)
     env_out.write_text(
         "\n".join(
             [
                 "# Generated by agl-lite deploy",
-                f'export AGL_LITE_URL="{host_url}"',
-                f'export AGL_LITE_URL_POD="{pod_url}"',
+                f'export AGL_BASE_URL="{host_url}"',
+                f'export AGL_BASE_URL_POD="{pod_url}"',
                 f'export AGL_K8S_NAMESPACE="{ns}"',
                 "",
             ]

@@ -14,7 +14,7 @@ kubectl apply -n $AGL_K8S_NAMESPACE -f deploy/controller/k8s.yaml
 
 ```bash
 export AGL_KEY=dev-key
-export AGL_LITE_URL=http://localhost:8080
+export AGL_BASE_URL=http://localhost:8080
 agl-lite controller --namespace agl --secret-name agl-lite-keys
 ```
 

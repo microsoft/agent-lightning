@@ -30,7 +30,7 @@ app.add_typer(resources_app, name="resources")
 
 
 def _url() -> str:
-    return os.environ.get("AGL_LITE_URL", "http://localhost:8080")
+    return os.environ.get("AGL_BASE_URL", "http://localhost:8080")
 
 
 def _key() -> str | None:

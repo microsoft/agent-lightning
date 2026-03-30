@@ -170,10 +170,10 @@ fi
 # --- Run the RL loop ---
 echo ""
 echo "--- Running SWE-bench RL loop ---"
-export AGL_LITE_URL="http://localhost:8080"
+export AGL_BASE_URL="http://localhost:8080"
 
 AGL_KEY="$AGL_KEY" \
-AGL_LITE_URL="$AGL_LITE_URL" \
+AGL_BASE_URL="$AGL_BASE_URL" \
 AGL_MODEL_NAME="$AGL_MODEL_NAME" \
 AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}" \
 AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}" \

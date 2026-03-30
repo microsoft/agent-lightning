@@ -16,7 +16,7 @@ Works with both mock and vLLM modes -- the mode is determined by which
 hooks module is loaded into agl-lite serve.
 
 Usage:
-    export AGL_LITE_URL=http://localhost:8080
+    export AGL_BASE_URL=http://localhost:8080
     export AGL_KEY=<your-key>
     export AGL_MODEL_NAME=<model>
     export AGL_MODEL_ENDPOINT=<endpoint>
@@ -187,7 +187,7 @@ async def run_iteration(
 
 
 async def main() -> None:
-    base_url = os.environ.get("AGL_LITE_URL", "http://localhost:8080")
+    base_url = os.environ.get("AGL_BASE_URL", "http://localhost:8080")
     agl_key = os.environ.get("AGL_KEY")
     mode = os.environ.get("AGL_MODEL_MODE", "vllm")
 

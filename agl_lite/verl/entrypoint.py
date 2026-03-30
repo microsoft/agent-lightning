@@ -195,12 +195,12 @@ class TaskRunner:
             val_dataset = LoadedDataset(val_dataset)
 
         # agl-lite connection: read from config (set via env vars or Hydra overrides)
-        agl_lite_url = config.agentlightning.get("agl_lite_url", "http://localhost:8080")
+        agl_base_url = config.agentlightning.get("agl_base_url", "http://localhost:8080")
         agl_key = config.agentlightning.get("agl_key", "")
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
         trainer = trainer_cls(
-            agl_lite_url=agl_lite_url,
+            agl_base_url=agl_base_url,
             agl_key=agl_key,
             config=config,
             tokenizer=tokenizer,

@@ -13,7 +13,7 @@ Prerequisites:
 - VERL dependencies available in current Python env
 
 Env vars:
-- AGL_LITE_URL (default: http://localhost:8080)
+- AGL_BASE_URL (default: http://localhost:8080)
 - AGL_KEY (required)
 - AGL_MODEL_NAME (default: Qwen/Qwen2.5-1.5B-Instruct)
 """
@@ -127,7 +127,7 @@ def build_verl_config(
     *,
     model_path: str,
     resources_id: str,
-    agl_lite_url: str,
+    agl_base_url: str,
     agl_key: str,
     rollout_n: int,
     total_steps: int,
@@ -191,7 +191,7 @@ def build_verl_config(
         },
         # Keep user-facing namespace name for compatibility.
         "agentlightning": {
-            "agl_lite_url": agl_lite_url,
+            "agl_base_url": agl_base_url,
             "agl_key": agl_key,
             "resources_id": resources_id,
             "trace_aggregator": {
@@ -223,7 +223,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    base_url = os.environ.get("AGL_LITE_URL", "http://localhost:8080")
+    base_url = os.environ.get("AGL_BASE_URL", "http://localhost:8080")
     agl_key = os.environ.get("AGL_KEY", "")
     model_name = os.environ.get("AGL_MODEL_NAME", "Qwen/Qwen2.5-1.5B-Instruct")
 
@@ -252,7 +252,7 @@ def main() -> None:
     config = build_verl_config(
         model_path=model_name,
         resources_id=resources_id,
-        agl_lite_url=base_url,
+        agl_base_url=base_url,
         agl_key=agl_key,
         rollout_n=args.rollout_n,
         total_steps=args.total_steps,

@@ -92,7 +92,7 @@ class TestDaemonStoreInteraction:
             client._client = async_client
 
             d = AglLiteDaemon(
-                agl_lite_url="http://test",
+                agl_base_url="http://test",
                 agl_key="test-key",
                 train_rollout_n=1,
                 train_information={"model": "test-model"},

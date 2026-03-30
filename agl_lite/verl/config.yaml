@@ -7,7 +7,7 @@ defaults:
   - _self_
 
 agentlightning:
-  agl_lite_url: ${oc.env:AGL_LITE_URL,http://localhost:8080}
+  agl_base_url: ${oc.env:AGL_BASE_URL,http://localhost:8080}
   agl_key: ${oc.env:AGL_KEY,}
   trace_aggregator:
     level: transition  # transition or trajectory, docs refer to https://agent-lightning.github.io/posts/trajectory_level_aggregation/

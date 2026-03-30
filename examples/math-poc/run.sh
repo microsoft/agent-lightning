@@ -146,9 +146,9 @@ trap cleanup EXIT
 
 # --- Export env for algorithm script ---
 if [ "$MODE" = "mock" ]; then
-    export AGL_LITE_URL="http://127.0.0.1:${PF_PORT}"
+    export AGL_BASE_URL="http://127.0.0.1:${PF_PORT}"
 else
-    export AGL_LITE_URL=http://localhost:8080
+    export AGL_BASE_URL=http://localhost:8080
 fi
 export AGL_K8S_NAMESPACE="$NS"
 export AGL_KEY

@@ -169,12 +169,12 @@ class AgentLightningTrainer(RayPPOTrainer):
 
     def __init__(
         self,
-        agl_lite_url: str,
+        agl_base_url: str,
         agl_key: str,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.agl_lite_url = agl_lite_url
+        self.agl_base_url = agl_base_url
         self.agl_key = agl_key
 
     def _validate(self):
@@ -445,7 +445,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         else:
             model = self.config.actor_rollout_ref.model.path
         self.agent_mode_daemon = AglLiteDaemon(
-            agl_lite_url=self.agl_lite_url,
+            agl_base_url=self.agl_base_url,
             agl_key=self.agl_key,
             train_rollout_n=self.config.actor_rollout_ref.rollout.n,
             train_information={

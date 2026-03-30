@@ -173,17 +173,17 @@ env:
     valueFrom:
       fieldRef:
         fieldPath: metadata.uid      # K8s generates a unique UID per pod
-  - name: AGL_LITE_URL
+  - name: AGL_BASE_URL
     value: "http://agl-lite:8080"    # single service endpoint
   - name: OPENAI_BASE_URL
-    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+    value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
   - name: OPENAI_API_KEY             # OpenAI SDK sends as Authorization: Bearer header
     valueFrom:
       secretKeyRef:
         name: agl-lite-keys
         key: AGL_KEY
   - name: ANTHROPIC_BASE_URL         # Anthropic SDK — same gateway URL
-    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+    value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
   - name: ANTHROPIC_API_KEY          # Anthropic SDK sends as x-api-key header
     valueFrom:
       secretKeyRef:
@@ -192,7 +192,7 @@ env:
   - name: AGL_TASK_INPUT             # task payload (JSON-serialized rollout.input)
     value: '{"prompt": "Write a sort function", "test_cases": [...]}'
   - name: AGL_EVENT_URL              # for explicit event posting (rewards, etc.)
-    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
+    value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
 ```
 
 The agent uses whichever SDK it wants — OpenAI, Anthropic, or any framework. All env vars point to the same gateway URL and same key:
@@ -968,17 +968,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
-            - name: AGL_LITE_URL
+            - name: AGL_BASE_URL
               value: "http://agl-lite:8080"
             - name: OPENAI_BASE_URL
-              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+              value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
             - name: OPENAI_API_KEY               # OpenAI SDK → Authorization: Bearer
               valueFrom:
                 secretKeyRef:
                   name: agl-lite-keys
                   key: AGL_KEY
             - name: ANTHROPIC_BASE_URL           # Anthropic SDK — same gateway URL
-              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
+              value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/v1"
             - name: ANTHROPIC_API_KEY            # Anthropic SDK → x-api-key
               valueFrom:
                 secretKeyRef:
@@ -987,7 +987,7 @@ spec:
             - name: AGL_TASK_INPUT
               value: '{"prompt": "Write a sort function", ...}'
             - name: AGL_EVENT_URL
-              value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
+              value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)/attempt/$(POD_UID)/events"
             # algorithm extra env (from rollout.config.environment_variables)
             - name: DEBUG
               value: "1"

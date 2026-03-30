@@ -565,7 +565,7 @@ The controller bridges the store and K8s — the **only component that writes ro
 ```yaml
 env:
   - name: OPENAI_BASE_URL
-    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)
+    value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)
            /attempt/$(POD_UID)/v1"
   - name: OPENAI_API_KEY
     valueFrom:
@@ -575,7 +575,7 @@ env:
   - name: AGL_TASK_INPUT
     value: '{"prompt": "Solve: 2+2=?"}'
   - name: AGL_EVENT_URL
-    value: "$(AGL_LITE_URL)/rollout/$(ROLLOUT_ID)
+    value: "$(AGL_BASE_URL)/rollout/$(ROLLOUT_ID)
            /attempt/$(POD_UID)/events"
 ```
 
@@ -774,7 +774,7 @@ Tensor construction from Agent Lightning `AgentModeDaemon`:
 ```python
 # Using agl-lite
 daemon = AglLiteDaemon(
-    agl_lite_url="http://agl-lite:8080",  # single HTTP endpoint
+    agl_base_url="http://agl-lite:8080",  # single HTTP endpoint
     agl_key="agl_xxx...",                  # shared API key
     train_rollout_n=4, tokenizer=tokenizer, mini_batch_size=64, pad_token_id=0,
 )

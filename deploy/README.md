@@ -36,7 +36,7 @@ scripts/deploy.sh
 
 # 4. Access from host
 kubectl -n agl port-forward svc/agl-lite 8080:8080
-export AGL_LITE_URL=http://localhost:8080
+export AGL_BASE_URL=http://localhost:8080
 agl-client health
 ```
 

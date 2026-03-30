@@ -36,7 +36,7 @@ AGL_KEY="$AGL_KEY" "${SERVE_CMD[@]}" > "$LOG_DIR/agl-lite.log" 2>&1 &
 SERVE_PID=$!
 
 for i in $(seq 1 30); do
-  if curl -sf "$AGL_LITE_URL/healthz" >/dev/null 2>&1; then
+  if curl -sf "$AGL_BASE_URL/healthz" >/dev/null 2>&1; then
     echo "agl-lite ready"
     break
   fi
@@ -48,7 +48,7 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-export AGL_LITE_URL
+export AGL_BASE_URL
 export AGL_MODEL_NAME
 export AGL_KEY
 

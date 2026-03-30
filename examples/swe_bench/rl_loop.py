@@ -13,7 +13,7 @@ Everything else is handled by hooks and the container:
                      posts small reward event, archives test log to hostPath
 
 Usage:
-    export AGL_LITE_URL=http://localhost:8080
+    export AGL_BASE_URL=http://localhost:8080
     export AGL_KEY=<your-key>
     export AGL_MODEL_NAME=<model>
     export AGL_MODEL_ENDPOINT=<endpoint>
@@ -177,7 +177,7 @@ async def run_iteration(
 
 
 async def main() -> None:
-    base_url = os.environ.get("AGL_LITE_URL", "http://localhost:8080")
+    base_url = os.environ.get("AGL_BASE_URL", "http://localhost:8080")
     agl_key = os.environ.get("AGL_KEY")
 
     log(f"=== SWE-bench RL Loop ===")

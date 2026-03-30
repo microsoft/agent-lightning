@@ -210,7 +210,7 @@ spec:
         - name: controller
           image: agl-lite-controller:latest
           env:
-            - name: AGL_LITE_URL
+            - name: AGL_BASE_URL
               value: "http://agl-lite.agl.svc.cluster.local:8080"
             - name: AGL_KEY
               valueFrom:
@@ -228,7 +228,7 @@ kubectl apply -f controller-deployment.yaml
 ### Option B: Run locally (dev)
 
 ```bash
-export AGL_LITE_URL="http://localhost:8080"
+export AGL_BASE_URL="http://localhost:8080"
 export AGL_KEY="<same key as in K8s Secret>"
 export KUBECONFIG=~/.kube/config
 
@@ -248,11 +248,11 @@ The algorithm (or a setup script) posts a resource snapshot containing infra-lev
 ```python
 import httpx
 
-AGL_LITE_URL = "http://agl-lite.agl.svc.cluster.local:8080"
+AGL_BASE_URL = "http://agl-lite.agl.svc.cluster.local:8080"
 HEADERS = {"Authorization": "Bearer <AGL_KEY>"}
 
 # Post resource snapshot with job_defaults
-res = httpx.post(f"{AGL_LITE_URL}/api/resources", headers=HEADERS, json={
+res = httpx.post(f"{AGL_BASE_URL}/api/resources", headers=HEADERS, json={
     "job_defaults": {
         "resources": {
             "requests": {"cpu": "500m", "memory": "1Gi"},
@@ -279,14 +279,14 @@ Tell agl-lite where the model servers are. The gateway routes agent LLM calls to
 
 ```python
 # Register a model server
-httpx.post(f"{AGL_LITE_URL}/api/models", headers=HEADERS, json={
+httpx.post(f"{AGL_BASE_URL}/api/models", headers=HEADERS, json={
     "name": "vllm-0",
     "endpoint": "http://vllm-server:8000",
     "model": "deepseek-r1-7b"
 })
 
 # Verify
-models = httpx.get(f"{AGL_LITE_URL}/api/models", headers=HEADERS).json()
+models = httpx.get(f"{AGL_BASE_URL}/api/models", headers=HEADERS).json()
 print(f"Registered models: {models}")
 ```
 
@@ -298,7 +298,7 @@ Submit tasks. Each rollout becomes a K8s Job running your agent container.
 
 ```python
 # Enqueue a batch of rollouts
-resp = httpx.post(f"{AGL_LITE_URL}/api/rollouts", headers=HEADERS, json={
+resp = httpx.post(f"{AGL_BASE_URL}/api/rollouts", headers=HEADERS, json={
     "resources_id": resources_id,       # from Step 5
     "config": {
         "image": "my-agent:latest",
@@ -344,7 +344,7 @@ import time
 
 # Poll for completion
 while True:
-    rollouts = httpx.get(f"{AGL_LITE_URL}/api/rollouts",
+    rollouts = httpx.get(f"{AGL_BASE_URL}/api/rollouts",
         params={"ids": ",".join(rollout_ids)}, headers=HEADERS).json()
     
     done = all(r["status"] in ("succeeded", "terminal_failed", "cancelled")
@@ -356,7 +356,7 @@ while True:
 # Retrieve events (trajectories) for succeeded rollouts
 for r in rollouts:
     if r["status"] == "succeeded":
-        events = httpx.get(f"{AGL_LITE_URL}/api/events",
+        events = httpx.get(f"{AGL_BASE_URL}/api/events",
             params={"rollout_id": r["rollout_id"]}, headers=HEADERS).json()
         print(f"Rollout {r['rollout_id']}: {len(events)} events")
 ```

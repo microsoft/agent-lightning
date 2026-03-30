@@ -14,14 +14,14 @@ namespace: agl
 #   agl-external -> controller in K8s, external agl-lite (not managed)
 mode: agl-in-k8s
 
-# URL used by controller/agent pods to reach agl-lite.
-# - agl-in-k8s: ignored (auto set to http://agl-lite.<namespace>.svc:8080)
+# agl-lite base URL used by controller/agent pods.
+# - agl-in-k8s: must be unset (auto set to http://agl-lite.<namespace>.svc:8080)
 # - agl-in-host: optional on minikube; required on non-minikube
-# pod_base_url: http://host.minikube.internal:8080
+# agl_base_url_pod: http://host.minikube.internal:8080
 
-# External agl-lite URL.
+# agl-lite base URL in external mode.
 # Required only when mode=agl-external.
-# external_base_url: http://your-external-agl-lite:8080
+# agl_base_url_external: http://your-external-agl-lite:8080
 
 # Host `agl-lite serve` settings (used only when mode=agl-in-host).
 host_serve:
@@ -44,5 +44,5 @@ server_runtime:
 # Deployment wait timeout for readiness checks.
 wait_ready_timeout_seconds: 120
 
-# Where deploy writes exported host/pod URL variables.
-env_output_path: .local/agl-lite.env
+# Local directory for generated files (env output, host PID/log).
+local_state_dir: .local
