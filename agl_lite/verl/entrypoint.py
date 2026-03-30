@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Type
+from typing import Any, Sequence, Type
 
 import hydra
 import ray
@@ -14,16 +14,8 @@ from ray.actor import ActorClass
 from verl.trainer.main_ppo import create_rl_sampler
 from verl.trainer.ppo.reward import load_reward_manager
 
-from agentlightning.adapter import TraceAdapter
-from agentlightning.llm_proxy import LLMProxy
-from agentlightning.store.base import LightningStore
-from agentlightning.types import Dataset
-
 from .dataset import AgentDataset, LoadedDataset
-
-if TYPE_CHECKING:
-    from .daemon import AgentModeDaemon
-    from .trainer import AgentLightningTrainer
+from .trainer import AgentLightningTrainer
 
 __all__ = [
     "main",
@@ -32,32 +24,21 @@ __all__ = [
 ]
 
 
-@hydra.main(config_path="pkg://agentlightning/verl", config_name="config", version_base=None)
+@hydra.main(config_path="pkg://agl_lite/verl", config_name="config", version_base=None)
 def main(config: Any):
-    from .daemon import AgentModeDaemon
-    from .trainer import AgentLightningTrainer
-
     run_ppo(
         config,
         train_dataset=None,
         val_dataset=None,
-        store=None,
-        llm_proxy=None,
-        adapter=None,
         trainer_cls=AgentLightningTrainer,
-        daemon_cls=AgentModeDaemon,
     )
 
 
 def run_ppo(
     config: Any,
-    train_dataset: Dataset[Any] | None,
-    val_dataset: Dataset[Any] | None,
-    store: LightningStore | None,
-    llm_proxy: LLMProxy | None,
-    adapter: TraceAdapter[Any] | None,
-    trainer_cls: Type[AgentLightningTrainer],
-    daemon_cls: Type[AgentModeDaemon],
+    train_dataset: Sequence[Any] | None,
+    val_dataset: Sequence[Any] | None,
+    trainer_cls: Type[AgentLightningTrainer] = AgentLightningTrainer,
 ) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
@@ -80,11 +61,7 @@ def run_ppo(
             config=config,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
-            store=store,
-            llm_proxy=llm_proxy,
-            adapter=adapter,
             trainer_cls=trainer_cls,
-            daemon_cls=daemon_cls,
         )
     )
 
@@ -94,13 +71,9 @@ class TaskRunner:
     def run(
         self,
         config: Any,
-        train_dataset: Dataset[Any] | None,
-        val_dataset: Dataset[Any] | None,
-        store: LightningStore | None,
-        llm_proxy: LLMProxy | None,
-        adapter: TraceAdapter[Any] | None,
+        train_dataset: Sequence[Any] | None,
+        val_dataset: Sequence[Any] | None,
         trainer_cls: Type[AgentLightningTrainer],
-        daemon_cls: Type[AgentModeDaemon],
     ):
         # print initial config
         from pprint import pprint
@@ -221,8 +194,14 @@ class TaskRunner:
         else:
             val_dataset = LoadedDataset(val_dataset)
 
+        # agl-lite connection: read from config (set via env vars or Hydra overrides)
+        agl_lite_url = config.agentlightning.get("agl_lite_url", "http://localhost:8080")
+        agl_key = config.agentlightning.get("agl_key", "")
+
         train_sampler = create_rl_sampler(config.data, train_dataset)
         trainer = trainer_cls(
+            agl_lite_url=agl_lite_url,
+            agl_key=agl_key,
             config=config,
             tokenizer=tokenizer,
             processor=processor,
@@ -235,10 +214,6 @@ class TaskRunner:
             val_dataset=val_dataset,
             collate_fn=collate_fn,
             train_sampler=train_sampler,
-            store=store,
-            llm_proxy=llm_proxy,
-            adapter=adapter,
-            daemon_cls=daemon_cls,
         )
         trainer.init_workers()
         trainer.fit()

@@ -7,7 +7,8 @@ defaults:
   - _self_
 
 agentlightning:
-  port: 9999
+  agl_lite_url: ${oc.env:AGL_LITE_URL,http://localhost:8080}
+  agl_key: ${oc.env:AGL_KEY,}
   trace_aggregator:
     level: transition  # transition or trajectory, docs refer to https://agent-lightning.github.io/posts/trajectory_level_aggregation/
     trajectory_max_prompt_length: 2048  # supported in trajectory level aggregation, suggest to set as maximum length for the prompt in first turn
@@ -21,7 +22,3 @@ data:
 actor_rollout_ref:
   rollout:
     mode: async
-    agent:
-      custom_async_server:
-        path: pkg://agentlightning.verl.async_server
-        name: PatchedvLLMServer
