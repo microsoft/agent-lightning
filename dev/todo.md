@@ -168,8 +168,12 @@ HTTP API:                           AglLiteDaemon:
 
 #### Next actions
 
-- [x] Add an executable training script under `examples/math-verl/` (`train.py`) that builds VERL config + dataset and calls `run_ppo()`.
-- [ ] Add pre-flight checks in script/docs: healthz, auth, model registration, rollout completion, triplet extraction, non-empty PPO batch. (healthz/auth/resources + optional rollout/triplet added in `examples/math-verl/train.py`; model-registration and non-empty-PPO-batch checks still need explicit assertions)
+- [x] Add a minimal executable training script under `examples/math-verl/` (`train.py`) that builds VERL config + dataset and calls `run_ppo()`.
+- [ ] Migrate `examples/calc_x/` from Agent Lightning as the primary apple-to-apple training example (ignore `legacy_*` files):
+  - adapt `train_calc_agent.py` to agl-lite VERL entrypoint (`run_ppo`) and agl-lite service auth/url flow
+  - replace `agentlightning` runtime dependencies in `calc_agent.py`/`eval_utils.py` with agl-lite-compatible agent + reward/event flow
+  - provide a self-contained run script with explicit external lifecycle boundary (`deploy.sh --controller-only` outside, host `agl-lite serve` inside run script)
+- [ ] Add pre-flight checks in calc_x script/docs: healthz, auth, model registration, rollout completion, triplet extraction, non-empty PPO batch.
 
 ---
 
