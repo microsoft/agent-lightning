@@ -69,7 +69,7 @@ scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
 echo ""
 if [ "$MODE" = "vllm" ]; then
     echo "=== Deploying controller to K8s (agl-lite will run on host) ==="
-    scripts/deploy.sh --no-serve 2>&1 | tee "$LOG_DIR/deploy.log"
+    scripts/deploy.sh --agl-in-host 2>&1 | tee "$LOG_DIR/deploy.log"
 else
     echo "=== Deploying agl-lite infra to K8s ==="
     scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"

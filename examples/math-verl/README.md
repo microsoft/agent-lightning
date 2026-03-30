@@ -13,7 +13,7 @@ This example is the **training** path for math tasks using VERL + agl-lite.
 
 ## Prerequisites
 
-- Controller already running in K8s (recommended: `scripts/deploy.sh --controller-only`)
+- Controller already running in K8s (recommended: `scripts/deploy.sh --agl-in-host`)
 - vLLM backend available for VERL rollout workers
 - `AGL_KEY` exported
 - VERL dependencies installed in current Python env

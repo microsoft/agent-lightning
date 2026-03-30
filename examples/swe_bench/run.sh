@@ -136,7 +136,7 @@ fi
 # --- Deploy infrastructure ---
 echo ""
 echo "--- Deploying infrastructure ---"
-"$REPO_ROOT/scripts/deploy.sh" --controller-only
+"$REPO_ROOT/scripts/deploy.sh" --agl-in-host
 
 # --- Start agl-lite server on host ---
 echo ""

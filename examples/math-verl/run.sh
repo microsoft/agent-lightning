@@ -18,7 +18,7 @@ mkdir -p "$LOG_DIR"
 echo "=== math-verl training ==="
 echo "logs: $LOG_DIR"
 
-echo "Reminder: controller/minikube should already be running (e.g. scripts/deploy.sh --controller-only)"
+echo "Reminder: controller/minikube should already be running (e.g. scripts/deploy.sh --agl-in-host)"
 
 SERVE_PID=""
 cleanup() {

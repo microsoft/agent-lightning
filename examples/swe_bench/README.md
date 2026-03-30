@@ -63,7 +63,7 @@ examples/swe_bench/run.sh
 
 The `run.sh` script:
 - Creates a ConfigMap with agent scripts
-- Deploys the K8s controller (`--controller-only` mode)
+- Deploys controller in K8s and launches agl-lite on host (`--agl-in-host` mode)
 - Starts the agl-lite server on the host (with SWE-bench hooks)
 - Runs `rl_loop.py` to enqueue instances and poll for results
 

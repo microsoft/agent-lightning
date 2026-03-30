@@ -2,23 +2,22 @@
 # Deploy agl-lite infrastructure to K8s.
 #
 # Usage:
-#   scripts/deploy.sh                    # deploy agl-lite server + controller into K8s
-#   scripts/deploy.sh --controller-only  # deploy controller only (server runs externally)
-#   scripts/deploy.sh --cleanup          # remove everything
+#   scripts/deploy.sh --agl-in-k8s       # agl-lite server + controller in K8s (default)
+#   scripts/deploy.sh --agl-in-host      # controller in K8s + agl-lite server on host
+#   scripts/deploy.sh --cleanup          # remove K8s namespace (and stop host server if started by this script)
 #
 # Modes:
-#   Default (in-cluster):
+#   --agl-in-k8s (default):
 #     Both agl-lite server and controller run inside K8s.
 #     AGL_LITE_URL is auto-set to http://agl-lite.<namespace>.svc:8080.
-#     Pods reach the server via cluster-internal DNS — no special networking.
 #
-#   --controller-only:
-#     Only the K8s controller (and agent infrastructure) is deployed.
-#     The agl-lite server runs externally on the compute backend (host machine),
-#     typically colocated with model servers (vLLM) that have internal endpoints.
-#     Set AGL_LITE_URL in deploy/.env to the external server address.
-#     On minikube, this script auto-patches CoreDNS so pods can resolve
-#     host.minikube.internal.
+#   --agl-in-host:
+#     Controller runs in K8s. agl-lite server is launched by this script on host.
+#     AGL_LITE_URL defaults to http://host.minikube.internal:8080 on minikube.
+#     On minikube, this script patches CoreDNS so pods can resolve host.minikube.internal.
+#
+# Backward compatibility:
+#   --controller-only / --no-serve are aliases of --agl-in-host.
 #
 # Reads: deploy/.env (config), AGL_KEY env var or from .env (secret).
 set -euo pipefail
@@ -36,21 +35,41 @@ source "$ENV_FILE"
 
 NS="${AGL_K8S_NAMESPACE:?AGL_K8S_NAMESPACE not set in .env}"
 
+HOST_STATE_DIR="$REPO_ROOT/.local"
+HOST_PID_FILE="$HOST_STATE_DIR/agl-lite-serve.pid"
+HOST_LOG_FILE="$HOST_STATE_DIR/agl-lite-serve.log"
+
+stop_host_server_if_running() {
+    if [ -f "$HOST_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$HOST_PID_FILE" || true)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "--- Stopping host agl-lite server (pid=$pid) ---"
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+        fi
+        rm -f "$HOST_PID_FILE"
+    fi
+}
+
 # --- Cleanup mode ---
 if [[ "${1:-}" == "--cleanup" || "${1:-}" == "--teardown" ]]; then
     echo "=== Cleaning up namespace: $NS ==="
     kubectl delete namespace "$NS" --ignore-not-found --wait
+    stop_host_server_if_running
     echo "Done."
     exit 0
 fi
 
 # --- Parse flags ---
-CONTROLLER_ONLY=false
+AGL_LOCATION="k8s" # k8s | host
 for arg in "$@"; do
     case "$arg" in
-        --controller-only) CONTROLLER_ONLY=true ;;
-        # Keep --no-serve as hidden alias for backwards compat
-        --no-serve) CONTROLLER_ONLY=true ;;
+        --agl-in-k8s) AGL_LOCATION="k8s" ;;
+        --agl-in-host) AGL_LOCATION="host" ;;
+        --controller-only) AGL_LOCATION="host" ;;
+        # hidden backwards compat alias
+        --no-serve) AGL_LOCATION="host" ;;
     esac
 done
 
@@ -110,18 +129,21 @@ if [ -z "${AGL_KEY:-}" ]; then
 fi
 
 # --- Determine AGL_LITE_URL ---
-if [ "$CONTROLLER_ONLY" = true ]; then
-    # Server runs externally — user must set AGL_LITE_URL in .env
+if [ "$AGL_LOCATION" = "host" ]; then
+    # Server runs on host (launched below).
     if [ -z "${AGL_LITE_URL:-}" ]; then
-        echo "ERROR: --controller-only requires AGL_LITE_URL in deploy/.env"
-        echo "  e.g., AGL_LITE_URL=http://host.minikube.internal:8080"
-        exit 1
+        ctx=$(kubectl config current-context 2>/dev/null || echo "")
+        if [[ "$ctx" == "minikube" ]]; then
+            AGL_LITE_URL="http://host.minikube.internal:8080"
+        else
+            AGL_LITE_URL="http://127.0.0.1:8080"
+        fi
     fi
-    echo "=== Mode: controller-only (server external at $AGL_LITE_URL) ==="
+    echo "=== Mode: agl-in-host (server at $AGL_LITE_URL) ==="
 else
     # Server runs in-cluster — auto-set URL to cluster-internal service DNS
     AGL_LITE_URL="http://agl-lite.${NS}.svc:8080"
-    echo "=== Mode: in-cluster (server at $AGL_LITE_URL) ==="
+    echo "=== Mode: agl-in-k8s (server at $AGL_LITE_URL) ==="
 fi
 
 echo "=== Deploying to namespace: $NS ==="
@@ -149,23 +171,23 @@ echo "--- Applying RBAC ---"
 kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/rbac.yaml"
 
 # 5. Deployments
-if [ "$CONTROLLER_ONLY" = false ]; then
-    echo "--- Deploying agl-lite server ---"
+if [ "$AGL_LOCATION" = "k8s" ]; then
+    echo "--- Deploying agl-lite server (K8s) ---"
     kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/agl-lite/k8s.yaml"
+else
+    echo "--- Skipping agl-lite server deployment in K8s (host mode) ---"
 fi
 
 echo "--- Deploying controller ---"
 kubectl apply -n "$NS" -f "$REPO_ROOT/deploy/controller/k8s.yaml"
 
-# 6. Minikube connectivity fix (--controller-only mode only)
-#    Pods need to resolve host.minikube.internal to reach the external server.
-#    CoreDNS doesn't read the node's /etc/hosts, so we patch it.
-if [ "$CONTROLLER_ONLY" = true ] && echo "$AGL_LITE_URL" | grep -q "host.minikube.internal"; then
+# 6. Minikube connectivity fix (host mode only)
+if [ "$AGL_LOCATION" = "host" ] && echo "$AGL_LITE_URL" | grep -q "host.minikube.internal"; then
     ensure_minikube_host_dns
 fi
 
 # 7. Wait
-if [ "$CONTROLLER_ONLY" = false ]; then
+if [ "$AGL_LOCATION" = "k8s" ]; then
     echo "--- Waiting for pods ---"
     kubectl -n "$NS" wait --for=condition=available deployment/agl-lite --timeout=120s
     kubectl -n "$NS" wait --for=condition=available deployment/agl-controller --timeout=120s
@@ -174,14 +196,52 @@ else
     kubectl -n "$NS" wait --for=condition=available deployment/agl-controller --timeout=120s
 fi
 
+# 8. Start host agl-lite server if needed
+if [ "$AGL_LOCATION" = "host" ]; then
+    echo "--- Launching agl-lite server on host ---"
+    mkdir -p "$HOST_STATE_DIR"
+    stop_host_server_if_running
+
+    HOST_PORT=$(echo "$AGL_LITE_URL" | sed -E 's#^https?://[^:/]+:([0-9]+).*$#\1#')
+    if ! [[ "$HOST_PORT" =~ ^[0-9]+$ ]]; then
+        HOST_PORT=8080
+    fi
+
+    SERVE_ARGS=(serve --host 0.0.0.0 --port "$HOST_PORT")
+    [ -n "${AGL_GATEWAY_CONFIG:-}" ] && SERVE_ARGS+=(--gateway-config "$AGL_GATEWAY_CONFIG")
+    [ -n "${AGL_HOOKS:-}" ] && SERVE_ARGS+=(--hooks "$AGL_HOOKS")
+    [ -n "${AGL_ARTIFACT_DIR:-}" ] && SERVE_ARGS+=(--artifact-dir "$AGL_ARTIFACT_DIR")
+
+    nohup env AGL_KEY="$AGL_KEY" uv run agl-lite "${SERVE_ARGS[@]}" > "$HOST_LOG_FILE" 2>&1 &
+    HOST_PID=$!
+    echo "$HOST_PID" > "$HOST_PID_FILE"
+
+    # Health check from host-side URL (replace host.minikube.internal with localhost)
+    HEALTH_URL="$AGL_LITE_URL"
+    HEALTH_URL=${HEALTH_URL/host.minikube.internal/localhost}
+    for i in $(seq 1 40); do
+        if curl -sf "$HEALTH_URL/healthz" >/dev/null 2>&1; then
+            echo "✓ Host agl-lite server ready (pid=$HOST_PID)"
+            break
+        fi
+        if ! kill -0 "$HOST_PID" 2>/dev/null; then
+            echo "ERROR: host agl-lite server exited; see $HOST_LOG_FILE"
+            tail -40 "$HOST_LOG_FILE" || true
+            exit 1
+        fi
+        sleep 1
+    done
+fi
+
 echo ""
 echo "=== agl-lite deployed to namespace: $NS ==="
 kubectl -n "$NS" get pods
 echo ""
-if [ "$CONTROLLER_ONLY" = true ]; then
-    echo "Server is external at: $AGL_LITE_URL"
-    echo "Start it on the host with:"
-    echo "  AGL_KEY=\$AGL_KEY uv run agl-lite serve --host 0.0.0.0 --port 8080 [--hooks ...]"
+if [ "$AGL_LOCATION" = "host" ]; then
+    echo "Server is running on host at: $AGL_LITE_URL"
+    echo "Host server pid: $(cat "$HOST_PID_FILE")"
+    echo "Host server log: $HOST_LOG_FILE"
+    echo "To stop host server: kill $(cat "$HOST_PID_FILE") && rm -f $HOST_PID_FILE"
 else
     echo "Server is in-cluster at: $AGL_LITE_URL"
     echo "To access from host (for rl_loop.py or debugging):"
