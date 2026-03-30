@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Train math-poc with VERL via agl-lite.
+"""Train math task with VERL via agl-lite (math-verl example).
 
 This script is the Phase 5c bridge for the first training E2E:
-- Uses existing math-poc dataset + hooks + job template
-- Registers job_template resources in agl-lite
+- Reuses math-poc dataset + vLLM job template
+- Registers `job_template` resources in agl-lite
 - Builds VERL config and calls `agl_lite.verl.entrypoint.run_ppo(...)`
 
-Prerequisites (same topology as math-poc vllm mode):
+Prerequisites:
 - agl-lite serve running
 - controller running in K8s
-- hooks loaded in serve (examples/math-poc/<mode>/hooks.py)
+- hooks loaded in serve (default: examples/math-poc/vllm/hooks.py)
 - VERL dependencies available in current Python env
 
 Env vars:
@@ -206,7 +206,7 @@ def build_verl_config(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train math-poc with VERL via agl-lite")
+    parser = argparse.ArgumentParser(description="Train math-verl with VERL via agl-lite")
     parser.add_argument("--dataset", default="examples/math-poc/data/gsm8k_sample.jsonl")
     parser.add_argument("--val-size", type=int, default=5)
     parser.add_argument("--rollout-n", type=int, default=2)

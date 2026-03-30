@@ -168,8 +168,8 @@ HTTP API:                           AglLiteDaemon:
 
 #### Next actions
 
-- [x] Add an executable training script under `examples/math-poc/` (e.g., `train_verl.py`) that builds VERL config + dataset and calls `run_ppo()`.
-- [ ] Add pre-flight checks in script/docs: healthz, auth, model registration, rollout completion, triplet extraction, non-empty PPO batch. (healthz/auth/resources + optional rollout/triplet added in `train_verl.py`; model-registration and non-empty-PPO-batch checks still need explicit assertions)
+- [x] Add an executable training script under `examples/math-verl/` (`train.py`) that builds VERL config + dataset and calls `run_ppo()`.
+- [ ] Add pre-flight checks in script/docs: healthz, auth, model registration, rollout completion, triplet extraction, non-empty PPO batch. (healthz/auth/resources + optional rollout/triplet added in `examples/math-verl/train.py`; model-registration and non-empty-PPO-batch checks still need explicit assertions)
 
 ---
 
