@@ -34,11 +34,7 @@ from verl.trainer.ppo.ray_trainer import (
 from verl.utils.metric import reduce_metrics
 from verl.utils.tracking import Tracking
 
-from agentlightning.adapter import TraceAdapter, TraceToTripletBase
-from agentlightning.llm_proxy import LLMProxy
-from agentlightning.store.base import LightningStore
-
-from .daemon import AgentModeDaemon
+from .daemon import AglLiteDaemon
 
 __all__ = [
     "AgentLightningTrainer",
@@ -160,14 +156,12 @@ class AgentLightningTrainer(RayPPOTrainer):
     """
     Specialized PPO trainer for agent-based reinforcement learning.
 
-    This trainer is designed specifically for scenarios where the model interacts with
-    external environments, tools, or APIs through an AgentLightningServer. It simplifies
-    the training loop by removing the complex conditional logic present in the original
-    RayPPOTrainer and focusing on the agent mode workflow.
+    Adapted from the original AgentLightningTrainer.  Uses AglLiteDaemon
+    (HTTP-based) internally instead of in-process store/proxy/adapter.
 
     Key differences from RayPPOTrainer:
 
-    1. Uses AgentModeDaemon for server communication
+    1. Uses AglLiteDaemon for rollout orchestration via agl-lite HTTP API
     2. Simplified data flow without pop/union operations
     3. Direct batch processing through agent daemon
     4. Streamlined validation using agent_mode validation
@@ -175,17 +169,13 @@ class AgentLightningTrainer(RayPPOTrainer):
 
     def __init__(
         self,
-        store: LightningStore | None,
-        llm_proxy: LLMProxy | None,
-        adapter: TraceAdapter | None,
-        daemon_cls: Type[AgentModeDaemon],
+        agl_lite_url: str,
+        agl_key: str,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.store = store
-        self.llm_proxy = llm_proxy
-        self.adapter = adapter
-        self.daemon_cls = daemon_cls
+        self.agl_lite_url = agl_lite_url
+        self.agl_key = agl_key
 
     def _validate(self):
         assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
@@ -449,20 +439,15 @@ class AgentLightningTrainer(RayPPOTrainer):
         self._load_checkpoint()
 
         assert self.async_rollout_mode, "If agent mode is enabled, async server must be enabled"
-        if self.adapter is not None and not isinstance(self.adapter, TraceToTripletBase):
-            raise ValueError("Adapter must be a TraceToTripletBase for currently VERL implementation.")
         verl_version = verl.__version__
         if verl_version == "0.5.0":
-            # Note (Zhiyuan): To avoid further patch into vllm async server, using the same sentence to get the naming here.
-            # However, it is possible that verl updates the naming and causes incompatibility.
-            # Reference: https://github.com/volcengine/verl/blob/5b5e09d9cc20625e436d01f69d9cc739ff681c54/verl/workers/rollout/vllm_rollout/vllm_async_server.py#L217
             model = "/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:])
         else:
-            # For other versions (e.g., 0.6.0), we use the full path to the model.
             model = self.config.actor_rollout_ref.model.path
-        self.agent_mode_daemon = self.daemon_cls(
-            self.config.agentlightning.port,
-            self.config.actor_rollout_ref.rollout.n,
+        self.agent_mode_daemon = AglLiteDaemon(
+            agl_lite_url=self.agl_lite_url,
+            agl_key=self.agl_key,
+            train_rollout_n=self.config.actor_rollout_ref.rollout.n,
             train_information={
                 "model": model,
                 "temperature": self.config.actor_rollout_ref.rollout.temperature,
@@ -470,10 +455,6 @@ class AgentLightningTrainer(RayPPOTrainer):
             tokenizer=self.tokenizer,
             mini_batch_size=self.config.actor_rollout_ref.actor.ppo_mini_batch_size,
             pad_token_id=self.tokenizer.pad_token_id,
-            mode="v1" if self.store is not None else "v0",
-            store=self.store,
-            llm_proxy=self.llm_proxy,
-            adapter=self.adapter,
             processor=self.processor,  # For Qwen2-VL mrope position_ids
             image_base_dir=getattr(self.config.data, "image_base_dir", None),
             trace_aggregator=self.config.agentlightning.trace_aggregator,
