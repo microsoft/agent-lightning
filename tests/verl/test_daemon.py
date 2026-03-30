@@ -38,7 +38,7 @@ class TestUtilities:
 
     def test_left_pad_truncate(self):
         ids, mask = get_left_padded_ids_and_attention_mask([1, 2, 3, 4, 5], 3, 0)
-        assert ids == [1, 2, 3]
+        assert ids == [3, 4, 5]  # keeps last max_length tokens
         assert mask == [1, 1, 1]
 
     def test_right_pad(self):

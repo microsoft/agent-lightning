@@ -1,32 +1,64 @@
 # Copyright (c) Microsoft. All rights reserved.
+# Adapted from agentlightning/verl/daemon.py — AgentModeDaemon replaced with
+from __future__ import annotations
+
+# AglLiteDaemon that talks to agl-lite over HTTP instead of using LightningStore,
+# LLMProxy, and Adapter directly.
 
 import asyncio
-import json
-import os
-import random
-import socket
 import threading
-import time
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any, Dict, List, Literal, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import requests
-import torch
-from flask import Flask, Response, abort, request
-from tensordict import TensorDict
-from verl import DataProto
 
-from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
-from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
-from agentlightning.llm_proxy import LLMProxy, ModelConfig
-from agentlightning.store.base import LightningStore
-from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
+from agl_lite.client import AglLiteClient
+from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
+
+# --- Optional heavy imports (only needed when actually training) ---
+try:
+    import torch
+    from tensordict import TensorDict
+    from verl import DataProto
+except ImportError:
+    torch = None  # type: ignore[assignment]
+    TensorDict = None  # type: ignore[assignment,misc]
+    DataProto = None  # type: ignore[assignment,misc]
+
+# --- Local types (replace agentlightning.types) ---
+from pydantic import BaseModel, Field
+
+
+class Triplet(BaseModel):
+    """Single interaction turn (prompt + response + reward)."""
+    prompt: Any  # {"token_ids": [...], "image_urls": [...]}
+    response: Any  # {"token_ids": [...]}
+    reward: Optional[float] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Task(BaseModel):
+    """Task echoed back in RolloutLegacy."""
+    rollout_id: str
+    input: Any = None
+    mode: Optional[str] = None
+    resources_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RolloutLegacy(BaseModel):
+    """Completed rollout with triplets, used by get_train_data_batch()."""
+    rollout_id: str
+    task: Optional[Task] = None
+    final_reward: Optional[float] = None
+    triplets: Optional[List[Triplet]] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
 
 __all__ = [
-    "AgentModeDaemon",
+    "AglLiteDaemon",
     "get_left_padded_ids_and_attention_mask",
     "get_right_padded_ids_and_attention_mask",
 ]
@@ -173,14 +205,8 @@ def get_right_padded_ids_and_attention_mask(
     return padded_ids, attention_mask
 
 
-def _find_available_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-
 def _to_native(obj: Any) -> Any:
-    """Convert data retrieved from Parquet to data usable in AGL server."""
+    """Convert numpy/torch types to native Python for JSON serialization."""
     # 1) Arrays -> list (then recurse)
     if isinstance(obj, np.ndarray):
         return _to_native(obj.tolist())
@@ -197,70 +223,52 @@ def _to_native(obj: Any) -> Any:
     if isinstance(obj, (list, tuple, set)):
         return [_to_native(x) for x in obj]  # type: ignore
 
-    # 5) Anything else: leave as-is
+    # 5) Torch tensors
+    if torch is not None and isinstance(obj, torch.Tensor):
+        return obj.item() if obj.ndim == 0 else obj.tolist()
+
+    # 6) Anything else: leave as-is
     return obj
 
 
-class AgentModeDaemon:
-    """
-    AgentModeDaemon using the AgentLightningServer SDK.
+class AglLiteDaemon:
+    """Bridge between agl-lite HTTP API and VERL trainer.
 
-    This class manages the server lifecycle, task queueing, and results
-    retrieval, while also running a proxy server for LLM requests. It maintains
-    the original interface for compatibility with the RayPPOTrainer.
+    Drop-in replacement for Agent Lightning's AgentModeDaemon.  The trainer
+    calls the same 4 methods:
+      1. set_up_data_and_server()  — register model + enqueue rollouts
+      2. run_until_all_finished()  — poll until all rollouts complete
+      3. get_train_data_batch()    — fetch triplets, build padded tensors → DataProto
+      4. clear_data_and_server()   — reset state
+
+    Compared to AgentModeDaemon:
+    - No LightningStore — talks to agl-lite over HTTP via AglLiteClient
+    - No LLMProxy — agl-lite gateway handles proxying
+    - No Adapter — agl-lite's format=triplet does event→triplet conversion
+    - No proxy server thread — not needed
+    - Tensor construction (get_train_data_batch) is identical
     """
 
     def __init__(
         self,
-        port: Optional[int],
+        agl_lite_url: str,
+        agl_key: str,
         train_rollout_n: int,
         train_information: Dict[str, Any],
         tokenizer: Any,
         mini_batch_size: int,
         pad_token_id: int,
         reward_fillna_value: float = 0.0,
-        llm_timeout_seconds: float = 1200.0,
-        mode: Literal["v0", "v1"] = "v1",
-        llm_proxy: LLMProxy | None = None,
-        store: LightningStore | None = None,
-        adapter: TraceToTripletBase | None = None,
+        timeout_seconds: float = 1200.0,
         processor: Any = None,
         image_base_dir: Optional[str] = None,
-        trace_aggregator: Dict[str, Any] = {"level": "transition"},
+        trace_aggregator: Dict[str, Any] | None = None,
     ):
-        self.mode = mode
-        self.llm_timeout_seconds = llm_timeout_seconds
+        # --- agl-lite connection (replaces store + proxy + adapter) ---
+        self.client = AglLiteClient(base_url=agl_lite_url, agl_key=agl_key)
+        self.timeout_seconds = timeout_seconds
 
-        # Server and Task Configuration
-        if mode == "v0":
-            assert port is not None
-            self.server_port = port
-            self.server = AgentLightningServer(
-                host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.llm_timeout_seconds
-            )
-            self.proxy_port = _find_available_port()  # Run proxy on a different port
-        else:
-            assert store is not None
-            self.store = store
-            if llm_proxy is None:
-                self.llm_proxy = LLMProxy(
-                    port=_find_available_port(),
-                    model_list=[],
-                    store=store,
-                )
-            else:
-                # Reuse the existing LLM proxy (probably configured by user)
-                self.llm_proxy = llm_proxy
-            if adapter is None:
-                self.adapter = TracerTraceToTriplet()
-            else:
-                # Reuse the one from trainer
-                self.adapter = adapter
-            self._internal_loop: Optional[asyncio.AbstractEventLoop] = None
-            self._internal_loop_thread = threading.Thread(target=self._internal_loop_runner, daemon=True)
-            self._internal_loop_thread.start()
-
-        # Training and Data Configuration
+        # --- Training config ---
         self.train_rollout_n = train_rollout_n
         self.train_information = train_information
         self.mini_batch_size = mini_batch_size
@@ -269,27 +277,26 @@ class AgentModeDaemon:
         self.processor = processor
         self.reward_fillna_value = reward_fillna_value
         self.image_base_dir = image_base_dir
-        self.trace_aggregator = trace_aggregator
+        self.trace_aggregator = trace_aggregator or {"level": "transition"}
 
-        # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
+        # --- Multimodal ---
         self._use_mrope = self._is_mrope_model()
 
-        # Internal State
-        self.backend_llm_server_addresses: List[str] = []
+        # --- Internal state ---
         self._total_tasks_queued = 0
         self._completed_rollouts_v0: Dict[str, RolloutLegacy] = {}
         self._task_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
-        self._server_thread: Optional[threading.Thread] = None
-        self._proxy_thread: Optional[threading.Thread] = None
         self.is_train = True
 
-    def _internal_loop_runner(self):
-        """Run the internal loop."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        self._internal_loop = loop
-        loop.run_forever()
-        loop.close()
+        # --- Async event loop for _async methods ---
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._loop_thread.start()
+
+    def _run_loop(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
 
     # Multimodal utilities for M-RoPE position embeddings
 
@@ -310,7 +317,7 @@ class AgentModeDaemon:
             raise ValueError(f"Relative path '{path}' requires 'image_base_dir' to be set.")
         return os.path.join(self.image_base_dir, path)
 
-    def _get_image_grid_thw(self, image_urls: List[str]) -> Optional[torch.Tensor]:
+    def _get_image_grid_thw(self, image_urls: List[str]) -> Optional["torch.Tensor"]:
         """Compute image_grid_thw from image URLs for M-RoPE computation.
 
         Args:
@@ -337,14 +344,14 @@ class AgentModeDaemon:
 
     def _compute_mrope_position_ids(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        image_grid_thw: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        input_ids: "torch.Tensor",
+        attention_mask: "torch.Tensor",
+        image_grid_thw: Optional["torch.Tensor"] = None,
+    ) -> "torch.Tensor":
         """Compute 4D position_ids for M-RoPE models."""
         from typing import Callable
 
-        get_rope_index: Callable[..., torch.Tensor]
+        get_rope_index: Callable[..., "torch.Tensor"]
         if "Qwen3VL" in self.processor.__class__.__name__:
             from verl.models.transformers.qwen3_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
         else:
@@ -360,252 +367,63 @@ class AgentModeDaemon:
 
         return torch.cat([text_pos, vision_pos], dim=0)
 
-    def _start_proxy_server_v0(self):
-        """
-        Initializes and runs a Flask-based proxy server in a separate thread.
-        This proxy load-balances requests to the actual backend LLM servers.
-        """
-        app = Flask(__name__)
+    def start(self) -> None:
+        """No-op. AgentModeDaemon starts proxy server here; agl-lite gateway handles that."""
+        pass
 
-        num_requests = 0
-        last_request_time = 0
-
-        @app.route("/v1/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-        def proxy(path: str):  # type: ignore
-            if not self.backend_llm_server_addresses:
-                abort(503, description="No backend LLM servers available.")
-
-            # Randomly choose a backend server for load balancing
-            target_server = random.choice(self.backend_llm_server_addresses)
-            target_url = f"http://{target_server}/v1/{path}"
-
-            # Copy client request headers, removing the Host header
-            headers = {key: value for key, value in request.headers if key.lower() != "host"}
-
-            # Log the request for debugging
-            nonlocal num_requests, last_request_time
-            current_time = time.time()
-            num_requests += 1
-            if current_time - last_request_time > 60 or num_requests == 1 or num_requests % 100 == 0:
-                print(f"Proxying {request.method} request to {target_server}. Request data: {request.get_data()}")
-            last_request_time = current_time
-
-            try:
-                # Forward the request to the target backend
-                resp = requests.request(
-                    method=request.method,
-                    url=target_url,
-                    headers=headers,
-                    params=request.args,  # type: ignore
-                    data=request.get_data(),
-                    cookies=request.cookies,
-                    allow_redirects=False,
-                    timeout=self.llm_timeout_seconds,
-                )
-                # Filter out hop-by-hop headers before returning the response
-                excluded_headers = [
-                    "content-encoding",
-                    "content-length",
-                    "transfer-encoding",
-                    "connection",
-                    "keep-alive",
-                    "proxy-authenticate",
-                    "proxy-authorization",
-                    "te",
-                    "trailers",
-                    "upgrade",
-                ]
-                response_headers = [
-                    (name, value) for name, value in resp.raw.headers.items() if name.lower() not in excluded_headers
-                ]
-                if resp.status_code == 200:
-                    # NOTE: from Zhiyuan's code.
-                    # https://github.com/hzy46/verl_agent_mode/blob/2db65ea9858f645a914120357412a7540f8bd82d/verl/trainer/ppo/ray_trainer.py#L692-L711
-                    # request_json = json.loads(request.get_data().decode("utf-8"))
-                    response_json = json.loads(resp.content.decode("utf-8"))
-                    # response_message = ChatCompletion(**response_json).choices[0].message.model_dump(exclude_unset=True, exclude_none=True)
-                    # tool_schemas = request_json.get("tools", None)
-                    # prompt_ids = self.tokenizer.apply_chat_template(request_json["messages"], tools=tool_schemas, add_generation_prompt=True, tokenize=True)
-                    # full_ids = self.tokenizer.apply_chat_template(request_json["messages"] + [response_message], tools=tool_schemas, add_generation_prompt=False, tokenize=True)
-                    # TBD: response_ids sometimes ends with "<eos_id>\n", shall we keep the extra "\n"?
-                    # sometimes it has some differences with the hacky method in the end, but this should align with ToolCompletionCallback
-                    # response_ids = full_ids[len(prompt_ids):]
-
-                    # NOTE (yuge): They are different. Don't know why.
-                    # assert response_json['prompt_token_ids'] == prompt_ids
-                    # patched_response_ids = response_json['response_token_ids'][0]
-                    # assert patched_response_ids == response_ids[:len(patched_response_ids)], f"{patched_response_ids} != {response_ids[:len(patched_response_ids)]}"
-                    # response_json['prompt_token_ids'] = prompt_ids
-                    # response_json['response_token_ids'] = [response_ids]
-                    replaced_return_content = json.dumps(response_json).encode("utf-8")
-                    return Response(replaced_return_content, status=resp.status_code, headers=response_headers)
-                return Response(resp.content, resp.status_code, response_headers)
-            except requests.exceptions.RequestException as e:
-                abort(500, description=f"Error proxying request: {e}")
-
-        def run_app():
-            app.run(host="0.0.0.0", port=self.proxy_port, threaded=True, debug=False)
-
-        self._proxy_thread = threading.Thread(target=run_app, daemon=True)
-        self._proxy_thread.start()
-        print(f"Proxy server running on port {self.proxy_port}")
-
-    async def _update_proxy_server_v1(self):
-        model_name = self.train_information.get("model")
-        if not model_name:
-            raise ValueError("Model name is not set.")
-        self.llm_proxy.update_model_list(
-            [
-                ModelConfig(
-                    {
-                        "model_name": model_name,
-                        "litellm_params": {
-                            "model": "hosted_vllm/" + model_name,
-                            "api_base": f"http://{address}/v1/",
-                        },
-                    }
-                )
-                for address in self.backend_llm_server_addresses
-            ],
-        )
-
-        await self.llm_proxy.restart()
-
-    def start(self):
-        """Starts the main AgentLightningServer and the proxy server."""
-
-        if self.mode == "v0":
-
-            def run_server():
-                """Run the AgentLightningServer in a separate thread."""
-                asyncio.run(self.server.run_forever())
-
-            self._server_thread = threading.Thread(target=run_server, daemon=True)
-            self._server_thread.start()
-
-            # Wait for the server's internal startup event to be set.
-            print("Waiting for AgentLightningServer to start...")
-            is_ready = self.server.startup_event.wait(timeout=20.0)  # Wait up to 20s
-            if not is_ready:
-                raise RuntimeError("AgentLightningServer failed to start within the timeout period.")
-
-            print(f"AgentLightningServer control plane running on port {self.server_port}")
-
-            self._start_proxy_server_v0()
-        else:
-            # Agent lightning server is no longer needed;
-            # Start proxy server in _async_set_up
-            pass
-
-    async def _async_set_up(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
-        """Async helper to set up data and resources on the server."""
+    async def _async_set_up(
+        self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True
+    ) -> None:
+        """Register model servers and enqueue rollouts via AglLiteClient."""
         self.clear_data_and_server()
-        if server_addresses != self.backend_llm_server_addresses:
-            self.backend_llm_server_addresses = server_addresses
-            if self.mode == "v1" and not self.llm_proxy.is_running():
-                await self._update_proxy_server_v1()
         self.is_train = is_train
 
-        # 1. Update resources on the server for clients to use
-        if self.mode == "v0":
-            llm_resource = LLM(
-                endpoint=f"http://127.0.0.1:{self.proxy_port}/v1",
-                model=self.train_information.get("model", "default-model"),
-                sampling_parameters={
-                    "temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)
-                },
-            )
-        else:
-            llm_resource = self.llm_proxy.as_resource(
-                sampling_parameters={
-                    "temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)
-                },
-            )
+        # 1. Register model servers with agl-lite
+        model_name = self.train_information.get("model", "default-model")
+        regs = []
+        for addr in server_addresses:
+            endpoint = f"http://{addr}/v1" if not addr.startswith("http") else addr
+            regs.append(RegisterModelRequest(model=model_name, endpoint=endpoint))
+        await self.client.register_models(regs)
 
-        resources: NamedResources = {"main_llm": llm_resource}
-
-        if self.mode == "v0":
-            resources_id = await self.server.update_resources(resources)
-        else:
-            resources_update = await self.store.add_resources(resources)
-            resources_id = resources_update.resources_id
-
-        # 2. Queue tasks for agents to process
+        # 2. Enqueue rollouts
         keys = list(data.keys())
         num_samples = len(data[keys[0]])
         rollouts_per_sample = self.train_rollout_n if is_train else 1
 
-        enqueue_rollout_requests: List[EnqueueRolloutRequest] = []
-        data_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
+        rollout_requests: List[EnqueueRolloutRequest] = []
+        data_id_to_original: Dict[str, Dict[str, Any]] = {}
 
         for i in range(num_samples):
             data_id = str(uuid.uuid4())
-            original_sample = {key: data[key][i] for key in keys}
-            original_sample["data_id"] = data_id
-            data_id_to_original_sample[data_id] = original_sample
+            original = {key: _to_native(data[key][i]) for key in keys}
+            original["data_id"] = data_id
+            data_id_to_original[data_id] = original
 
-            # For training, each sample is rolled out multiple times
-            # Data ID is different from Rollout ID, as one data can have multiple rollouts.
             for _ in range(rollouts_per_sample):
-                task_metadata = {"data_id": data_id, "is_train": is_train}
-                if self.mode == "v0":
-                    # Queue immediately
-                    rollout_id = await self.server.queue_task(
-                        sample=_to_native(original_sample),
-                        mode="train" if is_train else "val",
-                        resources_id=resources_id,
-                        metadata=task_metadata,
-                    )
+                rollout_requests.append(EnqueueRolloutRequest(
+                    input=_to_native(original),
+                    config={"timeout": int(self.timeout_seconds)},
+                ))
 
-                    # Store original sample data to reconstruct batch information later
-                    self._task_id_to_original_sample[rollout_id] = original_sample
-                    self._total_tasks_queued += 1
-                else:
-                    # Collect tasks to enqueue in batch and queue them later
-                    enqueue_rollout_requests.append(
-                        EnqueueRolloutRequest(
-                            input=_to_native(original_sample),
-                            mode="train" if is_train else "val",
-                            resources_id=resources_id,
-                            config=RolloutConfig(
-                                unresponsive_seconds=self.llm_timeout_seconds,
-                                timeout_seconds=self.llm_timeout_seconds,
-                            ),
-                            metadata=task_metadata,
-                        )
-                    )
+        created = await self.client.enqueue_rollouts(rollout_requests)
 
-        if self.mode == "v1":
-            # Enqueue all the tasks in a single batch
-            rollouts = await self.store.enqueue_many_rollouts(enqueue_rollout_requests)
-            self._task_id_to_original_sample.update(
-                {
-                    # Recover the original data and store it for later use.
-                    rollout.rollout_id: data_id_to_original_sample[cast(Dict[str, Any], rollout.metadata)["data_id"]]
-                    for rollout in rollouts
-                }
-            )
-            self._total_tasks_queued += len(rollouts)
+        for r in created:
+            rid = r.rollout_id
+            data_id = r.input.get("data_id") if isinstance(r.input, dict) else None
+            if data_id and data_id in data_id_to_original:
+                self._task_id_to_original_sample[rid] = data_id_to_original[data_id]
+        self._total_tasks_queued += len(created)
 
-    def set_up_data_and_server(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
-        """Synchronous wrapper for setting up data and server resources."""
-        coro = self._async_set_up(data, server_addresses, is_train)
-
-        if self.mode == "v0":
-            if not self.server.loop or not self.server.startup_event.is_set():
-                raise RuntimeError("Server is not running or ready.")
-
-            future = asyncio.run_coroutine_threadsafe(coro, self.server.loop)
-
-        else:
-            if self._internal_loop is None:
-                raise RuntimeError("Internal loop is not running.")
-            future = asyncio.run_coroutine_threadsafe(coro, self._internal_loop)
-        try:
-            future.result(timeout=300)  # Wait for completion with a timeout
-        except Exception as e:
-            print(f"Failed to set up data on server: {e}")
-            raise
+    def set_up_data_and_server(
+        self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True
+    ) -> None:
+        """Sync wrapper — same signature as AgentModeDaemon."""
+        assert self._loop is not None
+        future = asyncio.run_coroutine_threadsafe(
+            self._async_set_up(data, server_addresses, is_train), self._loop
+        )
+        future.result()
 
     def _validate_data(self, rollout: RolloutLegacy):
         if rollout.final_reward is None:
@@ -621,103 +439,85 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
-    async def _validate_data_v1(self, rollout: Rollout) -> RolloutLegacy:
-        """Convert Rollout to RolloutLegacy and validate.
+    async def _async_validate_data(self, rollout_id: str) -> RolloutLegacy:
+        """Fetch triplets for a completed rollout via AglLiteClient.
 
-        1. Task: construct from Rollout
-        2. Triplets: obtained by querying spans and feeding into the adapter
-        3. Final reward: extracted from last triplet's reward, searching backwards if not found
+        Replaces AgentModeDaemon._validate_data_v1() which calls:
+          store.query_spans() → adapter.adapt(spans) → List[Triplet]
+
+        In agl-lite, the server does event→triplet conversion via format=triplet.
         """
-        # Query spans for this rollout (latest attempt)
-        spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
+        events = await self.client.get_events(rollout_id, format="triplet")
 
-        # Convert spans to triplets using the adapter
-        if not spans:
-            # No triplets found, will emit a warning later.
-            triplets = []
-        else:
-            triplets = self.adapter.adapt(spans)
+        # Convert trimmed events to Triplet objects
+        triplets: List[Triplet] = []
+        for evt in events:
+            if evt.event_type == "model_request":
+                d = evt.data
+                triplets.append(Triplet(
+                    prompt={"token_ids": d.get("prompt_token_ids", [])},
+                    response={"token_ids": d.get("response_token_ids", [])},
+                    reward=None,
+                    metadata={"server": d.get("server", {})},
+                ))
 
-        # Extract final reward from triplets
+        # Match rewards to triplets (last reward wins)
         final_reward: Optional[float] = None
-        if triplets:
-            # Search backwards through triplets for the first non-None reward
-            for triplet in reversed(triplets):
-                if triplet.reward is not None:
-                    final_reward = triplet.reward
-                    break
+        reward_events = [e for e in events if e.event_type == "reward"]
+        if reward_events:
+            final_reward = reward_events[-1].data.get("value")
 
-        # Construct the Task object from Rollout
-        task = Task(
-            rollout_id=rollout.rollout_id,
-            input=rollout.input,
-            mode=rollout.mode,
-            resources_id=rollout.resources_id,
-            metadata=rollout.metadata or {},
-        )
+        # Assign reward to last triplet (same as Agent Lightning convention)
+        if triplets and final_reward is not None:
+            triplets[-1] = triplets[-1].model_copy(update={"reward": final_reward})
 
-        # Create the Rollout object (without trace and logs as per user's note)
-        result_rollout = RolloutLegacy(
-            rollout_id=rollout.rollout_id,
-            task=task,
+        original = self._task_id_to_original_sample.get(rollout_id, {})
+        result = RolloutLegacy(
+            rollout_id=rollout_id,
+            task=Task(
+                rollout_id=rollout_id,
+                input=original,
+                metadata=original.get("metadata", {}),
+            ),
             final_reward=final_reward,
             triplets=triplets,
-            metadata=rollout.metadata or {},
+            metadata=original.get("metadata", {}),
         )
 
-        # Run the same validation as v0
-        self._validate_data(result_rollout)
+        self._validate_data(result)
+        return result
 
-        return result_rollout
-
-    async def _async_run_until_finished(self, verbose: bool = True):
-        """Async helper to wait for all tasks to complete."""
+    async def _async_run_until_finished(self, verbose: bool = True) -> None:
+        """Poll agl-lite until all rollouts complete."""
         while len(self._completed_rollouts_v0) < self._total_tasks_queued:
-            if self.mode == "v0":
-                completed_batch = await self.server.retrieve_completed_rollouts()
-            else:
-                completed_batch = await self.store.wait_for_rollouts(
-                    rollout_ids=list(self._task_id_to_original_sample.keys()), timeout=0
-                )
-            for rollout in completed_batch:
-                if rollout.rollout_id in self._completed_rollouts_v0:
-                    # Already processed, skip
+            rollout_ids = list(self._task_id_to_original_sample.keys())
+            for rid in rollout_ids:
+                if rid in self._completed_rollouts_v0:
                     continue
-                if isinstance(rollout, Rollout):
-                    rollout = await self._validate_data_v1(rollout)
-                else:
-                    self._validate_data(rollout)
-                if rollout.rollout_id not in self._task_id_to_original_sample:
-                    print(f"Warning: Received unknown rollout ID {rollout.rollout_id}, skipping.")
-                else:
-                    self._completed_rollouts_v0[rollout.rollout_id] = rollout
+                rollout = await self.client.get_rollout(rid)
+                if rollout.status == "succeeded":
+                    legacy = await self._async_validate_data(rid)
+                    self._completed_rollouts_v0[rid] = legacy
+
             if verbose:
-                print(f"Completed {len(self._completed_rollouts_v0)}/{self._total_tasks_queued} tasks...")
+                print(
+                    f"Completed {len(self._completed_rollouts_v0)}/{self._total_tasks_queued} tasks..."
+                )
             await asyncio.sleep(5)
 
         print("All tasks finished.")
 
-    def run_until_all_finished(self, verbose: bool = True):
-        """Synchronously waits for all queued tasks to be completed and reported."""
+    def run_until_all_finished(self, verbose: bool = True) -> None:
+        """Sync wrapper — same signature as AgentModeDaemon."""
         if self._total_tasks_queued == 0:
             print("Warning: No tasks were queued.")
             return
 
-        if self.mode == "v0":
-            if not self.server.loop or not self.server.startup_event.is_set():
-                raise RuntimeError("Server is not running or ready.")
-            loop = self.server.loop
-        else:
-            loop = self._internal_loop
-            assert loop is not None
-
-        coro = self._async_run_until_finished(verbose)
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
-        try:
-            future.result()  # Wait indefinitely for all tasks to complete
-        except Exception as e:
-            print(f"Error while waiting for tasks to finish: {e}")
-            raise
+        assert self._loop is not None
+        future = asyncio.run_coroutine_threadsafe(
+            self._async_run_until_finished(verbose), self._loop
+        )
+        future.result()
 
     def get_test_metrics(self):
         """Calculates and returns metrics for a validation run."""
@@ -805,7 +605,7 @@ class AgentModeDaemon:
         return metric_dict
 
     def get_train_data_batch(
-        self, max_prompt_length: int, max_response_length: int, device: torch.device, global_steps: int
+        self, max_prompt_length: int, max_response_length: int, device: "torch.device", global_steps: int
     ):
         """
         Processes completed rollouts to generate a training data batch.
@@ -869,7 +669,7 @@ class AgentModeDaemon:
         rollout_id_list: List[str] = []
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
-        image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
+        image_grid_thw_list: List[Optional["torch.Tensor"]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
 
         if self.trace_aggregator.get("level", "transition") == "transition":
@@ -1039,7 +839,7 @@ class AgentModeDaemon:
         # Compute position_ids - use mrope for Qwen2-VL, standard 2D otherwise
         if self._use_mrope:
             # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
-            position_ids_list: list[torch.Tensor] = []
+            position_ids_list: list["torch.Tensor"] = []
             for i in range(n_transition):
                 pos_ids = self._compute_mrope_position_ids(
                     input_ids=batch_seq[i],
@@ -1133,22 +933,15 @@ class AgentModeDaemon:
 
         return data_proto, data_metrics
 
-    def clear_data_and_server(self):
-        """Resets the internal state of the daemon for the next run."""
-        self.backend_llm_server_addresses = []
+    def clear_data_and_server(self) -> None:
+        """Reset internal state for next iteration."""
+        self._total_tasks_queued = 0
         self._completed_rollouts_v0.clear()
         self._task_id_to_original_sample.clear()
-        self._total_tasks_queued = 0
-        # For a true reset, the server's internal queues would also need clearing.
-        # This implementation assumes that `set_up_data_and_server` is called
-        # for each new run, effectively starting a fresh batch.
+        self.is_train = True
 
-    def _fillna_reward(self, rollout: RolloutLegacy):
-        if rollout.final_reward is None:
-            if self.reward_fillna_value is not None:  # type: ignore
-                final_reward = self.reward_fillna_value
-            else:
-                raise ValueError(f"Reward is None for rollout {rollout.rollout_id}, please check the reward function.")
-        else:
-            final_reward = rollout.final_reward
-        return final_reward
+    def _fillna_reward(self, rollout: RolloutLegacy) -> float:
+        """Return final_reward or the fill value."""
+        if rollout.final_reward is not None:
+            return rollout.final_reward
+        return self.reward_fillna_value
