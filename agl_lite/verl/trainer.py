@@ -451,6 +451,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             train_information={
                 "model": model,
                 "temperature": self.config.actor_rollout_ref.rollout.temperature,
+                "resources_id": self.config.agentlightning.get("resources_id", None),
             },
             tokenizer=self.tokenizer,
             mini_batch_size=self.config.actor_rollout_ref.actor.ppo_mini_batch_size,

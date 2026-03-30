@@ -380,6 +380,7 @@ class AglLiteDaemon:
 
         # 1. Register model servers with agl-lite
         model_name = self.train_information.get("model", "default-model")
+        resources_id = self.train_information.get("resources_id")
         regs = []
         for addr in server_addresses:
             endpoint = f"http://{addr}/v1" if not addr.startswith("http") else addr
@@ -403,6 +404,7 @@ class AglLiteDaemon:
             for _ in range(rollouts_per_sample):
                 rollout_requests.append(EnqueueRolloutRequest(
                     input=_to_native(original),
+                    resources_id=resources_id,
                     config={"timeout": int(self.timeout_seconds)},
                 ))
 

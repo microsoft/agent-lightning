@@ -130,7 +130,22 @@ examples/math-poc/run.sh
 scripts/start_vllm.sh --stop
 ```
 
-### 4. Verify
+### 4. VERL training smoke run (Phase 5c)
+
+```bash
+# Reuse the same topology as vLLM mode (agl-lite + controller + hooks already running)
+uv run python examples/math-poc/train_verl.py \
+  --mode vllm \
+  --total-steps 1 \
+  --rollout-n 2 \
+  --smoke-rollout-check
+```
+
+This script performs preflight checks (healthz/auth/resources, optional smoke rollout
+with triplet extraction), then calls `agl_lite.verl.entrypoint.run_ppo(...)` with a
+small math-poc dataset split.
+
+### 5. Verify
 
 Compare against reference outputs:
 
@@ -163,6 +178,7 @@ reasoning text varies but the structure (events, checks, rewards) should match.
 | `.env.mockai.example` | Complete config for mock mode → `cp` to `deploy/.env` |
 | `.env.vllm.example` | Complete config for vLLM mode → `cp` to `deploy/.env` |
 | `run.sh` | One-command: build → deploy → run → verify → collect logs |
+| `train_verl.py` | VERL training entry for math-poc (Phase 5c smoke run) |
 | `reference_output.log` | Expected output — mock mode (redacted IDs) |
 | `reference_output_vllm.log` | Expected output — vLLM mode (redacted IDs) |
 | `logs/` | Per-run logs (gitignored) |
