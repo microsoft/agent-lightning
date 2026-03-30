@@ -15,7 +15,6 @@ Prerequisites (same topology as math-poc vllm mode):
 Env vars:
 - AGL_LITE_URL (default: http://localhost:8080)
 - AGL_KEY (required)
-- AGL_MODEL_MODE (default: vllm)
 - AGL_MODEL_NAME (default: Qwen/Qwen2.5-1.5B-Instruct)
 """
 
@@ -80,7 +79,6 @@ async def preflight_and_prepare_resources(
     *,
     base_url: str,
     agl_key: str,
-    mode: str,
     do_smoke_rollout: bool,
 ) -> str:
     """Run preflight checks and return resources_id for training."""
@@ -95,7 +93,7 @@ async def preflight_and_prepare_resources(
         _ = await client.list_models()
 
         # 3) add resources with math-poc job template
-        mode_dir = REPO_ROOT / "examples" / "math-poc" / mode
+        mode_dir = REPO_ROOT / "examples" / "math-poc" / "vllm"
         template_path = mode_dir / "job-template.yaml"
         with template_path.open() as f:
             job_template = yaml.safe_load(f)
@@ -209,7 +207,6 @@ def build_verl_config(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train math-poc with VERL via agl-lite")
-    parser.add_argument("--mode", choices=["mock", "vllm"], default=os.environ.get("AGL_MODEL_MODE", "vllm"))
     parser.add_argument("--dataset", default="examples/math-poc/data/gsm8k_sample.jsonl")
     parser.add_argument("--val-size", type=int, default=5)
     parser.add_argument("--rollout-n", type=int, default=2)
@@ -239,7 +236,7 @@ def main() -> None:
 
     log("=== Preflight ===")
     log(f"  agl-lite:   {base_url}")
-    log(f"  mode:       {args.mode}")
+    log("  mode:       vllm (training only)")
     log(f"  model:      {model_name}")
     log(f"  dataset:    train={len(train_dataset)}, val={len(val_dataset)}")
 
@@ -247,7 +244,6 @@ def main() -> None:
         preflight_and_prepare_resources(
             base_url=base_url,
             agl_key=agl_key,
-            mode=args.mode,
             do_smoke_rollout=args.smoke_rollout_check,
         )
     )

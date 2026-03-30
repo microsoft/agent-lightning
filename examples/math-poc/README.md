@@ -135,15 +135,14 @@ scripts/start_vllm.sh --stop
 ```bash
 # Reuse the same topology as vLLM mode (agl-lite + controller + hooks already running)
 uv run python examples/math-poc/train_verl.py \
-  --mode vllm \
   --total-steps 1 \
   --rollout-n 2 \
   --smoke-rollout-check
 ```
 
-This script performs preflight checks (healthz/auth/resources, optional smoke rollout
-with triplet extraction), then calls `agl_lite.verl.entrypoint.run_ppo(...)` with a
-small math-poc dataset split.
+This script is **vLLM-only** (no mock mode for training). It performs preflight checks
+(healthz/auth/resources, optional smoke rollout with triplet extraction), then calls
+`agl_lite.verl.entrypoint.run_ppo(...)` with a small math-poc dataset split.
 
 ### 5. Verify
 
