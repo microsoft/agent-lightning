@@ -27,6 +27,24 @@ spec:
                 secretKeyRef:
                   name: agl-lite-keys
                   key: AGL_KEY
+            - name: GATEWAY_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_GATEWAY_CONFIG
+                  optional: true
+            - name: HOOKS
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_HOOKS
+                  optional: true
+            - name: ARTIFACT_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_ARTIFACT_DIR
+                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz

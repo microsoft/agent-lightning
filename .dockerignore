@@ -8,7 +8,6 @@ __pycache__/
 tests/
 docs/
 dev/
-examples/
 node_modules/
 tmp/
 *.egg-info/

@@ -42,6 +42,10 @@ fi
 source "$MODE_DIR/.env.example"
 NS="${AGL_K8S_NAMESPACE:?AGL_K8S_NAMESPACE not set}"
 
+# Keep deploy.sh and this script on the same config source.
+# deploy.sh reads deploy/.env, so sync mode config into deploy/.env for this run.
+cp "$MODE_DIR/.env.example" "$REPO_ROOT/deploy/.env"
+
 if [ -z "${AGL_KEY:-}" ]; then
     echo "ERROR: AGL_KEY not set. Run: export AGL_KEY=\$(openssl rand -hex 32)"
     exit 1
@@ -65,14 +69,18 @@ fi
 echo "=== Building images ==="
 scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
 
+# Pass gateway config + hooks to deploy.sh (used when launching host agl-lite).
+export AGL_GATEWAY_CONFIG="examples/math-poc/$MODE/gateway-config.yaml"
+export AGL_HOOKS="${AGL_HOOKS:-}"
+
 # --- Deploy K8s infra ---
 echo ""
 if [ "$MODE" = "vllm" ]; then
-    echo "=== Deploying controller to K8s (agl-lite will run on host) ==="
+    echo "=== Deploying controller to K8s + host agl-lite service ==="
     scripts/deploy.sh --agl-in-host 2>&1 | tee "$LOG_DIR/deploy.log"
 else
     echo "=== Deploying agl-lite infra to K8s ==="
-    scripts/deploy.sh 2>&1 | tee "$LOG_DIR/deploy.log"
+    scripts/deploy.sh --agl-in-k8s 2>&1 | tee "$LOG_DIR/deploy.log"
 fi
 
 # --- Deploy mockai (mock mode only) ---
@@ -83,39 +91,32 @@ if [ "$MODE" = "mock" ]; then
     kubectl -n "$NS" wait --for=condition=available deployment/mockai --timeout=120s 2>&1 | tee -a "$LOG_DIR/deploy.log"
 fi
 
-# --- Start agl-lite serve ---
+# --- Connectivity setup ---
 SERVE_PID=""
 PF_PID=""
+PF_PORT="${AGL_LOCAL_PORT:-18080}"
 
-GATEWAY_CONFIG="$MODE_DIR/gateway-config.yaml"
-HOOKS_PATH="${AGL_HOOKS:-}"
-
+# vLLM mode: deploy.sh --agl-in-host launches agl-lite on host.
 if [ "$MODE" = "vllm" ]; then
-    SERVE_CMD=(uv run agl-lite serve --host 0.0.0.0 --port 8080)
-    [ -f "$GATEWAY_CONFIG" ] && SERVE_CMD+=(--gateway-config "$GATEWAY_CONFIG")
-    [ -n "$HOOKS_PATH" ] && SERVE_CMD+=(--hooks "$HOOKS_PATH")
     echo ""
-    echo "=== Starting agl-lite serve on host ==="
-    echo "  ${SERVE_CMD[*]}"
-    AGL_KEY="$AGL_KEY" "${SERVE_CMD[@]}" > "$LOG_DIR/agl-lite.log" 2>&1 &
-    SERVE_PID=$!
-
-    for i in $(seq 1 30); do
+    echo "=== Waiting for host agl-lite service ==="
+    READY=false
+    for i in $(seq 1 40); do
         if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then
             echo "  agl-lite ready"
+            READY=true
             break
-        fi
-        if ! kill -0 $SERVE_PID 2>/dev/null; then
-            echo "ERROR: agl-lite process died"
-            tail -20 "$LOG_DIR/agl-lite.log"
-            exit 1
         fi
         sleep 1
     done
+    if [ "$READY" != true ]; then
+        echo "ERROR: host agl-lite did not become ready"
+        exit 1
+    fi
 else
     echo ""
     echo "=== Starting port-forward ==="
-    kubectl -n "$NS" port-forward svc/agl-lite 8080:8080 &
+    kubectl -n "$NS" port-forward --address 127.0.0.1 svc/agl-lite "${PF_PORT}:8080" &
     PF_PID=$!
     sleep 2
 fi
@@ -144,12 +145,20 @@ cleanup() {
 trap cleanup EXIT
 
 # --- Export env for algorithm script ---
-export AGL_LITE_URL=http://localhost:8080
+if [ "$MODE" = "mock" ]; then
+    export AGL_LITE_URL="http://127.0.0.1:${PF_PORT}"
+else
+    export AGL_LITE_URL=http://localhost:8080
+fi
 export AGL_K8S_NAMESPACE="$NS"
 export AGL_KEY
 export AGL_MODEL_MODE="$MODE"
 export AGL_MODEL_NAME="${AGL_MODEL_NAME:-mock-llm}"
-export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
+if [ "$MODE" = "mock" ] && [ -z "${AGL_MODEL_ENDPOINT:-}" ]; then
+    export AGL_MODEL_ENDPOINT="http://mockai.${NS}.svc.cluster.local:5002/v1"
+else
+    export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
+fi
 export AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}"
 export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-1}"
 

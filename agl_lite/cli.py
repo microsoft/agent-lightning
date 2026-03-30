@@ -19,9 +19,13 @@ def serve(
     """Start the agl-lite HTTP service (store + gateway)."""
     import os
 
-    # Set env vars so ServerSettings picks them up.
-    if gateway_config:
-        os.environ.setdefault("GATEWAY_CONFIG", gateway_config)
+    # Resolve settings from CLI args first, then env vars as fallback.
+    if not gateway_config:
+        gateway_config = os.environ.get("GATEWAY_CONFIG", "")
+    if not hooks:
+        hooks = os.environ.get("HOOKS", "")
+    if not artifact_dir:
+        artifact_dir = os.environ.get("ARTIFACT_DIR", "")
 
     from agl_lite.server.app import create_app
     from agl_lite.server.config import ServerSettings

@@ -168,6 +168,19 @@ if [ -z "${AGL_KEY:-}" ]; then
     exit 1
 fi
 
+# --- Redeploy warnings (non-blocking) ---
+if kubectl -n "$NS" get deployment agl-controller >/dev/null 2>&1; then
+    echo ""
+    echo "⚠ Existing deployment detected in namespace '$NS' (agl-controller already exists)."
+    echo "  Recommended for a clean restart:"
+    echo "    scripts/deploy.sh --cleanup"
+    echo "    scripts/deploy.sh --$([ "$AGL_LOCATION" = "k8s" ] && echo 'agl-in-k8s' || ([ "$AGL_LOCATION" = "host" ] && echo 'agl-in-host' || echo 'agl-external'))"
+    echo ""
+    echo "⚠ If deploying from source changes, rebuild images first (minikube):"
+    echo "    scripts/build_images.sh"
+    echo "  (for math-poc agents too: scripts/build_images.sh --math-poc)"
+fi
+
 # --- Determine AGL_LITE_URL ---
 CTX=$(kubectl config current-context 2>/dev/null || echo "")
 
@@ -222,11 +235,26 @@ kubectl -n "$NS" create secret generic "${AGL_SECRET_NAME:-agl-lite-keys}" \
     --from-literal=AGL_KEY="$AGL_KEY" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-# 3. ConfigMap (from .env, excluding AGL_KEY and comments, with correct AGL_LITE_URL)
+# 3. ConfigMap (from .env + runtime overrides, excluding AGL_KEY)
 echo "--- Creating configmap ---"
-(grep -v '^AGL_KEY=' "$ENV_FILE" | grep -v '^AGL_LITE_URL=' | grep -v '^#' | grep -v '^$'; \
- echo "AGL_LITE_URL=$AGL_LITE_URL") | \
-    kubectl -n "$NS" create configmap agl-lite-config \
+(
+  grep -v '^AGL_KEY=' "$ENV_FILE" \
+    | grep -v '^AGL_LITE_URL=' \
+    | grep -v '^AGL_GATEWAY_CONFIG=' \
+    | grep -v '^AGL_HOOKS=' \
+    | grep -v '^AGL_ARTIFACT_DIR=' \
+    | grep -v '^#' | grep -v '^$'
+  echo "AGL_LITE_URL=$AGL_LITE_URL"
+  if [ -n "${AGL_GATEWAY_CONFIG:-}" ]; then
+    echo "AGL_GATEWAY_CONFIG=$AGL_GATEWAY_CONFIG"
+  fi
+  if [ -n "${AGL_HOOKS:-}" ]; then
+    echo "AGL_HOOKS=$AGL_HOOKS"
+  fi
+  if [ -n "${AGL_ARTIFACT_DIR:-}" ]; then
+    echo "AGL_ARTIFACT_DIR=$AGL_ARTIFACT_DIR"
+  fi
+) | kubectl -n "$NS" create configmap agl-lite-config \
     --from-env-file=/dev/stdin \
     --dry-run=client -o yaml | kubectl apply -f -
 
