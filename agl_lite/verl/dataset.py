@@ -2,12 +2,13 @@
 
 # type: ignore
 
+from typing import Any, Sequence
+
 import torch
 from datasets import Dataset as HuggingFaceDataset
 from omegaconf import DictConfig
 from verl.utils.dataset.rl_dataset import RLHFDataset
 
-from agentlightning.types import Dataset
 
 __all__ = [
     "AgentDataset",
@@ -35,7 +36,7 @@ class AgentDataset(RLHFDataset):
 
 class LoadedDataset(AgentDataset):
 
-    def __init__(self, dataset: Dataset):
+    def __init__(self, dataset: Sequence[Any]):
         super().__init__([], None, DictConfig({}))  # type: ignore
         dataset_copy = [dataset[i] for i in range(len(dataset))]
         self.dataframe = HuggingFaceDataset.from_list(dataset_copy)
