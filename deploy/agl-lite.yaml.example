@@ -1,0 +1,48 @@
+# agl-lite deploy configuration (non-secret).
+#
+# Secret handling:
+#   export AGL_KEY=$(openssl rand -hex 32)
+# then run:
+#   agl-lite deploy --config deploy/agl-lite.yaml.example
+
+# Kubernetes namespace where agl-lite/controller resources are deployed.
+namespace: agl
+
+# Deployment mode:
+#   agl-in-k8s   -> agl-lite server + controller in K8s
+#   agl-in-host  -> controller in K8s, agl-lite serve on this host
+#   agl-external -> controller in K8s, external agl-lite (not managed)
+mode: agl-in-k8s
+
+# URL used by controller/agent pods to reach agl-lite.
+# - agl-in-k8s: ignored (auto set to http://agl-lite.<namespace>.svc:8080)
+# - agl-in-host: optional on minikube; required on non-minikube
+# pod_base_url: http://host.minikube.internal:8080
+
+# External agl-lite URL.
+# Required only when mode=agl-external.
+# external_base_url: http://your-external-agl-lite:8080
+
+# Host `agl-lite serve` settings (used only when mode=agl-in-host).
+host_serve:
+  bind: 0.0.0.0
+  port: 8080
+
+# Controller reconcile settings.
+controller:
+  poll_interval_seconds: 10
+  max_queue_time_seconds: 3600
+
+# Optional agl-lite server runtime paths.
+# These are passed to `agl-lite serve` in host mode and injected as env vars
+# in in-k8s mode.
+server_runtime:
+  gateway_config: null
+  hooks: null
+  artifact_dir: null
+
+# Deployment wait timeout for readiness checks.
+wait_ready_timeout_seconds: 120
+
+# Where deploy writes exported host/pod URL variables.
+env_output_path: .local/agl-lite.env

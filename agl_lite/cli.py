@@ -83,30 +83,13 @@ def controller(
 
 @app.command("deploy")
 def deploy_entrypoint(
-    config: str = typer.Option("deploy/.env", "--config", help="Path to env config file"),
-    agl_in_k8s: bool = typer.Option(False, "--agl-in-k8s", help="Run agl-lite in Kubernetes"),
-    agl_in_host: bool = typer.Option(False, "--agl-in-host", help="Run agl-lite on this host"),
-    agl_external: bool = typer.Option(False, "--agl-external", help="Use external agl-lite service"),
-    controller_only: bool = typer.Option(False, "--controller-only", hidden=True),
-    no_serve: bool = typer.Option(False, "--no-serve", hidden=True),
-    agl_host_bind: str = typer.Option("0.0.0.0", "--agl-host-bind", help="Host bind address for agl-lite serve"),
-    agl_host_port: int = typer.Option(8080, "--agl-host-port", help="Host port for agl-lite serve"),
+    config: str = typer.Option(..., "--config", help="Path to deploy YAML config file"),
     cleanup: bool = typer.Option(False, "--cleanup", help="Delete namespace and stop managed host service"),
 ) -> None:
-    """Deploy controller/server in k8s/host/external modes."""
+    """Deploy controller/server in k8s/host/external modes from YAML config."""
     from agl_lite.deploy import deploy_command
 
-    deploy_command(
-        config=config,
-        agl_in_k8s=agl_in_k8s,
-        agl_in_host=agl_in_host,
-        agl_external=agl_external,
-        controller_only=controller_only,
-        no_serve=no_serve,
-        agl_host_bind=agl_host_bind,
-        agl_host_port=agl_host_port,
-        cleanup=cleanup,
-    )
+    deploy_command(config=config, cleanup=cleanup)
 
 
 if __name__ == "__main__":
