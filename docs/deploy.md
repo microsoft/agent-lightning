@@ -66,7 +66,10 @@ Deploy writes both to `${local_state_dir}/agl-lite.env` (default `.local/agl-lit
 
 Mode behavior:
 
-For pods in all modes, the pod-facing URL is injected as `AGL_BASE_URL` in the ConfigMap used by the controller and agent pods. And it will also be used to resolve the environment variables like `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` for the agent pods.
+For all modes, the pod-facing URL is stored as `AGL_BASE_URL` in the ConfigMap used by the controller. The controller then uses this URL (and derived URLs such as `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL`) when creating agent pods.
+
+***Note that in `agl-in-host` mode with non-minikube clusters, users must provide a pod-reachable `agl_base_url_k8s_accessible` and ensure it routes to the host server at `http://<agl_host_ip_bind>:<agl_host_port>`. This routing must be guaranteed outside of the deploy command, e.g. via ingress/load balancer, tunnel, or custom networking setup.***
+In minikube, deploy will attempt to auto-resolve a pod-reachable URL using `host.minikube.internal`.
 
 | Mode | Pod-facing URL (`AGL_BASE_URL` in K8s ConfigMap) | Host-facing URL (`AGL_BASE_URL` in `.local/agl-lite.env`) |
 |---|---|---|
