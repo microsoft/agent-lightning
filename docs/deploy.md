@@ -66,6 +66,8 @@ Deploy writes both to `${local_state_dir}/agl-lite.env` (default `.local/agl-lit
 
 Mode behavior:
 
+For pods in all modes, the pod-facing URL is injected as `AGL_BASE_URL` in the ConfigMap used by the controller and agent pods. And it will also be used to resolve the environment variables like `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` for the agent pods.
+
 | Mode | Pod-facing URL (`AGL_BASE_URL` in K8s ConfigMap) | Host-facing URL (`AGL_BASE_URL` in `.local/agl-lite.env`) |
 |---|---|---|
 | `agl-in-k8s` | Auto: `http://agl-lite.<namespace>.svc:8080` | `http://127.0.0.1:<agl_host_port>` (requires manual `kubectl port-forward`) |
