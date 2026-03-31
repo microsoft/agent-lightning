@@ -25,11 +25,6 @@ class DeployMode(str, Enum):
     EXTERNAL = "agl-external"
 
 
-class HostServeConfig(BaseModel):
-    bind: str = Field(default="0.0.0.0", description="Bind address for host-side `agl-lite serve`.")
-    port: int = Field(default=8080, ge=1, le=65535, description="Listen port for host-side `agl-lite serve`.")
-
-
 class ControllerConfig(BaseModel):
     poll_interval_seconds: int = Field(default=10, ge=1)
     max_queue_time_seconds: int = Field(default=3600, ge=1)
@@ -43,18 +38,15 @@ class ServerRuntimeConfig(BaseModel):
 
 class DeployConfig(BaseModel):
     namespace: str = Field(description="Kubernetes namespace where agl-lite/controller resources are deployed.")
-    mode: DeployMode = Field(description="Deployment mode: agl-in-k8s | agl-in-host | agl-external.")
+    mode: DeployMode = Field(description="Deployment mode: agl-in-k8s | agl-in-host | agl-external")
 
-    agl_base_url_pod: str | None = Field(
+    agl_base_url_k8s_accessible: str | None = Field(
         default=None,
-        description="agl-lite base URL as seen by controller/agent pods (pod-facing URL).",
+        description="Base URL reachable from Kubernetes pods (required for agl-external, optional for agl-in-host on minikube).",
     )
-    agl_base_url_external: str | None = Field(
-        default=None,
-        description="agl-lite base URL for external mode (used by both pods and host clients).",
-    )
+    agl_host_port: int = Field(default=8080, ge=1, le=65535)
+    agl_host_ip_bind: str = Field(default="0.0.0.0")
 
-    host_serve: HostServeConfig = Field(default_factory=HostServeConfig)
     controller: ControllerConfig = Field(default_factory=ControllerConfig)
     server_runtime: ServerRuntimeConfig = Field(default_factory=ServerRuntimeConfig)
 
@@ -69,7 +61,7 @@ class DeployConfig(BaseModel):
             raise ValueError("namespace cannot be empty")
         return v
 
-    @field_validator("agl_base_url_pod", "agl_base_url_external")
+    @field_validator("agl_base_url_k8s_accessible")
     @classmethod
     def _validate_http_url(cls, v: str | None) -> str | None:
         if v is None:
@@ -79,28 +71,21 @@ class DeployConfig(BaseModel):
             raise ValueError(f"invalid URL: {v}")
         return v
 
-    @field_validator("local_state_dir")
+    @field_validator("agl_host_ip_bind", "local_state_dir")
     @classmethod
-    def _validate_local_state_dir(cls, v: str) -> str:
+    def _not_empty(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError("local_state_dir cannot be empty")
+            raise ValueError("field cannot be empty")
         return v
 
     @model_validator(mode="after")
     def _validate_mode_requirements(self) -> DeployConfig:
         if self.mode == DeployMode.IN_K8S:
-            if self.agl_base_url_pod is not None:
-                raise ValueError("agl_base_url_pod must be unset when mode=agl-in-k8s (auto-derived)")
-            if self.agl_base_url_external is not None:
-                raise ValueError("agl_base_url_external must be unset when mode=agl-in-k8s")
-        elif self.mode == DeployMode.IN_HOST:
-            if self.agl_base_url_external is not None:
-                raise ValueError("agl_base_url_external must be unset when mode=agl-in-host")
+            if self.agl_base_url_k8s_accessible is not None:
+                raise ValueError("agl_base_url_k8s_accessible must be unset when mode=agl-in-k8s")
         elif self.mode == DeployMode.EXTERNAL:
-            if not self.agl_base_url_external:
-                raise ValueError("agl_base_url_external is required when mode=agl-external")
-            if self.agl_base_url_pod is not None:
-                raise ValueError("agl_base_url_pod must be unset when mode=agl-external")
+            if not self.agl_base_url_k8s_accessible:
+                raise ValueError("agl_base_url_k8s_accessible is required when mode=agl-external")
         return self
 
 
@@ -120,8 +105,7 @@ def _host_is_localhost(url: str) -> bool:
 
 
 def _port_from_url(url: str) -> int | None:
-    p = urlparse(url)
-    return p.port
+    return urlparse(url).port
 
 
 def _stop_host_server(pid_file: Path) -> None:
@@ -202,7 +186,7 @@ def _load_config(config_path: Path) -> DeployConfig:
         raise typer.BadParameter("Config YAML must be a mapping/object")
     try:
         return DeployConfig.model_validate(raw)
-    except Exception as e:  # pydantic raises ValidationError
+    except Exception as e:
         raise typer.BadParameter(f"Invalid deploy config: {e}") from e
 
 
@@ -235,95 +219,13 @@ def deploy(config: str, cleanup: bool) -> None:
 
     ctx = _run(["kubectl", "config", "current-context"], check=False)
 
+    # Phase A/B/C: resolve endpoints + optional host serve
+    host_url = f"http://127.0.0.1:{cfg.agl_host_port}"
+
     if cfg.mode == DeployMode.IN_K8S:
-        pod_url = f"http://agl-lite.{ns}.svc:8080"
-        host_url = "http://127.0.0.1:8080"
+        k8s_accessible_url = f"http://agl-lite.{ns}.svc:8080"
 
     elif cfg.mode == DeployMode.IN_HOST:
-        if cfg.agl_base_url_pod:
-            pod_url = cfg.agl_base_url_pod
-        elif ctx == "minikube":
-            pod_url = f"http://host.minikube.internal:{cfg.host_serve.port}"
-        else:
-            raise typer.BadParameter(
-                "mode=agl-in-host on non-minikube requires agl_base_url_pod (pod-reachable host URL)."
-            )
-
-        if ctx != "minikube" and _host_is_localhost(pod_url):
-            raise typer.BadParameter(f"agl_base_url_pod is not pod-reachable on remote cluster: {pod_url}")
-
-        pod_port = _port_from_url(pod_url)
-        if pod_port is not None and pod_port != cfg.host_serve.port:
-            raise typer.BadParameter(
-                f"agl_base_url_pod port ({pod_port}) must match host_serve.port ({cfg.host_serve.port}) in agl-in-host mode"
-            )
-
-        host_url = f"http://127.0.0.1:{cfg.host_serve.port}"
-
-    else:
-        pod_url = cfg.agl_base_url_external or ""
-        if _host_is_localhost(pod_url):
-            raise typer.BadParameter(f"agl_base_url_external is not pod-reachable: {pod_url}")
-        host_url = pod_url
-
-    typer.echo(f"=== Mode: {cfg.mode.value} ===")
-    typer.echo(f"Pod URL:  {pod_url}")
-    typer.echo(f"Host URL: {host_url}")
-
-    # namespace
-    _run_shell(f"kubectl create namespace {shlex.quote(ns)} --dry-run=client -o yaml | kubectl apply -f -")
-
-    # secret
-    _run_shell(
-        " ".join(
-            [
-                f"kubectl -n {shlex.quote(ns)} create secret generic {SECRET_NAME}",
-                f"--from-literal=AGL_KEY={shlex.quote(agl_key)}",
-                "--dry-run=client -o yaml | kubectl apply -f -",
-            ]
-        )
-    )
-
-    cm_env: dict[str, str] = {
-        "AGL_K8S_NAMESPACE": ns,
-        "AGL_SECRET_NAME": SECRET_NAME,
-        "AGL_BASE_URL": pod_url,
-        "AGL_POLL_INTERVAL": str(cfg.controller.poll_interval_seconds),
-        "AGL_MAX_QUEUE_TIME": str(cfg.controller.max_queue_time_seconds),
-    }
-
-    if cfg.server_runtime.gateway_config:
-        cm_env["AGL_GATEWAY_CONFIG"] = cfg.server_runtime.gateway_config
-    if cfg.server_runtime.hooks:
-        cm_env["AGL_HOOKS"] = cfg.server_runtime.hooks
-    if cfg.server_runtime.artifact_dir:
-        cm_env["AGL_ARTIFACT_DIR"] = cfg.server_runtime.artifact_dir
-
-    with tempfile.NamedTemporaryFile("w", delete=False) as f:
-        for k, v in cm_env.items():
-            f.write(f"{k}={v}\n")
-        tmp_env = f.name
-
-    try:
-        _run_shell(
-            f"kubectl -n {shlex.quote(ns)} create configmap agl-lite-config --from-env-file={shlex.quote(tmp_env)} --dry-run=client -o yaml | kubectl apply -f -"
-        )
-    finally:
-        Path(tmp_env).unlink(missing_ok=True)
-
-    _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/controller/rbac.yaml")])
-    if cfg.mode == DeployMode.IN_K8S:
-        _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/agl-lite/k8s.yaml")])
-    _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/controller/k8s.yaml")])
-
-    _ensure_minikube_host_dns(pod_url)
-
-    timeout = f"{cfg.wait_ready_timeout_seconds}s"
-    if cfg.mode == DeployMode.IN_K8S:
-        _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-lite", f"--timeout={timeout}"])
-    _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-controller", f"--timeout={timeout}"])
-
-    if cfg.mode == DeployMode.IN_HOST:
         local_state_dir.mkdir(parents=True, exist_ok=True)
         _stop_host_server(pid_file)
 
@@ -333,9 +235,9 @@ def deploy(config: str, cleanup: bool) -> None:
             "agl-lite",
             "serve",
             "--host",
-            cfg.host_serve.bind,
+            cfg.agl_host_ip_bind,
             "--port",
-            str(cfg.host_serve.port),
+            str(cfg.agl_host_port),
         ]
         if cfg.server_runtime.gateway_config:
             cmd += ["--gateway-config", cfg.server_runtime.gateway_config]
@@ -366,13 +268,94 @@ def deploy(config: str, cleanup: bool) -> None:
         if not ready:
             raise RuntimeError(f"Host agl-lite server failed to become ready. See {log_file}")
 
+        if ctx == "minikube":
+            k8s_accessible_url = f"http://host.minikube.internal:{cfg.agl_host_port}"
+            # Note: we will also patch CoreDNS to make host.minikube.internal resolvable from pods, so no need to check reachability here.
+            # see the later calling of _ensure_minikube_host_dns()
+        else:
+            if cfg.agl_base_url_k8s_accessible:
+                k8s_accessible_url = cfg.agl_base_url_k8s_accessible
+                # NOTE user is responsible for ensuring the provided URL is correctly routed to the host service and reachable from pods. 
+                # We will check if it's pod-reachable later, but we won't validate the reachability at this point because it may require user-specific setup 
+                # (e.g. tunneling, port forwarding, or cloud load balancer) that is hard to generally validate in this deploy script.
+            else:
+                raise typer.BadParameter(
+                    "mode=agl-in-host requires agl_base_url_k8s_accessible on non-minikube clusters"
+                )
+
+        if _host_is_localhost(k8s_accessible_url):
+            raise typer.BadParameter(f"agl_base_url_k8s_accessible is not pod-reachable: {k8s_accessible_url}")
+
+
+    else:  # agl-external
+        k8s_accessible_url = cfg.agl_base_url_k8s_accessible or ""
+        if _host_is_localhost(k8s_accessible_url):
+            raise typer.BadParameter(f"agl_base_url_k8s_accessible is not pod-reachable: {k8s_accessible_url}")
+        host_url = k8s_accessible_url
+
+    typer.echo(f"=== Mode: {cfg.mode.value} ===")
+    typer.echo(f"K8s-accessible URL: {k8s_accessible_url}")
+    typer.echo(f"Host URL:           {host_url}")
+
+    # Phase D: Kubernetes resources + controller
+    _run_shell(f"kubectl create namespace {shlex.quote(ns)} --dry-run=client -o yaml | kubectl apply -f -")
+
+    _run_shell(
+        " ".join(
+            [
+                f"kubectl -n {shlex.quote(ns)} create secret generic {SECRET_NAME}",
+                f"--from-literal=AGL_KEY={shlex.quote(agl_key)}",
+                "--dry-run=client -o yaml | kubectl apply -f -",
+            ]
+        )
+    )
+
+    cm_env: dict[str, str] = {
+        "AGL_K8S_NAMESPACE": ns,
+        "AGL_SECRET_NAME": SECRET_NAME,
+        "AGL_BASE_URL": k8s_accessible_url,
+        "AGL_POLL_INTERVAL": str(cfg.controller.poll_interval_seconds),
+        "AGL_MAX_QUEUE_TIME": str(cfg.controller.max_queue_time_seconds),
+    }
+    if cfg.server_runtime.gateway_config:
+        cm_env["AGL_GATEWAY_CONFIG"] = cfg.server_runtime.gateway_config
+    if cfg.server_runtime.hooks:
+        cm_env["AGL_HOOKS"] = cfg.server_runtime.hooks
+    if cfg.server_runtime.artifact_dir:
+        cm_env["AGL_ARTIFACT_DIR"] = cfg.server_runtime.artifact_dir
+
+    with tempfile.NamedTemporaryFile("w", delete=False) as f:
+        for k, v in cm_env.items():
+            f.write(f"{k}={v}\n")
+        tmp_env = f.name
+
+    try:
+        _run_shell(
+            f"kubectl -n {shlex.quote(ns)} create configmap agl-lite-config --from-env-file={shlex.quote(tmp_env)} --dry-run=client -o yaml | kubectl apply -f -"
+        )
+    finally:
+        Path(tmp_env).unlink(missing_ok=True)
+
+    _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/controller/rbac.yaml")])
+    _ensure_minikube_host_dns(k8s_accessible_url)
+
+    if cfg.mode == DeployMode.IN_K8S:
+        _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/agl-lite/k8s.yaml")])
+
+    _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/controller/k8s.yaml")])
+
+    timeout = f"{cfg.wait_ready_timeout_seconds}s"
+    if cfg.mode == DeployMode.IN_K8S:
+        _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-lite", f"--timeout={timeout}"])
+    _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-controller", f"--timeout={timeout}"])
+
     local_state_dir.mkdir(parents=True, exist_ok=True)
     env_out.write_text(
         "\n".join(
             [
                 "# Generated by agl-lite deploy",
                 f'export AGL_BASE_URL="{host_url}"',
-                f'export AGL_BASE_URL_POD="{pod_url}"',
+                f'export AGL_BASE_URL_POD="{k8s_accessible_url}"',
                 f'export AGL_K8S_NAMESPACE="{ns}"',
                 "",
             ]
@@ -381,7 +364,7 @@ def deploy(config: str, cleanup: bool) -> None:
 
     typer.echo("\n=== Deploy complete ===")
     _run(["kubectl", "-n", ns, "get", "pods"], capture=False)
-    typer.echo(f"Pod-facing URL:  {pod_url}")
+    typer.echo(f"Pod-facing URL:  {k8s_accessible_url}")
     typer.echo(f"Host-facing URL: {host_url}")
     typer.echo(f"Env file: {env_out}")
     typer.echo(f"  source {env_out}")

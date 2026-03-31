@@ -10,23 +10,19 @@ namespace: agl
 
 # Deployment mode:
 #   agl-in-k8s   -> agl-lite server + controller in K8s
-#   agl-in-host  -> controller in K8s, agl-lite serve on this host
-#   agl-external -> controller in K8s, external agl-lite (not managed)
+#   agl-in-host  -> agl-lite serve on host + controller in K8s
+#   agl-external -> external agl-lite + controller in K8s
 mode: agl-in-k8s
 
-# agl-lite base URL used by controller/agent pods.
-# - agl-in-k8s: must be unset (auto set to http://agl-lite.<namespace>.svc:8080)
-# - agl-in-host: optional on minikube; required on non-minikube
-# agl_base_url_pod: http://host.minikube.internal:8080
+# URL reachable by Kubernetes pods.
+# - agl-in-k8s: must be unset (auto: http://agl-lite.<namespace>.svc:8080)
+# - agl-in-host: optional on minikube (auto: host.minikube.internal), required on non-minikube
+# - agl-external: required
+# agl_base_url_k8s_accessible: http://host.minikube.internal:8080
 
-# agl-lite base URL in external mode.
-# Required only when mode=agl-external.
-# agl_base_url_external: http://your-external-agl-lite:8080
-
-# Host `agl-lite serve` settings (used only when mode=agl-in-host).
-host_serve:
-  bind: 0.0.0.0
-  port: 8080
+# Host-side agl-lite serve bind/port (used in agl-in-host, and host output URL in agl-in-k8s).
+agl_host_ip_bind: 0.0.0.0
+agl_host_port: 8080
 
 # Controller reconcile settings.
 controller:
@@ -34,8 +30,7 @@ controller:
   max_queue_time_seconds: 3600
 
 # Optional agl-lite server runtime paths.
-# These are passed to `agl-lite serve` in host mode and injected as env vars
-# in in-k8s mode.
+# Passed to `agl-lite serve` in agl-in-host and injected as env vars in agl-in-k8s.
 server_runtime:
   gateway_config: null
   hooks: null
