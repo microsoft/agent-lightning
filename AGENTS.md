@@ -54,3 +54,21 @@ Local environment setup and secrets are in `.local/` (gitignored). See `.local/R
 - **Ruff** for linting/formatting, **pyright** for type checking
 - **Conventional commits**: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
 - Run tests: `uv run pytest`
+
+## Avoid Abusing Default Values
+
+agl-lite is system-level infrastructure code that is called through deep stacks — CLI → controller → reconciler → job builder → K8s. At this level, default values are a liability, not a convenience.
+
+**Default values are appropriate for:**
+- Genuinely optional tuning knobs (`ttl_after_finished`, `poll_interval`, `timeout`)
+- Feature flags that are off by default
+- Collection fields that are empty when absent (`env: list = []`)
+
+**Default values are wrong for:**
+- Inputs that represent a real decision the caller must make consciously — especially across module or layer boundaries
+- Paths, URLs, or external resources that may not exist in all environments
+- Any value that silently changes system behavior when the caller forgets to pass it
+
+**The rule:** if omitting an argument would mask a bug or produce silently wrong behavior, it must be required — no default. Fail loudly at startup rather than fail mysteriously at runtime.
+
+**Concrete example from this codebase:** `build_job_spec(..., manifest_template: str)` has no default. An earlier version had `_DEFAULT_MANIFEST_TEMPLATE_PATH` that resolved to a path valid in the source tree but not in an installed Docker image — a bug that would have been invisible until deployment. Making it required forces every caller to be explicit about where the template comes from.
