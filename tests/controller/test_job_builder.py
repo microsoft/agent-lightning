@@ -75,7 +75,6 @@ def settings() -> ControllerSettings:
         base_url="http://agl-lite:8000",
         key="test-key",
         namespace="test-ns",
-        secret_name="agl-secrets",
         job_manifest_template="deploy/controller/job-template.yaml.j2",
     )
 
@@ -180,7 +179,7 @@ class TestEnvVarInjection:
         assert env_map["AGL_POD_UID"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"
         for name in ("AGL_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
             ref = env_map[name]["valueFrom"]["secretKeyRef"]
-            assert ref["name"] == "agl-secrets"
+            assert ref["name"] == "agl-lite-keys"
         assert env_map["OPENAI_BASE_URL"]["value"].endswith("/v1")
         assert "/events" in env_map["AGL_EVENT_URL"]["value"]
 
@@ -264,7 +263,6 @@ class TestPodPatcher:
 
         rendered = Template(manifest_template).render(
             job_name="test-job", rollout_id="r1", namespace="default",
-            secret_name="agl-secrets", base_url="http://agl-lite:8000", ttl_after_finished=3600,
         )
         docs = list(yaml.safe_load_all(rendered))
         patcher = PodPatcher.model_validate(docs[1])

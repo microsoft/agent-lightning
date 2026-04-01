@@ -7,9 +7,9 @@
 #               (user's own env/volume entries win on name conflict)
 #
 # Jinja2 variables injected by job_builder:
-#   job_name, rollout_id, namespace, secret_name, lite_url, ttl_after_finished
+#   job_name, rollout_id, namespace, lite_url, ttl_after_finished
 #
-# To customise: copy this file, edit, and set controller.job_manifest_template in deploy config.
+# To customise: copy this file, edit, and set AGL_JOB_MANIFEST_TEMPLATE in deploy config.
 
 apiVersion: batch/v1
 kind: Job
@@ -45,19 +45,19 @@ env:
   - name: AGL_KEY
     valueFrom:
       secretKeyRef:
-        name: {{ secret_name }}
+        name: agl-lite-keys
         key: AGL_KEY
         optional: true
   - name: OPENAI_API_KEY
     valueFrom:
       secretKeyRef:
-        name: {{ secret_name }}
+        name: agl-lite-keys
         key: AGL_KEY
         optional: true
   - name: ANTHROPIC_API_KEY
     valueFrom:
       secretKeyRef:
-        name: {{ secret_name }}
+        name: agl-lite-keys
         key: AGL_KEY
         optional: true
   - name: OPENAI_BASE_URL

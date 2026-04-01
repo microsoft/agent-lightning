@@ -301,7 +301,6 @@ def deploy(env_file: str, cleanup: bool) -> None:
 
     cm_env: dict[str, str] = {
         "AGL_NAMESPACE": ns,
-        "AGL_SECRET_NAME": SECRET_NAME,
         "AGL_BASE_URL": k8s_accessible_url,
     }
     if cfg.gateway_config:

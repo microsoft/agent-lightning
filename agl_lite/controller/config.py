@@ -19,7 +19,6 @@ class ControllerSettings(BaseSettings):
 
     # K8s configuration.
     namespace: str             # AGL_NAMESPACE
-    secret_name: str           # AGL_SECRET_NAME — K8s Secret with OPENAI_API_KEY, ANTHROPIC_API_KEY
 
     # Reconcile timing.
     poll_interval: int = 10  # seconds between periodic reconcile cycles

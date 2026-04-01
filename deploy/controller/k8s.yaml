@@ -44,11 +44,6 @@ spec:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_NAMESPACE
-            - name: AGL_SECRET_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: agl-lite-config
-                  key: AGL_SECRET_NAME
           volumeMounts:
             - name: job-template
               mountPath: /etc/agl

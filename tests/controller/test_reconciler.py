@@ -21,7 +21,6 @@ def _settings(**kwargs) -> ControllerSettings:
         "base_url": "http://agl-lite:8000",
         "key": "test",
         "namespace": "default",
-        "secret_name": "agl-secrets",
         "poll_interval": 1,
         "max_queue_time": 3600,
         "job_manifest_template": "deploy/controller/job-template.yaml.j2",
