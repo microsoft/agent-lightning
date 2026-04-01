@@ -13,8 +13,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import typer
-import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SECRET_NAME = "agl-lite-keys"
 
@@ -25,32 +25,34 @@ class DeployMode(str, Enum):
     EXTERNAL = "agl-external"
 
 
-class ServerRuntimeConfig(BaseModel):
-    gateway_config: str | None = Field(default=None, description="Path to gateway config YAML (loaded by agl-lite serve).")
-    hooks: str | None = Field(default=None, description="Path to hooks Python file (loaded by agl-lite serve).")
-    artifact_dir: str | None = Field(default=None, description="Artifact directory path for agl-lite serve.")
+class DeploySettings(BaseSettings):
+    """Deploy configuration — loaded from a .env file via --env-file.
 
+    All fields are read from environment variables with the AGL_ prefix.
+    Extra variables in the .env file (hook config, model endpoints, etc.)
+    are silently ignored — the file serves as the single project config.
+    """
 
-class DeployConfig(BaseModel):
-    namespace: str = Field(description="Kubernetes namespace where agl-lite/controller resources are deployed.")
-    mode: DeployMode = Field(description="Deployment mode: agl-in-k8s | agl-in-host | agl-external")
-
-    agl_base_url_k8s_accessible: str | None = Field(
-        default=None,
-        description="Base URL reachable from Kubernetes pods (required for agl-external, optional for agl-in-host on minikube).",
-    )
-    agl_host_port: int = Field(default=8080, ge=1, le=65535)
-    agl_host_ip_bind: str = Field(default="0.0.0.0")
-
-    server_runtime: ServerRuntimeConfig = Field(default_factory=ServerRuntimeConfig)
-    job_manifest_template: str | None = Field(
-        default=None,
-        description="Path to a custom Jinja2 job manifest template for the controller. "
-                    "Defaults to the packaged deploy/controller/job-template.yaml.j2 when unset.",
+    model_config = SettingsConfigDict(
+        env_prefix="AGL_",
+        extra="ignore",
+        env_ignore_empty=True,  # empty string values treated as unset → None/default
     )
 
-    wait_ready_timeout_seconds: int = Field(default=120, ge=1)
-    local_state_dir: str = Field(default=".local", description="Directory for generated local state files (.env, pid, logs).")
+    namespace: str
+    mode: DeployMode
+
+    base_url_k8s_accessible: str | None = None
+    host_ip_bind: str = "0.0.0.0"
+    host_port: int = 8080
+
+    job_manifest_template: str | None = None
+    gateway_config: str | None = None
+    hooks: str | None = None
+    artifact_dir: str | None = None
+
+    wait_ready_timeout_seconds: int = 120
+    local_state_dir: str = ".local"
 
     @field_validator("namespace")
     @classmethod
@@ -60,7 +62,7 @@ class DeployConfig(BaseModel):
             raise ValueError("namespace cannot be empty")
         return v
 
-    @field_validator("agl_base_url_k8s_accessible")
+    @field_validator("base_url_k8s_accessible")
     @classmethod
     def _validate_http_url(cls, v: str | None) -> str | None:
         if v is None:
@@ -70,7 +72,7 @@ class DeployConfig(BaseModel):
             raise ValueError(f"invalid URL: {v}")
         return v
 
-    @field_validator("agl_host_ip_bind", "local_state_dir")
+    @field_validator("host_ip_bind", "local_state_dir")
     @classmethod
     def _not_empty(cls, v: str) -> str:
         if not v.strip():
@@ -78,13 +80,13 @@ class DeployConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _validate_mode_requirements(self) -> DeployConfig:
+    def _validate_mode_requirements(self) -> DeploySettings:
         if self.mode == DeployMode.IN_K8S:
-            if self.agl_base_url_k8s_accessible is not None:
-                raise ValueError("agl_base_url_k8s_accessible must be unset when mode=agl-in-k8s")
+            if self.base_url_k8s_accessible is not None:
+                raise ValueError("AGL_BASE_URL_K8S_ACCESSIBLE must be unset when mode=agl-in-k8s")
         elif self.mode == DeployMode.EXTERNAL:
-            if not self.agl_base_url_k8s_accessible:
-                raise ValueError("agl_base_url_k8s_accessible is required when mode=agl-external")
+            if not self.base_url_k8s_accessible:
+                raise ValueError("AGL_BASE_URL_K8S_ACCESSIBLE is required when mode=agl-external")
         return self
 
 
@@ -179,25 +181,22 @@ def _ensure_minikube_host_dns(url_pod: str) -> None:
     typer.echo(f"✓ CoreDNS patched: host.minikube.internal → {host_ip}")
 
 
-def _load_config(config_path: Path) -> DeployConfig:
-    raw = yaml.safe_load(config_path.read_text())
-    if not isinstance(raw, dict):
-        raise typer.BadParameter("Config YAML must be a mapping/object")
+def _load_settings(env_file: Path) -> DeploySettings:
+    if not env_file.exists():
+        raise typer.BadParameter(f"Env file not found: {env_file}")
     try:
-        return DeployConfig.model_validate(raw)
+        return DeploySettings(_env_file=str(env_file))
     except Exception as e:
         raise typer.BadParameter(f"Invalid deploy config: {e}") from e
 
 
-def deploy(config: str, cleanup: bool) -> None:
+def deploy(env_file: str, cleanup: bool) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    config_path = Path(config)
-    if not config_path.is_absolute():
-        config_path = (Path.cwd() / config_path).resolve()
-    if not config_path.exists():
-        raise typer.BadParameter(f"Config file not found: {config_path}")
+    env_file_path = Path(env_file)
+    if not env_file_path.is_absolute():
+        env_file_path = (Path.cwd() / env_file_path).resolve()
 
-    cfg = _load_config(config_path)
+    cfg = _load_settings(env_file_path)
     ns = cfg.namespace
 
     local_state_dir = (repo_root / cfg.local_state_dir).resolve()
@@ -219,7 +218,7 @@ def deploy(config: str, cleanup: bool) -> None:
     ctx = _run(["kubectl", "config", "current-context"], check=False)
 
     # Phase A/B/C: resolve endpoints + optional host serve
-    host_url = f"http://127.0.0.1:{cfg.agl_host_port}"
+    host_url = f"http://127.0.0.1:{cfg.host_port}"
 
     if cfg.mode == DeployMode.IN_K8S:
         k8s_accessible_url = f"http://agl-lite.{ns}.svc:8080"
@@ -228,22 +227,13 @@ def deploy(config: str, cleanup: bool) -> None:
         local_state_dir.mkdir(parents=True, exist_ok=True)
         _stop_host_server(pid_file)
 
-        cmd = [
-            "uv",
-            "run",
-            "agl-lite",
-            "serve",
-            "--host",
-            cfg.agl_host_ip_bind,
-            "--port",
-            str(cfg.agl_host_port),
-        ]
-        if cfg.server_runtime.gateway_config:
-            cmd += ["--gateway-config", cfg.server_runtime.gateway_config]
-        if cfg.server_runtime.hooks:
-            cmd += ["--hooks", cfg.server_runtime.hooks]
-        if cfg.server_runtime.artifact_dir:
-            cmd += ["--artifact-dir", cfg.server_runtime.artifact_dir]
+        cmd = ["uv", "run", "agl-lite", "serve", "--host", cfg.host_ip_bind, "--port", str(cfg.host_port)]
+        if cfg.gateway_config:
+            cmd += ["--gateway-config", cfg.gateway_config]
+        if cfg.hooks:
+            cmd += ["--hooks", cfg.hooks]
+        if cfg.artifact_dir:
+            cmd += ["--artifact-dir", cfg.artifact_dir]
 
         with open(log_file, "w") as lf:
             p = subprocess.Popen(
@@ -268,28 +258,22 @@ def deploy(config: str, cleanup: bool) -> None:
             raise RuntimeError(f"Host agl-lite server failed to become ready. See {log_file}")
 
         if ctx == "minikube":
-            k8s_accessible_url = f"http://host.minikube.internal:{cfg.agl_host_port}"
-            # Note: we will also patch CoreDNS to make host.minikube.internal resolvable from pods, so no need to check reachability here.
-            # see the later calling of _ensure_minikube_host_dns()
+            k8s_accessible_url = f"http://host.minikube.internal:{cfg.host_port}"
         else:
-            if cfg.agl_base_url_k8s_accessible:
-                k8s_accessible_url = cfg.agl_base_url_k8s_accessible
-                # NOTE user is responsible for ensuring the provided URL is correctly routed to the host service and reachable from pods. 
-                # We will check if it's pod-reachable later, but we won't validate the reachability at this point because it may require user-specific setup 
-                # (e.g. tunneling, port forwarding, or cloud load balancer) that is hard to generally validate in this deploy script.
+            if cfg.base_url_k8s_accessible:
+                k8s_accessible_url = cfg.base_url_k8s_accessible
             else:
                 raise typer.BadParameter(
-                    "mode=agl-in-host requires agl_base_url_k8s_accessible on non-minikube clusters"
+                    "mode=agl-in-host requires AGL_BASE_URL_K8S_ACCESSIBLE on non-minikube clusters"
                 )
 
         if _host_is_localhost(k8s_accessible_url):
-            raise typer.BadParameter(f"agl_base_url_k8s_accessible is not pod-reachable: {k8s_accessible_url}")
-
+            raise typer.BadParameter(f"AGL_BASE_URL_K8S_ACCESSIBLE is not pod-reachable: {k8s_accessible_url}")
 
     else:  # agl-external
-        k8s_accessible_url = cfg.agl_base_url_k8s_accessible or ""
+        k8s_accessible_url = cfg.base_url_k8s_accessible or ""
         if _host_is_localhost(k8s_accessible_url):
-            raise typer.BadParameter(f"agl_base_url_k8s_accessible is not pod-reachable: {k8s_accessible_url}")
+            raise typer.BadParameter(f"AGL_BASE_URL_K8S_ACCESSIBLE is not pod-reachable: {k8s_accessible_url}")
         host_url = k8s_accessible_url
 
     typer.echo(f"=== Mode: {cfg.mode.value} ===")
@@ -314,12 +298,12 @@ def deploy(config: str, cleanup: bool) -> None:
         "AGL_SECRET_NAME": SECRET_NAME,
         "AGL_BASE_URL": k8s_accessible_url,
     }
-    if cfg.server_runtime.gateway_config:
-        cm_env["AGL_GATEWAY_CONFIG"] = cfg.server_runtime.gateway_config
-    if cfg.server_runtime.hooks:
-        cm_env["AGL_HOOKS"] = cfg.server_runtime.hooks
-    if cfg.server_runtime.artifact_dir:
-        cm_env["AGL_ARTIFACT_DIR"] = cfg.server_runtime.artifact_dir
+    if cfg.gateway_config:
+        cm_env["AGL_GATEWAY_CONFIG"] = cfg.gateway_config
+    if cfg.hooks:
+        cm_env["AGL_HOOKS"] = cfg.hooks
+    if cfg.artifact_dir:
+        cm_env["AGL_ARTIFACT_DIR"] = cfg.artifact_dir
 
     with tempfile.NamedTemporaryFile("w", delete=False) as f:
         for k, v in cm_env.items():
@@ -337,7 +321,6 @@ def deploy(config: str, cleanup: bool) -> None:
     _ensure_minikube_host_dns(k8s_accessible_url)
 
     # ConfigMap for the Jinja2 job manifest template.
-    # Uses cfg.job_manifest_template if set, otherwise the packaged default.
     job_template_path = (
         Path(cfg.job_manifest_template)
         if cfg.job_manifest_template
@@ -381,7 +364,7 @@ def deploy(config: str, cleanup: bool) -> None:
 
 
 def deploy_command(
-    config: str = typer.Option(..., "--config", help="Path to deploy YAML config file"),
+    env_file: str = typer.Option(..., "--env-file", help="Path to .env deploy config file"),
     cleanup: bool = typer.Option(False, "--cleanup", help="Delete namespace and stop managed host service"),
 ) -> None:
-    deploy(config=config, cleanup=cleanup)
+    deploy(env_file=env_file, cleanup=cleanup)

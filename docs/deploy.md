@@ -1,13 +1,13 @@
 # Deploy agl-lite
 
-This guide describes the YAML-driven deploy command:
+This guide describes the `.env`-driven deploy command:
 
 ```bash
 export AGL_KEY=$(openssl rand -hex 32)
-agl-lite deploy --config deploy/agl-lite.yaml
+agl-lite deploy --env-file deploy/agl-lite.env
 
 # cleanup (delete namespace + stop managed host server if any)
-agl-lite deploy --config deploy/agl-lite.yaml --cleanup
+agl-lite deploy --env-file deploy/agl-lite.env --cleanup
 ```
 
 > `scripts/deploy.sh` is a thin wrapper around the same command.
@@ -18,11 +18,11 @@ agl-lite deploy --config deploy/agl-lite.yaml --cleanup
 
 agl-lite supports three deployment modes. In all modes, the controller runs in Kubernetes.
 
-| Mode | agl-lite server (gateway + store) location | Required fields |
+| Mode | agl-lite server (gateway + store) location | Required vars |
 |---|---|---|
 | `agl-in-k8s` | In Kubernetes (`deploy/agl-lite/k8s.yaml`) | none |
-| `agl-in-host` | On deploy host (`agl-lite serve`) | `agl_host_ip_bind`, `agl_host_port`; `agl_base_url_k8s_accessible` required on non-minikube |
-| `agl-external` | External service (not managed by deploy) | `agl_base_url_k8s_accessible` |
+| `agl-in-host` | On deploy host (`agl-lite serve`) | `AGL_HOST_IP_BIND`, `AGL_HOST_PORT`; `AGL_BASE_URL_K8S_ACCESSIBLE` required on non-minikube |
+| `agl-external` | External service (not managed by deploy) | `AGL_BASE_URL_K8S_ACCESSIBLE` |
 
 The deploy flow:
 
@@ -88,56 +88,59 @@ kubectl -n <namespace> port-forward svc/agl-lite 8080:8080
 
 ## Config
 
-Start from `deploy/agl-lite.yaml.example`.
+Start from `deploy/agl-lite.env.example`.
 
-```yaml
-namespace: agl
-mode: agl-in-k8s
+```bash
+AGL_NAMESPACE=agl
+AGL_MODE=agl-in-k8s
 
 # required for agl-external; required for agl-in-host on non-minikube
-# agl_base_url_k8s_accessible: http://my-agl-lite.example:8080
+# AGL_BASE_URL_K8S_ACCESSIBLE=http://my-agl-lite.example:8080
 
-agl_host_ip_bind: 0.0.0.0
-agl_host_port: 8080
+AGL_HOST_IP_BIND=0.0.0.0
+AGL_HOST_PORT=8080
 
 # optional: custom Jinja2 job manifest template for the controller
-# job_manifest_template: /path/to/job-template.yaml.j2
+# AGL_JOB_MANIFEST_TEMPLATE=/path/to/job-template.yaml.j2
 
-server_runtime:
-  gateway_config: null
-  hooks: null
-  artifact_dir: null
+# AGL_GATEWAY_CONFIG=
+# AGL_HOOKS=
+# AGL_ARTIFACT_DIR=
 
-wait_ready_timeout_seconds: 120
-local_state_dir: .local
+AGL_WAIT_READY_TIMEOUT_SECONDS=120
+AGL_LOCAL_STATE_DIR=.local
 ```
+
+The `.env` file is also the **single project config** — add hook config, model
+endpoints, and experiment params here. Extra variables are silently ignored by
+the deploy command and consumed by other components via `os.environ`.
 
 Field summary:
 
-| Field | Default | Description |
+| Env var | Default | Description |
 |---|---:|---|
-| `namespace` | — | Kubernetes namespace to deploy into |
-| `mode` | — | `agl-in-k8s` / `agl-in-host` / `agl-external` |
-| `agl_base_url_k8s_accessible` | `null` | URL reachable from pods |
-| `agl_host_ip_bind` | `0.0.0.0` | bind IP for host `agl-lite serve` (host mode) |
-| `agl_host_port` | `8080` | host serve port and local host-facing URL port |
-| `job_manifest_template` | `null` | path to a custom Jinja2 job manifest template; defaults to `deploy/controller/job-template.yaml.j2` |
-| `server_runtime.gateway_config` | `null` | optional gateway config path |
-| `server_runtime.hooks` | `null` | optional hooks module path |
-| `server_runtime.artifact_dir` | `null` | optional artifact directory |
-| `wait_ready_timeout_seconds` | `120` | readiness wait timeout |
-| `local_state_dir` | `.local` | location of generated env/pid/log files |
+| `AGL_NAMESPACE` | — | Kubernetes namespace to deploy into |
+| `AGL_MODE` | — | `agl-in-k8s` / `agl-in-host` / `agl-external` |
+| `AGL_BASE_URL_K8S_ACCESSIBLE` | — | URL reachable from pods |
+| `AGL_HOST_IP_BIND` | `0.0.0.0` | bind IP for host `agl-lite serve` (host mode) |
+| `AGL_HOST_PORT` | `8080` | host serve port and local host-facing URL port |
+| `AGL_JOB_MANIFEST_TEMPLATE` | — | path to custom Jinja2 job manifest template; defaults to `deploy/controller/job-template.yaml.j2` |
+| `AGL_GATEWAY_CONFIG` | — | optional gateway config path |
+| `AGL_HOOKS` | — | optional hooks module path |
+| `AGL_ARTIFACT_DIR` | — | optional artifact directory |
+| `AGL_WAIT_READY_TIMEOUT_SECONDS` | `120` | readiness wait timeout |
+| `AGL_LOCAL_STATE_DIR` | `.local` | location of generated env/pid/log files |
 
 Validation rules:
 
 - `mode=agl-in-k8s`:
-  - `agl_base_url_k8s_accessible` must be unset.
+  - `AGL_BASE_URL_K8S_ACCESSIBLE` must be unset.
 - `mode=agl-in-host`:
   - starts host `agl-lite serve`.
-  - on non-minikube, `agl_base_url_k8s_accessible` is required.
-  - on minikube, pod URL defaults to `http://host.minikube.internal:<agl_host_port>`.
+  - on non-minikube, `AGL_BASE_URL_K8S_ACCESSIBLE` is required.
+  - on minikube, pod URL defaults to `http://host.minikube.internal:<AGL_HOST_PORT>`.
 - `mode=agl-external`:
-  - `agl_base_url_k8s_accessible` is required and used for both pod + host URLs.
+  - `AGL_BASE_URL_K8S_ACCESSIBLE` is required and used for both pod + host URLs.
 
 ---
 

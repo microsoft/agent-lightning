@@ -13,18 +13,22 @@ deploy/
 │   ├── k8s.yaml               # Deployment
 │   ├── rbac.yaml              # ServiceAccount + Role + RoleBinding
 │   └── README.md
-├── agl-lite.yaml.example  # Deploy config template (copy and edit)
+├── agl-lite.env.example  # Deploy config template (copy and edit)
 └── README.md              # this file
 ```
 
 ## Configuration
 
-All deploy config lives in a YAML file. Copy the example and edit:
+All deploy config lives in a `.env` file. Copy the example and edit:
 
 ```bash
-cp deploy/agl-lite.yaml.example deploy/agl-lite.yaml
-$EDITOR deploy/agl-lite.yaml
+cp deploy/agl-lite.env.example deploy/agl-lite.env
+$EDITOR deploy/agl-lite.env
 ```
+
+This file is also the **single project config** — add hook config, model
+endpoints, and experiment parameters here. Extra variables are silently ignored
+by the deploy command and consumed by other components via `os.environ`.
 
 Set the API key via environment variable (never in the config file):
 
@@ -36,14 +40,14 @@ export AGL_KEY=$(openssl rand -hex 32)
 
 ```bash
 # 1. Copy and edit config
-cp deploy/agl-lite.yaml.example deploy/agl-lite.yaml
+cp deploy/agl-lite.env.example deploy/agl-lite.env
 
 # 2. Build image
 scripts/build_images.sh
 
 # 3. Deploy
 export AGL_KEY=$(openssl rand -hex 32)
-agl-lite deploy --config deploy/agl-lite.yaml
+agl-lite deploy --env-file deploy/agl-lite.env
 
 # 4. Source the generated env file for host-side access
 source .local/agl-lite.env
@@ -53,7 +57,7 @@ agl-client health
 ## Cleanup
 
 ```bash
-agl-lite deploy --config deploy/agl-lite.yaml --cleanup
+agl-lite deploy --env-file deploy/agl-lite.env --cleanup
 ```
 
 See [docs/deploy.md](../docs/deploy.md) for full configuration reference.

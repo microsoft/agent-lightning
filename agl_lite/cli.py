@@ -81,13 +81,13 @@ def controller(
 
 @app.command("deploy")
 def deploy_entrypoint(
-    config: str = typer.Option(..., "--config", help="Path to deploy YAML config file"),
+    env_file: str = typer.Option(..., "--env-file", help="Path to .env deploy config file"),
     cleanup: bool = typer.Option(False, "--cleanup", help="Delete namespace and stop managed host service"),
 ) -> None:
-    """Deploy controller/server in k8s/host/external modes from YAML config."""
+    """Deploy controller/server in k8s/host/external modes from a .env config file."""
     from agl_lite.deploy import deploy_command
 
-    deploy_command(config=config, cleanup=cleanup)
+    deploy_command(env_file=env_file, cleanup=cleanup)
 
 
 if __name__ == "__main__":
