@@ -46,7 +46,7 @@ class DeploySettings(BaseSettings):
     host_ip_bind: str = "0.0.0.0"
     host_port: int = 8080
 
-    job_manifest_template: str | None = None
+    job_manifest_template: str = "deploy/controller/job-template.yaml.j2"
 
     # User pod spec template — plain YAML file loaded by the base RolloutHooks.on_startup
     # into self._pod_spec (AGL_POD_SPEC_TEMPLATE).  Often the job-template.yaml in the
@@ -327,11 +327,7 @@ def deploy(env_file: str, cleanup: bool) -> None:
     _ensure_minikube_host_dns(k8s_accessible_url)
 
     # ConfigMap for the Jinja2 job manifest template.
-    job_template_path = (
-        Path(cfg.job_manifest_template)
-        if cfg.job_manifest_template
-        else repo_root / "deploy/controller/job-template.yaml.j2"
-    )
+    job_template_path = Path(cfg.job_manifest_template)
     _run_shell(
         f"kubectl -n {shlex.quote(ns)} create configmap agl-controller-job-template"
         f" --from-file=job-template.yaml.j2={shlex.quote(str(job_template_path))}"
