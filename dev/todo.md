@@ -265,7 +265,7 @@ docs/
 
 ---
 
-## job_builder: Jinja2 template + PodPatcher [ongoing]
+## job_builder: Jinja2 template + PodPatcher [completed]
 
 Refactor `agl_lite/controller/job_builder.py` to move the hardcoded Job manifest
 structure and controller env vars into a Jinja2 template, with a `PodPatcher`

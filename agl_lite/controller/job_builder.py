@@ -1,16 +1,16 @@
-"""Job spec builder — pure function that converts rollout + job_template into a K8s Job manifest.
+"""Job spec builder — pure function that converts rollout + pod spec fragment into a K8s Job manifest.
 
-No I/O (caller passes the pre-rendered manifest_template string), no K8s API calls. Easy to unit test.
+No I/O, no K8s API calls. Easy to unit test.
 
 Template format (Jinja2, two YAML documents separated by ---):
   Document 0: K8s Job manifest scaffold — Job metadata, spec shell, empty containers/volumes.
   Document 1: PodPatcher — env vars and volumes injected into ALL containers in the pod.
 
 Merge order (later wins):
-  1. Jinja2 manifest template  — Job scaffold + PodPatcher defaults
-  2. job_template               — pod spec fragment from resources (containers, volumes, pod fields)
-  3. rollout.config named fields — image, command, env vars, mounts → agent container
-  4. rollout.config.overrides   — per-rollout K8s overrides, name-matched containers
+  1. manifest_template — Jinja2 template string → Job scaffold + PodPatcher defaults
+  2. pod_spec          — pod spec fragment from resources (containers, volumes, pod fields)
+  3. rollout.config    — image, command, env vars, mounts → agent container
+  4. rollout.config.overrides — per-rollout K8s overrides, name-matched containers
 
 PodPatcher env vars are injected into every container; container's own env wins on conflict.
 rollout.config.environment_variables further override patcher env on the agent container.
@@ -19,7 +19,6 @@ rollout.config.environment_variables further override patcher env on the agent c
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -28,9 +27,6 @@ from pydantic import BaseModel, Field
 
 from agl_lite.controller.config import ControllerSettings
 from agl_lite.schemas.rollout import Rollout
-
-# Path to the packaged default Jinja2 template.
-_DEFAULT_TEMPLATE_PATH = Path(__file__).parent.parent.parent / "deploy" / "controller" / "job-template.yaml.j2"
 
 
 class PodPatcher(BaseModel):
@@ -45,15 +41,6 @@ class PodPatcher(BaseModel):
     volumes: list[dict[str, Any]] = Field(default_factory=list)
 
 
-def load_manifest_template(path: Path | str | None = None) -> str:
-    """Load the Jinja2 job manifest template string.
-
-    Uses the packaged default (deploy/controller/job-template.yaml.j2) if path is None.
-    """
-    p = Path(path) if path is not None else _DEFAULT_TEMPLATE_PATH
-    return p.read_text()
-
-
 def build_job_name(rollout_id: str) -> str:
     """Deterministic Job name from rollout ID."""
     return f"agl-rollout-{rollout_id}"
@@ -61,11 +48,21 @@ def build_job_name(rollout_id: str) -> str:
 
 def build_job_spec(
     rollout: Rollout,
-    job_template: dict[str, Any] | None,
+    pod_spec: dict[str, Any] | None,
     settings: ControllerSettings,
     manifest_template: str,
 ) -> dict[str, Any]:
-    """Build a K8s Job manifest from rollout config + job_template + rendered manifest template."""
+    """Build a K8s Job manifest from rollout config + pod spec fragment + manifest template.
+
+    Args:
+        rollout:           The rollout to build a Job for.
+        pod_spec:          Pod spec fragment from the resource snapshot — containers, volumes,
+                           nodeSelector, tolerations, etc. Sourced from resources["job_template"].
+                           None means no user-provided spec; agent container is created bare.
+        settings:          Controller settings (namespace, secret name, lite URL, ttl, ...).
+        manifest_template: Jinja2 template string (two YAML docs separated by ---). Caller
+                           is responsible for loading this from disk before calling.
+    """
     config = rollout.config
 
     # --- 1. Render Jinja2 template → two YAML documents ---
@@ -75,10 +72,10 @@ def build_job_spec(
     job_dict: dict[str, Any] = copy.deepcopy(docs[0])
     patcher = PodPatcher.model_validate(docs[1] if len(docs) > 1 else {})
 
-    pod_spec: dict[str, Any] = job_dict["spec"]["template"]["spec"]
+    scaffold_pod_spec: dict[str, Any] = job_dict["spec"]["template"]["spec"]
 
-    # --- 2. Normalise user's job_template (pod spec fragment) ---
-    user_pod = copy.deepcopy(job_template) if job_template else {}
+    # --- 2. Normalise pod spec fragment from resources ---
+    user_pod = copy.deepcopy(pod_spec) if pod_spec else {}
     # Unwrap {"spec": {...}} form (backward compat).
     if "spec" in user_pod and "containers" not in user_pod:
         user_pod = user_pod["spec"]
@@ -89,19 +86,19 @@ def build_job_spec(
     user_deadline: int | None = user_pod.pop("activeDeadlineSeconds", None)
 
     # --- 3. Merge user pod spec into scaffold ---
-    pod_spec["containers"] = user_containers  # replaces empty []
-    pod_spec["volumes"] = _merge_by_name(patcher.volumes, user_volumes)  # user wins on name
-    _deep_merge(pod_spec, user_pod)  # nodeSelector, tolerations, serviceAccountName, etc.
+    scaffold_pod_spec["containers"] = user_containers  # replaces empty []
+    scaffold_pod_spec["volumes"] = _merge_by_name(patcher.volumes, user_volumes)  # user wins on name
+    _deep_merge(scaffold_pod_spec, user_pod)  # nodeSelector, tolerations, serviceAccountName, etc.
 
     # --- 4. Ensure agent container exists (before env injection) ---
-    _ensure_agent_container(pod_spec)
+    _ensure_agent_container(scaffold_pod_spec)
 
     # --- 5. Inject patcher env into ALL containers (container's own env wins on conflict) ---
-    for container in pod_spec["containers"]:
+    for container in scaffold_pod_spec["containers"]:
         container["env"] = _merge_env(patcher.env, container.get("env", []))
 
     # --- 6. Apply rollout.config named fields to agent container ---
-    agent = _get_agent_container(pod_spec)
+    agent = _get_agent_container(scaffold_pod_spec)
 
     if config.image:
         agent["image"] = config.image
@@ -121,7 +118,7 @@ def build_job_spec(
             agent["volumeMounts"].append(
                 {"name": m.name, "mountPath": m.mount_path, "readOnly": m.read_only}
             )
-        pod_spec.setdefault("volumes", [])
+        scaffold_pod_spec.setdefault("volumes", [])
         for m in config.mount:
             vol: dict[str, Any] = {"name": m.name}
             if m.source.startswith("/"):
@@ -130,7 +127,7 @@ def build_job_spec(
                 vol["persistentVolumeClaim"] = {"claimName": m.source[4:]}
             else:
                 vol["configMap"] = {"name": m.source}
-            pod_spec["volumes"].append(vol)
+            scaffold_pod_spec["volumes"].append(vol)
 
     # --- 7. Apply per-rollout overrides (name-matched container merge) ---
     if config.overrides:
@@ -140,11 +137,11 @@ def build_job_spec(
             oc_name = oc.get("name")
             if not oc_name:
                 continue
-            for container in pod_spec["containers"]:
+            for container in scaffold_pod_spec["containers"]:
                 if container.get("name") == oc_name:
                     _deep_merge(container, oc)
                     break
-        _deep_merge(pod_spec, overrides)
+        _deep_merge(scaffold_pod_spec, overrides)
 
     # --- 8. Set per-rollout job spec fields ---
     job_spec: dict[str, Any] = job_dict["spec"]

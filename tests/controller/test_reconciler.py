@@ -23,6 +23,7 @@ def _settings(**kwargs) -> ControllerSettings:
         "namespace": "default",
         "poll_interval": 1,
         "max_queue_time": 3600,
+        "job_manifest_template": "deploy/controller/job-template.yaml.j2",
     }
     defaults.update(kwargs)
     return ControllerSettings(**defaults)

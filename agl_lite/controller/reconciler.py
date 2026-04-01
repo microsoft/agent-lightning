@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Any, Protocol
 
 import structlog
 
 from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.controller.config import ControllerSettings
-from agl_lite.controller.job_builder import build_job_name, build_job_spec, load_manifest_template
+from agl_lite.controller.job_builder import build_job_name, build_job_spec
 from agl_lite.schemas.api import PatchRolloutRequest
 from agl_lite.schemas.resources import ResourcesUpdate
 from agl_lite.schemas.rollout import Rollout, RolloutStatus
@@ -84,7 +85,7 @@ class Reconciler:
         self._k8s = k8s
         self._settings = settings
         self._resources_cache: dict[str, ResourcesUpdate] = {}
-        self._manifest_template: str = load_manifest_template(settings.job_manifest_template)
+        self._manifest_template: str = Path(settings.job_manifest_template).read_text()
         self._stop = asyncio.Event()
 
     async def run(self) -> None:

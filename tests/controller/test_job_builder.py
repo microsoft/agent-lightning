@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agl_lite.controller.config import ControllerSettings
@@ -12,7 +14,6 @@ from agl_lite.controller.job_builder import (
     _merge_env,
     build_job_name,
     build_job_spec,
-    load_manifest_template,
 )
 from agl_lite.schemas.rollout import Rollout, RolloutConfig, RolloutStatus
 
@@ -67,8 +68,7 @@ def _multi_container_template() -> dict:
 
 @pytest.fixture(scope="module")
 def manifest_template() -> str:
-    """Load the default packaged Jinja2 job manifest template."""
-    return load_manifest_template()
+    return Path("deploy/controller/job-template.yaml.j2").read_text()
 
 
 @pytest.fixture
@@ -78,6 +78,7 @@ def settings() -> ControllerSettings:
         key="test-key",
         namespace="test-ns",
         secret_name="agl-secrets",
+        job_manifest_template="deploy/controller/job-template.yaml.j2",
     )
 
 

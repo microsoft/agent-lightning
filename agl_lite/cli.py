@@ -42,6 +42,7 @@ def controller(
     secret_name: str = typer.Option("agl-api-keys", help="K8s Secret name with API keys"),
     poll_interval: int = typer.Option(10, help="Seconds between reconcile cycles"),
     max_queue_time: int = typer.Option(3600, help="Max seconds a rollout can stay in queuing"),
+    job_manifest_template: str = typer.Option(..., help="Path to Jinja2 job manifest template file"),
 ) -> None:
     """Start the K8s controller (reconcile loop)."""
     import asyncio
@@ -58,6 +59,7 @@ def controller(
         secret_name=secret_name,
         poll_interval=poll_interval,
         max_queue_time=max_queue_time,
+        job_manifest_template=job_manifest_template,
     )
 
     async def _run() -> None:
