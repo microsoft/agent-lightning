@@ -204,7 +204,7 @@ async def main() -> None:
         # --- Setup: register resources ---
         log(f"")
         log(f"--- Setup ---")
-        template_path = MODE_DIR / "job-template.yaml"
+        template_path = Path(__file__).parent / "job-template.yaml"
         with open(template_path) as f:
             job_template = yaml.safe_load(f)
         log(f"  Job template: {template_path}")

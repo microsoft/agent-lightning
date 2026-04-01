@@ -100,21 +100,22 @@ model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm
 ### 1. Configure
 
 ```bash
-# Pick one:
-cp examples/math-poc/.env.mockai.example deploy/.env   # mock (CPU-only)
-cp examples/math-poc/.env.vllm.example deploy/.env     # vLLM (GPU)
-
 # API key
 export AGL_KEY=$(openssl rand -hex 32)
+
+# Optional: adjust mode-specific configs
+$EDITOR examples/math-poc/mock/deploy.yaml
+$EDITOR examples/math-poc/mock/.env.example
 ```
 
-Each `.env` file is self-contained — infrastructure, model server, and
-experiment settings all in one place. Just copy and go.
+Deploy config now lives in `examples/math-poc/<mode>/deploy.yaml`.
+Runtime/experiment config lives in `examples/math-poc/<mode>/.env.example`.
+`run.sh` reads namespace directly from `deploy.yaml`.
 
 ### 2. Run (mock mode)
 
 ```bash
-examples/math-poc/run.sh
+examples/math-poc/run.sh mock
 ```
 
 Builds images, deploys to minikube, runs 2-iteration RL loop, verifies results.

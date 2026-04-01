@@ -39,17 +39,33 @@ if [ ! -f "$MODE_DIR/.env.example" ]; then
     echo "ERROR: $MODE_DIR/.env.example not found"
     exit 1
 fi
+if [ ! -f "$MODE_DIR/deploy.yaml" ]; then
+    echo "ERROR: $MODE_DIR/deploy.yaml not found"
+    exit 1
+fi
 source "$MODE_DIR/.env.example"
-NS="${AGL_K8S_NAMESPACE:?AGL_K8S_NAMESPACE not set}"
-
-# Keep deploy.sh and this script on the same config source.
-# deploy.sh reads deploy/.env, so sync mode config into deploy/.env for this run.
-cp "$MODE_DIR/.env.example" "$REPO_ROOT/deploy/.env"
+DEPLOY_CONFIG="$MODE_DIR/deploy.yaml"
+NS="$(uv run python -c 'import yaml,sys;print((yaml.safe_load(open(sys.argv[1])) or {}).get("namespace",""))' "$DEPLOY_CONFIG")"
+if [ -z "$NS" ]; then
+    echo "ERROR: namespace is missing in $DEPLOY_CONFIG"
+    exit 1
+fi
 
 if [ -z "${AGL_KEY:-}" ]; then
     echo "ERROR: AGL_KEY not set. Run: export AGL_KEY=\$(openssl rand -hex 32)"
     exit 1
 fi
+
+# --- Export env for all components (including host agl-lite server) ---
+export AGL_MODEL_MODE="$MODE"
+export AGL_MODEL_NAME="${AGL_MODEL_NAME:?AGL_MODEL_NAME not set}"
+if [ "$MODE" = "mock" ] && [ -z "${AGL_MODEL_ENDPOINT:-}" ]; then
+    export AGL_MODEL_ENDPOINT="http://mockai.${NS}.svc.cluster.local:5002/v1"
+else
+    export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
+fi
+export AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}"
+export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-1}"
 
 echo "=== Mode: $MODE ==="
 
@@ -69,19 +85,10 @@ fi
 echo "=== Building images ==="
 scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
 
-# Pass gateway config + hooks to deploy.sh (used when launching host agl-lite).
-export AGL_GATEWAY_CONFIG="examples/math-poc/$MODE/gateway-config.yaml"
-export AGL_HOOKS="${AGL_HOOKS:-}"
-
 # --- Deploy K8s infra ---
 echo ""
-if [ "$MODE" = "vllm" ]; then
-    echo "=== Deploying controller to K8s + host agl-lite service ==="
-    scripts/deploy.sh --agl-in-host 2>&1 | tee "$LOG_DIR/deploy.log"
-else
-    echo "=== Deploying agl-lite infra to K8s ==="
-    scripts/deploy.sh --agl-in-k8s 2>&1 | tee "$LOG_DIR/deploy.log"
-fi
+echo "=== Deploying with config: $DEPLOY_CONFIG ==="
+uv run agl-lite deploy --config "$DEPLOY_CONFIG" 2>&1 | tee "$LOG_DIR/deploy.log"
 
 # --- Deploy mockai (mock mode only) ---
 if [ "$MODE" = "mock" ]; then
@@ -95,6 +102,7 @@ fi
 SERVE_PID=""
 PF_PID=""
 PF_PORT="${AGL_LOCAL_PORT:-18080}"
+PF_LOG="$LOG_DIR/port-forward.log"
 
 # vLLM mode: deploy.sh --agl-in-host launches agl-lite on host.
 if [ "$MODE" = "vllm" ]; then
@@ -116,9 +124,23 @@ if [ "$MODE" = "vllm" ]; then
 else
     echo ""
     echo "=== Starting port-forward ==="
-    kubectl -n "$NS" port-forward --address 127.0.0.1 svc/agl-lite "${PF_PORT}:8080" &
+    kubectl -n "$NS" port-forward --address 127.0.0.1 svc/agl-lite "${PF_PORT}:8080" >"$PF_LOG" 2>&1 &
     PF_PID=$!
     sleep 2
+
+    if ! kill -0 "$PF_PID" 2>/dev/null; then
+        echo "ERROR: failed to start port-forward on local port $PF_PORT"
+        echo "Detail:"
+        cat "$PF_LOG" || true
+        exit 1
+    fi
+
+    if ! curl -sf "http://127.0.0.1:${PF_PORT}/healthz" > /dev/null 2>&1; then
+        echo "ERROR: port-forward started but agl-lite is not reachable on 127.0.0.1:${PF_PORT}"
+        echo "Detail:"
+        cat "$PF_LOG" || true
+        exit 1
+    fi
 fi
 
 # Cleanup on exit
@@ -140,7 +162,7 @@ cleanup() {
     [ -n "$PF_PID" ] && kill $PF_PID 2>/dev/null || true
     [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
     echo "Logs saved to: $LOG_DIR"
-    echo "To tear down: scripts/deploy.sh --cleanup"
+    echo "To tear down: uv run agl-lite deploy --config $DEPLOY_CONFIG --cleanup"
 }
 trap cleanup EXIT
 
@@ -152,15 +174,6 @@ else
 fi
 export AGL_K8S_NAMESPACE="$NS"
 export AGL_KEY
-export AGL_MODEL_MODE="$MODE"
-export AGL_MODEL_NAME="${AGL_MODEL_NAME:-mock-llm}"
-if [ "$MODE" = "mock" ] && [ -z "${AGL_MODEL_ENDPOINT:-}" ]; then
-    export AGL_MODEL_ENDPOINT="http://mockai.${NS}.svc.cluster.local:5002/v1"
-else
-    export AGL_MODEL_ENDPOINT="${AGL_MODEL_ENDPOINT:-}"
-fi
-export AGL_BATCH_SIZE="${AGL_BATCH_SIZE:-5}"
-export AGL_NUM_ITERATIONS="${AGL_NUM_ITERATIONS:-1}"
 
 # --- Run algorithm ---
 echo ""
