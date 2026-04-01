@@ -18,7 +18,7 @@ from agl_lite.schemas.rollout import Rollout, RolloutConfig, RolloutStatus
 
 def _settings(**kwargs) -> ControllerSettings:
     defaults = {
-        "lite_url": "http://agl-lite:8000",
+        "base_url": "http://agl-lite:8000",
         "key": "test",
         "namespace": "default",
         "poll_interval": 1,

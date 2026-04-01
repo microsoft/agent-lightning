@@ -72,7 +72,7 @@ def manifest_template() -> str:
 @pytest.fixture
 def settings() -> ControllerSettings:
     return ControllerSettings(
-        lite_url="http://agl-lite:8000",
+        base_url="http://agl-lite:8000",
         key="test-key",
         namespace="test-ns",
         secret_name="agl-secrets",
@@ -264,7 +264,7 @@ class TestPodPatcher:
 
         rendered = Template(manifest_template).render(
             job_name="test-job", rollout_id="r1", namespace="default",
-            secret_name="agl-secrets", lite_url="http://agl-lite:8000", ttl_after_finished=3600,
+            secret_name="agl-secrets", base_url="http://agl-lite:8000", ttl_after_finished=3600,
         )
         docs = list(yaml.safe_load_all(rendered))
         patcher = PodPatcher.model_validate(docs[1])

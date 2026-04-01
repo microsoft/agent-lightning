@@ -111,7 +111,7 @@ def _template_context(rollout: Rollout, settings: ControllerSettings) -> dict[st
         "rollout_id": rollout.rollout_id,
         "namespace": settings.namespace,
         "secret_name": settings.secret_name,
-        "lite_url": settings.lite_url,
+        "lite_url": settings.base_url,
         "ttl_after_finished": settings.ttl_after_finished,
     }
 

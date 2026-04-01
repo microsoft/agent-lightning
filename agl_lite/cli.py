@@ -51,7 +51,7 @@ def controller(
     from agl_lite.controller.reconciler import Reconciler
 
     settings = ControllerSettings(
-        lite_url=agl_base_url,
+        base_url=agl_base_url,
         key=os.environ.get("AGL_KEY", ""),
         namespace=namespace,
         secret_name=secret_name,
@@ -59,7 +59,7 @@ def controller(
     )
 
     async def _run() -> None:
-        api = AglLiteClient(base_url=settings.lite_url, agl_key=settings.key or None)
+        api = AglLiteClient(base_url=settings.base_url, agl_key=settings.key or None)
         # kr8s client created here in production; for now use a placeholder.
         # The real kr8s adapter will be added in Phase 4 (E2E validation).
         try:

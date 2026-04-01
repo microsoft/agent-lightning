@@ -14,7 +14,7 @@ class ControllerSettings(BaseSettings):
     model_config = {"env_prefix": "AGL_"}
 
     # Connection to agl-lite server.
-    lite_url: str = "http://localhost:8000"  # agl-lite server URL
+    base_url: str = "http://localhost:8000"  # agl-lite server URL; AGL_BASE_URL
     key: str = ""  # AGL_KEY — auth key for agl-lite API
 
     # K8s configuration.
