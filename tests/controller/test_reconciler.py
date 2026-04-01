@@ -42,7 +42,7 @@ def _rollout(
         status=status,
         cancel_requested=cancel_requested,
         input={"task": "test"},
-        config=RolloutConfig(image="agent:v1"),
+        config=RolloutConfig(),
         job_name=job_name,
         resources_id=resources_id,
         created_at=created_at or time.time(),
@@ -141,7 +141,6 @@ def mock_api() -> AsyncMock:
     api = AsyncMock(spec=AglLiteClient)
     api.query_rollouts = AsyncMock(return_value=[])
     api.patch_rollout = AsyncMock()
-    api.get_resources = AsyncMock()
     return api
 
 
@@ -360,44 +359,6 @@ class TestJobWatchEvents:
         await rec._handle_job_event(job)
 
         mock_api.patch_rollout.assert_not_called()
-
-
-class TestResourcesCaching:
-    async def test_caches_resources(self, mock_api: AsyncMock, mock_k8s: MockK8s):
-        from agl_lite.schemas.resources import ResourcesUpdate
-
-        res = ResourcesUpdate(
-            resources_id="res-1",
-            resources={"job_template": {"spec": {"containers": [{"name": "agent"}]}}},
-            created_at=1000.0,
-        )
-        mock_api.get_resources = AsyncMock(return_value=res)
-
-        rec = Reconciler(mock_api, mock_k8s, _settings())
-
-        # First call fetches.
-        template = await rec._get_job_template("res-1")
-        assert template is not None
-        assert template["spec"]["containers"][0]["name"] == "agent"
-        assert mock_api.get_resources.call_count == 1
-
-        # Second call uses cache.
-        template2 = await rec._get_job_template("res-1")
-        assert template2 is not None
-        assert mock_api.get_resources.call_count == 1  # still 1
-
-    async def test_no_resources_id(self, mock_api: AsyncMock, mock_k8s: MockK8s):
-        rec = Reconciler(mock_api, mock_k8s, _settings())
-        template = await rec._get_job_template(None)
-        assert template is None
-        mock_api.get_resources.assert_not_called()
-
-    async def test_resources_fetch_error(self, mock_api: AsyncMock, mock_k8s: MockK8s):
-        mock_api.get_resources = AsyncMock(side_effect=AglLiteError(404, "not found"))
-
-        rec = Reconciler(mock_api, mock_k8s, _settings())
-        template = await rec._get_job_template("bad-id")
-        assert template is None
 
 
 class TestHelpers:

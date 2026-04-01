@@ -6,10 +6,27 @@ hooks execute atomically — no reader can see intermediate state.
 
 Users subclass ``RolloutHooks`` and override the methods they need. The server
 loads the module at startup via ``--hooks path/to/hooks.py``.
+
+Typical pattern::
+
+    class MyHooks(RolloutHooks):
+        def on_startup(self, store: InMemoryStore) -> None:
+            # Hook-specific config from env vars — document what your hook expects.
+            self._pod_spec = yaml.safe_load(
+                Path(os.environ["MY_POD_SPEC_TEMPLATE"]).read_text()
+            )
+
+        def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+            pod_spec = self.copy_pod_spec()
+            agent = self.get_container(pod_spec, "agent")
+            agent["image"] = f"my-image:{request.input['version']}"
+            request.config.pod_spec = pod_spec
+            return request
 """
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING, Any
 
 from agl_lite.schemas.api import EnqueueRolloutRequest
@@ -29,7 +46,49 @@ class RolloutHooks:
       - Hooks must be **fast and synchronous** (no ``await``, no blocking I/O).
       - Volume reads (local disk, ~μs) and CPU-bound parsing (~ms) are fine.
       - Network calls to external APIs will block the event loop — avoid them.
+
+    Pod spec template convention:
+      Set ``self._pod_spec`` in ``on_startup()`` and use ``copy_pod_spec()``
+      in ``on_enqueue()`` to get a per-request mutable copy.
     """
+
+    _pod_spec: dict[str, Any] | None = None
+
+    def on_startup(self, store: InMemoryStore) -> None:
+        """Called once by the server after startup and store initialisation.
+
+        Override to load per-dataset resources (pod spec templates, eval configs,
+        etc.) that are needed for every request. Hook-specific config should come
+        from environment variables — document what your hook expects.
+
+        Example::
+
+            def on_startup(self, store: InMemoryStore) -> None:
+                self._pod_spec = yaml.safe_load(
+                    Path(os.environ["MY_POD_SPEC_TEMPLATE"]).read_text()
+                )
+        """
+
+    def copy_pod_spec(self) -> dict[str, Any]:
+        """Return a deep copy of the stored pod spec template.
+
+        Call this in ``on_enqueue`` to get a per-request mutable copy.
+        Raises ``RuntimeError`` if ``self._pod_spec`` has not been set in ``on_startup``.
+        """
+        if self._pod_spec is None:
+            raise RuntimeError("no pod spec loaded — set self._pod_spec in on_startup()")
+        return copy.deepcopy(self._pod_spec)
+
+    @staticmethod
+    def get_container(pod_spec: dict[str, Any], name: str) -> dict[str, Any]:
+        """Return a container dict by name from a pod spec dict.
+
+        Raises ``KeyError`` if no container with that name exists.
+        """
+        for c in pod_spec.get("containers", []):
+            if c.get("name") == name:
+                return c
+        raise KeyError(f"container {name!r} not found in pod spec")
 
     def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
         """Pre-processor: transform a rollout request before it enters the store.
@@ -39,10 +98,10 @@ class RolloutHooks:
         returns an error to the caller.
 
         Typical uses:
+          - Deep copy ``self._pod_spec``, apply per-sample modifications
+            (image, env vars, command), assign to ``request.config.pod_spec``
           - Move raw dataset fields from ``input`` into ``metadata``
-          - Set ``config.image`` based on task type (e.g., SWE-bench instance → Docker image)
-          - Generate eval scripts and inject them as environment variables
-          - Prepare ``input`` so it contains only what the agent needs
+          - Set ``config.timeout`` / ``config.max_retries``
         """
         return request
 
@@ -53,12 +112,10 @@ class RolloutHooks:
         committed. Since the store is single-threaded, no reader can interleave —
         the transition and this hook are atomic from any external observer.
 
-        ``events`` is the raw events dict for this rollout:
-        ``{attempt_id: [Event, ...]}``.
+        ``events`` is the raw events dict for this rollout: ``{attempt_id: [Event, ...]}``.
 
         Typical uses:
-          - Read test output from a shared volume
-          - Grade using official evaluation tools (e.g., ``swebench.harness.grading``)
+          - Grade output using official evaluation tools
           - Post a reward event via ``store.add_event(rollout.rollout_id, ...)``
         """
 
@@ -100,7 +157,6 @@ def load_hooks(path: str) -> RolloutHooks:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    # Find all RolloutHooks subclasses (excluding the base class itself).
     hook_classes = [
         obj
         for _, obj in inspect.getmembers(module, inspect.isclass)

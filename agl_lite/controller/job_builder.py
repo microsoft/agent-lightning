@@ -1,4 +1,4 @@
-"""Job spec builder — pure function that converts rollout + pod spec fragment into a K8s Job manifest.
+"""Job spec builder — pure function that converts a rollout into a K8s Job manifest.
 
 No I/O, no K8s API calls. Easy to unit test.
 
@@ -8,12 +8,11 @@ Template format (Jinja2, two YAML documents separated by ---):
 
 Merge order (later wins):
   1. manifest_template — Jinja2 template string → Job scaffold + PodPatcher defaults
-  2. user_pod_spec     — pod spec fragment from resources (containers, volumes, pod fields)
-  3. rollout.config    — image, command, env vars, mounts → agent container
-  4. rollout.config.overrides — per-rollout K8s overrides, name-matched containers
+  2. rollout.config.pod_spec — pod spec fragment assembled by the on_enqueue hook
+  3. rollout.config.timeout / max_retries — per-sample execution policy
 
-PodPatcher env vars are injected into every container; container's own env wins on conflict.
-rollout.config.environment_variables further override patcher env on the agent container.
+The hook owns all container-level customisation (image, command, env vars, volumes).
+The controller only injects gateway env vars (via PodPatcher) and sets Job-level fields.
 """
 
 from __future__ import annotations
@@ -48,20 +47,17 @@ def build_job_name(rollout_id: str) -> str:
 
 def build_job_spec(
     rollout: Rollout,
-    user_pod_spec: dict[str, Any] | None,
     settings: ControllerSettings,
     manifest_template: str,
 ) -> dict[str, Any]:
-    """Build a K8s Job manifest from rollout config + pod spec fragment + manifest template.
+    """Build a K8s Job manifest from rollout config + manifest template.
 
     Args:
-        rollout:           The rollout to build a Job for.
-        user_pod_spec:     Pod spec fragment from the resource snapshot — containers, volumes,
-                           nodeSelector, tolerations, etc. Sourced from resources["job_template"].
-                           None means no user-provided spec; agent container is created bare.
-        settings:          Controller settings (namespace, secret name, lite URL, ttl, ...).
-        manifest_template: Jinja2 template string (two YAML docs separated by ---). Caller
-                           is responsible for loading this from disk before calling.
+        rollout:           The rollout to build a Job for. rollout.config.pod_spec
+                           holds the pod spec fragment assembled by the on_enqueue hook.
+        settings:          Controller settings (namespace, secret name, lite URL, ttl).
+        manifest_template: Jinja2 template string (two YAML docs separated by ---).
+                           Caller is responsible for loading this from disk before calling.
     """
     config = rollout.config
 
@@ -74,80 +70,28 @@ def build_job_spec(
 
     pod_spec: dict[str, Any] = job_dict["spec"]["template"]["spec"]
 
-    # --- 2. Normalise pod spec fragment from resources ---
-    user_pod = copy.deepcopy(user_pod_spec) if user_pod_spec else {}
-    # Unwrap {"spec": {...}} form (backward compat).
-    if "spec" in user_pod and "containers" not in user_pod:
-        user_pod = user_pod["spec"]
+    # --- 2. Merge rollout.config.pod_spec (hook-assembled) into scaffold ---
+    user_deadline: int | None = None
+    if config.pod_spec:
+        user_pod = copy.deepcopy(config.pod_spec)
+        user_containers: list[dict[str, Any]] = user_pod.pop("containers", [])
+        user_volumes: list[dict[str, Any]] = user_pod.pop("volumes", [])
+        user_deadline = user_pod.pop("activeDeadlineSeconds", None)
 
-    user_containers: list[dict[str, Any]] = user_pod.pop("containers", [])
-    user_volumes: list[dict[str, Any]] = user_pod.pop("volumes", [])
-    # activeDeadlineSeconds at root of user fragment → hoist to job spec later.
-    user_deadline: int | None = user_pod.pop("activeDeadlineSeconds", None)
+        pod_spec["containers"] = user_containers
+        pod_spec["volumes"] = _merge_by_name(patcher.volumes, user_volumes)
+        _deep_merge(pod_spec, user_pod)  # nodeSelector, tolerations, etc.
+    else:
+        pod_spec["volumes"] = list(patcher.volumes)
 
-    # --- 3. Merge user pod spec into scaffold ---
-    pod_spec["containers"] = user_containers  # replaces empty []
-    pod_spec["volumes"] = _merge_by_name(patcher.volumes, user_volumes)  # user wins on name
-    _deep_merge(pod_spec, user_pod)  # nodeSelector, tolerations, serviceAccountName, etc.
-
-    # --- 4. Ensure agent container exists (before env injection) ---
-    _ensure_agent_container(pod_spec)
-
-    # --- 5. Inject patcher env into ALL containers (container's own env wins on conflict) ---
+    # --- 3. Inject patcher env into ALL containers (container's own env wins on conflict) ---
     for container in pod_spec["containers"]:
         container["env"] = _merge_env(patcher.env, container.get("env", []))
 
-    # --- 6. Apply rollout.config named fields to agent container ---
-    agent = _get_agent_container(pod_spec)
-
-    if config.image:
-        agent["image"] = config.image
-
-    if config.command:
-        agent["command"] = config.command
-
-    # rollout.config env vars override patcher env on the agent container.
-    if config.environment_variables:
-        rollout_env = [{"name": k, "value": v} for k, v in config.environment_variables.items()]
-        agent["env"] = _merge_env(agent.get("env", []), rollout_env)
-
-    # Volume mounts from rollout config.
-    if config.mount:
-        agent.setdefault("volumeMounts", [])
-        for m in config.mount:
-            agent["volumeMounts"].append(
-                {"name": m.name, "mountPath": m.mount_path, "readOnly": m.read_only}
-            )
-        pod_spec.setdefault("volumes", [])
-        for m in config.mount:
-            vol: dict[str, Any] = {"name": m.name}
-            if m.source.startswith("/"):
-                vol["hostPath"] = {"path": m.source}
-            elif m.source.startswith("pvc:"):
-                vol["persistentVolumeClaim"] = {"claimName": m.source[4:]}
-            else:
-                vol["configMap"] = {"name": m.source}
-            pod_spec["volumes"].append(vol)
-
-    # --- 7. Apply per-rollout overrides (name-matched container merge) ---
-    if config.overrides:
-        overrides = copy.deepcopy(config.overrides)
-        override_containers = overrides.pop("containers", [])
-        for oc in override_containers:
-            oc_name = oc.get("name")
-            if not oc_name:
-                continue
-            for container in pod_spec["containers"]:
-                if container.get("name") == oc_name:
-                    _deep_merge(container, oc)
-                    break
-        _deep_merge(pod_spec, overrides)
-
-    # --- 8. Set per-rollout job spec fields ---
+    # --- 4. Set per-rollout job spec fields ---
     job_spec: dict[str, Any] = job_dict["spec"]
     job_spec["backoffLimit"] = config.max_retries if config.max_retries is not None else 0
 
-    # activeDeadlineSeconds: rollout.config.timeout > user fragment field > absent.
     deadline = config.timeout or user_deadline
     if deadline is not None:
         job_spec["activeDeadlineSeconds"] = deadline
@@ -172,33 +116,14 @@ def _template_context(rollout: Rollout, settings: ControllerSettings) -> dict[st
     }
 
 
-def _ensure_agent_container(pod_spec: dict[str, Any]) -> None:
-    """Ensure pod spec has an 'agent' container, inserting one at position 0 if absent."""
-    for c in pod_spec["containers"]:
-        if c.get("name") == "agent":
-            return
-    pod_spec["containers"].insert(0, {"name": "agent"})
-
-
-def _get_agent_container(pod_spec: dict[str, Any]) -> dict[str, Any]:
-    """Return the 'agent' container (must exist — call _ensure_agent_container first)."""
-    for c in pod_spec["containers"]:
-        if c.get("name") == "agent":
-            return c
-    raise RuntimeError("agent container not found — call _ensure_agent_container first")
-
-
 def _merge_env(
     base_env: list[dict[str, Any]],
     override_env: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Merge two env var lists. override_env wins on name conflict.
-
-    Order: base entries first, then override-only extras appended at the end.
-    """
+    """Merge two env var lists. override_env wins on name conflict."""
     merged: dict[str, dict[str, Any]] = {e["name"]: e for e in base_env}
     for e in override_env:
-        merged[e["name"]] = e  # override wins
+        merged[e["name"]] = e
     return list(merged.values())
 
 
@@ -209,7 +134,7 @@ def _merge_by_name(
     """Merge two lists of name-keyed dicts. override wins on name conflict."""
     merged: dict[str, dict[str, Any]] = {item["name"]: item for item in base}
     for item in override:
-        merged[item["name"]] = item  # override wins
+        merged[item["name"]] = item
     return list(merged.values())
 
 

@@ -19,7 +19,7 @@ from agl_lite.store.memory import InMemoryStore
 
 
 class TransformHooks(RolloutHooks):
-    """on_enqueue: set config, stash ground_truth in metadata."""
+    """on_enqueue: set pod_spec with image, stash ground_truth in metadata."""
 
     def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
         raw = request.input if isinstance(request.input, dict) else {}
@@ -27,9 +27,16 @@ class TransformHooks(RolloutHooks):
             request.metadata = {}
         if isinstance(request.metadata, dict):
             request.metadata["ground_truth"] = raw.get("ground_truth", "")
-        request.config = request.config or RolloutConfig(image="")
-        request.config.image = "test-agent:dev"
-        request.config.environment_variables["INJECTED"] = "true"
+        request.config = request.config or RolloutConfig()
+        request.config.pod_spec = {
+            "containers": [
+                {
+                    "name": "agent",
+                    "image": "test-agent:dev",
+                    "env": [{"name": "INJECTED", "value": "true"}],
+                }
+            ]
+        }
         return request
 
 
@@ -71,6 +78,46 @@ class ErrorHooks(RolloutHooks):
 # ── Tests ────────────────────────────────────────────────────────────
 
 
+class TestOnStartup:
+    def test_on_startup_called_with_store(self) -> None:
+        """on_startup receives the store and can load resources into self."""
+        class StartupHooks(RolloutHooks):
+            started: bool = False
+
+            def on_startup(self, store: InMemoryStore) -> None:
+                self.started = True
+                self._pod_spec = {"containers": [{"name": "agent", "image": "startup:v1"}]}
+
+        hooks = StartupHooks()
+        store = InMemoryStore()
+        hooks.on_startup(store)
+
+        assert hooks.started is True
+        assert hooks._pod_spec is not None
+
+    def test_copy_pod_spec_deep_copies(self) -> None:
+        hooks = RolloutHooks()
+        hooks._pod_spec = {"containers": [{"name": "agent", "image": "base:v1"}]}
+        copy1 = hooks.copy_pod_spec()
+        copy1["containers"][0]["image"] = "modified:v1"
+        assert hooks._pod_spec["containers"][0]["image"] == "base:v1"  # original unchanged
+
+    def test_copy_pod_spec_raises_if_not_loaded(self) -> None:
+        hooks = RolloutHooks()
+        with pytest.raises(RuntimeError, match="no pod spec loaded"):
+            hooks.copy_pod_spec()
+
+    def test_get_container_found(self) -> None:
+        pod_spec = {"containers": [{"name": "agent", "image": "x"}, {"name": "sidecar"}]}
+        c = RolloutHooks.get_container(pod_spec, "agent")
+        assert c["image"] == "x"
+
+    def test_get_container_not_found(self) -> None:
+        pod_spec = {"containers": [{"name": "agent"}]}
+        with pytest.raises(KeyError, match="nonexistent"):
+            RolloutHooks.get_container(pod_spec, "nonexistent")
+
+
 class TestOnEnqueue:
     def test_transforms_request(self) -> None:
         store = InMemoryStore(hooks=TransformHooks())
@@ -83,9 +130,11 @@ class TestOnEnqueue:
         assert rollout.input == {"question": "What is 2+2?", "ground_truth": "4"}
         # metadata should have ground_truth stashed by hook (extra field)
         assert rollout.metadata.ground_truth == "4"
-        # config should be set by hook
-        assert rollout.config.image == "test-agent:dev"
-        assert rollout.config.environment_variables["INJECTED"] == "true"
+        # config.pod_spec set by hook with image and env var
+        assert rollout.config.pod_spec is not None
+        agent = RolloutHooks.get_container(rollout.config.pod_spec, "agent")
+        assert agent["image"] == "test-agent:dev"
+        assert any(e["name"] == "INJECTED" for e in agent.get("env", []))
 
     def test_no_hooks_passthrough(self) -> None:
         store = InMemoryStore()  # no hooks

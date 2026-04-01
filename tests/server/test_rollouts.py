@@ -19,7 +19,7 @@ class TestEnqueueRollouts:
     def test_single(self, client: TestClient, auth_headers: dict):
         resp = client.post(
             "/api/rollouts",
-            json={"rollouts": [{"input": {"prompt": "hi"}, "config": {"image": "agent:v1"}}]},
+            json={"rollouts": [{"input": {"prompt": "hi"}, "config": {}}]},
             headers=auth_headers,
         )
         assert resp.status_code == 201
@@ -33,9 +33,9 @@ class TestEnqueueRollouts:
             "/api/rollouts",
             json={
                 "rollouts": [
-                    {"input": {"i": 0}, "config": {"image": "a:v1"}},
-                    {"input": {"i": 1}, "config": {"image": "a:v1"}},
-                    {"input": {"i": 2}, "config": {"image": "a:v1"}},
+                    {"input": {"i": 0}, "config": {}},
+                    {"input": {"i": 1}, "config": {}},
+                    {"input": {"i": 2}, "config": {}},
                 ]
             },
             headers=auth_headers,

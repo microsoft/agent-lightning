@@ -19,14 +19,12 @@ import structlog
 from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.controller.config import ControllerSettings
 from agl_lite.controller.job_builder import build_job_name, build_job_spec
+
 from agl_lite.schemas.api import PatchRolloutRequest
-from agl_lite.schemas.resources import ResourcesUpdate
 from agl_lite.schemas.rollout import Rollout, RolloutStatus
 
+
 log = structlog.get_logger()
-
-
-# --- Error classification ---
 
 
 def _is_invalid_spec_error(exc: Exception) -> bool:
@@ -84,7 +82,6 @@ class Reconciler:
         self._api = api
         self._k8s = k8s
         self._settings = settings
-        self._resources_cache: dict[str, ResourcesUpdate] = {}
         self._manifest_template: str = Path(settings.job_manifest_template).read_text()
         self._stop = asyncio.Event()
 
@@ -184,11 +181,8 @@ class Reconciler:
             )
             return
 
-        # Fetch job_template (with caching).
-        job_template = await self._get_job_template(rollout.resources_id)
-
         # Build and create Job.
-        manifest = build_job_spec(rollout, job_template, self._settings, self._manifest_template)
+        manifest = build_job_spec(rollout, self._settings, self._manifest_template)
         try:
             await self._k8s.create_job(manifest)
             log.info("Job created", rollout_id=rollout.rollout_id, job_name=job_name)
@@ -318,24 +312,6 @@ class Reconciler:
         return None
 
     # --- Helpers ---
-
-    async def _get_job_template(self, resources_id: str | None) -> dict[str, Any] | None:
-        """Fetch job_template (raw pod spec dict) from resources, with caching."""
-        if not resources_id:
-            return None
-
-        # Check cache.
-        if resources_id in self._resources_cache:
-            res = self._resources_cache[resources_id]
-        else:
-            try:
-                res = await self._api.get_resources(resources_id)
-                self._resources_cache[resources_id] = res
-            except AglLiteError:
-                log.warning("Failed to fetch resources", resources_id=resources_id)
-                return None
-
-        return res.resources.get("job_template")
 
     async def _patch_rollout(self, rollout_id: str, patch: PatchRolloutRequest) -> None:
         """Patch a rollout, handling errors gracefully."""

@@ -22,18 +22,19 @@ class TestEnqueueRolloutRequest:
     def test_with_config(self):
         r = EnqueueRolloutRequest(
             input={"prompt": "hello"},
-            config=RolloutConfig(image="agent:v1"),
+            config=RolloutConfig(),
             resources_id="res-1",
         )
-        assert r.config.image == "agent:v1"
+        assert r.config is not None
+        assert r.resources_id == "res-1"
 
 
 class TestEnqueueBatchRequest:
     def test_batch(self):
         b = EnqueueBatchRequest(
             rollouts=[
-                EnqueueRolloutRequest(input={"prompt": "task 1"}, config=RolloutConfig(image="agent:v1")),
-                EnqueueRolloutRequest(input={"prompt": "task 2"}, config=RolloutConfig(image="agent:v1")),
+                EnqueueRolloutRequest(input={"prompt": "task 1"}, config=RolloutConfig()),
+                EnqueueRolloutRequest(input={"prompt": "task 2"}, config=RolloutConfig()),
             ],
         )
         assert len(b.rollouts) == 2

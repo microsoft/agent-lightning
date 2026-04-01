@@ -3,7 +3,6 @@
 from agl_lite.schemas.rollout import (
     TERMINAL_STATUSES,
     VALID_TRANSITIONS,
-    Mount,
     Rollout,
     RolloutConfig,
     RolloutStatus,
@@ -38,28 +37,16 @@ class TestRolloutStatus:
 
 
 class TestRolloutConfig:
-    def test_minimal_config(self):
-        config = RolloutConfig(image="my-agent:latest")
-        assert config.image == "my-agent:latest"
-        assert config.command == []
-        assert config.environment_variables == {}
-        assert config.mount == []
+    def test_defaults(self):
+        config = RolloutConfig()
+        assert config.pod_spec is None
         assert config.timeout is None
         assert config.max_retries is None
 
-    def test_full_config(self):
-        config = RolloutConfig(
-            image="my-agent:v2",
-            command=["python", "solve.py"],
-            environment_variables={"MODE": "train", "DEBUG": "1"},
-            mount=[Mount(name="data", mount_path="/data", source="my-pvc", read_only=True)],
-            timeout=600,
-            max_retries=3,
-        )
-        assert config.command == ["python", "solve.py"]
-        assert config.environment_variables["MODE"] == "train"
-        assert len(config.mount) == 1
-        assert config.mount[0].mount_path == "/data"
+    def test_with_pod_spec(self):
+        spec = {"containers": [{"name": "agent", "image": "my-agent:v1"}]}
+        config = RolloutConfig(pod_spec=spec, timeout=600, max_retries=3)
+        assert config.pod_spec == spec
         assert config.timeout == 600
         assert config.max_retries == 3
 
@@ -69,7 +56,7 @@ class TestRollout:
         r = Rollout(
             rollout_id="r1",
             input={"prompt": "hello"},
-            config=RolloutConfig(image="agent:v1"),
+            config=RolloutConfig(),
             created_at=1000.0,
             updated_at=1000.0,
         )
@@ -85,7 +72,7 @@ class TestRollout:
         r = Rollout(
             rollout_id="r1",
             input={"prompt": "hello"},
-            config=RolloutConfig(image="agent:v1"),
+            config=RolloutConfig(),
             resources_id="res-42",
             created_at=1000.0,
             updated_at=1000.0,

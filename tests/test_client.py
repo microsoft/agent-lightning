@@ -44,8 +44,8 @@ class TestRollouts:
     async def test_enqueue_and_query(self, client: AglLiteClient):
         rollouts = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={"task": "a"}, config={"image": "agent:v1"}),
-                EnqueueRolloutRequest(input={"task": "b"}, config={"image": "agent:v1"}),
+                EnqueueRolloutRequest(input={"task": "a"}, config={}),
+                EnqueueRolloutRequest(input={"task": "b"}, config={}),
             ]
         )
         assert len(rollouts) == 2
@@ -68,7 +68,7 @@ class TestRollouts:
     async def test_get_rollout(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={"task": "x"}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={"task": "x"}, config={}),
             ]
         )
         fetched = await client.get_rollout(rollout.rollout_id)
@@ -81,7 +81,7 @@ class TestRollouts:
     async def test_patch_rollout(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={}, config={}),
             ]
         )
         updated = await client.patch_rollout(
@@ -94,7 +94,7 @@ class TestRollouts:
     async def test_patch_invalid_transition(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={}, config={}),
             ]
         )
         # queuing → succeeded is not valid
@@ -107,7 +107,7 @@ class TestRollouts:
     async def test_cancel_rollout(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={}, config={}),
             ]
         )
         cancelled = await client.cancel_rollout(rollout.rollout_id)
@@ -116,7 +116,7 @@ class TestRollouts:
     async def test_archive_rollouts(self, client: AglLiteClient, tmp_path):
         [r] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={}, config={}),
             ]
         )
         # Move to terminal state first
@@ -135,7 +135,7 @@ class TestEvents:
     async def test_post_and_get_events(self, client: AglLiteClient):
         [r] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={}, config={}),
             ]
         )
         event = await client.post_event(
@@ -152,7 +152,7 @@ class TestEvents:
     async def test_get_events_with_filters(self, client: AglLiteClient):
         [r] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={"image": "img:1"}),
+                EnqueueRolloutRequest(input={}, config={}),
             ]
         )
         await client.post_event(r.rollout_id, "pod-1", PostEventRequest(event_type="reward", data={"v": 1}))

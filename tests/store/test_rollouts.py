@@ -16,7 +16,7 @@ def store() -> InMemoryStore:
 def _enqueue(store: InMemoryStore, **kwargs):
     """Helper: enqueue with defaults."""
     kwargs.setdefault("input", {})
-    kwargs.setdefault("config", RolloutConfig(image="agent:v1"))
+    kwargs.setdefault("config", RolloutConfig())
     return store.enqueue_rollouts([EnqueueRolloutRequest(**kwargs)])[0]
 
 
@@ -30,7 +30,7 @@ class TestEnqueueRollout:
         r = _enqueue(store, input={"prompt": "hello"})
         assert r.status == RolloutStatus.QUEUING
         assert r.input == {"prompt": "hello"}
-        assert r.config.image == "agent:v1"
+        assert r.config.pod_spec is None
         assert r.version == 1
         assert r.cancel_requested is False
         assert r.rollout_id  # non-empty

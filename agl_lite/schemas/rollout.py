@@ -37,41 +37,20 @@ TERMINAL_STATUSES: frozenset[RolloutStatus] = frozenset(
 )
 
 
-class Mount(BaseModel):
-    """Volume mount specification for agent containers."""
-
-    name: str
-    mount_path: str  # path inside container, e.g., "/data"
-    source: str  # host path, PVC name, or ConfigMap name
-    read_only: bool = True
-
-
 class RolloutConfig(BaseModel):
     """Algorithm-facing config. Describes the containerized task.
 
-    Named fields target the 'agent' container in the pod spec.
-    The 'overrides' field provides per-rollout K8s overrides for the pod spec,
-    including other containers via overrides.containers (name-matched merge).
-
-    K8s pod-level infra details (nodeSelector, tolerations, etc.) come from
-    the job_template in the resources snapshot — not here.
+    pod_spec is the K8s pod spec fragment assembled by the on_enqueue hook —
+    containers, volumes, nodeSelector, tolerations, etc. The hook deep-copies
+    a per-dataset template and applies per-sample modifications before storing
+    it here. The controller merges it with the manifest_template PodPatcher
+    (which injects gateway env vars into every container) and wraps it in a
+    K8s Job manifest.
     """
 
-    # Agent container — image and command can come from job_template or here.
-    # If set here, they override what's in the template.
-    image: str | None = None
-    command: list[str] = Field(default_factory=list)
-    environment_variables: dict[str, str] = Field(default_factory=dict)
-    mount: list[Mount] = Field(default_factory=list)
-
-    # Optional — execution policy.
-    timeout: int | None = None  # seconds → K8s activeDeadlineSeconds
-    max_retries: int | None = None  # retry count → K8s backoffLimit
-
-    # Per-rollout K8s overrides (optional). Merged into the pod spec.
-    # Use overrides.containers (list of {name: ..., ...}) for name-matched
-    # merge into other containers (e.g., different scorer image per task).
-    overrides: dict[str, Any] = Field(default_factory=dict)
+    pod_spec: dict[str, Any] | None = None  # full pod spec fragment, set by on_enqueue hook
+    timeout: int | None = None             # seconds → K8s activeDeadlineSeconds
+    max_retries: int | None = None         # retry count → K8s backoffLimit
 
 
 class RolloutMetadata(BaseModel):
