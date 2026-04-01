@@ -327,7 +327,7 @@ def deploy(env_file: str, cleanup: bool) -> None:
     _ensure_minikube_host_dns(k8s_accessible_url)
 
     # ConfigMap for the Jinja2 job manifest template.
-    job_template_path = Path(cfg.job_manifest_template)
+    job_template_path = repo_root / cfg.job_manifest_template
     _run_shell(
         f"kubectl -n {shlex.quote(ns)} create configmap agl-controller-job-template"
         f" --from-file=job-template.yaml.j2={shlex.quote(str(job_template_path))}"
