@@ -49,7 +49,7 @@ class InMemoryStore:
       models:    dict[model, dict[endpoint, ModelServer]]  (nested)
     """
 
-    def __init__(self, hooks: RolloutHooks | None = None, artifact_dir: str = "") -> None:
+    def __init__(self, hooks: RolloutHooks | None = None, artifact_dir: str | None = None) -> None:
         self._rollouts: dict[str, Rollout] = {}
         self._events: dict[str, dict[str, list[Event]]] = {}
         self._resources: dict[str, ResourcesUpdate] = {}

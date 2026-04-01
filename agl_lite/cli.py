@@ -10,36 +10,26 @@ app = typer.Typer(name="agl-lite", help="Minimal agentic RL infrastructure.")
 
 @app.command()
 def serve(
-    host: str = typer.Option("0.0.0.0", help="Bind host"),
-    port: int = typer.Option(8080, help="Bind port"),
-    gateway_config: str = typer.Option("", help="Path to gateway YAML config"),
-    hooks: str = typer.Option("", help="Path to Python module with RolloutHooks subclass"),
-    artifact_dir: str = typer.Option("", help="Directory for artifact files (default: /tmp/agl-artifacts)"),
+    host: str = typer.Option(..., help="Bind host"),
+    port: int = typer.Option(..., help="Bind port"),
+    gateway_config: str | None = typer.Option(None, help="Path to gateway YAML config"),
+    hooks: str | None = typer.Option(None, help="Path to Python module with RolloutHooks subclass"),
+    artifact_dir: str | None = typer.Option(None, help="Directory for artifact files"),
 ) -> None:
     """Start the agl-lite HTTP service (store + gateway)."""
-    import os
-
-    # Resolve settings from CLI args first, then env vars as fallback.
-    if not gateway_config:
-        gateway_config = os.environ.get("GATEWAY_CONFIG", "")
-    if not hooks:
-        hooks = os.environ.get("HOOKS", "")
-    if not artifact_dir:
-        artifact_dir = os.environ.get("ARTIFACT_DIR", "")
-
     from agl_lite.server.app import create_app
     from agl_lite.server.config import ServerSettings
 
-    settings = ServerSettings(host=host, port=port, gateway_config=gateway_config, hooks=hooks, artifact_dir=artifact_dir)
+    settings = ServerSettings(gateway_config=gateway_config, hooks=hooks, artifact_dir=artifact_dir)
     application = create_app(settings)
     uvicorn.run(application, host=host, port=port, workers=1)
 
 
 @app.command()
 def controller(
-    agl_base_url: str = typer.Option("http://localhost:8000", help="agl-lite server URL"),
-    namespace: str = typer.Option("default", help="K8s namespace for agent Jobs"),
-    secret_name: str = typer.Option("agl-api-keys", help="K8s Secret name with API keys"),
+    agl_base_url: str = typer.Option(..., help="agl-lite server URL (AGL_BASE_URL)"),
+    namespace: str = typer.Option(..., help="K8s namespace for agent Jobs (AGL_NAMESPACE)"),
+    secret_name: str = typer.Option(..., help="K8s Secret name with API keys (AGL_SECRET_NAME)"),
     job_manifest_template: str = typer.Option(..., help="Path to Jinja2 job manifest template (AGL_JOB_MANIFEST_TEMPLATE)"),
 ) -> None:
     """Start the K8s controller (reconcile loop)."""

@@ -14,12 +14,12 @@ class ControllerSettings(BaseSettings):
     model_config = {"env_prefix": "AGL_"}
 
     # Connection to agl-lite server.
-    base_url: str = "http://localhost:8000"  # agl-lite server URL; AGL_BASE_URL
-    key: str = ""  # AGL_KEY — auth key for agl-lite API
+    base_url: str              # AGL_BASE_URL — always required in pod
+    key: str = ""             # AGL_KEY — auth key; empty = auth disabled
 
     # K8s configuration.
-    namespace: str = "default"
-    secret_name: str = "agl-api-keys"  # K8s Secret with OPENAI_API_KEY, ANTHROPIC_API_KEY
+    namespace: str             # AGL_NAMESPACE
+    secret_name: str           # AGL_SECRET_NAME — K8s Secret with OPENAI_API_KEY, ANTHROPIC_API_KEY
 
     # Reconcile timing.
     poll_interval: int = 10  # seconds between periodic reconcile cycles

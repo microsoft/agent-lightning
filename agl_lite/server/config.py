@@ -8,11 +8,9 @@ from pydantic_settings import BaseSettings
 class ServerSettings(BaseSettings):
     """agl-lite serve settings. All from env vars (prefix-free)."""
 
-    host: str = "0.0.0.0"
-    port: int = 8080
     agl_key: str = ""  # AGL_KEY — shared API key; empty = auth disabled
-    gateway_config: str = ""  # path to gateway YAML config; empty = no routes (passthrough only)
-    hooks: str = ""  # path to Python module with RolloutHooks subclass; empty = no hooks
-    artifact_dir: str = ""  # directory for artifact files; empty = ./artifacts
+    gateway_config: str | None = None  # path to gateway YAML config
+    hooks: str | None = None           # path to Python module with RolloutHooks subclass
+    artifact_dir: str | None = None    # directory for artifact files
 
     model_config = {"env_prefix": ""}
