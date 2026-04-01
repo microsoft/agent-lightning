@@ -44,6 +44,7 @@ nav:
     - Quick Start: getting-started/quickstart.md
   - Concepts:
     - concepts/index.md
+    - Task Lifecycle: concepts/task-lifecycle.md
     - Gateway: concepts/gateway.md
     - Data Store: concepts/store.md
     - K8s Controller: concepts/controller.md
