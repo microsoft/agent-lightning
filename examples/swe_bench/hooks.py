@@ -1,25 +1,20 @@
 """SWE-bench hooks — task-specific logic for SWE-bench rollouts.
 
-on_startup:  load pod spec template from SWE_POD_SPEC_TEMPLATE env var.
-on_enqueue:  deep copy template, set per-instance image, inject env vars
-             (AGL_TASK_INPUT, AGL_EVAL_SCRIPT, AGL_EVAL_META, etc.),
-             set config.timeout from template.
-
-on_succeeded / on_failed: post zero-reward fallback if container didn't post one.
-  Grading is done in the container using official swebench tools.
+The base RolloutHooks.on_startup automatically loads the pod spec from
+AGL_POD_SPEC_TEMPLATE (set in the project .env file).  This hook only needs
+to customise on_enqueue (per-instance image + env vars) and on_succeeded /
+on_failed (reward posting).
 
 Required env vars:
-  SWE_POD_SPEC_TEMPLATE  path to the pod spec YAML (e.g. examples/swe_bench/job-template.yaml)
+  AGL_POD_SPEC_TEMPLATE  path to the pod spec YAML (e.g. examples/swe_bench/job-template.yaml)
 """
 
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 from typing import Any
 
-import yaml
 from swebench.harness.test_spec.test_spec import make_test_spec
 
 from agl_lite.hooks import RolloutHooks
@@ -29,11 +24,6 @@ from agl_lite.store.memory import InMemoryStore
 
 
 class SWEBenchHooks(RolloutHooks):
-
-    def on_startup(self, store: InMemoryStore) -> None:
-        """Load pod spec template once from SWE_POD_SPEC_TEMPLATE env var."""
-        path = os.environ["SWE_POD_SPEC_TEMPLATE"]
-        self._pod_spec = yaml.safe_load(Path(path).read_text())
 
     def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
         instance = request.input

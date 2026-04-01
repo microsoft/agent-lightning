@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import textwrap
 import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -79,21 +81,48 @@ class ErrorHooks(RolloutHooks):
 
 
 class TestOnStartup:
-    def test_on_startup_called_with_store(self) -> None:
-        """on_startup receives the store and can load resources into self."""
-        class StartupHooks(RolloutHooks):
-            started: bool = False
+    def test_base_loads_pod_spec_from_env(self, tmp_path) -> None:
+        """Base on_startup reads AGL_POD_SPEC_TEMPLATE and populates self._pod_spec."""
+        import yaml
+        pod_spec = {"containers": [{"name": "agent", "image": "auto:v1"}]}
+        f = tmp_path / "pod-spec.yaml"
+        f.write_text(yaml.dump(pod_spec))
+
+        hooks = RolloutHooks()
+        with patch.dict(os.environ, {"AGL_POD_SPEC_TEMPLATE": str(f)}):
+            hooks.on_startup(InMemoryStore())
+
+        assert hooks._pod_spec is not None
+        assert hooks._pod_spec["containers"][0]["image"] == "auto:v1"
+
+    def test_base_no_op_when_env_unset(self) -> None:
+        """Base on_startup is a no-op when AGL_POD_SPEC_TEMPLATE is not set."""
+        env = {k: v for k, v in os.environ.items() if k != "AGL_POD_SPEC_TEMPLATE"}
+        hooks = RolloutHooks()
+        with patch.dict(os.environ, env, clear=True):
+            hooks.on_startup(InMemoryStore())  # must not raise
+        assert hooks._pod_spec is None
+
+    def test_subclass_can_call_super(self, tmp_path) -> None:
+        """Subclass calling super().on_startup gets the env-loaded pod spec."""
+        import yaml
+        pod_spec = {"containers": [{"name": "agent", "image": "base:v1"}]}
+        f = tmp_path / "pod-spec.yaml"
+        f.write_text(yaml.dump(pod_spec))
+
+        class MyHooks(RolloutHooks):
+            index_loaded: bool = False
 
             def on_startup(self, store: InMemoryStore) -> None:
-                self.started = True
-                self._pod_spec = {"containers": [{"name": "agent", "image": "startup:v1"}]}
+                super().on_startup(store)
+                self.index_loaded = True  # simulate extra setup
 
-        hooks = StartupHooks()
-        store = InMemoryStore()
-        hooks.on_startup(store)
+        h = MyHooks()
+        with patch.dict(os.environ, {"AGL_POD_SPEC_TEMPLATE": str(f)}):
+            h.on_startup(InMemoryStore())
 
-        assert hooks.started is True
-        assert hooks._pod_spec is not None
+        assert h._pod_spec is not None
+        assert h.index_loaded is True
 
     def test_copy_pod_spec_deep_copies(self) -> None:
         hooks = RolloutHooks()

@@ -10,14 +10,12 @@ loads the module at startup via ``--hooks path/to/hooks.py``.
 Typical pattern::
 
     class MyHooks(RolloutHooks):
-        def on_startup(self, store: InMemoryStore) -> None:
-            # Hook-specific config from env vars — document what your hook expects.
-            self._pod_spec = yaml.safe_load(
-                Path(os.environ["MY_POD_SPEC_TEMPLATE"]).read_text()
-            )
+        # on_startup is optional — if AGL_POD_SPEC_TEMPLATE is set in the
+        # environment the base implementation loads the pod spec automatically.
+        # Override only when you need extra setup beyond file loading.
 
         def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
-            pod_spec = self.copy_pod_spec()
+            pod_spec = self.copy_pod_spec()  # deep copy of the loaded template
             agent = self.get_container(pod_spec, "agent")
             agent["image"] = f"my-image:{request.input['version']}"
             request.config.pod_spec = pod_spec
@@ -27,7 +25,11 @@ Typical pattern::
 from __future__ import annotations
 
 import copy
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import yaml
 
 from agl_lite.schemas.api import EnqueueRolloutRequest
 
@@ -57,17 +59,28 @@ class RolloutHooks:
     def on_startup(self, store: InMemoryStore) -> None:
         """Called once by the server after startup and store initialisation.
 
-        Override to load per-dataset resources (pod spec templates, eval configs,
-        etc.) that are needed for every request. Hook-specific config should come
-        from environment variables — document what your hook expects.
+        The base implementation reads ``AGL_POD_SPEC_TEMPLATE`` from the
+        environment and, if set, loads that YAML file into ``self._pod_spec``.
+        This covers the common case where all instances use the same container
+        image base and only differ in per-sample env vars.
 
-        Example::
+        ``AGL_POD_SPEC_TEMPLATE`` — path to a plain YAML file that describes the
+        pod spec fragment: ``containers``, optional ``volumes``, ``nodeSelector``,
+        ``tolerations``, ``activeDeadlineSeconds``, etc.  Typically
+        ``examples/<project>/job-template.yaml``.
+
+        Override only when you need setup beyond file loading, e.g. loading a
+        dataset index or connecting to an external registry.  When overriding,
+        call ``super().on_startup(store)`` first so the base pod spec load still
+        happens::
 
             def on_startup(self, store: InMemoryStore) -> None:
-                self._pod_spec = yaml.safe_load(
-                    Path(os.environ["MY_POD_SPEC_TEMPLATE"]).read_text()
-                )
+                super().on_startup(store)      # loads AGL_POD_SPEC_TEMPLATE
+                self._index = load_index(os.environ["MY_INDEX"])
         """
+        template_path = os.environ.get("AGL_POD_SPEC_TEMPLATE")
+        if template_path:
+            self._pod_spec = yaml.safe_load(Path(template_path).read_text())
 
     def copy_pod_spec(self) -> dict[str, Any]:
         """Return a deep copy of the stored pod spec template.

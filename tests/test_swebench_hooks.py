@@ -74,27 +74,28 @@ def swe_instance() -> dict:
 
 
 class TestOnStartup:
-    def test_loads_pod_spec_from_env_var(self, hooks, tmp_path) -> None:
-        """on_startup reads SWE_POD_SPEC_TEMPLATE env var and loads pod spec."""
+    def test_loads_pod_spec_from_agl_env_var(self, hooks, tmp_path) -> None:
+        """Base on_startup reads AGL_POD_SPEC_TEMPLATE; SWEBenchHooks inherits this."""
         import yaml
         pod_spec = {"containers": [{"name": "agent", "image": "test:v1"}]}
         template_file = tmp_path / "job-template.yaml"
         template_file.write_text(yaml.dump(pod_spec))
 
         h = hooks.SWEBenchHooks()
-        with patch.dict(os.environ, {"SWE_POD_SPEC_TEMPLATE": str(template_file)}):
+        with patch.dict(os.environ, {"AGL_POD_SPEC_TEMPLATE": str(template_file)}):
             from agl_lite.store.memory import InMemoryStore
             h.on_startup(InMemoryStore())
 
         assert h._pod_spec is not None
         assert h._pod_spec["containers"][0]["name"] == "agent"
 
-    def test_missing_env_var_raises(self, hooks) -> None:
+    def test_missing_env_var_leaves_pod_spec_none(self, hooks) -> None:
+        """No AGL_POD_SPEC_TEMPLATE → _pod_spec stays None (copy_pod_spec raises later)."""
         h = hooks.SWEBenchHooks()
-        env = {k: v for k, v in os.environ.items() if k != "SWE_POD_SPEC_TEMPLATE"}
+        env = {k: v for k, v in os.environ.items() if k != "AGL_POD_SPEC_TEMPLATE"}
         with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(KeyError):
-                h.on_startup(InMemoryStore())
+            h.on_startup(InMemoryStore())  # must not raise
+        assert h._pod_spec is None
 
 
 class TestOnEnqueue:

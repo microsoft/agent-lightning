@@ -28,4 +28,4 @@ class ControllerSettings(BaseSettings):
     # Job defaults (can be overridden by resources snapshot).
     ttl_after_finished: int = 3600  # ttlSecondsAfterFinished on Jobs (pod GC safety)
 
-    job_manifest_template: str  # path to Jinja2 job manifest template; always required
+    job_manifest_template: str = "deploy/controller/job-template.yaml.j2"  # Jinja2 job scaffold; AGL_JOB_MANIFEST_TEMPLATE

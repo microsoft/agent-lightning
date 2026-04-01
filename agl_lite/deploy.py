@@ -47,6 +47,12 @@ class DeploySettings(BaseSettings):
     host_port: int = 8080
 
     job_manifest_template: str | None = None
+
+    # User pod spec template — plain YAML file loaded by the base RolloutHooks.on_startup
+    # into self._pod_spec (AGL_POD_SPEC_TEMPLATE).  Often the job-template.yaml in the
+    # example folder.  When set, hooks get self._pod_spec for free without overriding
+    # on_startup.  Defaults to None (no pod spec loaded by base).
+    pod_spec_template: str | None = None
     gateway_config: str | None = None
     hooks: str | None = None
     artifact_dir: str | None = None
