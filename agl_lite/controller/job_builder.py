@@ -8,7 +8,7 @@ Template format (Jinja2, two YAML documents separated by ---):
 
 Merge order (later wins):
   1. manifest_template — Jinja2 template string → Job scaffold + PodPatcher defaults
-  2. pod_spec          — pod spec fragment from resources (containers, volumes, pod fields)
+  2. user_pod_spec     — pod spec fragment from resources (containers, volumes, pod fields)
   3. rollout.config    — image, command, env vars, mounts → agent container
   4. rollout.config.overrides — per-rollout K8s overrides, name-matched containers
 
@@ -48,7 +48,7 @@ def build_job_name(rollout_id: str) -> str:
 
 def build_job_spec(
     rollout: Rollout,
-    pod_spec: dict[str, Any] | None,
+    user_pod_spec: dict[str, Any] | None,
     settings: ControllerSettings,
     manifest_template: str,
 ) -> dict[str, Any]:
@@ -56,7 +56,7 @@ def build_job_spec(
 
     Args:
         rollout:           The rollout to build a Job for.
-        pod_spec:          Pod spec fragment from the resource snapshot — containers, volumes,
+        user_pod_spec:     Pod spec fragment from the resource snapshot — containers, volumes,
                            nodeSelector, tolerations, etc. Sourced from resources["job_template"].
                            None means no user-provided spec; agent container is created bare.
         settings:          Controller settings (namespace, secret name, lite URL, ttl, ...).
@@ -72,10 +72,10 @@ def build_job_spec(
     job_dict: dict[str, Any] = copy.deepcopy(docs[0])
     patcher = PodPatcher.model_validate(docs[1] if len(docs) > 1 else {})
 
-    scaffold_pod_spec: dict[str, Any] = job_dict["spec"]["template"]["spec"]
+    pod_spec: dict[str, Any] = job_dict["spec"]["template"]["spec"]
 
     # --- 2. Normalise pod spec fragment from resources ---
-    user_pod = copy.deepcopy(pod_spec) if pod_spec else {}
+    user_pod = copy.deepcopy(user_pod_spec) if user_pod_spec else {}
     # Unwrap {"spec": {...}} form (backward compat).
     if "spec" in user_pod and "containers" not in user_pod:
         user_pod = user_pod["spec"]
@@ -86,19 +86,19 @@ def build_job_spec(
     user_deadline: int | None = user_pod.pop("activeDeadlineSeconds", None)
 
     # --- 3. Merge user pod spec into scaffold ---
-    scaffold_pod_spec["containers"] = user_containers  # replaces empty []
-    scaffold_pod_spec["volumes"] = _merge_by_name(patcher.volumes, user_volumes)  # user wins on name
-    _deep_merge(scaffold_pod_spec, user_pod)  # nodeSelector, tolerations, serviceAccountName, etc.
+    pod_spec["containers"] = user_containers  # replaces empty []
+    pod_spec["volumes"] = _merge_by_name(patcher.volumes, user_volumes)  # user wins on name
+    _deep_merge(pod_spec, user_pod)  # nodeSelector, tolerations, serviceAccountName, etc.
 
     # --- 4. Ensure agent container exists (before env injection) ---
-    _ensure_agent_container(scaffold_pod_spec)
+    _ensure_agent_container(pod_spec)
 
     # --- 5. Inject patcher env into ALL containers (container's own env wins on conflict) ---
-    for container in scaffold_pod_spec["containers"]:
+    for container in pod_spec["containers"]:
         container["env"] = _merge_env(patcher.env, container.get("env", []))
 
     # --- 6. Apply rollout.config named fields to agent container ---
-    agent = _get_agent_container(scaffold_pod_spec)
+    agent = _get_agent_container(pod_spec)
 
     if config.image:
         agent["image"] = config.image
@@ -118,7 +118,7 @@ def build_job_spec(
             agent["volumeMounts"].append(
                 {"name": m.name, "mountPath": m.mount_path, "readOnly": m.read_only}
             )
-        scaffold_pod_spec.setdefault("volumes", [])
+        pod_spec.setdefault("volumes", [])
         for m in config.mount:
             vol: dict[str, Any] = {"name": m.name}
             if m.source.startswith("/"):
@@ -127,7 +127,7 @@ def build_job_spec(
                 vol["persistentVolumeClaim"] = {"claimName": m.source[4:]}
             else:
                 vol["configMap"] = {"name": m.source}
-            scaffold_pod_spec["volumes"].append(vol)
+            pod_spec["volumes"].append(vol)
 
     # --- 7. Apply per-rollout overrides (name-matched container merge) ---
     if config.overrides:
@@ -137,11 +137,11 @@ def build_job_spec(
             oc_name = oc.get("name")
             if not oc_name:
                 continue
-            for container in scaffold_pod_spec["containers"]:
+            for container in pod_spec["containers"]:
                 if container.get("name") == oc_name:
                     _deep_merge(container, oc)
                     break
-        _deep_merge(scaffold_pod_spec, overrides)
+        _deep_merge(pod_spec, overrides)
 
     # --- 8. Set per-rollout job spec fields ---
     job_spec: dict[str, Any] = job_dict["spec"]
