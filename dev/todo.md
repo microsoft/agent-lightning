@@ -301,7 +301,7 @@ schema for per-container env/volume injection.
 
 ---
 
-## Simplify job construction: RolloutConfig.pod_spec + hook on_startup [ready]
+## Simplify job construction: RolloutConfig.pod_spec + hook on_startup [completed]
 
 Refactor the job construction flow to remove the three-layer merge and make
 the hook the single point of pod spec assembly.
