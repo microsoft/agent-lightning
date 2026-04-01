@@ -100,9 +100,8 @@ mode: agl-in-k8s
 agl_host_ip_bind: 0.0.0.0
 agl_host_port: 8080
 
-controller:
-  poll_interval_seconds: 10
-  max_queue_time_seconds: 3600
+# optional: custom Jinja2 job manifest template for the controller
+# job_manifest_template: /path/to/job-template.yaml.j2
 
 server_runtime:
   gateway_config: null
@@ -122,8 +121,7 @@ Field summary:
 | `agl_base_url_k8s_accessible` | `null` | URL reachable from pods |
 | `agl_host_ip_bind` | `0.0.0.0` | bind IP for host `agl-lite serve` (host mode) |
 | `agl_host_port` | `8080` | host serve port and local host-facing URL port |
-| `controller.poll_interval_seconds` | `10` | controller poll interval |
-| `controller.max_queue_time_seconds` | `3600` | max queue time before timeout |
+| `job_manifest_template` | `null` | path to a custom Jinja2 job manifest template; defaults to `deploy/controller/job-template.yaml.j2` |
 | `server_runtime.gateway_config` | `null` | optional gateway config path |
 | `server_runtime.hooks` | `null` | optional hooks module path |
 | `server_runtime.artifact_dir` | `null` | optional artifact directory |

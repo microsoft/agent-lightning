@@ -24,10 +24,9 @@ mode: agl-in-k8s
 agl_host_ip_bind: 0.0.0.0
 agl_host_port: 8080
 
-# Controller reconcile settings.
-controller:
-  poll_interval_seconds: 10
-  max_queue_time_seconds: 3600
+# Optional: path to a custom Jinja2 job manifest template for the controller.
+# Defaults to deploy/controller/job-template.yaml.j2 when unset.
+# job_manifest_template: /path/to/job-template.yaml.j2
 
 # Optional agl-lite server runtime paths.
 # Passed to `agl-lite serve` in agl-in-host and injected as env vars in agl-in-k8s.

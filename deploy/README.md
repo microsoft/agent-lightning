@@ -9,39 +9,51 @@ deploy/
 │   ├── k8s.yaml           # Deployment + Service
 │   └── README.md
 ├── controller/            # K8s reconciler (reuses agl-lite image)
-│   ├── k8s.yaml           # Deployment
-│   ├── rbac.yaml          # ServiceAccount + Role + RoleBinding
+│   ├── job-template.yaml.j2   # Default Jinja2 job manifest template
+│   ├── k8s.yaml               # Deployment
+│   ├── rbac.yaml              # ServiceAccount + Role + RoleBinding
 │   └── README.md
-├── .env.example           # all config (copy to .env)
+├── agl-lite.yaml.example  # Deploy config template (copy and edit)
 └── README.md              # this file
 ```
 
 ## Configuration
 
-- **`deploy/.env`** — all config: namespace, URLs, controller settings. AGL_KEY placeholder (commented out — set via env var or uncomment).
-- **`AGL_KEY`** — either uncomment in `.env` or `export AGL_KEY=...` in your shell.
+All deploy config lives in a YAML file. Copy the example and edit:
+
+```bash
+cp deploy/agl-lite.yaml.example deploy/agl-lite.yaml
+$EDITOR deploy/agl-lite.yaml
+```
+
+Set the API key via environment variable (never in the config file):
+
+```bash
+export AGL_KEY=$(openssl rand -hex 32)
+```
 
 ## Quick Start
 
 ```bash
 # 1. Copy and edit config
-cp deploy/.env.example deploy/.env
+cp deploy/agl-lite.yaml.example deploy/agl-lite.yaml
 
 # 2. Build image
 scripts/build_images.sh
 
-# 3. Set secret and deploy
+# 3. Deploy
 export AGL_KEY=$(openssl rand -hex 32)
-scripts/deploy.sh
+agl-lite deploy --config deploy/agl-lite.yaml
 
-# 4. Access from host
-kubectl -n agl port-forward svc/agl-lite 8080:8080
-export AGL_BASE_URL=http://localhost:8080
+# 4. Source the generated env file for host-side access
+source .local/agl-lite.env
 agl-client health
 ```
 
 ## Cleanup
 
 ```bash
-scripts/deploy.sh --cleanup
+agl-lite deploy --config deploy/agl-lite.yaml --cleanup
 ```
+
+See [docs/deploy.md](../docs/deploy.md) for full configuration reference.
