@@ -301,7 +301,7 @@ schema for per-container env/volume injection.
 
 ---
 
-## Simplify job construction: RolloutConfig.pod_spec + hook on_startup [discuss]
+## Simplify job construction: RolloutConfig.pod_spec + hook on_startup [ready]
 
 Refactor the job construction flow to remove the three-layer merge and make
 the hook the single point of pod spec assembly.
@@ -332,7 +332,7 @@ the hook the single point of pod spec assembly.
 
 ---
 
-## Convert deploy config from YAML to .env format [discuss]
+## Convert deploy config from YAML to .env format [ready]
 
 Replace `agl-lite deploy --config agl-lite.yaml` with
 `agl-lite deploy --env-file agl-lite.env` for consistency with the
