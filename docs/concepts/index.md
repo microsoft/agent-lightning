@@ -40,7 +40,7 @@ K8s Jobs are the execution unit. Pod UIDs serve as attempt IDs. The Job lifecycl
 
 ## How the pieces connect
 
-A typical RL iteration flows like this:
+A typical RL iteration flows like this (see [Task Lifecycle](task-lifecycle.md) for a detailed walkthrough):
 
 ```
 Algorithm                      agl-lite Service               K8s Cluster
@@ -69,6 +69,7 @@ Algorithm                      agl-lite Service               K8s Cluster
 
 | Topic | What you'll learn |
 |-------|-------------------|
+| [Task Lifecycle](task-lifecycle.md) | End-to-end walkthrough — how one dataset row becomes a running pod, produces a trajectory, and feeds back into training |
 | [Gateway](gateway.md) | How the LLM proxy works — routing, param injection, streaming, event capture |
 | [Data Store](store.md) | Rollouts, events, resources, model servers — the data layer |
 | [Controller](controller.md) | K8s reconciliation, Job lifecycle, retry, crash recovery |
