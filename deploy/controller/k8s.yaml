@@ -22,12 +22,6 @@ spec:
           command:
             - "agl-lite"
             - "controller"
-            - "--agl-base-url"
-            - "$(AGL_BASE_URL)"
-            - "--namespace"
-            - "$(AGL_K8S_NAMESPACE)"
-            - "--secret-name"
-            - "$(AGL_SECRET_NAME)"
             - "--job-manifest-template"
             - "/etc/agl/job-template.yaml.j2"
           env:
@@ -45,11 +39,11 @@ spec:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_BASE_URL
-            - name: AGL_K8S_NAMESPACE
+            - name: AGL_NAMESPACE
               valueFrom:
                 configMapKeyRef:
                   name: agl-lite-config
-                  key: AGL_K8S_NAMESPACE
+                  key: AGL_NAMESPACE
             - name: AGL_SECRET_NAME
               valueFrom:
                 configMapKeyRef:

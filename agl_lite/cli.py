@@ -27,26 +27,16 @@ def serve(
 
 @app.command()
 def controller(
-    agl_base_url: str = typer.Option(..., help="agl-lite server URL (AGL_BASE_URL)"),
-    namespace: str = typer.Option(..., help="K8s namespace for agent Jobs (AGL_NAMESPACE)"),
-    secret_name: str = typer.Option(..., help="K8s Secret name with API keys (AGL_SECRET_NAME)"),
     job_manifest_template: str = typer.Option(..., help="Path to Jinja2 job manifest template (AGL_JOB_MANIFEST_TEMPLATE)"),
 ) -> None:
     """Start the K8s controller (reconcile loop)."""
     import asyncio
-    import os
 
     from agl_lite.client import AglLiteClient
     from agl_lite.controller.config import ControllerSettings
     from agl_lite.controller.reconciler import Reconciler
 
-    settings = ControllerSettings(
-        base_url=agl_base_url,
-        key=os.environ.get("AGL_KEY", ""),
-        namespace=namespace,
-        secret_name=secret_name,
-        job_manifest_template=job_manifest_template,
-    )
+    settings = ControllerSettings(job_manifest_template=job_manifest_template)
 
     async def _run() -> None:
         api = AglLiteClient(base_url=settings.base_url, agl_key=settings.key or None)
