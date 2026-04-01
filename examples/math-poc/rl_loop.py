@@ -92,6 +92,24 @@ async def wait_for_rollouts(
     raise TimeoutError(f"Rollouts did not complete within {max_time}s")
 
 
+async def archive_rollouts(client: AglLiteClient, rollout_ids: list[str]) -> None:
+    # We ask the server to write to a log file.
+    # The server runs in host mode (vllm) or pod mode (mock).
+    # Writing to a simple .jsonl path will work locally. If the server is in K8s,
+    # it writes to its pod's working directory.
+    archive_path = "archive_rollouts.jsonl"
+    log(f"  Archiving {len(rollout_ids)} rollouts to {archive_path}...")
+    
+    try:
+        res = await client.archive_rollouts(
+            rollout_ids=rollout_ids,
+            backend=ArchiveBackend(type="jsonl", path=archive_path)
+        )
+        log(f"  Archived {res.archived} rollouts, purged {res.purged}.")
+    except Exception as e:
+        log(f"  [Error] Archive failed: {e}")
+
+
 async def run_iteration(
     client: AglLiteClient,
     resources_id: str,
@@ -174,6 +192,8 @@ async def run_iteration(
     log(f"  Rollouts: {len(succeeded)} succeeded, {len(failed)} failed")
     log(f"  Events: {model_request_count} model_request, {reward_count} reward")
     log(f"  Average reward: {avg_reward:.2f} ({int(total_reward)}/{len(succeeded)} correct)")
+
+    await archive_rollouts(client, enqueued_ids)
 
     return {
         "iteration": iteration,
