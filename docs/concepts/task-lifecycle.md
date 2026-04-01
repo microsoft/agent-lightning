@@ -7,20 +7,20 @@ This page traces a single task — one row from a dataset — from the moment th
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Algo  as Algorithm
+    participant Algo  as Algorithm<br/>(incl. Inference Engine)
     participant Svc   as agl-lite Service
     participant Ctrl  as Controller
     participant K8s   as Kubernetes
     participant Pod   as Agent Pod
-    participant LLM   as Inference Server
 
     Algo->>Svc: POST /api/rollouts<br/>(input, config, resources_id)
     Note over Svc: on_enqueue hook:<br/>set image, env vars, …
-
+    Note over Svc: rollout entry created<br/>in store
     Svc-->>Algo: Rollout (status: queuing)
 
     loop reconcile cycle
         Ctrl->>Svc: GET queuing rollouts
+        Svc-->>Ctrl: rollouts in queuing state
         Ctrl->>Svc: GET /api/resources/{id} → user_pod_spec
         Note over Ctrl: build_job_spec():<br/>manifest_template ⊕ user_pod_spec ⊕ rollout.config
         Ctrl->>K8s: create Job
@@ -32,13 +32,13 @@ sequenceDiagram
 
     loop agent steps
         Pod->>Svc: POST …/v1/chat/completions
-        Svc->>LLM: forward request
-        LLM-->>Svc: stream response
+        Svc->>Algo: forward request
+        Algo-->>Svc: stream response
         Svc-->>Pod: stream response
         Note over Svc: capture model_request event<br/>(transparent, no agent change)
+        Pod->>Svc: POST …/events (optional)
     end
 
-    Pod-->>Svc: POST …/events (optional)
     Pod->>K8s: exit 0
 
     K8s-->>Ctrl: Job Complete (watch event)
@@ -111,9 +111,9 @@ rollout.config (per-sample, set by algorithm / on_enqueue hook)
 
 | Layer | Source | Owner | What it contributes |
 |---|---|---|---|
-| `manifest_template` | Jinja2 file, mounted as ConfigMap, path from `--job-manifest-template` | Infra operator | Job scaffold (apiVersion, labels, ttl, restartPolicy), PodPatcher env vars (gateway URLs, API key refs) injected into **all** containers |
-| `user_pod_spec` | `resources["job_template"]`, fetched from store | Algorithm / dataset author | Container specs (image, resources, volumeMounts), volumes, pod-level fields (nodeSelector, tolerations, serviceAccountName) |
-| `rollout.config` | Rollout record | Algorithm (per sample) | Per-sample overrides: image, command, extra env vars, mounts, timeout, max retries |
+| `manifest_template` | Jinja2 file, mounted as ConfigMap, path from `--job-manifest-template` | Infra operator | Job scaffold (apiVersion, labels, ttl, restartPolicy), PodPatcher env vars (gateway URLs, API key refs) injected into **all** containers<br/>example: [deploy/controller/job-template.yaml.j2](deploy/controller/job-template.yaml.j2) |
+| `user_pod_spec` | `resources["job_template"]`, fetched from store | Algorithm / dataset author | Container specs (image, resources, volumeMounts), volumes, pod-level fields (nodeSelector, tolerations, serviceAccountName)<br/>example: [examples/swe_bench/job-template.yaml](examples/swe_bench/job-template.yaml) |
+| `rollout.config` | `on_enqueue` hook, code | Algorithm (per sample) | Per-sample overrides: image, command, extra env vars, mounts, timeout, max retries<br/>example: [examples/swe_bench/hooks.py](examples/swe_bench/hooks.py) |
 
 ### Merge precedence
 
