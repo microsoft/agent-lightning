@@ -1,0 +1,73 @@
+# K8s Job manifest scaffold — rendered by agl-lite controller (Jinja2).
+#
+# Two YAML documents separated by ---:
+#   Document 0: Job manifest scaffold (standard K8s, containers/volumes populated from
+#               the rollout's job_template resource at runtime)
+#   Document 1: PodPatcher — env vars and volumes injected into ALL containers in the pod
+#               (user's own env/volume entries win on name conflict)
+#
+# Jinja2 variables injected by job_builder:
+#   job_name, rollout_id, namespace, secret_name, lite_url, ttl_after_finished
+#
+# To customise: copy this file, edit, and set controller.job_manifest_template in deploy config.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ job_name }}
+  namespace: {{ namespace }}
+  labels:
+    app.kubernetes.io/managed-by: agl-lite
+    agl-lite/rollout-id: {{ rollout_id }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ ttl_after_finished }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: agl-lite
+        agl-lite/rollout-id: {{ rollout_id }}
+    spec:
+      restartPolicy: Never
+      containers: []
+      volumes: []
+
+---
+
+# PodPatcher: injected into every container in the pod by job_builder.
+# env  — prepended to each container's env list; container's own values win on name conflict.
+# volumes — merged into pod spec volumes; user's volumes win on name conflict.
+env:
+  - name: AGL_POD_UID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid
+  - name: AGL_KEY
+    valueFrom:
+      secretKeyRef:
+        name: {{ secret_name }}
+        key: AGL_KEY
+        optional: true
+  - name: OPENAI_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: {{ secret_name }}
+        key: AGL_KEY
+        optional: true
+  - name: ANTHROPIC_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: {{ secret_name }}
+        key: AGL_KEY
+        optional: true
+  - name: OPENAI_BASE_URL
+    value: "{{ lite_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)/v1"
+  - name: ANTHROPIC_BASE_URL
+    value: "{{ lite_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)"
+  - name: AGL_EVENT_URL
+    value: "{{ lite_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)/events"
+  - name: AGL_ROLLOUT_ID
+    value: "{{ rollout_id }}"
+  - name: AGL_ATTEMPT_ID
+    value: "$(AGL_POD_UID)"
+volumes: []

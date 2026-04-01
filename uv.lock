@@ -19,6 +19,7 @@ dependencies = [
 
 [package.optional-dependencies]
 controller = [
+    { name = "jinja2" },
     { name = "kr8s" },
 ]
 dev = [
@@ -41,6 +42,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "jinja2", marker = "extra == 'controller'", specifier = ">=3.1.6" },
     { name = "kr8s", marker = "extra == 'controller'", specifier = ">=0.18.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },

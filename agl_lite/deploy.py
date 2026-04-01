@@ -28,6 +28,11 @@ class DeployMode(str, Enum):
 class ControllerConfig(BaseModel):
     poll_interval_seconds: int = Field(default=10, ge=1)
     max_queue_time_seconds: int = Field(default=3600, ge=1)
+    job_manifest_template: str | None = Field(
+        default=None,
+        description="Path to a custom Jinja2 job manifest template. "
+                    "Defaults to the packaged deploy/controller/job-template.yaml.j2 when unset.",
+    )
 
 
 class ServerRuntimeConfig(BaseModel):

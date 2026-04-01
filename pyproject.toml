@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 controller = [
+    "jinja2>=3.1.6",
     "kr8s>=0.18.0",
 ]
 dev = [

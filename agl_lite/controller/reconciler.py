@@ -17,7 +17,7 @@ import structlog
 
 from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.controller.config import ControllerSettings
-from agl_lite.controller.job_builder import build_job_name, build_job_spec
+from agl_lite.controller.job_builder import build_job_name, build_job_spec, load_manifest_template
 from agl_lite.schemas.api import PatchRolloutRequest
 from agl_lite.schemas.resources import ResourcesUpdate
 from agl_lite.schemas.rollout import Rollout, RolloutStatus
@@ -84,6 +84,7 @@ class Reconciler:
         self._k8s = k8s
         self._settings = settings
         self._resources_cache: dict[str, ResourcesUpdate] = {}
+        self._manifest_template: str = load_manifest_template(settings.job_manifest_template)
         self._stop = asyncio.Event()
 
     async def run(self) -> None:
@@ -186,7 +187,7 @@ class Reconciler:
         job_template = await self._get_job_template(rollout.resources_id)
 
         # Build and create Job.
-        manifest = build_job_spec(rollout, job_template, self._settings)
+        manifest = build_job_spec(rollout, job_template, self._settings, self._manifest_template)
         try:
             await self._k8s.create_job(manifest)
             log.info("Job created", rollout_id=rollout.rollout_id, job_name=job_name)

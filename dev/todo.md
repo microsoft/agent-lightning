@@ -265,6 +265,42 @@ docs/
 
 ---
 
+## job_builder: Jinja2 template + PodPatcher [ongoing]
+
+Refactor `agl_lite/controller/job_builder.py` to move the hardcoded Job manifest
+structure and controller env vars into a Jinja2 template, with a `PodPatcher`
+schema for per-container env/volume injection.
+
+**Design:**
+- `deploy/controller/job-template.yaml.j2`: two YAML documents separated by `---`
+  - Doc 0: Job manifest scaffold (apiVersion, kind, metadata, spec shell with
+    `restartPolicy: Never`, empty `containers: []`, empty `volumes: []`)
+  - Doc 1: `PodPatcher` — controller env vars (with Jinja2 variables) + default volumes
+- `PodPatcher(BaseModel)` in `job_builder.py`: validates doc 1 (`env`, `volumes`)
+- `build_job_spec` renders the template, parses both docs, then:
+  1. Merges user's `job_template` pod spec fragment into the scaffold
+     (containers replace `[]`, volumes merged by name, pod-level fields deep-merged)
+  2. Injects `patcher.env` into ALL containers (user wins on name conflict)
+  3. Injects `patcher.volumes` into pod spec (user wins on name conflict)
+  4. Applies `rollout.config` named fields to "agent" container
+  5. Applies `rollout.config.overrides`
+- `ControllerConfig` in `deploy.py`: add `job_manifest_template: str | None`
+- `ControllerSettings` in `controller/config.py`: add `job_manifest_template: str | None`
+- Template loaded once at controller startup (or lazily), path resolved relative
+  to config file or falling back to packaged default
+- Update `controller/reconciler.py` to load/pass template to `build_job_spec`
+- Update tests in `tests/controller/test_job_builder.py`
+
+**Files changed:**
+- `deploy/controller/job-template.yaml.j2` (new)
+- `agl_lite/controller/job_builder.py`
+- `agl_lite/controller/config.py`
+- `agl_lite/controller/reconciler.py`
+- `agl_lite/deploy.py`
+- `tests/controller/test_job_builder.py`
+
+---
+
 ## Phase 7: Polish [backlog]
 
 - [ ] Structured logging (JSON, with rollout_id/attempt_id context)
