@@ -29,6 +29,10 @@ spec:
             - "--secret-name"
             - "$(AGL_SECRET_NAME)"
           env:
+            - name: AGL_POLL_INTERVAL
+              value: "10"
+            - name: AGL_MAX_QUEUE_TIME
+              value: "3600"
             - name: AGL_KEY
               valueFrom:
                 secretKeyRef:
@@ -49,13 +53,3 @@ spec:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_SECRET_NAME
-            - name: AGL_POLL_INTERVAL
-              valueFrom:
-                configMapKeyRef:
-                  name: agl-lite-config
-                  key: AGL_POLL_INTERVAL
-            - name: AGL_MAX_QUEUE_TIME
-              valueFrom:
-                configMapKeyRef:
-                  name: agl-lite-config
-                  key: AGL_MAX_QUEUE_TIME

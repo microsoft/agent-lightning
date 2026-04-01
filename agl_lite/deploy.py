@@ -25,16 +25,6 @@ class DeployMode(str, Enum):
     EXTERNAL = "agl-external"
 
 
-class ControllerConfig(BaseModel):
-    poll_interval_seconds: int = Field(default=10, ge=1)
-    max_queue_time_seconds: int = Field(default=3600, ge=1)
-    job_manifest_template: str | None = Field(
-        default=None,
-        description="Path to a custom Jinja2 job manifest template. "
-                    "Defaults to the packaged deploy/controller/job-template.yaml.j2 when unset.",
-    )
-
-
 class ServerRuntimeConfig(BaseModel):
     gateway_config: str | None = Field(default=None, description="Path to gateway config YAML (loaded by agl-lite serve).")
     hooks: str | None = Field(default=None, description="Path to hooks Python file (loaded by agl-lite serve).")
@@ -52,8 +42,12 @@ class DeployConfig(BaseModel):
     agl_host_port: int = Field(default=8080, ge=1, le=65535)
     agl_host_ip_bind: str = Field(default="0.0.0.0")
 
-    controller: ControllerConfig = Field(default_factory=ControllerConfig)
     server_runtime: ServerRuntimeConfig = Field(default_factory=ServerRuntimeConfig)
+    job_manifest_template: str | None = Field(
+        default=None,
+        description="Path to a custom Jinja2 job manifest template for the controller. "
+                    "Defaults to the packaged deploy/controller/job-template.yaml.j2 when unset.",
+    )
 
     wait_ready_timeout_seconds: int = Field(default=120, ge=1)
     local_state_dir: str = Field(default=".local", description="Directory for generated local state files (.env, pid, logs).")
@@ -319,8 +313,6 @@ def deploy(config: str, cleanup: bool) -> None:
         "AGL_K8S_NAMESPACE": ns,
         "AGL_SECRET_NAME": SECRET_NAME,
         "AGL_BASE_URL": k8s_accessible_url,
-        "AGL_POLL_INTERVAL": str(cfg.controller.poll_interval_seconds),
-        "AGL_MAX_QUEUE_TIME": str(cfg.controller.max_queue_time_seconds),
     }
     if cfg.server_runtime.gateway_config:
         cm_env["AGL_GATEWAY_CONFIG"] = cfg.server_runtime.gateway_config
