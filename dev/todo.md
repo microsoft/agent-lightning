@@ -301,6 +301,65 @@ schema for per-container env/volume injection.
 
 ---
 
+## Simplify job construction: RolloutConfig.pod_spec + hook on_startup [discuss]
+
+Refactor the job construction flow to remove the three-layer merge and make
+the hook the single point of pod spec assembly.
+
+**Design decisions agreed:**
+- `RolloutConfig` shrinks to `{pod_spec, timeout, max_retries}` — remove `image`,
+  `command`, `environment_variables`, `mount`, `overrides`; hook writes directly
+  into `pod_spec` per-sample
+- Hook loads pod spec template once via `on_startup(self, store)`, stores as
+  `self._pod_spec`; deep-copies and modifies per request in `on_enqueue`
+- Hook-specific config (e.g. template path) communicated via env vars — hook
+  author's responsibility to document
+- `RolloutHooks` base class gains: `on_startup(store)` lifecycle method,
+  `copy_pod_spec()` helper, `get_container(pod_spec, name)` static helper
+- `build_job_spec(rollout, settings, manifest_template)` — `user_pod_spec` param
+  removed; controller merges `rollout.config.pod_spec` instead
+- `_get_job_template`, `_resources_cache` removed from reconciler — controller
+  no longer fetches resources
+
+**Files to change:**
+- `agl_lite/schemas/rollout.py` — simplify `RolloutConfig`
+- `agl_lite/hooks.py` — add `on_startup`, `copy_pod_spec`, `get_container`
+- `agl_lite/controller/job_builder.py` — remove `user_pod_spec` param
+- `agl_lite/controller/reconciler.py` — remove resources fetch + cache
+- `agl_lite/server/` — call `hook.on_startup(store)` in FastAPI lifespan
+- `examples/swe_bench/hooks.py` — rewrite using new pattern
+- `tests/` — update all affected tests
+
+---
+
+## Convert deploy config from YAML to .env format [discuss]
+
+Replace `agl-lite deploy --config agl-lite.yaml` with
+`agl-lite deploy --env-file agl-lite.env` for consistency with the
+env-var-based config pattern used everywhere else in the system.
+
+**Design decisions agreed:**
+- `.env` file format (`KEY=VALUE`, `#` comments) — universally understood,
+  consistent with K8s ConfigMap/Secret patterns
+- Explicit `--env-file` flag (standard name, used by docker-compose/podman) —
+  keeps safety of `--config`, makes format self-evident, no ambient env reading
+- `DeployConfig(BaseModel)` —> `DeploySettings(BaseSettings)` with
+  `env_prefix="AGL_"`; pydantic-settings loads the file via `_env_file` kwarg
+- `ServerRuntimeConfig` wrapper class removed — `gateway_config`, `hooks`,
+  `artifact_dir` promote to top-level `AGL_GATEWAY_CONFIG`, `AGL_HOOKS`,
+  `AGL_ARTIFACT_DIR`
+- `deploy/agl-lite.yaml.example` —> `deploy/agl-lite.env.example`
+- `docs/deploy.md` updated accordingly
+
+**Files to change:**
+- `agl_lite/deploy.py` — `DeployConfig` → `DeploySettings(BaseSettings)`,
+  flatten `ServerRuntimeConfig`, rename CLI arg to `--env-file`
+- `agl_lite/cli.py` — update deploy entrypoint arg
+- `deploy/agl-lite.yaml.example` — replace with `deploy/agl-lite.env.example`
+- `deploy/README.md`, `docs/deploy.md` — update docs
+
+---
+
 ## Phase 7: Polish [backlog]
 
 - [ ] Structured logging (JSON, with rollout_id/attempt_id context)
