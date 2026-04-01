@@ -339,8 +339,11 @@ Replace `agl-lite deploy --config agl-lite.yaml` with
 env-var-based config pattern used everywhere else in the system.
 
 **Design decisions agreed:**
-- `.env` file format (`KEY=VALUE`, `#` comments) — universally understood,
-  consistent with K8s ConfigMap/Secret patterns
+- `.env` file is the single project config for a deployment — `DeploySettings`
+  only reads its declared fields, extra vars (hook config, model endpoints,
+  experiment params) are ignored by pydantic-settings and consumed by other
+  components via `os.environ`; `source deploy/agl-lite.env` in shell populates
+  the environment for all components at once
 - Explicit `--env-file` flag (standard name, used by docker-compose/podman) —
   keeps safety of `--config`, makes format self-evident, no ambient env reading
 - `DeployConfig(BaseModel)` —> `DeploySettings(BaseSettings)` with
