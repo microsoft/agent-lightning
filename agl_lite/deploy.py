@@ -336,6 +336,19 @@ def deploy(config: str, cleanup: bool) -> None:
     _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/controller/rbac.yaml")])
     _ensure_minikube_host_dns(k8s_accessible_url)
 
+    # ConfigMap for the Jinja2 job manifest template.
+    # Uses cfg.job_manifest_template if set, otherwise the packaged default.
+    job_template_path = (
+        Path(cfg.job_manifest_template)
+        if cfg.job_manifest_template
+        else repo_root / "deploy/controller/job-template.yaml.j2"
+    )
+    _run_shell(
+        f"kubectl -n {shlex.quote(ns)} create configmap agl-controller-job-template"
+        f" --from-file=job-template.yaml.j2={shlex.quote(str(job_template_path))}"
+        " --dry-run=client -o yaml | kubectl apply -f -"
+    )
+
     if cfg.mode == DeployMode.IN_K8S:
         _run(["kubectl", "apply", "-n", ns, "-f", str(repo_root / "deploy/agl-lite/k8s.yaml")])
 

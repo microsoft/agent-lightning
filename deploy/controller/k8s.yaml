@@ -28,6 +28,8 @@ spec:
             - "$(AGL_K8S_NAMESPACE)"
             - "--secret-name"
             - "$(AGL_SECRET_NAME)"
+            - "--job-manifest-template"
+            - "/etc/agl/job-template.yaml.j2"
           env:
             - name: AGL_POLL_INTERVAL
               value: "10"
@@ -53,3 +55,11 @@ spec:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_SECRET_NAME
+          volumeMounts:
+            - name: job-template
+              mountPath: /etc/agl
+              readOnly: true
+      volumes:
+        - name: job-template
+          configMap:
+            name: agl-controller-job-template
