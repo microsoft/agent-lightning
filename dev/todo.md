@@ -332,7 +332,7 @@ the hook the single point of pod spec assembly.
 
 ---
 
-## Convert deploy config from YAML to .env format [ongoing]
+## Convert deploy config from YAML to .env format [completed]
 
 Replace `agl-lite deploy --config agl-lite.yaml` with
 `agl-lite deploy --env-file agl-lite.env` for consistency with the
