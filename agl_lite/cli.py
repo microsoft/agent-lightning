@@ -40,10 +40,7 @@ def controller(
     agl_base_url: str = typer.Option("http://localhost:8000", help="agl-lite server URL"),
     namespace: str = typer.Option("default", help="K8s namespace for agent Jobs"),
     secret_name: str = typer.Option("agl-api-keys", help="K8s Secret name with API keys"),
-    job_manifest_template: str = typer.Option(
-        "deploy/controller/job-template.yaml.j2",
-        help="Path to Jinja2 job manifest template (AGL_JOB_MANIFEST_TEMPLATE)",
-    ),
+    job_manifest_template: str = typer.Option(..., help="Path to Jinja2 job manifest template (AGL_JOB_MANIFEST_TEMPLATE)"),
 ) -> None:
     """Start the K8s controller (reconcile loop)."""
     import asyncio
