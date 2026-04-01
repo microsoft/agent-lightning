@@ -3,6 +3,9 @@
 Mockai echoes the last user message, so we embed \\boxed{answer} in the question.
 The agent's parser extracts it as the "model response". Alternating pattern:
 even index → correct answer, odd index → wrong answer (deterministic rewards).
+
+Required env vars:
+  AGL_POD_SPEC_TEMPLATE  path to examples/math-poc/job-template.yaml
 """
 
 from __future__ import annotations
@@ -25,28 +28,30 @@ class MathMockHooks(RolloutHooks):
         question = raw.get("question", "")
         ground_truth = raw.get("answer", "")
 
-        # Read sample index from metadata for alternating pattern
+        # Read sample index from metadata for alternating pattern.
         meta = request.metadata
         idx = 0
         if isinstance(meta, dict):
             idx = meta.get("sample_idx_in_batch", 0) or 0
         elif meta is not None:
-            idx = meta.sample_idx_in_batch or 0
+            idx = getattr(meta, "sample_idx_in_batch", 0) or 0
 
-        # Alternating: even=correct, odd=wrong (deterministic mock rewards)
-        correct = idx % 2 == 0
-        boxed_value = ground_truth if correct else WRONG_ANSWER
+        # Alternating: even=correct, odd=wrong (deterministic mock rewards).
+        boxed_value = ground_truth if idx % 2 == 0 else WRONG_ANSWER
         augmented = question + f"\n\\boxed{{{boxed_value}}}"
 
-        # Set agent-facing task input (image, command, etc. come from job-template)
-        if request.config is None:
-            request.config = RolloutConfig(image="")
-        request.config.environment_variables["AGL_TASK_INPUT"] = json.dumps(augmented)
+        # Build pod spec and inject per-sample env var.
+        pod_spec = self.copy_pod_spec()
+        agent = self.get_container(pod_spec, "agent")
+        agent.setdefault("env", [])
+        agent["env"].append({"name": "AGL_TASK_INPUT", "value": json.dumps(augmented)})
 
+        if request.config is None:
+            request.config = RolloutConfig()
+        request.config.pod_spec = pod_spec
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
-        # Read ground_truth directly from rollout.input
         gt = ""
         if isinstance(rollout.input, dict):
             gt = rollout.input.get("answer", "")

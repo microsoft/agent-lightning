@@ -39,15 +39,15 @@ if [ ! -f "$MODE_DIR/.env.example" ]; then
     echo "ERROR: $MODE_DIR/.env.example not found"
     exit 1
 fi
-if [ ! -f "$MODE_DIR/deploy.yaml" ]; then
-    echo "ERROR: $MODE_DIR/deploy.yaml not found"
+if [ ! -f "$MODE_DIR/deploy.env" ]; then
+    echo "ERROR: $MODE_DIR/deploy.env not found"
     exit 1
 fi
 source "$MODE_DIR/.env.example"
-DEPLOY_CONFIG="$MODE_DIR/deploy.yaml"
-NS="$(uv run python -c 'import yaml,sys;print((yaml.safe_load(open(sys.argv[1])) or {}).get("namespace",""))' "$DEPLOY_CONFIG")"
+DEPLOY_CONFIG="$MODE_DIR/deploy.env"
+NS="$(grep -E '^AGL_NAMESPACE=' "$DEPLOY_CONFIG" | cut -d= -f2 | tr -d '[:space:]')"
 if [ -z "$NS" ]; then
-    echo "ERROR: namespace is missing in $DEPLOY_CONFIG"
+    echo "ERROR: AGL_NAMESPACE is missing in $DEPLOY_CONFIG"
     exit 1
 fi
 
@@ -88,7 +88,7 @@ scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
 # --- Deploy K8s infra ---
 echo ""
 echo "=== Deploying with config: $DEPLOY_CONFIG ==="
-uv run agl-lite deploy --config "$DEPLOY_CONFIG" 2>&1 | tee "$LOG_DIR/deploy.log"
+uv run agl-lite deploy --env-file "$DEPLOY_CONFIG" 2>&1 | tee "$LOG_DIR/deploy.log"
 
 # --- Deploy mockai (mock mode only) ---
 if [ "$MODE" = "mock" ]; then
@@ -172,7 +172,7 @@ if [ "$MODE" = "mock" ]; then
 else
     export AGL_BASE_URL=http://localhost:8080
 fi
-export AGL_K8S_NAMESPACE="$NS"
+export AGL_NAMESPACE="$NS"
 export AGL_KEY
 
 # --- Run algorithm ---

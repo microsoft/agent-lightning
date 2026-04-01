@@ -1,27 +1,15 @@
 #!/usr/bin/env python3
-"""Unified RL loop -- task-agnostic orchestration for math-poc.
+"""Unified RL loop — task-agnostic orchestration for math-poc.
 
-Algorithm contract -- for each rollout, the algorithm only sets:
-  - input:        raw dataset row (full JSONL content, e.g., {"question": ..., "answer": ...})
-  - resources_id: link to the registered resource snapshot (job_template, etc.)
-  - metadata:     algorithm control indexes (batch_idx, sample_idx_in_batch, etc.)
+Algorithm contract — for each rollout, the algorithm only sets:
+  - input:     raw dataset row (full JSONL content, e.g., {"question": ..., "answer": ...})
+  - metadata:  algorithm control indexes (batch_idx, sample_idx_in_batch, etc.)
 
 Everything else is handled by hooks loaded into the agl-lite server:
-  - on_enqueue:   reads input, sets config.environment_variables.AGL_TASK_INPUT.
-                  Image, command, resources etc. come from job-template defaults.
+  - on_startup:   loads pod spec template from AGL_POD_SPEC_TEMPLATE
+  - on_enqueue:   reads input, builds pod spec, injects AGL_TASK_INPUT into container env
   - on_succeeded: reads rollout.input for ground_truth, extracts answer from events,
-                  computes reward, posts reward event to store.
-
-Works with both mock and vLLM modes -- the mode is determined by which
-hooks module is loaded into agl-lite serve.
-
-Usage:
-    export AGL_BASE_URL=http://localhost:8080
-    export AGL_KEY=<your-key>
-    export AGL_MODEL_NAME=<model>
-    export AGL_MODEL_ENDPOINT=<endpoint>
-    python examples/math-poc/rl_loop_v2.py
-"""
+                  computes reward, posts reward event to store."""
 
 from __future__ import annotations
 
@@ -34,23 +22,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import yaml
-
 from agl_lite.client import AglLiteClient, AglLiteError
-from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
+from agl_lite.schemas.api import ArchiveBackend, EnqueueRolloutRequest, RegisterModelRequest
 from agl_lite.schemas.rollout import RolloutStatus
 
-# --- Config (from env, set by run.sh from .env.example) ---
-
+# --- Config (from env, set by run.sh) ---
 MODEL_NAME = os.environ.get("AGL_MODEL_NAME", "mock-llm")
 MODEL_ENDPOINT = os.environ.get("AGL_MODEL_ENDPOINT", "")
 BATCH_SIZE = int(os.environ.get("AGL_BATCH_SIZE", "5"))
 NUM_ITERATIONS = int(os.environ.get("AGL_NUM_ITERATIONS", "1"))
 POLL_INTERVAL = int(os.environ.get("AGL_POLL_INTERVAL_SEC", "5"))
 MAX_POLL_TIME = int(os.environ.get("AGL_MAX_POLL_TIME", "300"))
-
-DATA_DIR = Path(__file__).parent / "data"
-MODE_DIR = Path(__file__).parent / os.environ.get("AGL_MODEL_MODE", "vllm")
 
 
 def log(msg: str) -> None:
@@ -112,7 +94,6 @@ async def archive_rollouts(client: AglLiteClient, rollout_ids: list[str]) -> Non
 
 async def run_iteration(
     client: AglLiteClient,
-    resources_id: str,
     dataset: list[dict],
     iteration: int,
 ) -> dict:
@@ -135,11 +116,11 @@ async def run_iteration(
         log(f"    [{i}] Q: {q}")
         log(f"         GT: {item['answer']}")
 
-    # Enqueue rollouts -- algorithm only sets input, resources_id, metadata
+    # Enqueue rollouts — algorithm sets input and metadata only.
+    # on_enqueue hook assembles the pod spec and injects per-sample env vars.
     requests = [
         EnqueueRolloutRequest(
-            resources_id=resources_id,
-            input=item,  # full JSONL row -- hooks read and transform
+            input=item,
             metadata={"batch_idx": iteration, "sample_idx_in_batch": i},
         )
         for i, item in enumerate(batch)
@@ -193,7 +174,7 @@ async def run_iteration(
     log(f"  Events: {model_request_count} model_request, {reward_count} reward")
     log(f"  Average reward: {avg_reward:.2f} ({int(total_reward)}/{len(succeeded)} correct)")
 
-    await archive_rollouts(client, enqueued_ids)
+    await archive_rollouts(client, rollout_ids)
 
     return {
         "iteration": iteration,
@@ -221,18 +202,8 @@ async def main() -> None:
     client = AglLiteClient(base_url=base_url, agl_key=agl_key)
 
     try:
-        # --- Setup: register resources ---
         log(f"")
         log(f"--- Setup ---")
-        template_path = Path(__file__).parent / "job-template.yaml"
-        with open(template_path) as f:
-            job_template = yaml.safe_load(f)
-        log(f"  Job template: {template_path}")
-
-        res = await client.add_resources({"job_template": job_template})
-        resources_id = res.resources_id
-        log(f"  Resources registered: {resources_id}")
-
         dataset = load_dataset()
         log(f"  Dataset loaded: {len(dataset)} problems")
 
@@ -248,7 +219,7 @@ async def main() -> None:
         # --- Run iterations ---
         results = []
         for i in range(1, NUM_ITERATIONS + 1):
-            r = await run_iteration(client, resources_id, dataset, iteration=i)
+            r = await run_iteration(client, dataset, iteration=i)
             results.append(r)
 
         # --- Final Summary ---

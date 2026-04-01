@@ -2,6 +2,9 @@
 
 Plain questions sent to the model. Reward computed by numeric comparison
 of the agent's \\boxed{answer} with the ground truth.
+
+Required env vars:
+  AGL_POD_SPEC_TEMPLATE  path to examples/math-poc/job-template.yaml
 """
 
 from __future__ import annotations
@@ -22,19 +25,21 @@ class MathVllmHooks(RolloutHooks):
         raw = request.input if isinstance(request.input, dict) else {}
         question = raw.get("question", "")
 
-        # Set agent-facing task input (image, command, etc. come from job-template)
-        if request.config is None:
-            request.config = RolloutConfig(image="")
-        request.config.environment_variables["AGL_TASK_INPUT"] = json.dumps(question)
-        # Pass model name so agent knows which model to call
+        # Build pod spec and inject per-sample env vars.
+        pod_spec = self.copy_pod_spec()
+        agent = self.get_container(pod_spec, "agent")
+        agent.setdefault("env", [])
+        agent["env"].append({"name": "AGL_TASK_INPUT", "value": json.dumps(question)})
         model_name = os.environ.get("AGL_MODEL_NAME", "")
         if model_name:
-            request.config.environment_variables.setdefault("AGL_MODEL_NAME", model_name)
+            agent["env"].append({"name": "AGL_MODEL_NAME", "value": model_name})
 
+        if request.config is None:
+            request.config = RolloutConfig()
+        request.config.pod_spec = pod_spec
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
-        # Read ground_truth directly from rollout.input
         gt = ""
         if isinstance(rollout.input, dict):
             gt = rollout.input.get("answer", "")
