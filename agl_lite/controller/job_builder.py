@@ -110,7 +110,7 @@ def _template_context(rollout: Rollout, settings: ControllerSettings) -> dict[st
         "job_name": build_job_name(rollout.rollout_id),
         "rollout_id": rollout.rollout_id,
         "namespace": settings.namespace,
-        "lite_url": settings.base_url,
+        "base_url": settings.base_url,
         "ttl_after_finished": settings.ttl_after_finished,
     }
 

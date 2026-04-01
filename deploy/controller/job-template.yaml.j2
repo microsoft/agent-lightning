@@ -7,7 +7,7 @@
 #               (user's own env/volume entries win on name conflict)
 #
 # Jinja2 variables injected by job_builder:
-#   job_name, rollout_id, namespace, lite_url, ttl_after_finished
+#   job_name, rollout_id, namespace, base_url, ttl_after_finished
 #
 # To customise: copy this file, edit, and set AGL_JOB_MANIFEST_TEMPLATE in deploy config.
 
@@ -61,11 +61,11 @@ env:
         key: AGL_KEY
         optional: true
   - name: OPENAI_BASE_URL
-    value: "{{ lite_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)/v1"
+    value: "{{ base_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)/v1"
   - name: ANTHROPIC_BASE_URL
-    value: "{{ lite_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)"
+    value: "{{ base_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)"
   - name: AGL_EVENT_URL
-    value: "{{ lite_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)/events"
+    value: "{{ base_url }}/rollout/{{ rollout_id }}/attempt/$(AGL_POD_UID)/events"
   - name: AGL_ROLLOUT_ID
     value: "{{ rollout_id }}"
   - name: AGL_ATTEMPT_ID

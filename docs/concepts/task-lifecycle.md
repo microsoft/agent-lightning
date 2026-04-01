@@ -132,11 +132,11 @@ env:
   - name: AGL_POD_UID          # K8s Downward API — becomes the attempt_id
     valueFrom: {fieldRef: {fieldPath: metadata.uid}}
   - name: OPENAI_BASE_URL
-    value: "{lite_url}/rollout/{rollout_id}/attempt/$(AGL_POD_UID)/v1"
+    value: "{base_url}/rollout/{rollout_id}/attempt/$(AGL_POD_UID)/v1"
   - name: AGL_KEY              # from K8s Secret
     valueFrom: {secretKeyRef: …}
   - name: AGL_EVENT_URL
-    value: "{lite_url}/rollout/{rollout_id}/attempt/$(AGL_POD_UID)/events"
+    value: "{base_url}/rollout/{rollout_id}/attempt/$(AGL_POD_UID)/events"
   - name: AGL_ROLLOUT_ID
     value: "{rollout_id}"
   …
