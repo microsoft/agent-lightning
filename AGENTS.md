@@ -55,7 +55,41 @@ Local environment setup and secrets are in `.local/` (gitignored). See `.local/R
 - **Conventional commits**: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
 - Run tests: `uv run pytest`
 
-## Avoid Abusing Default Values
+## Config Classes Are Pure Data — CLI Owns Env Var Mapping
+
+All config/settings classes are plain `pydantic.BaseModel` — pure data carriers with no ambient environment access. **The CLI (`cli.py`) is the only place that reads `os.environ`** and constructs config objects explicitly.
+
+**Never do this:**
+```python
+# BAD — BaseSettings reads os.environ implicitly
+class ServerSettings(BaseSettings):
+    gateway_config: str | None = None  # silently reads GATEWAY_CONFIG from env
+    model_config = {"env_prefix": "AGL_"}
+```
+
+**Do this instead:**
+```python
+# GOOD — plain model, constructed explicitly in cli.py
+class ServerSettings(BaseModel):
+    gateway_config: str | None = None
+
+# In cli.py:
+settings = ServerSettings(
+    gateway_config=os.environ.get("AGL_GATEWAY_CONFIG"),
+)
+```
+
+**Why:**
+- Tests construct settings with zero `monkeypatch.setenv` noise
+- All env var → field mappings are visible in one file (`cli.py`), not scattered across classes with different `env_prefix` rules
+- No silent ambient reads — if a field is missing, the failure is explicit at the CLI boundary
+- `BaseSettings` `env_prefix` rules are subtle and error-prone (e.g. `env_prefix=""` + field `agl_key` accidentally reads `AGL_KEY` while `gateway_config` reads `GATEWAY_CONFIG`, not `AGL_GATEWAY_CONFIG`)
+
+**The one exception:** `DeploySettings` parses an explicit `.env` file given by the user via `--env-file`. This is not ambient env reading — it's "parse this specific file into a struct." It may use `python-dotenv` for parsing, but the result is still constructed explicitly.
+
+**The rule:** if a class reads `os.environ` without being explicitly told to, it violates this principle.
+
+
 
 agl-lite is system-level infrastructure code that is called through deep stacks — CLI → controller → reconciler → job builder → K8s. At this level, default values are a liability, not a convenience.
 

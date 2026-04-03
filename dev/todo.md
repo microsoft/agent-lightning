@@ -78,7 +78,28 @@
 
 ---
 
-## Logging persistence [backlog]
+## Settings refactor: BaseModel + CLI owns env mapping [ready]
+
+All config classes currently subclass `BaseSettings` and read `os.environ` implicitly.
+Refactor to plain `BaseModel`; CLI is the sole boundary that reads env vars.
+
+**Design:**
+- `ServerSettings(BaseModel)`: fields `key`, `gateway_config`, `hooks` (no `env_prefix`, no ambient reads)
+- `ControllerSettings(BaseModel)`: same — all fields required except those with genuine defaults
+- `cli.py serve`: reads `AGL_KEY`, `AGL_GATEWAY_CONFIG`, `AGL_HOOKS` explicitly via `os.environ.get()`; constructs `ServerSettings(...)` with all values provided
+- `cli.py controller`: reads `AGL_BASE_URL`, `AGL_NAMESPACE`, `AGL_KEY`, `AGL_POLL_INTERVAL`, etc. via `os.environ`; fails loud if required vars missing
+- `DeploySettings`: keep as `BaseSettings` with explicit `_env_file` kwarg — this is not ambient env reading, it's "parse this specific file"; or migrate to `BaseModel` + `python-dotenv` parse in `cli.py` for full consistency
+- Tests construct settings directly as `ServerSettings(key="test", ...)` — no `monkeypatch.setenv` needed
+
+**Files to change:**
+- `agl_lite/server/config.py` — `BaseSettings` → `BaseModel`; rename `agl_key` → `key`
+- `agl_lite/controller/config.py` — `BaseSettings` → `BaseModel`
+- `agl_lite/cli.py` — add explicit `os.environ` reads for all `AGL_*` vars in `serve` and `controller`
+- `tests/` — remove any `monkeypatch.setenv` usage that only exists to feed `BaseSettings`
+
+---
+
+
 
 Goal: logs survive pod deletion and are easy to find without a log aggregation stack.
 
