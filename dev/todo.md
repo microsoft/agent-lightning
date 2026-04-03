@@ -72,10 +72,62 @@
 
 ## Phase 7: Polish [backlog]
 
-- [ ] Structured logging (JSON, with rollout_id/attempt_id context)
 - [ ] Prometheus metrics (optional)
 - [ ] Docker images for agl-lite serve and controller
 - [ ] CI/CD pipeline
+
+---
+
+## Logging persistence [backlog]
+
+Goal: logs survive pod deletion and are easy to find without a log aggregation stack.
+
+### 7a: Structured logging for server + controller
+
+Both processes write structured JSON log lines to a file in addition to stdout.
+
+**Design:**
+- `AGL_LOG_FILE` env var — path to log file; if unset, file logging is disabled (stdout only)
+- `AGL_LOG_LEVEL` env var — `DEBUG` / `INFO` / `WARNING`; default `INFO`
+- JSON formatter: each line is `{"ts": "...", "level": "...", "msg": "...", "rollout_id": "...", ...}`
+- `rollout_id` / `attempt_id` added to log context where available
+- Server in K8s: `AGL_LOG_FILE` + a volume mount needed in `deploy/controller/k8s.yaml` (hostPath or emptyDir)
+- Library: `python-json-logger` (add to `pyproject.toml`)
+
+**Files to change:**
+- `agl_lite/cli.py` — configure root logger on startup (both `serve` and `controller`)
+- `deploy/agl-lite.env.example` — add `# AGL_LOG_FILE=` and `# AGL_LOG_LEVEL=INFO`
+- `deploy/controller/k8s.yaml` — add optional volume mount for controller log file
+
+### 7b: Per-pod log volume for agents
+
+Every agent pod gets a hostPath volume mounted at a fixed container path.
+Agents write logs directly to `$AGL_LOG_DIR` — no stdout capture, no sidecar.
+
+**Design:**
+- Configured entirely in `deploy/controller/job-template.yaml.j2` (PodPatcher section) — no new `ControllerSettings` field
+- PodPatcher injects into every container:
+  - `AGL_ATTEMPT_ID` (already present, via `fieldRef: metadata.uid`)
+  - `AGL_LOG_DIR=/agl/logs/$(AGL_ATTEMPT_ID)` — K8s resolves `$(AGL_ATTEMPT_ID)` at pod startup; `AGL_ATTEMPT_ID` **must appear before** `AGL_LOG_DIR` in the patcher `env` list
+  - `volumeMount`: `name: agl-logs`, `mountPath: /agl/logs`
+- PodPatcher injects into pod spec:
+  - `volume`: `name: agl-logs`, `hostPath.path: /tmp/agl-lite/logs`, `type: DirectoryOrCreate`
+- Agent is responsible for `mkdir -p $AGL_LOG_DIR` before writing (document in agent-contract)
+- hostPath is dev/testing only — production would swap for a PVC
+
+**Schema change — `PodPatcher`:**
+- Add `volume_mounts: list[dict] = []` field
+- `_apply_patcher` in `job_builder.py` injects `volume_mounts` into all containers (same merge logic as `env`: patcher mounts first, container's own mounts win on `name` conflict)
+
+**Ordering invariant (enforced in `job_builder.py`):**
+- `_apply_patcher` must place patcher `env` entries before existing container `env` entries so that `$(AGL_ATTEMPT_ID)` resolves correctly when `AGL_LOG_DIR` references it
+- Add a comment in `_apply_patcher` marking this as load-bearing
+
+**Files to change:**
+- `deploy/controller/job-template.yaml.j2` — add `volume_mounts` + `volumes` to PodPatcher doc; add `AGL_LOG_DIR` env entry after `AGL_ATTEMPT_ID`
+- `agl_lite/controller/job_builder.py` — add `volume_mounts` to `PodPatcher`; update `_apply_patcher` to inject mounts; enforce + document patcher-first env ordering
+- `tests/controller/test_job_builder.py` — add tests for `volume_mounts` injection and env ordering
+- `docs/concepts/agent-contract.md` — document `AGL_LOG_DIR`, `mkdir -p` requirement, hostPath caveat
 
 ---
 
