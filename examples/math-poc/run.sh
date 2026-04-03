@@ -39,12 +39,8 @@ if [ ! -f "$MODE_DIR/.env.example" ]; then
     echo "ERROR: $MODE_DIR/.env.example not found"
     exit 1
 fi
-if [ ! -f "$MODE_DIR/deploy.env" ]; then
-    echo "ERROR: $MODE_DIR/deploy.env not found"
-    exit 1
-fi
 source "$MODE_DIR/.env.example"
-DEPLOY_CONFIG="$MODE_DIR/deploy.env"
+DEPLOY_CONFIG="$MODE_DIR/.env.example"
 NS="$(grep -E '^AGL_NAMESPACE=' "$DEPLOY_CONFIG" | cut -d= -f2 | tr -d '[:space:]')"
 if [ -z "$NS" ]; then
     echo "ERROR: AGL_NAMESPACE is missing in $DEPLOY_CONFIG"
