@@ -55,8 +55,6 @@ class DeploySettings(BaseSettings):
     pod_spec_template: str | None = None
     gateway_config: str | None = None
     hooks: str | None = None
-    artifact_dir: str | None = None
-
     wait_ready_timeout_seconds: int = 120
     local_state_dir: str = ".local"
 
@@ -238,9 +236,6 @@ def deploy(env_file: str, cleanup: bool) -> None:
             cmd += ["--gateway-config", cfg.gateway_config]
         if cfg.hooks:
             cmd += ["--hooks", cfg.hooks]
-        if cfg.artifact_dir:
-            cmd += ["--artifact-dir", cfg.artifact_dir]
-
         with open(log_file, "w") as lf:
             p = subprocess.Popen(
                 cmd,
@@ -307,9 +302,6 @@ def deploy(env_file: str, cleanup: bool) -> None:
         cm_env["AGL_GATEWAY_CONFIG"] = cfg.gateway_config
     if cfg.hooks:
         cm_env["AGL_HOOKS"] = cfg.hooks
-    if cfg.artifact_dir:
-        cm_env["AGL_ARTIFACT_DIR"] = cfg.artifact_dir
-
     with tempfile.NamedTemporaryFile("w", delete=False) as f:
         for k, v in cm_env.items():
             f.write(f"{k}={v}\n")

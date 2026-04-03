@@ -42,7 +42,7 @@
 
 ## SWE-bench follow-ups [backlog]
 
-- [ ] Remove artifact event support from store if no remaining consumers
+- [ ] Remove `resources_id` field from rollout schemas and archive JSONL output (dead field — controller no longer fetches resources)
 
 ---
 
