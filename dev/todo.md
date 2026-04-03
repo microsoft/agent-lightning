@@ -84,12 +84,17 @@ All config classes currently subclass `BaseSettings` and read `os.environ` impli
 Refactor to plain `BaseModel`; CLI is the sole boundary that reads env vars.
 
 **Design:**
-- `ServerSettings(BaseModel)`: fields `key`, `gateway_config`, `hooks` (no `env_prefix`, no ambient reads)
-- `ControllerSettings(BaseModel)`: same — all fields required except those with genuine defaults
-- `cli.py serve`: reads `AGL_KEY`, `AGL_GATEWAY_CONFIG`, `AGL_HOOKS` explicitly via `os.environ.get()`; constructs `ServerSettings(...)` with all values provided
-- `cli.py controller`: reads `AGL_BASE_URL`, `AGL_NAMESPACE`, `AGL_KEY`, `AGL_POLL_INTERVAL`, etc. via `os.environ`; fails loud if required vars missing
-- `DeploySettings`: keep as `BaseSettings` with explicit `_env_file` kwarg — this is not ambient env reading, it's "parse this specific file"; or migrate to `BaseModel` + `python-dotenv` parse in `cli.py` for full consistency
+- `ServerSettings(BaseModel)`: plain fields, no `env_prefix`, no ambient reads
+- `ControllerSettings(BaseModel)`: same
+- `DeploySettings`: keep as `BaseSettings` with explicit `_env_file` kwarg — not ambient env reading, it's "parse this specific file into a struct"
+- `cli.py` uses `typer.Option(default, envvar="AGL_*")` for every setting:
+  - CLI arg wins if passed
+  - Env var is the fallback (read at call time by typer, not import time)
+  - `--help` shows `[env var: AGL_*]`, not the value — no key leakage
+  - Type conversion (int, bool) handled by typer automatically
+  - Required fields (e.g. `AGL_BASE_URL`): `typer.Option(..., envvar="AGL_BASE_URL")` — typer fails cleanly with "Missing option '--base-url'. You can also set 'AGL_BASE_URL'"
 - Tests construct settings directly as `ServerSettings(key="test", ...)` — no `monkeypatch.setenv` needed
+- No `os.environ` anywhere in `cli.py`
 
 **Files to change:**
 - `agl_lite/server/config.py` — `BaseSettings` → `BaseModel`; rename `agl_key` → `key`

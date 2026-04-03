@@ -73,10 +73,11 @@ class ServerSettings(BaseSettings):
 class ServerSettings(BaseModel):
     gateway_config: str | None = None
 
-# In cli.py:
-settings = ServerSettings(
-    gateway_config=os.environ.get("AGL_GATEWAY_CONFIG"),
-)
+# In cli.py — typer reads env at call time, shows name (not value) in --help:
+def serve(
+    gateway_config: str | None = typer.Option(None, envvar="AGL_GATEWAY_CONFIG", help="..."),
+) -> None:
+    settings = ServerSettings(gateway_config=gateway_config)
 ```
 
 **Why:**
