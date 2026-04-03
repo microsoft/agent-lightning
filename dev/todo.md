@@ -82,22 +82,28 @@
 
 Goal: logs survive pod deletion and are easy to find without a log aggregation stack.
 
-### 7a: Structured logging for server + controller
+### 7a: Structured logging for server [ready]
 
-Both processes write structured JSON log lines to a file in addition to stdout.
+Server writes structured JSON log lines to stdout (always) and optionally to a file.
+Controller logging and K8s file logging are backlog.
 
 **Design:**
-- `AGL_LOG_FILE` env var — path to log file; if unset, file logging is disabled (stdout only)
-- `AGL_LOG_LEVEL` env var — `DEBUG` / `INFO` / `WARNING`; default `INFO`
-- JSON formatter: each line is `{"ts": "...", "level": "...", "msg": "...", "rollout_id": "...", ...}`
-- `rollout_id` / `attempt_id` added to log context where available
-- Server in K8s: `AGL_LOG_FILE` + a volume mount needed in `deploy/controller/k8s.yaml` (hostPath or emptyDir)
-- Library: `python-json-logger` (add to `pyproject.toml`)
+- `structlog` already used in server/gateway/reconciler but never configured — runs on defaults (human-friendly, not JSON)
+- `store/memory.py` uses stdlib `logging` — align to structlog
+- `structlog.configure()` called once at CLI startup: JSON renderer + ISO timestamp + log level
+- `AGL_LOG_LEVEL` — `DEBUG` / `INFO` / `WARNING`; default `INFO`; read in `cli.py serve`
+- Log file: `--log-file <path>` CLI arg on `agl-lite serve`; `ServerSettings` does not need `AGL_LOG_FILE` — path comes from CLI arg only
+- `AGL_LOG_FILE` in `DeploySettings` (field `log_file: str | None = None`); `deploy.py IN_HOST` always passes `--log-file` to server — uses `cfg.log_file` if set, else falls back to `local_state_dir/agl-lite-serve.log`; remove the current stdout redirect from `deploy.py`
+- For e2e experiments, set `AGL_LOG_FILE=logs/agl-lite-serve.log` in `.env.example` so logs land in a visible directory alongside experiment output (not buried in `.local/`)
+- K8s file logging (server in pod, volume mount): backlog
 
 **Files to change:**
-- `agl_lite/cli.py` — configure root logger on startup (both `serve` and `controller`)
-- `deploy/agl-lite.env.example` — add `# AGL_LOG_FILE=` and `# AGL_LOG_LEVEL=INFO`
-- `deploy/controller/k8s.yaml` — add optional volume mount for controller log file
+- `agl_lite/cli.py` — add `--log-file` option to `serve`; call `structlog.configure()` at startup; `AGL_LOG_LEVEL` from env
+- `agl_lite/server/config.py` — no change (log file is CLI-only concern)
+- `agl_lite/store/memory.py` — switch from stdlib `logging` to structlog
+- `agl_lite/deploy.py` — add `log_file: str | None = None` to `DeploySettings`; pass `--log-file` to server command; remove stdout redirect
+- `deploy/agl-lite.env.example` — add `# AGL_LOG_FILE=logs/agl-lite-serve.log`
+- `examples/math-poc/mock/.env.example`, `examples/math-poc/vllm/.env.example` — add `AGL_LOG_FILE=logs/agl-lite-serve.log`
 
 ### 7b: Per-pod log volume for agents
 
