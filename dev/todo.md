@@ -22,6 +22,7 @@
 - [x] **Phase 5a–5b**: Triplet API + `AglLiteDaemon` (VERL bridge)
 - [x] **Config hygiene**: no defaults in CLI or settings for pod-side values; `AGL_SECRET_NAME` removed (hardcoded `agl-lite-keys`); `AGL_K8S_NAMESPACE` → `AGL_NAMESPACE`; `lite_url` → `base_url`
 - [x] **Math-poc**: updated hooks, deploy.env, run.sh, rl_loop.py for new API
+- [x] **Settings refactor**: `ServerSettings` + `ControllerSettings` → plain `BaseModel`; `cli.py` is the sole env boundary via `typer.Option(default, envvar="AGL_*")`; `agl_key` → `key`
 
 ---
 
@@ -78,33 +79,13 @@
 
 ---
 
-## Settings refactor: BaseModel + CLI owns env mapping [ready]
+## Settings refactor: BaseModel + CLI owns env mapping [completed]
 
-All config classes currently subclass `BaseSettings` and read `os.environ` implicitly.
-Refactor to plain `BaseModel`; CLI is the sole boundary that reads env vars.
-
-**Design:**
-- `ServerSettings(BaseModel)`: plain fields, no `env_prefix`, no ambient reads
-- `ControllerSettings(BaseModel)`: same
-- `DeploySettings`: keep as `BaseSettings` with explicit `_env_file` kwarg — not ambient env reading, it's "parse this specific file into a struct"
-- `cli.py` uses `typer.Option(default, envvar="AGL_*")` for every setting:
-  - CLI arg wins if passed
-  - Env var is the fallback (read at call time by typer, not import time)
-  - `--help` shows `[env var: AGL_*]`, not the value — no key leakage
-  - Type conversion (int, bool) handled by typer automatically
-  - Required fields (e.g. `AGL_BASE_URL`): `typer.Option(..., envvar="AGL_BASE_URL")` — typer fails cleanly with "Missing option '--base-url'. You can also set 'AGL_BASE_URL'"
-- Tests construct settings directly as `ServerSettings(key="test", ...)` — no `monkeypatch.setenv` needed
-- No `os.environ` anywhere in `cli.py`
-
-**Files to change:**
-- `agl_lite/server/config.py` — `BaseSettings` → `BaseModel`; rename `agl_key` → `key`
-- `agl_lite/controller/config.py` — `BaseSettings` → `BaseModel`
-- `agl_lite/cli.py` — add explicit `os.environ` reads for all `AGL_*` vars in `serve` and `controller`
-- `tests/` — remove any `monkeypatch.setenv` usage that only exists to feed `BaseSettings`
+(Done — see Completed section above.)
 
 ---
 
-
+## Logging persistence [backlog]
 
 Goal: logs survive pod deletion and are easy to find without a log aggregation stack.
 
@@ -116,18 +97,17 @@ Controller logging and K8s file logging are backlog.
 **Design:**
 - `structlog` already used in server/gateway/reconciler but never configured — runs on defaults (human-friendly, not JSON)
 - `store/memory.py` uses stdlib `logging` — align to structlog
-- `structlog.configure()` called once at CLI startup: JSON renderer + ISO timestamp + log level
-- `AGL_LOG_LEVEL` — `DEBUG` / `INFO` / `WARNING`; default `INFO`; read in `cli.py serve`
-- Log file: `--log-file <path>` CLI arg on `agl-lite serve`; `ServerSettings` does not need `AGL_LOG_FILE` — path comes from CLI arg only
-- `AGL_LOG_FILE` in `DeploySettings` (field `log_file: str | None = None`); `deploy.py IN_HOST` always passes `--log-file` to server — uses `cfg.log_file` if set, else falls back to `local_state_dir/agl-lite-serve.log`; remove the current stdout redirect from `deploy.py`
-- For e2e experiments, set `AGL_LOG_FILE=logs/agl-lite-serve.log` in `.env.example` so logs land in a visible directory alongside experiment output (not buried in `.local/`)
+- `structlog.configure()` called once at CLI startup (`serve` command): JSON renderer + ISO timestamp + log level
+- `--log-file` and `--log-level` on `agl-lite serve` via `typer.Option(None, envvar="AGL_LOG_FILE")` / `typer.Option("INFO", envvar="AGL_LOG_LEVEL")` — consistent with the new CLI pattern
+- `AGL_LOG_FILE` in `DeploySettings` (`log_file: str | None = None`); `deploy.py IN_HOST` removes the current stdout redirect — `AGL_LOG_FILE` flows to the subprocess via `os.environ` (already set from sourced `.env`); typer picks it up automatically
+- If `AGL_LOG_FILE` is not set, deploy.py falls back to `local_state_dir/agl-lite-serve.log` by setting it explicitly in the subprocess env
+- For e2e experiments, set `AGL_LOG_FILE=logs/agl-lite-serve.log` in `.env.example` so logs land alongside experiment output
 - K8s file logging (server in pod, volume mount): backlog
 
 **Files to change:**
-- `agl_lite/cli.py` — add `--log-file` option to `serve`; call `structlog.configure()` at startup; `AGL_LOG_LEVEL` from env
-- `agl_lite/server/config.py` — no change (log file is CLI-only concern)
+- `agl_lite/cli.py` — add `--log-file` + `--log-level` options to `serve`; call `structlog.configure()` at startup
 - `agl_lite/store/memory.py` — switch from stdlib `logging` to structlog
-- `agl_lite/deploy.py` — add `log_file: str | None = None` to `DeploySettings`; pass `--log-file` to server command; remove stdout redirect
+- `agl_lite/deploy.py` — add `log_file: str | None = None` to `DeploySettings`; remove stdout redirect; set `AGL_LOG_FILE` in subprocess env (from cfg or fallback)
 - `deploy/agl-lite.env.example` — add `# AGL_LOG_FILE=logs/agl-lite-serve.log`
 - `examples/math-poc/mock/.env.example`, `examples/math-poc/vllm/.env.example` — add `AGL_LOG_FILE=logs/agl-lite-serve.log`
 
