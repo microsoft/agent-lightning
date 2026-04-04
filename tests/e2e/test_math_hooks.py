@@ -10,6 +10,26 @@ from agl_lite.schemas.api import EnqueueRolloutRequest, PatchRolloutRequest
 from agl_lite.schemas.rollout import RolloutStatus
 from agl_lite.store.memory import InMemoryStore
 
+# Minimal pod spec matching examples/math-poc/job-template.yaml
+_POD_SPEC = {
+    "containers": [
+        {
+            "name": "agent",
+            "image": "math-agent:dev",
+            "command": ["python", "/app/qa_agent.py"],
+        }
+    ]
+}
+
+
+def _get_task_input(result) -> str:
+    """Extract AGL_TASK_INPUT value from pod spec container env."""
+    env = result.config.pod_spec["containers"][0].get("env", [])
+    for e in env:
+        if e["name"] == "AGL_TASK_INPUT":
+            return e["value"]
+    raise KeyError("AGL_TASK_INPUT not found in container env")
+
 
 class TestMathMockHooks:
     @pytest.fixture
@@ -18,7 +38,9 @@ class TestMathMockHooks:
         spec = spec_from_file_location("mock_hooks", "examples/math-poc/mock/hooks.py")
         mod = module_from_spec(spec)
         spec.loader.exec_module(mod)
-        return mod.MathMockHooks()
+        h = mod.MathMockHooks()
+        h._pod_spec = _POD_SPEC
+        return h
 
     def test_on_enqueue_even_correct(self, hooks) -> None:
         req = EnqueueRolloutRequest(
@@ -26,9 +48,8 @@ class TestMathMockHooks:
             metadata={"sample_idx_in_batch": 0},
         )
         result = hooks.on_enqueue(req)
-        task_input = json.loads(result.config.environment_variables["AGL_TASK_INPUT"])
+        task_input = json.loads(_get_task_input(result))
         assert "\\boxed{4}" in task_input
-        # image NOT set by hook — comes from job-template
         assert result.input == {"question": "What is 2+2?", "answer": "4"}
 
     def test_on_enqueue_odd_wrong(self, hooks) -> None:
@@ -37,7 +58,7 @@ class TestMathMockHooks:
             metadata={"sample_idx_in_batch": 1},
         )
         result = hooks.on_enqueue(req)
-        task_input = json.loads(result.config.environment_variables["AGL_TASK_INPUT"])
+        task_input = json.loads(_get_task_input(result))
         assert "\\boxed{WRONG}" in task_input
 
     def test_on_succeeded_correct(self, hooks) -> None:
@@ -54,8 +75,7 @@ class TestMathMockHooks:
         store.update_rollout(rid, PatchRolloutRequest(
             status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
         ))
-        events = store.query_events(rid)
-        rewards = [e for e in events if e.event_type == "reward"]
+        rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert len(rewards) == 1
         assert rewards[0].data["value"] == 1.0
 
@@ -73,8 +93,7 @@ class TestMathMockHooks:
         store.update_rollout(rid, PatchRolloutRequest(
             status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
         ))
-        events = store.query_events(rid)
-        rewards = [e for e in events if e.event_type == "reward"]
+        rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert len(rewards) == 1
         assert rewards[0].data["value"] == 0.0
 
@@ -86,7 +105,9 @@ class TestMathVllmHooks:
         spec = spec_from_file_location("vllm_hooks", "examples/math-poc/vllm/hooks.py")
         mod = module_from_spec(spec)
         spec.loader.exec_module(mod)
-        return mod.MathVllmHooks()
+        h = mod.MathVllmHooks()
+        h._pod_spec = _POD_SPEC
+        return h
 
     def test_on_enqueue_plain_question(self, hooks) -> None:
         req = EnqueueRolloutRequest(
@@ -94,18 +115,15 @@ class TestMathVllmHooks:
             metadata={"sample_idx_in_batch": 0},
         )
         result = hooks.on_enqueue(req)
-        task_input = json.loads(result.config.environment_variables["AGL_TASK_INPUT"])
+        task_input = json.loads(_get_task_input(result))
         assert task_input == "What is 2+2?"
         assert "boxed" not in task_input
-        # input unchanged — hooks read from it in on_succeeded
         assert result.input == {"question": "What is 2+2?", "answer": "4"}
 
     def test_on_succeeded_numeric_correct(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
         [rollout] = store.enqueue_rollouts([
-            EnqueueRolloutRequest(
-                input={"question": "What is 2+2?", "answer": "4"},
-            )
+            EnqueueRolloutRequest(input={"question": "What is 2+2?", "answer": "4"})
         ])
         rid = rollout.rollout_id
         store.add_event(rid, "a1", "agent_output", {"answer": "4.0"})
@@ -113,8 +131,7 @@ class TestMathVllmHooks:
         store.update_rollout(rid, PatchRolloutRequest(
             status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
         ))
-        events = store.query_events(rid)
-        rewards = [e for e in events if e.event_type == "reward"]
+        rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert len(rewards) == 1
         assert rewards[0].data["value"] == 1.0
         assert rewards[0].data["reason"] == "correct"
@@ -122,9 +139,7 @@ class TestMathVllmHooks:
     def test_on_succeeded_numeric_wrong(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
         [rollout] = store.enqueue_rollouts([
-            EnqueueRolloutRequest(
-                input={"question": "What is 2+2?", "answer": "4"},
-            )
+            EnqueueRolloutRequest(input={"question": "What is 2+2?", "answer": "4"})
         ])
         rid = rollout.rollout_id
         store.add_event(rid, "a1", "agent_output", {"answer": "5"})
@@ -132,7 +147,6 @@ class TestMathVllmHooks:
         store.update_rollout(rid, PatchRolloutRequest(
             status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
         ))
-        events = store.query_events(rid)
-        rewards = [e for e in events if e.event_type == "reward"]
+        rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert rewards[0].data["value"] == 0.0
         assert "wrong" in rewards[0].data["reason"]
