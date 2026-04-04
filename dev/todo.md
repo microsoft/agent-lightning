@@ -24,6 +24,7 @@
 - [x] **Math-poc**: updated hooks, deploy.env, run.sh, rl_loop.py for new API
 - [x] **Settings refactor**: `ServerSettings` + `ControllerSettings` → plain `BaseModel`; `cli.py` is the sole env boundary via `typer.Option(default, envvar="AGL_*")`; `agl_key` → `key`
 - [x] **Logging (7a)**: structured logging via structlog; dual output (ConsoleRenderer stdout + JSONRenderer file); `AGL_LOG_DIR` / `AGL_LOG_LEVEL`; default archive path; `deploy.py` stdout redirect removed
+- [x] **Logging (7b)**: per-pod hostPath volume via PodPatcher; `AGL_LOG_DIR=/agl/logs/$(AGL_ATTEMPT_ID)`; `volume_mounts` field added to `PodPatcher`; ordering invariant enforced + tested
 
 ---
 
@@ -94,35 +95,9 @@ Goal: logs survive pod deletion and are easy to find without a log aggregation s
 
 (Done — see Completed section above.)
 
-### 7b: Per-pod log volume for agents
+### 7b: Per-pod log volume for agents [completed]
 
-Every agent pod gets a hostPath volume mounted at a fixed container path.
-Agents write logs directly to `$AGL_LOG_DIR` — no stdout capture, no sidecar.
-
-**Design:**
-- Configured entirely in `deploy/controller/job-template.yaml.j2` (PodPatcher section) — no new `ControllerSettings` field
-- PodPatcher injects into every container:
-  - `AGL_ATTEMPT_ID` (already present, via `fieldRef: metadata.uid`)
-  - `AGL_LOG_DIR=/agl/logs/$(AGL_ATTEMPT_ID)` — K8s resolves `$(AGL_ATTEMPT_ID)` at pod startup; `AGL_ATTEMPT_ID` **must appear before** `AGL_LOG_DIR` in the patcher `env` list
-  - `volumeMount`: `name: agl-logs`, `mountPath: /agl/logs`
-- PodPatcher injects into pod spec:
-  - `volume`: `name: agl-logs`, `hostPath.path: /tmp/agl-lite/logs`, `type: DirectoryOrCreate`
-- Agent is responsible for `mkdir -p $AGL_LOG_DIR` before writing (document in agent-contract)
-- hostPath is dev/testing only — production would swap for a PVC
-
-**Schema change — `PodPatcher`:**
-- Add `volume_mounts: list[dict] = []` field
-- `_apply_patcher` in `job_builder.py` injects `volume_mounts` into all containers (same merge logic as `env`: patcher mounts first, container's own mounts win on `name` conflict)
-
-**Ordering invariant (enforced in `job_builder.py`):**
-- `_apply_patcher` must place patcher `env` entries before existing container `env` entries so that `$(AGL_ATTEMPT_ID)` resolves correctly when `AGL_LOG_DIR` references it
-- Add a comment in `_apply_patcher` marking this as load-bearing
-
-**Files to change:**
-- `deploy/controller/job-template.yaml.j2` — add `volume_mounts` + `volumes` to PodPatcher doc; add `AGL_LOG_DIR` env entry after `AGL_ATTEMPT_ID`
-- `agl_lite/controller/job_builder.py` — add `volume_mounts` to `PodPatcher`; update `_apply_patcher` to inject mounts; enforce + document patcher-first env ordering
-- `tests/controller/test_job_builder.py` — add tests for `volume_mounts` injection and env ordering
-- `docs/concepts/agent-contract.md` — document `AGL_LOG_DIR`, `mkdir -p` requirement, hostPath caveat
+(Done — see Completed section above.)
 
 ---
 

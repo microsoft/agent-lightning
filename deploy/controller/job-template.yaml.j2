@@ -35,8 +35,9 @@ spec:
 ---
 
 # PodPatcher: injected into every container in the pod by job_builder.
-# env  — prepended to each container's env list; container's own values win on name conflict.
-# volumes — merged into pod spec volumes; user's volumes win on name conflict.
+# env          — prepended to each container's env list; container's own values win on name conflict.
+# volume_mounts — prepended to each container's volumeMounts; container's own mounts win on name conflict.
+# volumes      — merged into pod spec volumes; user's volumes win on name conflict.
 env:
   - name: AGL_POD_UID
     valueFrom:
@@ -70,4 +71,14 @@ env:
     value: "{{ rollout_id }}"
   - name: AGL_ATTEMPT_ID
     value: "$(AGL_POD_UID)"
-volumes: []
+  # AGL_LOG_DIR references $(AGL_ATTEMPT_ID) — must appear after it (K8s resolves in order).
+  - name: AGL_LOG_DIR
+    value: "/agl/logs/$(AGL_ATTEMPT_ID)"
+volume_mounts:
+  - name: agl-logs
+    mountPath: /agl/logs
+volumes:
+  - name: agl-logs
+    hostPath:
+      path: /tmp/agl-lite/logs
+      type: DirectoryOrCreate

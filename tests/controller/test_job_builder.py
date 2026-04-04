@@ -269,7 +269,85 @@ class TestPodPatcher:
         names = [e["name"] for e in patcher.env]
         assert "AGL_POD_UID" in names
         assert "OPENAI_BASE_URL" in names
-        assert patcher.volumes == []
+        assert "AGL_ATTEMPT_ID" in names
+        assert "AGL_LOG_DIR" in names
+        # AGL_ATTEMPT_ID must appear before AGL_LOG_DIR (ordering invariant for $(VAR) resolution)
+        assert names.index("AGL_ATTEMPT_ID") < names.index("AGL_LOG_DIR")
+        assert len(patcher.volume_mounts) == 1
+        assert patcher.volume_mounts[0]["name"] == "agl-logs"
+        assert len(patcher.volumes) == 1
+        assert patcher.volumes[0]["name"] == "agl-logs"
+
+    def test_volume_mounts_injected_into_all_containers(self, settings, manifest_template):
+        """PodPatcher volume_mounts are prepended to every container's volumeMounts."""
+        ps = {
+            "containers": [
+                {"name": "agent", "volumeMounts": [{"name": "data", "mountPath": "/data"}]},
+                {"name": "sidecar"},
+            ],
+            "volumes": [{"name": "data", "emptyDir": {}}],
+        }
+        rollout = _make_rollout(pod_spec=ps)
+        job = build_job_spec(rollout, settings, manifest_template)
+        containers = {c["name"]: c for c in job["spec"]["template"]["spec"]["containers"]}
+        for name, container in containers.items():
+            mount_names = [m["name"] for m in container.get("volumeMounts", [])]
+            assert "agl-logs" in mount_names, f"container {name!r} missing agl-logs mount"
+
+    def test_container_volume_mount_wins_over_patcher(self, settings):
+        """Container's own volumeMount wins over patcher on name conflict."""
+        custom_template = """\
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ job_name }}
+  namespace: {{ namespace }}
+  labels: {}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ ttl_after_finished }}
+  template:
+    metadata:
+      labels: {}
+    spec:
+      restartPolicy: Never
+      containers: []
+      volumes: []
+---
+env: []
+volume_mounts:
+  - name: shared
+    mountPath: /patcher-path
+volumes: []
+"""
+        ps = {
+            "containers": [{
+                "name": "agent",
+                "volumeMounts": [{"name": "shared", "mountPath": "/user-path"}],
+            }],
+        }
+        rollout = _make_rollout(pod_spec=ps)
+        job = build_job_spec(rollout, settings, custom_template)
+        mounts = {m["name"]: m for m in job["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]}
+        assert mounts["shared"]["mountPath"] == "/user-path"
+
+    def test_env_ordering_invariant(self, settings, manifest_template):
+        """Patcher env entries come before container env — required for $(VAR) resolution."""
+        ps = {
+            "containers": [{
+                "name": "agent",
+                "env": [{"name": "MY_VAR", "value": "mine"}],
+            }],
+        }
+        rollout = _make_rollout(pod_spec=ps)
+        job = build_job_spec(rollout, settings, manifest_template)
+        env = job["spec"]["template"]["spec"]["containers"][0]["env"]
+        names = [e["name"] for e in env]
+        # Patcher entries must precede container entries
+        assert names.index("AGL_ATTEMPT_ID") < names.index("MY_VAR")
+        assert names.index("AGL_LOG_DIR") < names.index("MY_VAR")
+        # AGL_ATTEMPT_ID before AGL_LOG_DIR ($(VAR) resolution order)
+        assert names.index("AGL_ATTEMPT_ID") < names.index("AGL_LOG_DIR")
 
     def test_custom_patcher_volumes(self, settings):
         """Custom template with patcher volumes injects them into pod spec."""

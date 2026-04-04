@@ -32,11 +32,13 @@ class PodPatcher(BaseModel):
     """Controller-managed contributions injected into all pod containers.
 
     Parsed from the second YAML document (after ---) in the Jinja2 job manifest template.
-      env     — prepended to each container's env; container's own values win on name conflict.
-      volumes — merged into pod spec; user's volumes win on name conflict.
+      env          — prepended to each container's env; container's own values win on name conflict.
+      volume_mounts — prepended to each container's volumeMounts; container's own mounts win on name conflict.
+      volumes      — merged into pod spec; user's volumes win on name conflict.
     """
 
     env: list[dict[str, Any]] = Field(default_factory=list)
+    volume_mounts: list[dict[str, Any]] = Field(default_factory=list)
     volumes: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -84,9 +86,16 @@ def build_job_spec(
     else:
         pod_spec["volumes"] = list(patcher.volumes)
 
-    # --- 3. Inject patcher env into ALL containers (container's own env wins on conflict) ---
+    # --- 3. Inject patcher env + volumeMounts into ALL containers ---
+    # ORDERING INVARIANT (load-bearing): patcher env entries MUST come before the
+    # container's own env. K8s resolves $(VAR) substitution in declaration order —
+    # AGL_LOG_DIR references $(AGL_ATTEMPT_ID) so AGL_ATTEMPT_ID must appear first.
     for container in pod_spec["containers"]:
         container["env"] = _merge_env(patcher.env, container.get("env", []))
+        if patcher.volume_mounts:
+            container["volumeMounts"] = _merge_by_name(
+                patcher.volume_mounts, container.get("volumeMounts", [])
+            )
 
     # --- 4. Set per-rollout job spec fields ---
     job_spec: dict[str, Any] = job_dict["spec"]
