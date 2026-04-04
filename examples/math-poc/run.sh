@@ -32,6 +32,7 @@ fi
 # --- Setup log directory ---
 LOG_DIR="$SCRIPT_DIR/logs/$(date +%Y%m%d-%H%M%S)-$MODE"
 mkdir -p "$LOG_DIR"
+export AGL_LOG_DIR="$LOG_DIR"
 echo "=== Logs → $LOG_DIR ==="
 
 # --- Load config ---
@@ -174,4 +175,4 @@ export AGL_KEY
 # --- Run algorithm ---
 echo ""
 echo "=== Running RL loop ($MODE) ==="
-uv run python examples/math-poc/rl_loop.py 2>&1 | tee "$LOG_DIR/rl_loop.log"
+uv run python examples/math-poc/rl_loop.py
