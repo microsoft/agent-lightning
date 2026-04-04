@@ -33,10 +33,24 @@ BATCH_SIZE = int(os.environ.get("AGL_BATCH_SIZE", "5"))
 NUM_ITERATIONS = int(os.environ.get("AGL_NUM_ITERATIONS", "1"))
 POLL_INTERVAL = int(os.environ.get("AGL_POLL_INTERVAL_SEC", "5"))
 MAX_POLL_TIME = int(os.environ.get("AGL_MAX_POLL_TIME", "300"))
+LOG_DIR = os.environ.get("AGL_LOG_DIR")
+
+_log_file = None
+
+
+def _setup_log_file() -> None:
+    global _log_file
+    if LOG_DIR:
+        log_path = Path(LOG_DIR) / "rl_loop.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        _log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
 
 def log(msg: str) -> None:
     print(msg, flush=True)
+    if _log_file:
+        _log_file.write(msg + "\n")
+        _log_file.flush()
 
 
 def load_dataset() -> list[dict]:
@@ -75,18 +89,17 @@ async def wait_for_rollouts(
 
 
 async def archive_rollouts(client: AglLiteClient, rollout_ids: list[str]) -> None:
-    # We ask the server to write to a log file.
-    # The server runs in host mode (vllm) or pod mode (mock).
-    # Writing to a simple .jsonl path will work locally. If the server is in K8s,
-    # it writes to its pod's working directory.
-    archive_path = "archive_rollouts.jsonl"
-    log(f"  Archiving {len(rollout_ids)} rollouts to {archive_path}...")
-    
+    # If AGL_LOG_DIR is set the server defaults to $AGL_LOG_DIR/archive.jsonl.
+    # Otherwise fall back to a local file.
+    if LOG_DIR:
+        backend = None  # server uses AGL_LOG_DIR/archive.jsonl
+        dest = str(Path(LOG_DIR) / "archive.jsonl")
+    else:
+        dest = "archive_rollouts.jsonl"
+        backend = ArchiveBackend(type="jsonl", path=dest)
+    log(f"  Archiving {len(rollout_ids)} rollouts to {dest}...")
     try:
-        res = await client.archive_rollouts(
-            rollout_ids=rollout_ids,
-            backend=ArchiveBackend(type="jsonl", path=archive_path)
-        )
+        res = await client.archive_rollouts(rollout_ids=rollout_ids, backend=backend)
         log(f"  Archived {res.archived} rollouts, purged {res.purged}.")
     except Exception as e:
         log(f"  [Error] Archive failed: {e}")
@@ -188,6 +201,7 @@ async def run_iteration(
 
 
 async def main() -> None:
+    _setup_log_file()
     base_url = os.environ.get("AGL_BASE_URL", "http://localhost:8080")
     agl_key = os.environ.get("AGL_KEY")
     mode = os.environ.get("AGL_MODEL_MODE", "vllm")
@@ -195,6 +209,8 @@ async def main() -> None:
     log(f"=== Math PoC -- RL Loop ({mode}) ===")
     log(f"  agl-lite:  {base_url}")
     log(f"  model:     {MODEL_NAME}")
+    if LOG_DIR:
+        log(f"  log dir:   {LOG_DIR}")
     if MODEL_ENDPOINT:
         log(f"  endpoint:  {MODEL_ENDPOINT}")
     log(f"  batch:     {BATCH_SIZE}, iterations: {NUM_ITERATIONS}")

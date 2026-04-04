@@ -17,12 +17,30 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
+from pathlib import Path
 
 import httpx
 from openai import OpenAI
+
+
+def _setup_logging() -> None:
+    """Write logs to stdout and, if AGL_LOG_DIR is set, to $AGL_LOG_DIR/agent.log."""
+    log_dir = os.environ.get("AGL_LOG_DIR")
+    fmt = "%(asctime)s %(levelname)s %(message)s"
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if log_dir:
+        log_path = Path(log_dir) / "agent.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_path))
+    logging.basicConfig(level=logging.INFO, format=fmt, handlers=handlers)
+
+
+_setup_logging()
+log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You're a helpful math assistant. "
@@ -40,7 +58,7 @@ def post_event(event_type: str, data: dict) -> None:
     """Post an event to agl-lite via AGL_EVENT_URL."""
     event_url = os.environ.get("AGL_EVENT_URL")
     if not event_url:
-        print(f"AGL_EVENT_URL not set — skipping {event_type} event", file=sys.stderr)
+        log.warning("AGL_EVENT_URL not set — skipping %s event", event_type)
         return
 
     api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -53,7 +71,7 @@ def post_event(event_type: str, data: dict) -> None:
         )
         resp.raise_for_status()
     except Exception as e:
-        print(f"Failed to post {event_type} event: {e}", file=sys.stderr)
+        log.error("Failed to post %s event: %s", event_type, e)
 
 
 def main() -> None:
@@ -70,18 +88,18 @@ def main() -> None:
     if os.environ.get("CRASH_ON_FIRST") == "1" and not os.path.exists(marker):
         with open(marker, "w") as f:
             f.write("crashed")
-        print("CRASH_ON_FIRST: simulating failure on first attempt", file=sys.stderr)
+        log.error("CRASH_ON_FIRST: simulating failure on first attempt")
         sys.exit(1)
 
-    # --- Read task input (plain text question) ---
+    # --- Read task input ---
     raw = os.environ.get("AGL_TASK_INPUT")
     if not raw:
-        print("ERROR: AGL_TASK_INPUT not set", file=sys.stderr)
+        log.error("AGL_TASK_INPUT not set")
         sys.exit(1)
 
     question = json.loads(raw)
     if not isinstance(question, str):
-        print(f"ERROR: AGL_TASK_INPUT should be a plain text string, got {type(question)}", file=sys.stderr)
+        log.error("AGL_TASK_INPUT should be a plain text string, got %s", type(question))
         sys.exit(1)
 
     # --- Call LLM via gateway ---
@@ -103,15 +121,15 @@ def main() -> None:
         if delta and delta.content:
             content_parts.append(delta.content)
     content = "".join(content_parts)
-    print(f"LLM response: {content}")
+    log.info("LLM response: %s", content)
 
     # --- Parse answer ---
     answer = extract_boxed_answer(content)
     if answer is None:
-        print("WARNING: could not extract \\boxed{answer} from response", file=sys.stderr)
+        log.warning("could not extract \\boxed{answer} from response")
         answer = content.strip()
 
-    print(f"Extracted answer: {answer}")
+    log.info("Extracted answer: %s", answer)
 
     # --- Report agent_output event ---
     post_event("agent_output", {"answer": answer, "raw_response": content})
