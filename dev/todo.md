@@ -91,25 +91,33 @@ Goal: logs survive pod deletion and are easy to find without a log aggregation s
 
 ### 7a: Structured logging for server [ready]
 
-Server writes structured JSON log lines to stdout (always) and optionally to a file.
+Server writes human-friendly logs to stdout and structured JSON to a file simultaneously.
 Controller logging and K8s file logging are backlog.
 
-**Design:**
-- `structlog` already used in server/gateway/reconciler but never configured — runs on defaults (human-friendly, not JSON)
+**Contract: `AGL_LOG_DIR`**
+- Every process writes its own log file to `$AGL_LOG_DIR/<component>.log`; if unset, file writing is skipped and stdout only
+- Server process: `$AGL_LOG_DIR/server.log`; controller process: `$AGL_LOG_DIR/controller.log`
+- Agent pods (7b): `$AGL_LOG_DIR/<attempt_id>.log` — same var, same contract, different value per process
+- `AGL_LOG_DIR` also becomes the default archive location: `archive_rollouts()` with no backend defaults to `$AGL_LOG_DIR/archive.jsonl`; K8s caveat: path is inside pod unless on a volume
+- `.env.example` uses a relative path (`AGL_LOG_DIR=logs/`); `deploy.py` resolves to absolute via `(repo_root / cfg.log_dir).resolve()` before setting in subprocess env — `pathlib` handles both relative and absolute inputs correctly (absolute right-hand side discards left)
+
+**Logging design:**
+- `structlog` already used but never configured — runs on defaults
 - `store/memory.py` uses stdlib `logging` — align to structlog
-- `structlog.configure()` called once at CLI startup (`serve` command): JSON renderer + ISO timestamp + log level
-- `--log-file` and `--log-level` on `agl-lite serve` via `typer.Option(None, envvar="AGL_LOG_FILE")` / `typer.Option("INFO", envvar="AGL_LOG_LEVEL")` — consistent with the new CLI pattern
-- `AGL_LOG_FILE` in `DeploySettings` (`log_file: str | None = None`); `deploy.py IN_HOST` removes the current stdout redirect — `AGL_LOG_FILE` flows to the subprocess via `os.environ` (already set from sourced `.env`); typer picks it up automatically
-- If `AGL_LOG_FILE` is not set, deploy.py falls back to `local_state_dir/agl-lite-serve.log` by setting it explicitly in the subprocess env
-- For e2e experiments, set `AGL_LOG_FILE=logs/agl-lite-serve.log` in `.env.example` so logs land alongside experiment output
-- K8s file logging (server in pod, volume mount): backlog
+- `structlog.configure()` called once at CLI startup (`serve` command) using `ProcessorFormatter` bridge to stdlib logging, enabling per-handler renderers:
+  - stdout handler: `structlog.dev.ConsoleRenderer()` — human-friendly, colored
+  - file handler (if `AGL_LOG_DIR` set): `structlog.processors.JSONRenderer()` — JSON Lines
+  - shared processors: `add_log_level`, `add_logger_name`, `TimeStamper(fmt="iso")`, `merge_contextvars`
+- `structlog.contextvars` for binding `rollout_id`/`attempt_id` to log context per request
+- `AGL_LOG_LEVEL` — `DEBUG` / `INFO` / `WARNING`; default `INFO`
 
 **Files to change:**
-- `agl_lite/cli.py` — add `--log-file` + `--log-level` options to `serve`; call `structlog.configure()` at startup
+- `agl_lite/cli.py` — add `log_dir: str | None = typer.Option(None, envvar="AGL_LOG_DIR")` and `log_level: str = typer.Option("INFO", envvar="AGL_LOG_LEVEL")` to `serve`; call `configure_logging(log_dir, log_level)` at startup
 - `agl_lite/store/memory.py` — switch from stdlib `logging` to structlog
-- `agl_lite/deploy.py` — add `log_file: str | None = None` to `DeploySettings`; remove stdout redirect; set `AGL_LOG_FILE` in subprocess env (from cfg or fallback)
-- `deploy/agl-lite.env.example` — add `# AGL_LOG_FILE=logs/agl-lite-serve.log`
-- `examples/math-poc/mock/.env.example`, `examples/math-poc/vllm/.env.example` — add `AGL_LOG_FILE=logs/agl-lite-serve.log`
+- `agl_lite/store/memory.py` — `archive_rollouts`: default `backend.path` to `$AGL_LOG_DIR/archive.jsonl` when backend is None and `AGL_LOG_DIR` is set
+- `agl_lite/deploy.py` — add `log_dir: str | None = None` to `DeploySettings`; resolve path via `(repo_root / cfg.log_dir).resolve()`; set `AGL_LOG_DIR=<absolute>` in subprocess env; remove current stdout redirect
+- `deploy/agl-lite.env.example` — add `# AGL_LOG_DIR=logs/`
+- `examples/math-poc/mock/.env.example`, `examples/math-poc/vllm/.env.example` — add `AGL_LOG_DIR=logs/`
 
 ### 7b: Per-pod log volume for agents
 
