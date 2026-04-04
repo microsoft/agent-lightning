@@ -7,7 +7,7 @@ handlers on the event loop thread. See docs/dev_guidelines.md § Concurrency Mod
 from __future__ import annotations
 
 import json
-import logging
+import structlog
 import time
 import uuid
 from pathlib import Path
@@ -36,7 +36,7 @@ from agl_lite.schemas.rollout import (
 if TYPE_CHECKING:
     from agl_lite.hooks import RolloutHooks
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger()
 
 
 class InMemoryStore:
@@ -49,13 +49,14 @@ class InMemoryStore:
       models:    dict[model, dict[endpoint, ModelServer]]  (nested)
     """
 
-    def __init__(self, hooks: RolloutHooks | None = None) -> None:
+    def __init__(self, hooks: RolloutHooks | None = None, log_dir: str | None = None) -> None:
         self._rollouts: dict[str, Rollout] = {}
         self._events: dict[str, dict[str, list[Event]]] = {}
         self._resources: dict[str, ResourcesUpdate] = {}
         self._latest_resources_id: str | None = None
         self._models: dict[str, dict[str, ModelServer]] = {}
         self._hooks = hooks
+        self._log_dir = Path(log_dir) if log_dir else None
 
     # ── Rollout management ───────────────────────────────────────────
 
@@ -137,7 +138,7 @@ class InMemoryStore:
                 elif updated.status == RolloutStatus.TERMINAL_FAILED:
                     self._hooks.on_failed(updated, self)
             except Exception:
-                log.exception("Hook error for rollout %s", rollout_id)
+                log.exception("Hook error for rollout", rollout_id=rollout_id)
 
         return updated
 
@@ -392,9 +393,12 @@ class InMemoryStore:
         """Archive and purge rollouts from hot store.
 
         1. Reject if any rollout is non-terminal (ValueError)
-        2. If backend specified: persist to JSONL file (append if exists, create if not)
+        2. If backend specified (or AGL_LOG_DIR default): persist to JSONL file (append if exists)
         3. Purge rollout records and all events from hot store
         """
+        # Default archive path: log_dir/archive.jsonl
+        if backend is None and self._log_dir is not None:
+            backend = ArchiveBackend(path=str(self._log_dir / "archive.jsonl"))
         # Validate all rollouts exist and are terminal.
         rollouts_to_archive: list[Rollout] = []
         for rid in rollout_ids:

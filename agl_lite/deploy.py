@@ -55,6 +55,7 @@ class DeploySettings(BaseSettings):
     pod_spec_template: str | None = None
     gateway_config: str | None = None
     hooks: str | None = None
+    log_dir: str | None = None
     wait_ready_timeout_seconds: int = 120
     local_state_dir: str = ".local"
 
@@ -205,8 +206,9 @@ def deploy(env_file: str, cleanup: bool) -> None:
 
     local_state_dir = (repo_root / cfg.local_state_dir).resolve()
     pid_file = local_state_dir / "agl-lite-serve.pid"
-    log_file = local_state_dir / "agl-lite-serve.log"
     env_out = local_state_dir / "agl-lite.env"
+    # Resolve log_dir: explicit config wins, else fall back to local_state_dir.
+    resolved_log_dir = str((repo_root / cfg.log_dir).resolve()) if cfg.log_dir else str(local_state_dir)
 
     if cleanup:
         typer.echo(f"=== Cleaning up namespace: {ns} ===")
@@ -236,12 +238,9 @@ def deploy(env_file: str, cleanup: bool) -> None:
             cmd += ["--gateway-config", cfg.gateway_config]
         if cfg.hooks:
             cmd += ["--hooks", cfg.hooks]
-        with open(log_file, "w") as lf:
-            p = subprocess.Popen(
+        p = subprocess.Popen(
                 cmd,
-                env={**os.environ, "AGL_KEY": agl_key},
-                stdout=lf,
-                stderr=subprocess.STDOUT,
+                env={**os.environ, "AGL_KEY": agl_key, "AGL_LOG_DIR": resolved_log_dir},
                 start_new_session=True,
             )
         pid_file.write_text(str(p.pid))
@@ -256,7 +255,7 @@ def deploy(env_file: str, cleanup: bool) -> None:
                 break
             time.sleep(1)
         if not ready:
-            raise RuntimeError(f"Host agl-lite server failed to become ready. See {log_file}")
+            raise RuntimeError(f"Host agl-lite server failed to become ready. See {resolved_log_dir}/server.log")
 
         if ctx == "minikube":
             k8s_accessible_url = f"http://host.minikube.internal:{cfg.host_port}"

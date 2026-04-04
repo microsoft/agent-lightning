@@ -15,12 +15,17 @@ def serve(
     key: str = typer.Option("", envvar="AGL_KEY", help="Shared API key (empty = auth disabled)"),
     gateway_config: str | None = typer.Option(None, envvar="AGL_GATEWAY_CONFIG", help="Path to gateway YAML config"),
     hooks: str | None = typer.Option(None, envvar="AGL_HOOKS", help="Path to Python module with RolloutHooks subclass"),
+    log_dir: str | None = typer.Option(None, envvar="AGL_LOG_DIR", help="Directory for log files and default archive (AGL_LOG_DIR)"),
+    log_level: str = typer.Option("INFO", envvar="AGL_LOG_LEVEL", help="Log level: DEBUG / INFO / WARNING / ERROR"),
 ) -> None:
     """Start the agl-lite HTTP service (store + gateway)."""
+    from agl_lite.logging_config import configure_logging
     from agl_lite.server.app import create_app
     from agl_lite.server.config import ServerSettings
 
-    settings = ServerSettings(key=key, gateway_config=gateway_config, hooks=hooks)
+    configure_logging(log_dir=log_dir, log_level=log_level, component="server")
+
+    settings = ServerSettings(key=key, gateway_config=gateway_config, hooks=hooks, log_dir=log_dir)
     application = create_app(settings)
     uvicorn.run(application, host=host, port=port, workers=1)
 

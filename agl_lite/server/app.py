@@ -34,7 +34,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         hooks = load_hooks(settings.hooks)
         log.info("Rollout hooks loaded", hooks_class=type(hooks).__name__, path=settings.hooks)
 
-    store = InMemoryStore(hooks=hooks)
+    store = InMemoryStore(hooks=hooks, log_dir=settings.log_dir)
 
     # Call on_startup after store is ready — hook may need store reference.
     if hooks:
