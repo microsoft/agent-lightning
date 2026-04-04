@@ -27,7 +27,7 @@ routes:
       drop:
         - frequency_penalty
 """)
-    return ServerSettings(agl_key=AGL_KEY, gateway_config=str(config_file))
+    return ServerSettings(key=AGL_KEY, gateway_config=str(config_file))
 
 
 @pytest.fixture

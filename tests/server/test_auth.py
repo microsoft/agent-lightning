@@ -34,7 +34,7 @@ class TestAuth:
 
     def test_auth_disabled(self):
         """When AGL_KEY is empty, all requests pass."""
-        settings = ServerSettings(agl_key="")
+        settings = ServerSettings(key="")
         app = create_app(settings)
         with TestClient(app) as c:
             resp = c.get("/api/rollouts")

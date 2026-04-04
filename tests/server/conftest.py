@@ -13,7 +13,7 @@ AGL_KEY = "test-secret-key"
 
 @pytest.fixture
 def settings() -> ServerSettings:
-    return ServerSettings(agl_key=AGL_KEY)
+    return ServerSettings(key=AGL_KEY)
 
 
 @pytest.fixture

@@ -1,30 +1,26 @@
-"""Controller configuration — settings for the K8s controller process."""
+"""Controller configuration — pure data carrier, no env reads."""
 
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 
 
-class ControllerSettings(BaseSettings):
-    """Settings for the agl-lite K8s controller.
-
-    All values can be set via environment variables (prefixed with AGL_).
-    """
-
-    model_config = {"env_prefix": "AGL_"}
+class ControllerSettings(BaseModel):
+    """Settings for the agl-lite K8s controller. Constructed explicitly by cli.py."""
 
     # Connection to agl-lite server.
-    base_url: str              # AGL_BASE_URL — always required in pod
-    key: str = ""             # AGL_KEY — auth key; empty = auth disabled
+    base_url: str              # AGL_BASE_URL
+    key: str = ""              # AGL_KEY — auth key; empty = auth disabled
 
     # K8s configuration.
     namespace: str             # AGL_NAMESPACE
 
     # Reconcile timing.
-    poll_interval: int = 10  # seconds between periodic reconcile cycles
-    max_queue_time: int = 3600  # max seconds a rollout can stay in queuing (default 1h)
+    poll_interval: int = 10    # AGL_POLL_INTERVAL — seconds between reconcile cycles
+    max_queue_time: int = 3600 # AGL_MAX_QUEUE_TIME — max seconds a rollout stays in queuing
 
-    # Job defaults (can be overridden by resources snapshot).
-    ttl_after_finished: int = 3600  # ttlSecondsAfterFinished on Jobs (pod GC safety)
+    # Job defaults.
+    ttl_after_finished: int = 3600  # AGL_TTL_AFTER_FINISHED — ttlSecondsAfterFinished on Jobs
 
-    job_manifest_template: str  # Jinja2 job scaffold; AGL_JOB_MANIFEST_TEMPLATE — always required in pod
+    # Job manifest template.
+    job_manifest_template: str  # AGL_JOB_MANIFEST_TEMPLATE — always required

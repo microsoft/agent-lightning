@@ -71,7 +71,7 @@ class TestDaemonStoreInteraction:
     def app(self):
         from agl_lite.server.app import create_app
         from agl_lite.server.config import ServerSettings
-        return create_app(ServerSettings(agl_key="test-key"))
+        return create_app(ServerSettings(key="test-key"))
 
     @pytest.fixture()
     def daemon(self, app):

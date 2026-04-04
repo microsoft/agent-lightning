@@ -1,15 +1,13 @@
-"""Server configuration — loaded from environment variables."""
+"""Server configuration — pure data carrier, no env reads."""
 
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 
 
-class ServerSettings(BaseSettings):
-    """agl-lite serve settings. All from env vars (prefix-free)."""
+class ServerSettings(BaseModel):
+    """agl-lite serve settings. Constructed explicitly by cli.py."""
 
-    agl_key: str = ""  # AGL_KEY — shared API key; empty = auth disabled
+    key: str = ""              # shared API key; empty = auth disabled
     gateway_config: str | None = None  # path to gateway YAML config
     hooks: str | None = None           # path to Python module with RolloutHooks subclass
-
-    model_config = {"env_prefix": ""}

@@ -25,7 +25,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     if settings is None:
         settings = ServerSettings()
 
-    if not settings.agl_key:
+    if not settings.key:
         log.warning("AGL_KEY not set — authentication disabled. Do not use in production.")
 
     # Load rollout lifecycle hooks (optional).
@@ -40,7 +40,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     if hooks:
         hooks.on_startup(store)
         log.info("Hook on_startup complete", hooks_class=type(hooks).__name__)
-    verify_key = build_auth_dependency(settings.agl_key)
+    verify_key = build_auth_dependency(settings.key)
 
     # Load gateway config.
     if settings.gateway_config:

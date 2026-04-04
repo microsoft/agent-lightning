@@ -21,7 +21,7 @@ def server():
     import threading
     import time
 
-    settings = ServerSettings(agl_key=AGL_KEY)
+    settings = ServerSettings(key=AGL_KEY)
     application = create_app(settings)
     config = uvicorn.Config(application, host="127.0.0.1", port=18923, log_level="error")
     server = uvicorn.Server(config)

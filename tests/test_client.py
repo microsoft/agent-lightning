@@ -21,7 +21,7 @@ AGL_KEY = "test-key"
 
 @pytest.fixture
 def app():
-    return create_app(ServerSettings(agl_key=AGL_KEY))
+    return create_app(ServerSettings(key=AGL_KEY))
 
 
 @pytest.fixture
