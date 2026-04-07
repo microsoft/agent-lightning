@@ -147,7 +147,7 @@ def _capture_event(
     rollout_id: str,
     attempt_id: str,
     original_body: dict[str, Any],
-    response_body: dict[str, Any] | list[dict[str, Any]],
+    response_body: dict[str, Any],
     server_meta: dict[str, Any],
 ) -> None:
     """Write a model_request event to the store."""
@@ -163,11 +163,26 @@ def _capture_event(
     )
 
 
-def _parse_sse_response(raw: bytes) -> dict[str, Any] | list[dict[str, Any]]:
-    """Parse SSE stream bytes into a list of data chunks.
+def _parse_sse_response(raw: bytes) -> dict[str, Any]:
+    """Parse SSE stream bytes into an assembled ChatCompletion-shaped dict.
+
+    Streaming and non-streaming responses are stored with the same shape so
+    that consumers (hooks, VERL, archive inspection) don't need to branch.
 
     SSE format: lines starting with "data: " followed by JSON.
     The final line is "data: [DONE]".
+
+    Assembled shape mirrors the non-streaming OpenAI response::
+
+        {
+          "id": "chatcmpl-...",
+          "object": "chat.completion",
+          "created": <int>,
+          "model": "<model>",
+          "choices": [{"index": 0, "message": {"role": "assistant", "content": "<full text>"},
+                       "finish_reason": "stop"}],
+          "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
+        }
     """
     import contextlib
     import json
@@ -178,4 +193,45 @@ def _parse_sse_response(raw: bytes) -> dict[str, Any] | list[dict[str, Any]]:
         if line.startswith("data: ") and line != "data: [DONE]":
             with contextlib.suppress(json.JSONDecodeError):
                 chunks.append(json.loads(line[6:]))
-    return chunks
+
+    if not chunks:
+        return {}
+
+    first = chunks[0]
+    last = chunks[-1]
+
+    # Assemble full content from delta.content across all choices (index-keyed).
+    contents: dict[int, list[str]] = {}
+    finish_reasons: dict[int, str | None] = {}
+    role: str = "assistant"
+    for chunk in chunks:
+        for choice in chunk.get("choices", []):
+            idx = choice.get("index", 0)
+            delta = choice.get("delta", {})
+            if "role" in delta:
+                role = delta["role"]
+            contents.setdefault(idx, []).append(delta.get("content") or "")
+            if choice.get("finish_reason"):
+                finish_reasons[idx] = choice["finish_reason"]
+
+    choices = [
+        {
+            "index": idx,
+            "message": {"role": role, "content": "".join(parts)},
+            "finish_reason": finish_reasons.get(idx),
+        }
+        for idx, parts in sorted(contents.items())
+    ]
+    if not choices:
+        choices = [{"index": 0, "message": {"role": role, "content": ""}, "finish_reason": None}]
+
+    return {
+        "id": first.get("id", ""),
+        "object": "chat.completion",
+        "created": first.get("created"),
+        "model": first.get("model", ""),
+        "choices": choices,
+        # vLLM sends usage in the last chunk when stream_options.include_usage=True;
+        # fall back to None so callers can detect absence.
+        "usage": last.get("usage"),
+    }

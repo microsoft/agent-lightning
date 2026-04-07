@@ -217,13 +217,15 @@ class TestProxyStreaming:
         assert event["data"]["request"]["model"] == "qwen-7b"  # prepared (rewritten) model
         assert event["data"]["server"]["model"] == "qwen-7b"
 
-        # Response should be the list of parsed SSE data chunks (3 chunks, not [DONE]).
+        # Response is now assembled into a ChatCompletion-shaped dict (same shape as non-streaming).
         response_data = event["data"]["response"]
-        assert isinstance(response_data, list)
-        assert len(response_data) == 3
-        assert response_data[0]["id"] == "chatcmpl-1"
-        assert response_data[1]["choices"][0]["delta"]["content"] == "Hello"
-        assert response_data[2]["choices"][0]["delta"]["content"] == "!"
+        assert isinstance(response_data, dict)
+        assert response_data["id"] == "chatcmpl-1"
+        assert response_data["object"] == "chat.completion"
+        assert len(response_data["choices"]) == 1
+        choice = response_data["choices"][0]
+        assert choice["message"]["role"] == "assistant"
+        assert choice["message"]["content"] == "Hello!"  # delta chunks concatenated
 
     def test_streaming_route_rewrite(self, client: TestClient, auth: dict, httpx_mock):
         """Verify model rewrite works for streaming requests too."""
@@ -268,4 +270,4 @@ class TestProxyStreaming:
 
         events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
         assert len(events) == 1
-        assert events[0]["data"]["response"] == []  # no chunks parsed
+        assert events[0]["data"]["response"] == {}  # no chunks parsed
