@@ -39,10 +39,12 @@ verl = [
     "omegaconf>=2.3.0",
     "datasets>=4.0.0",
     "codetiming>=1.4.0",
-    "flash-attn>=2.8.3",
     "autogen-agentchat",
     "autogen-ext[openai]",
     "mcp>=1.10.0",
+    # NOTE: flash-attn is NOT listed here — it's source-only on PyPI and
+    # requires torch at build time (circular). Install it via:
+    #   scripts/setup_verl.sh (handles the two-phase install)
 ]
 
 [project.scripts]
@@ -79,6 +81,7 @@ build-backend = "hatchling.build"
 # PyTorch GPU wheels require a CUDA-specific index. Don't hardcode it here —
 # use scripts/setup_verl.sh which auto-detects CUDA version, or pass manually:
 #   uv sync --extra verl --index pytorch=https://download.pytorch.org/whl/cu130
+
 
 [dependency-groups]
 dev = [

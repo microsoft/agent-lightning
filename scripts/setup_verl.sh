@@ -20,12 +20,22 @@ else
     # Auto-detect from nvcc
     if command -v nvcc &> /dev/null; then
         CUDA_VERSION=$(nvcc --version | grep -oP 'release \K[0-9]+\.[0-9]+')
-        # Convert "13.1" → "cu130" (major + minor, drop patch)
         CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
         CUDA_MINOR=$(echo "$CUDA_VERSION" | cut -d. -f2)
-        VARIANT="cu${CUDA_MAJOR}${CUDA_MINOR}0"
-        # Check if this index actually exists; fall back to nearest known
-        echo "Detected CUDA $CUDA_VERSION → trying PyTorch index: $VARIANT"
+        EXACT="cu${CUDA_MAJOR}${CUDA_MINOR}"
+
+        # PyTorch only publishes certain indexes (e.g., cu126, cu128, cu130).
+        # Try exact match first, then round minor down to 0.
+        ROUNDED="cu${CUDA_MAJOR}0"
+        if curl -sf "https://download.pytorch.org/whl/${EXACT}/torch/" > /dev/null 2>&1; then
+            VARIANT="$EXACT"
+        elif curl -sf "https://download.pytorch.org/whl/${ROUNDED}/torch/" > /dev/null 2>&1; then
+            echo "Detected CUDA $CUDA_VERSION — exact index $EXACT not found, using $ROUNDED"
+            VARIANT="$ROUNDED"
+        else
+            VARIANT="$EXACT"  # let user decide
+        fi
+        echo "Detected CUDA $CUDA_VERSION → PyTorch index: $VARIANT"
     else
         echo "WARNING: nvcc not found. Falling back to CPU-only PyTorch."
         echo "  For GPU support, install CUDA toolkit or specify variant:"
@@ -58,7 +68,13 @@ if ! curl -sf "${TORCH_INDEX}/torch/" > /dev/null 2>&1; then
     fi
 fi
 
-uv sync --extra verl --index "pytorch=${TORCH_INDEX}"
+uv sync --extra verl --extra dev --index "pytorch=${TORCH_INDEX}" --index-strategy unsafe-best-match
+
+# Phase 2: Install flash-attn (source-only on PyPI, needs torch at build time).
+# Must happen after torch is installed.
+echo ""
+echo "=== Installing flash-attn (requires compilation) ==="
+uv pip install "flash-attn>=2.8.3" --no-build-isolation
 
 echo ""
 echo "=== Verifying installation ==="
