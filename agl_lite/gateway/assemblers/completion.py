@@ -25,6 +25,14 @@ def assemble_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
           "choices": [{"index": 0, "text": "<full text>", "finish_reason": "stop"}],
           "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
         }
+
+    **vLLM extensions** (preserved when present, ignored when absent):
+
+    - ``prompt_token_ids`` — tokenized prompt, sent in the first chunk
+    - ``choices[i].token_ids`` — per-chunk response token IDs, concatenated
+
+    See :func:`~agl_lite.gateway.assemblers.chat_completion.assemble_chat_completion`
+    for details on these non-standard fields.
     """
     if not chunks:
         return {}

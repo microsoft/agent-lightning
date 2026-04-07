@@ -33,6 +33,16 @@ def assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
 
     ``usage`` is ``None`` when not provided by the upstream (vLLM only sends it
     when ``stream_options.include_usage=True`` is set by the caller).
+
+    **vLLM extensions** (preserved when present, ignored when absent):
+
+    - ``prompt_token_ids`` — tokenized prompt, sent in the first chunk
+    - ``choices[i].token_ids`` — per-chunk response token IDs, concatenated
+      across all chunks into each choice
+
+    These are non-standard fields added by vLLM for training pipelines
+    (see https://github.com/vllm-project/vllm/pull/22587).  Standard
+    OpenAI endpoints never send them — the assembler simply omits them.
     """
     if not chunks:
         return {}
