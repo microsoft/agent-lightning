@@ -132,7 +132,7 @@ Each sub-item is one commit. Implement in order.
       `AGL_MODEL_NAME=Qwen/Qwen2.5-1.5B-Instruct`, `AGL_MODEL_ENDPOINT=http://localhost:8010/v1`,
       vLLM params, VERL params
 
-#### 5c.4: Training script [ready]
+#### 5c.4: Training script [completed]
 
 - [ ] `train_calc_agent.py` — rewrite:
       - Load parquet dataset (train + val) via `datasets.Dataset.from_parquet`
