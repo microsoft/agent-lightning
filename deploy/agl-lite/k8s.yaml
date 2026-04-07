@@ -27,23 +27,29 @@ spec:
                 secretKeyRef:
                   name: agl-lite-keys
                   key: AGL_KEY
-            - name: GATEWAY_CONFIG
+            - name: AGL_GATEWAY_CONFIG
               valueFrom:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_GATEWAY_CONFIG
                   optional: true
-            - name: HOOKS
+            - name: AGL_HOOKS
               valueFrom:
                 configMapKeyRef:
                   name: agl-lite-config
                   key: AGL_HOOKS
                   optional: true
-            - name: ARTIFACT_DIR
+            - name: AGL_POD_SPEC_TEMPLATE
               valueFrom:
                 configMapKeyRef:
                   name: agl-lite-config
-                  key: AGL_ARTIFACT_DIR
+                  key: AGL_POD_SPEC_TEMPLATE
+                  optional: true
+            - name: AGL_LOG_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_LOG_DIR
                   optional: true
           readinessProbe:
             httpGet:

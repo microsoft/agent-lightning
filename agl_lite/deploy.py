@@ -317,6 +317,8 @@ def deploy(env_file: str, cleanup: bool) -> None:
         cm_env["AGL_GATEWAY_CONFIG"] = cfg.gateway_config
     if cfg.hooks:
         cm_env["AGL_HOOKS"] = cfg.hooks
+    if cfg.pod_spec_template:
+        cm_env["AGL_POD_SPEC_TEMPLATE"] = cfg.pod_spec_template
     with tempfile.NamedTemporaryFile("w", delete=False) as f:
         for k, v in cm_env.items():
             f.write(f"{k}={v}\n")
