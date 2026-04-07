@@ -120,7 +120,7 @@ Each sub-item is one commit. Implement in order.
 - [ ] `job-template.yaml` — pod spec with `agent` container, `imagePullPolicy: Never`
       (minikube), resource requests (CPU-only, MCP tools don't need GPU)
 
-#### 5c.3: Hooks and config [ready]
+#### 5c.3: Hooks and config [completed]
 
 - [ ] `vllm/hooks.py` — `CalcXHooks(RolloutHooks)`:
       `on_enqueue`: inject `AGL_TASK_INPUT` (question + id) and `AGL_MODEL_NAME` into pod env.
