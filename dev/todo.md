@@ -99,8 +99,9 @@ Each sub-item is one commit. Implement in order.
 
 #### 5c.1: Dataset and eval utils [ready]
 
-- [ ] `data/download.sh` — download Calc-X parquet from Google Drive; verify checksums
-- [ ] `data/sample.jsonl` — 5-10 rows for smoke testing without full download
+- [ ] `data/` — parquet files already downloaded; keep download instructions in README
+      (Google Drive link, manual download). Add `data/` to `.gitignore`.
+- [ ] `data/sample.jsonl` — 5-10 rows extracted from train.parquet for smoke testing
 - [ ] `eval_utils.py` — remove `from agentlightning.reward import reward` decorator;
       keep `scalar_are_results_same` and `evaluate` as pure functions;
       `evaluate` becomes sync (drop `async`, not needed in hooks)
@@ -152,7 +153,7 @@ Each sub-item is one commit. Implement in order.
 - [ ] `run.sh` — E2E entrypoint:
       1. Source `vllm/.env.example`
       2. Verify vLLM reachable at `AGL_VLLM_PORT`
-      3. `scripts/build_images.sh --calc-x` (build agent image into minikube)
+      3. `scripts/build_images.sh --include-example calc-x` (build agent image into minikube)
       4. `agl-lite deploy --env-file vllm/.env.example`
       5. Wait for healthz
       6. `exec python train_calc_agent.py "$@"`

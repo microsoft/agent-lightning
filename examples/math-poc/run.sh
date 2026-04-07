@@ -80,7 +80,7 @@ fi
 
 # --- Build images ---
 echo "=== Building images ==="
-scripts/build_images.sh --math-poc 2>&1 | tee "$LOG_DIR/build.log"
+scripts/build_images.sh --include-example math-poc 2>&1 | tee "$LOG_DIR/build.log"
 
 # --- Deploy K8s infra ---
 echo ""
