@@ -60,13 +60,118 @@ Questions to resolve:
 
 ## Phase 5c: Full training loop E2E [ongoing]
 
-- [ ] Migrate `examples/calc_x/` from Agent Lightning as the primary training example
-  - Adapt `train_calc_agent.py` to agl-lite VERL entrypoint (`run_ppo`) and agl-lite auth/url flow
-  - Replace `agentlightning` runtime dependencies in `calc_agent.py` / `eval_utils.py`
-  - Provide a self-contained run script
+Migrate `examples/calc_x/` from Agent Lightning as the primary VERL training example.
+Mode: `agl-in-host` (agl-lite serve + vLLM on host, controller + agent pods in minikube).
+
+### Architecture
+
+```
+run.sh                          ← E2E entrypoint
+  ├── verify vLLM reachable
+  ├── minikube image build (agent Docker image)
+  ├── agl-lite deploy --env-file vllm/.env.example  (agl-in-host)
+  │     ├── K8s: namespace, secret, configmap
+  │     ├── K8s: controller deployment
+  │     └── Host: agl-lite serve (with hooks)
+  ├── wait for healthz
+  └── exec python train_calc_agent.py "$@"
+
+train_calc_agent.py             ← VERL training (assumes infra is up)
+  ├── load Calc-X parquet dataset
+  ├── build VERL config dict
+  │     └── agentlightning.agl_base_url / agl_key from env
+  └── run_ppo(config, train_dataset, val_dataset)
+        └── Ray → AgentLightningTrainer.fit()
+              └── AglLiteDaemon (HTTP → agl-lite server)
+                    ├── register model servers
+                    ├── enqueue rollouts → controller creates K8s Jobs
+                    │     └── agent pod: AutoGen + MCP calculator → gateway → vLLM
+                    ├── poll until all complete
+                    ├── fetch triplets (format=triplet, token IDs from gateway)
+                    └── build padded tensors → PPO update
+```
+
+For iterative development, run `train_calc_agent.py` directly (infra already up).
+
+### Implementation plan
+
+Each sub-item is one commit. Implement in order.
+
+#### 5c.1: Dataset and eval utils [ready]
+
+- [ ] `data/download.sh` — download Calc-X parquet from Google Drive; verify checksums
+- [ ] `data/sample.jsonl` — 5-10 rows for smoke testing without full download
+- [ ] `eval_utils.py` — remove `from agentlightning.reward import reward` decorator;
+      keep `scalar_are_results_same` and `evaluate` as pure functions;
+      `evaluate` becomes sync (drop `async`, not needed in hooks)
+
+#### 5c.2: Agent container [ready]
+
+- [ ] `agents/calc_agent.py` — standalone container agent (no agl-lite imports):
+      reads `AGL_TASK_INPUT` (JSON: `{question, id}`), starts MCP calculator
+      via `uvx mcp-server-calculator`, runs AutoGen `AssistantAgent` with
+      `reflect_on_tool_use=True`, extracts answer via `### ANSWER: <answer> ###`
+      regex, posts `agent_output` event to `AGL_EVENT_URL` with `{answer, raw_response}`.
+      Uses `OPENAI_BASE_URL` / `OPENAI_API_KEY` (injected by controller).
+      Timeout: 5 min per problem.
+- [ ] `Dockerfile.agent` — `python:3.12-slim` + `pip install openai autogen-agentchat
+      autogen-ext[openai] mcp` + copy agent script. Needs `uvx` for MCP server.
+- [ ] `job-template.yaml` — pod spec with `agent` container, `imagePullPolicy: Never`
+      (minikube), resource requests (CPU-only, MCP tools don't need GPU)
+
+#### 5c.3: Hooks and config [ready]
+
+- [ ] `vllm/hooks.py` — `CalcXHooks(RolloutHooks)`:
+      `on_enqueue`: inject `AGL_TASK_INPUT` (question + id) and `AGL_MODEL_NAME` into pod env.
+      `on_succeeded`: extract answer from `agent_output` event, compare with ground truth
+      using `eval_utils.scalar_are_results_same`, post `reward` event.
+- [ ] `vllm/gateway-config.yaml` — same as math-poc: `return_token_ids: true` for all models
+- [ ] `vllm/.env.example` — deploy config: `AGL_NAMESPACE`, `AGL_MODE=agl-in-host`,
+      `AGL_GATEWAY_CONFIG`, `AGL_HOOKS`, `AGL_POD_SPEC_TEMPLATE`,
+      `AGL_MODEL_NAME=Qwen/Qwen2.5-1.5B-Instruct`, `AGL_MODEL_ENDPOINT=http://localhost:8010/v1`,
+      vLLM params, VERL params
+
+#### 5c.4: Training script [ready]
+
+- [ ] `train_calc_agent.py` — rewrite:
+      - Load parquet dataset (train + val) via `datasets.Dataset.from_parquet`
+      - Build VERL config dict (reuse `verl_default_config()` structure)
+      - Add `agentlightning` section: `agl_base_url` from `AGL_BASE_URL` env,
+        `agl_key` from `AGL_KEY` env
+      - Call `run_ppo(config, train_dataset, val_dataset)` from
+        `agl_lite.verl.entrypoint`
+      - CLI args: `--train-file`, `--val-file`, `--model` (optional override),
+        `--ci` / `--ci-fast` (for testing)
+      - Drop all Agent Lightning deps: `agl.VERL`, `agl.Trainer`, `agl.OtelTracer`,
+        `LlmProxyTraceToTriplet`, `LightningStoreClient`, `MongoLightningStore`,
+        `WeaveTracer`, `n_runners`, `external_store_address`, `mongo_uri`, `weave`,
+        `lora` (can add back later), `trajectory_level`
+
+#### 5c.5: Run script and cleanup [ready]
+
+- [ ] `run.sh` — E2E entrypoint:
+      1. Source `vllm/.env.example`
+      2. Verify vLLM reachable at `AGL_VLLM_PORT`
+      3. `scripts/build_images.sh --calc-x` (build agent image into minikube)
+      4. `agl-lite deploy --env-file vllm/.env.example`
+      5. Wait for healthz
+      6. `exec python train_calc_agent.py "$@"`
+- [ ] Delete old files: `calc_agent.py` (old), `tests/` (Agent Lightning tests)
+- [ ] Update `README.md` with new usage instructions
+
+#### 5c.6: Smoke test and validation [ready]
+
+- [ ] Verify with `--ci-fast`: single PPO step, 1 GPU, tiny batch
+      - agl-lite serve starts, controller reconciles, agent pods run,
+        gateway captures token IDs, triplets extracted, PPO update completes
+- [ ] Verify reward signal: non-zero rewards from Calc-X eval, visible in VERL metrics
+
+### Future (separate items)
+
 - [ ] Weight update protocol: after PPO step, update vLLM model weights
 - [ ] Multi-iteration training with measurable reward improvement
-- [ ] Pre-flight checks: healthz, auth, model registration, rollout completion, triplet extraction, non-empty PPO batch
+- [ ] Pre-flight checks: healthz, auth, model registration, rollout completion,
+      triplet extraction, non-empty PPO batch
 
 ---
 
