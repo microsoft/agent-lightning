@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Sequence, Type
 
 import hydra
@@ -48,11 +49,17 @@ def run_ppo(
         except AttributeError:
             # verl < 0.6.0
             num_cpus = config.ray_init.num_cpus
+        # On shared machines, RAY_tmpdir isolates from other users' clusters.
+        _temp_dir = os.environ.get("RAY_tmpdir")
         ray.init(
             runtime_env={
-                "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}
+                "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"},
+                # Prevent Ray from packaging the local module and creating a new venv.
+                # Workers should use the same environment as the driver.
+                "working_dir": None,
             },
             num_cpus=num_cpus,
+            **({"_temp_dir": _temp_dir} if _temp_dir else {}),
         )
 
     runner = TaskRunner.remote()

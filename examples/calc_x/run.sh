@@ -88,6 +88,11 @@ fi
 export AGL_BASE_URL=http://localhost:8080
 export AGL_KEY
 
+# Avoid conflicts with existing Ray clusters on shared machines.
+# Use a separate temp dir and auto-pick a free GCS port.
+export RAY_GCS_SERVER_PORT=${RAY_GCS_SERVER_PORT:-0}
+export RAY_tmpdir=${RAY_tmpdir:-/tmp/ray_agl_lite_$$}
+
 # --- Run training ---
 echo ""
 echo "=== Running VERL training ==="
