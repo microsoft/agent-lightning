@@ -148,7 +148,7 @@ Each sub-item is one commit. Implement in order.
         `WeaveTracer`, `n_runners`, `external_store_address`, `mongo_uri`, `weave`,
         `lora` (can add back later), `trajectory_level`
 
-#### 5c.5: Run script and cleanup [ready]
+#### 5c.5: Run script and cleanup [completed]
 
 - [ ] `run.sh` — E2E entrypoint:
       1. Source `vllm/.env.example`

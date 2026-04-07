@@ -1,79 +1,87 @@
-# Calc-X Example (migration WIP)
+# Calc-X Example — VERL Training on agl-lite
 
-> This directory is being migrated from original Agent Lightning for apple-to-apple
-> VERL training comparison on agl-lite.
-> Files prefixed with `legacy_` are intentionally ignored in this migration.
+Train a mathematical reasoning agent using VERL (PPO/GRPO) on agl-lite.
+The agent uses AutoGen + MCP calculator tools to solve math problems,
+with the agl-lite gateway transparently capturing all LLM interactions
+for RL training.
 
+## Architecture
 
-[![calc_x CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-calc-x.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-calc-x.yml)
-
-This example demonstrates training a mathematical reasoning agent using VERL and AutoGen with calculator MCP tools. The goal here is parity migration from Agent Lightning onto agl-lite.
+```
+run.sh → agl-lite deploy (agl-in-host) → train_calc_agent.py
+              │                                    │
+              ├── K8s: controller                  ├── load Calc-X dataset
+              └── Host: agl-lite serve             └── run_ppo() → VERL trainer
+                    │                                        │
+                    │                               AglLiteDaemon (HTTP)
+                    │                                        │
+                    ├── enqueue rollouts ←───────────────────┘
+                    ├── controller creates K8s Jobs
+                    │     └── agent pod: AutoGen + MCP calculator
+                    │           └── LLM calls → gateway → vLLM
+                    ├── gateway captures token IDs
+                    └── triplets → padded tensors → PPO update
+```
 
 ## Requirements
 
-This example requires a single node with at least one 40GB GPU. Follow the [installation guide](../../docs/tutorials/installation.md) to install Agent-Lightning and VERL-related dependencies.
-
-Additionally, ensure `uv` and the MCP calculator server are properly installed. The agent relies on the MCP protocol to access calculator functionality during problem-solving.
-
-```bash
-pip install "autogen-agentchat" "autogen-ext[openai]" "mcp>=1.10.0"
-```
+- Single node with at least one 40GB GPU
+- minikube running with nvidia-container-toolkit
+- `uv` installed
+- Python 3.12+
 
 ## Dataset
 
-Download the Calc-X dataset in parquet format from [here](https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view?usp=sharing) and extract it to the `data` folder:
+Download the Calc-X dataset from [Google Drive](https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view?usp=sharing)
+and extract to the `data/` folder:
 
 ```bash
-unzip calc-x-data.zip -d data
+cd examples/calc_x
+# Download calc-x-data.zip from the link above, then:
+unzip data/calc-x-data.zip -d data/
 ```
 
-The dataset contains mathematical problems with ground truth solutions for training and evaluation.
+The dataset contains:
+- `train.parquet` — 8192 math problems for training
+- `test.parquet` — 500 problems for validation
+- `test_mini.parquet` — 20 problems for quick testing
+- `sample.jsonl` — 10 rows for smoke testing (checked into git)
 
-## Included Files
-
-| File/Directory | Description |
-|----------------|-------------|
-| `calc_agent.py` | Math problem-solving agent using AutoGen and MCP calculator tool |
-| `train_calc_agent.py` | Training script using VERL algorithm with configurable hyperparameters |
-| `eval_utils.py` | Evaluation utilities for assessing agent accuracy on math problems |
-| `data/` | Directory containing training and test datasets in parquet format |
-| `tests/` | Test files including MCP calculator verification script |
-| `legacy_calc_agent.py` | Legacy agent implementation compatible with Agent-lightning v0.1.x (deprecated) |
-| `legacy_calc_agent_debug.py` | Legacy debugging script compatible with Agent-lightning v0.1.x (deprecated) |
-| `legacy_train.sh` | Legacy training script compatible with Agent-lightning v0.1.x (deprecated) |
-
-## Running Examples
-
-### Training
-
-The training process uses distributed Ray workers to run agent rollouts in parallel while the training server optimizes the model. Start Ray before launching the training:
+## Quick Start
 
 ```bash
-bash ../../scripts/restart_ray.sh
+# Prerequisites
+export AGL_KEY=$(openssl rand -hex 32)
+scripts/start_vllm.sh  # Start vLLM inference server
+
+# Full training
+examples/calc_x/run.sh
+
+# CI smoke test (single PPO step)
+examples/calc_x/run.sh --ci-fast
 ```
 
-If you want to track experiments with Weights & Biases, set the `WANDB_API_KEY` environment variable **before starting Ray**.
+## Standalone Training
 
-Then run the training script:
+If agl-lite and vLLM are already running:
 
 ```bash
-python train_calc_agent.py --train-file data/train.parquet --val-file data/test.parquet
+python examples/calc_x/train_calc_agent.py \
+    --train-file examples/calc_x/data/train.parquet \
+    --val-file examples/calc_x/data/test.parquet
 ```
 
-The script automatically launches agent workers and the training server. The agent workers execute math problem rollouts using the MCP calculator, while the training server applies the VERL algorithm to improve the model based on rewards.
+## Files
 
-### Debugging
-
-To test the agent interactively without training:
-
-```bash
-python calc_agent.py
-```
-
-This runs the agent on sample problems to verify that the MCP calculator integration and AutoGen setup work correctly. This test relies on an OpenAI service available. Set `OPENAI_API_KEY` environment variable to the API key of the OpenAI service; and `OPENAI_API_BASE` environment variable to the base URL of the OpenAI service.
-
-A very common issue is that the agent may hang indefinitely if the environment is not properly configured. Verify that `uv` and the MCP calculator server are correctly installed by running:
-
-```bash
-python tests/test_mcp_calculator.py
-```
+| File | Description |
+|------|-------------|
+| `agents/calc_agent.py` | Standalone agent container — AutoGen + MCP calculator, no agl-lite imports |
+| `eval_utils.py` | Evaluation utilities — sympy-based numeric comparison |
+| `train_calc_agent.py` | Training script — loads dataset, builds VERL config, calls `run_ppo()` |
+| `run.sh` | E2E entrypoint — verify vLLM, build images, deploy, run training |
+| `Dockerfile.agent` | Agent container image |
+| `job-template.yaml` | K8s pod spec for agent jobs |
+| `vllm/hooks.py` | CalcXHooks — enqueue (inject task), on_succeeded (compute reward) |
+| `vllm/gateway-config.yaml` | Gateway config — inject `return_token_ids` for vLLM |
+| `vllm/.env.example` | Deploy + experiment configuration |
+| `data/` | Dataset directory (parquet files, gitignored except sample.jsonl) |
