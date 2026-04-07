@@ -193,6 +193,7 @@ Each sub-item is one commit. Implement in order.
 - [ ] Prometheus metrics (optional)
 - [ ] Docker images for agl-lite serve and controller
 - [ ] CI/CD pipeline
+- [ ] `build_images.sh`: support build backends beyond minikube (e.g., `docker build` + push to a registry) for real cluster deployments. Currently hardcoded to `minikube image build` which only works for local dev.
 
 ---
 
