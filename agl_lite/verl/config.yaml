@@ -9,12 +9,14 @@ defaults:
 agentlightning:
   agl_base_url: ${oc.env:AGL_BASE_URL,http://localhost:8080}
   agl_key: ${oc.env:AGL_KEY,}
+  model_endpoint: ${oc.env:AGL_MODEL_ENDPOINT,}  # external model endpoint (if not using VERL's internal vLLM)
+  timeout_seconds: 1200
   trace_aggregator:
-    level: transition  # transition or trajectory, docs refer to https://agent-lightning.github.io/posts/trajectory_level_aggregation/
-    trajectory_max_prompt_length: 2048  # supported in trajectory level aggregation, suggest to set as maximum length for the prompt in first turn
-    trajectory_max_response_length: 8192  # supported in trajectory level aggregation, suggest to set as maximum length for the cumulative agent responses in the full trajectory, i.e., n_turns * (max_response_length + max_prompt_length)
-    debug: False  # supported in trajectory level aggregation, enable to diagnose trace merging failures
-    mismatch_log_dir: ./mismatch_cases  # supported in trajectory level aggregation with debug=True, directory to store logs of mismatch cases
+    level: transition
+    trajectory_max_prompt_length: 2048
+    trajectory_max_response_length: 8192
+    debug: False
+    mismatch_log_dir: ./mismatch_cases
 
 data:
   filter_overlong_prompts: false

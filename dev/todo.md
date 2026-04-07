@@ -171,7 +171,7 @@ Environment issues resolved:
 - [x] CUDA auto-detect in setup_verl.sh (cu128 fallback)
 - [x] verl/vllm version alignment (verl 0.7.1 + vllm 0.12.0)
 
-#### 5c.7: Migrate VERL integration to 0.7.1 AgentLoopManager API [ready]
+#### 5c.7: Migrate VERL integration to 0.7.1 AgentLoopManager API [ongoing]
 
 VERL 0.7.1 introduced `AgentLoopManager` — a built-in agent orchestration system
 that replaces the pattern of subclassing `RayPPOTrainer`. Our current code

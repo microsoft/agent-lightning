@@ -4,226 +4,158 @@
 # pyright: reportUnknownMemberType=false
 # pyright: reportUnknownArgumentType=false
 
+"""VERL entrypoint for agl-lite — thin wrapper around verl's run_ppo.
+
+The only customization is injecting our AglLiteAgentLoopManager via
+the ``agent_loop_manager_class`` config field, so the standard
+RayPPOTrainer uses agl-lite for agent execution while keeping VERL's
+internal vLLM servers for inference (with weight updates after PPO steps).
+"""
+
 from __future__ import annotations
 
 import os
-from typing import Any, Sequence, Type
+from typing import Any, Sequence
 
 import hydra
 import ray
-from ray.actor import ActorClass
-from verl.trainer.main_ppo import create_rl_sampler
-from verl.trainer.ppo.reward import load_reward_manager
+from omegaconf import OmegaConf
 
-from .dataset import AgentDataset, LoadedDataset
-from .trainer import AgentLightningTrainer
+from .dataset import LoadedDataset
 
 __all__ = [
     "main",
     "run_ppo",
-    "TaskRunner",
 ]
+
+# FQN of our custom AgentLoopManager — set in config automatically.
+_AGL_LITE_AGENT_LOOP_MANAGER = "agl_lite.verl.agent_loop.AglLiteAgentLoopManager"
 
 
 @hydra.main(config_path="pkg://agl_lite/verl", config_name="config", version_base=None)
 def main(config: Any):
-    run_ppo(
-        config,
-        train_dataset=None,
-        val_dataset=None,
-        trainer_cls=AgentLightningTrainer,
-    )
+    run_ppo(config, train_dataset=None, val_dataset=None)
 
 
 def run_ppo(
     config: Any,
     train_dataset: Sequence[Any] | None,
     val_dataset: Sequence[Any] | None,
-    trainer_cls: Type[AgentLightningTrainer] = AgentLightningTrainer,
 ) -> None:
+    """Launch VERL PPO training with agl-lite agent orchestration.
+
+    Injects ``AglLiteAgentLoopManager`` into the config and delegates to
+    verl's standard ``main_ppo.run_ppo``.  Datasets are wrapped in
+    ``LoadedDataset`` if provided as in-memory sequences.
+    """
+    # Ensure our agent loop manager is set in the config.
+    OmegaConf.set_struct(config, False)
+    if not config.actor_rollout_ref.rollout.get("agent"):
+        config.actor_rollout_ref.rollout.agent = {}
+    config.actor_rollout_ref.rollout.agent.agent_loop_manager_class = _AGL_LITE_AGENT_LOOP_MANAGER
+    OmegaConf.set_struct(config, True)
+
+    # Wrap in-memory datasets for verl compatibility.
+    if train_dataset is not None:
+        train_dataset = LoadedDataset(train_dataset)
+    if val_dataset is not None:
+        val_dataset = LoadedDataset(val_dataset)
+
+    # Use verl's standard run_ppo with a custom TaskRunner that passes datasets.
+    from verl.trainer.main_ppo import run_ppo as verl_run_ppo
+
+    # verl's run_ppo doesn't accept datasets directly — it expects them to be
+    # loaded from files inside TaskRunner. We use a custom TaskRunner subclass
+    # that injects the pre-loaded datasets.
+    if train_dataset is not None or val_dataset is not None:
+        _run_ppo_with_datasets(config, train_dataset, val_dataset)
+    else:
+        verl_run_ppo(config)
+
+
+def _run_ppo_with_datasets(config: Any, train_dataset: Any, val_dataset: Any) -> None:
+    """Start Ray and run PPO with pre-loaded datasets."""
+    from verl.trainer.main_ppo import TaskRunner as VerlTaskRunner, get_ppo_ray_runtime_env
+
     if not ray.is_initialized():
-        # this is for local ray cluster
-        try:
-            # verl >= 0.6.0
-            num_cpus = config.ray_kwargs.ray_init.num_cpus
-        except AttributeError:
-            # verl < 0.6.0
-            num_cpus = config.ray_init.num_cpus
+        default_runtime_env = get_ppo_ray_runtime_env()
+        ray_init_kwargs = OmegaConf.to_container(
+            config.ray_kwargs.get("ray_init", OmegaConf.create({}))
+        )
+        runtime_env_kwargs = ray_init_kwargs.pop("runtime_env", {})
+        runtime_env = {**default_runtime_env, **runtime_env_kwargs}
+
         # On shared machines, RAY_tmpdir isolates from other users' clusters.
         _temp_dir = os.environ.get("RAY_tmpdir")
+
         ray.init(
-            runtime_env={
-                "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"},
-                # Prevent Ray from packaging the local module and creating a new venv.
-                # Workers should use the same environment as the driver.
-                "working_dir": None,
-            },
-            num_cpus=num_cpus,
+            runtime_env=runtime_env,
             **({"_temp_dir": _temp_dir} if _temp_dir else {}),
+            **ray_init_kwargs,
         )
 
-    runner = TaskRunner.remote()
-    ray.get(
-        runner.run.remote(  # type: ignore
-            config=config,
-            train_dataset=train_dataset,
-            val_dataset=val_dataset,
-            trainer_cls=trainer_cls,
-        )
-    )
+    @ray.remote(num_cpus=1)
+    class AglTaskRunner(VerlTaskRunner):
+        """TaskRunner that uses pre-loaded datasets instead of loading from files."""
 
+        def run(self, config):
+            from pprint import pprint
+            from omegaconf import OmegaConf
+            from verl.utils.fs import copy_to_local
+            from verl.utils.tokenizer import hf_processor, hf_tokenizer
+            from verl.utils.dataset.rl_dataset import collate_fn
+            from verl.trainer.main_ppo import create_rl_sampler
+            from verl.trainer.ppo.ray_trainer import RayPPOTrainer, ResourcePoolManager
 
-@ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
-class TaskRunner:
-    def run(
-        self,
-        config: Any,
-        train_dataset: Sequence[Any] | None,
-        val_dataset: Sequence[Any] | None,
-        trainer_cls: Type[AgentLightningTrainer],
-    ):
-        # print initial config
-        from pprint import pprint
+            pprint(OmegaConf.to_container(config, resolve=True))
+            OmegaConf.resolve(config)
 
-        from omegaconf import OmegaConf
-        from verl.utils.fs import copy_to_local
+            local_path = copy_to_local(config.actor_rollout_ref.model.path)
+            trust_remote_code = config.data.get("trust_remote_code", False)
+            tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+            processor = hf_processor(local_path, use_fast=True)
 
-        pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
-        OmegaConf.resolve(config)
+            # Worker setup — delegated to parent's add_* methods
+            actor_rollout_cls, ray_worker_group_cls = self.add_actor_rollout_worker(config)
+            self.add_critic_worker(config)
+            self.add_reward_model_worker(config)
+            self.add_reference_policy_worker(config, actor_rollout_cls)
 
-        # download the checkpoint from hdfs
-        local_path = copy_to_local(config.actor_rollout_ref.model.path)
-
-        # instantiate tokenizer
-        from verl.utils.tokenizer import hf_processor, hf_tokenizer
-
-        trust_remote_code = config.data.get("trust_remote_code", False)
-        tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
-        processor = hf_processor(local_path, use_fast=True)  # used for multimodal LLM, could be none
-
-        # define worker classes
-        if config.actor_rollout_ref.actor.strategy in ["fsdp", "fsdp2"]:
-            assert config.critic.strategy in ["fsdp", "fsdp2"]
-            from verl.single_controller.ray import RayWorkerGroup
-            from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker, CriticWorker
-
-            actor_rollout_cls = (
-                AsyncActorRolloutRefWorker
-                if config.actor_rollout_ref.rollout.mode == "async"
-                else ActorRolloutRefWorker
+            global_pool_id = "global_pool"
+            resource_pool_spec = {
+                global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
+            }
+            mapping = {role: global_pool_id for role in self.role_worker_mapping}
+            resource_pool_manager = ResourcePoolManager(
+                resource_pool_spec=resource_pool_spec, mapping=mapping
             )
-            ray_worker_group_cls = RayWorkerGroup
 
-        elif config.actor_rollout_ref.actor.strategy == "megatron":
-            assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
-            # FIXME: This import is outdated
-            from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup  # type: ignore
-            from verl.workers.megatron_workers import ActorRolloutRefWorker, CriticWorker
+            # Use pre-loaded datasets (passed via ray.put)
+            td = ray.get(train_dataset_ref)
+            vd = ray.get(val_dataset_ref)
 
-            actor_rollout_cls = ActorRolloutRefWorker
-            ray_worker_group_cls = NVMegatronRayWorkerGroup
-
-        else:
-            raise NotImplementedError
-
-        from verl.trainer.ppo.ray_trainer import ResourcePoolManager
-
-        try:
-            # verl >= 0.6.0
-            from verl.trainer.ppo.utils import Role
-        except ImportError:
-            # Fallback for verl <= 0.5.0
-            from verl.trainer.ppo.ray_trainer import Role  # type: ignore
-
-        role_worker_mapping: dict[Role, ActorClass[Any]] = {
-            Role.ActorRollout: ray.remote(actor_rollout_cls),
-            Role.Critic: ray.remote(CriticWorker),
-        }
-
-        global_pool_id = "global_pool"
-        resource_pool_spec = {
-            global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
-        }
-        mapping = {
-            Role.ActorRollout: global_pool_id,
-            Role.Critic: global_pool_id,
-        }
-
-        # we should adopt a multi-source reward function here
-        # - for rule-based rm, we directly call a reward score
-        # - for model-based rm, we call a model
-        # - for code related prompt, we send to a sandbox if there are test cases
-        # - finally, we combine all the rewards together
-        # - The reward type depends on the tag of the data
-        if config.reward_model.enable:
-            if config.reward_model.strategy in ["fsdp", "fsdp2"]:
-                from verl.workers.fsdp_workers import RewardModelWorker
-            elif config.reward_model.strategy == "megatron":
-                from verl.workers.megatron_workers import RewardModelWorker
-            else:
-                raise NotImplementedError
-            role_worker_mapping[Role.RewardModel] = ray.remote(RewardModelWorker)
-            mapping[Role.RewardModel] = global_pool_id
-
-        # use reference model
-        if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
-            role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
-            mapping[Role.RefPolicy] = global_pool_id
-
-        reward_fn = load_reward_manager(
-            config, tokenizer, **config.reward_model.get("reward_kwargs", {})
-        )
-        val_reward_fn = load_reward_manager(
-            config, tokenizer, **config.reward_model.get("reward_kwargs", {})
-        )
-        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
-
-        from verl.utils.dataset.rl_dataset import collate_fn
-
-        # Use our special dataset
-        if train_dataset is None:
-            train_dataset = AgentDataset(
-                data_files=config.data.train_files,
+            train_sampler = create_rl_sampler(config.data, td)
+            trainer = RayPPOTrainer(
+                config=config,
                 tokenizer=tokenizer,
                 processor=processor,
-                config=config.data,
+                role_worker_mapping=self.role_worker_mapping,
+                resource_pool_manager=resource_pool_manager,
+                ray_worker_group_cls=ray_worker_group_cls,
+                train_dataset=td,
+                val_dataset=vd,
+                collate_fn=collate_fn,
+                train_sampler=train_sampler,
             )
-        else:
-            train_dataset = LoadedDataset(train_dataset)
+            trainer.init_workers()
+            trainer.fit()
 
-        if val_dataset is None:
-            val_dataset = AgentDataset(
-                data_files=config.data.val_files,
-                tokenizer=tokenizer,
-                processor=processor,
-                config=config.data,
-            )
-        else:
-            val_dataset = LoadedDataset(val_dataset)
+    # Put datasets in Ray object store
+    train_dataset_ref = ray.put(train_dataset)
+    val_dataset_ref = ray.put(val_dataset)
 
-        # agl-lite connection: read from config (set via env vars or Hydra overrides)
-        agl_base_url = config.agentlightning.get("agl_base_url", "http://localhost:8080")
-        agl_key = config.agentlightning.get("agl_key", "")
-
-        train_sampler = create_rl_sampler(config.data, train_dataset)
-        trainer = trainer_cls(
-            agl_base_url=agl_base_url,
-            agl_key=agl_key,
-            config=config,
-            tokenizer=tokenizer,
-            processor=processor,
-            role_worker_mapping=role_worker_mapping,
-            resource_pool_manager=resource_pool_manager,
-            ray_worker_group_cls=ray_worker_group_cls,
-            reward_fn=reward_fn,
-            val_reward_fn=val_reward_fn,
-            train_dataset=train_dataset,
-            val_dataset=val_dataset,
-            collate_fn=collate_fn,
-            train_sampler=train_sampler,
-        )
-        trainer.init_workers()
-        trainer.fit()
+    runner = AglTaskRunner.remote()
+    ray.get(runner.run.remote(config))
 
 
 if __name__ == "__main__":
