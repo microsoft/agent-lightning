@@ -84,8 +84,13 @@ scripts/build_images.sh --include-example math-poc 2>&1 | tee "$LOG_DIR/build.lo
 
 # --- Deploy K8s infra ---
 echo ""
+# Clean up previous deployment if any — avoids stale Jobs/pods from prior runs.
+if kubectl get namespace "$NS" > /dev/null 2>&1; then
+    echo "=== Cleaning up previous deployment in namespace: $NS ==="
+    uv run agl-lite deploy --env-file "$DEPLOY_CONFIG" --cleanup 2>&1 | tee "$LOG_DIR/deploy.log"
+fi
 echo "=== Deploying with config: $DEPLOY_CONFIG ==="
-uv run agl-lite deploy --env-file "$DEPLOY_CONFIG" 2>&1 | tee "$LOG_DIR/deploy.log"
+uv run agl-lite deploy --env-file "$DEPLOY_CONFIG" 2>&1 | tee -a "$LOG_DIR/deploy.log"
 
 # --- Deploy mockai (mock mode only) ---
 if [ "$MODE" = "mock" ]; then

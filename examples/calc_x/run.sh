@@ -22,6 +22,12 @@ MODE_DIR="$SCRIPT_DIR/vllm"
 
 cd "$REPO_ROOT"
 
+# --- Setup log directory ---
+LOG_DIR="$SCRIPT_DIR/logs/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$LOG_DIR"
+export AGL_LOG_DIR="$LOG_DIR"
+echo "=== Logs → $LOG_DIR ==="
+
 # --- Load config ---
 if [ ! -f "$MODE_DIR/.env.example" ]; then
     echo "ERROR: $MODE_DIR/.env.example not found"
@@ -51,7 +57,13 @@ echo "=== Building images ==="
 scripts/build_images.sh --include-example calc-x
 
 # --- Deploy K8s infra + start host agl-lite ---
+NS="$(grep -E '^AGL_NAMESPACE=' "$DEPLOY_CONFIG" | cut -d= -f2 | tr -d '[:space:]')"
 echo ""
+# Clean up previous deployment if any — avoids stale Jobs/pods from prior runs.
+if kubectl get namespace "$NS" > /dev/null 2>&1; then
+    echo "=== Cleaning up previous deployment in namespace: $NS ==="
+    uv run agl-lite deploy --env-file "$DEPLOY_CONFIG" --cleanup
+fi
 echo "=== Deploying (agl-in-host) ==="
 uv run agl-lite deploy --env-file "$DEPLOY_CONFIG"
 
