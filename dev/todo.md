@@ -173,6 +173,29 @@ Environment issues resolved:
 
 #### 5c.7: Migrate VERL integration to 0.7.1 AgentLoopManager API [ongoing]
 
+Implementation done. Remaining: hardware-specific VERL config tuning.
+
+Completed:
+- [x] `agl_lite/verl/agent_loop.py` — `AglLiteAgentLoopManager(AgentLoopManager)`
+- [x] Delete `agl_lite/verl/trainer.py` — use standard `RayPPOTrainer`
+- [x] Simplify `agl_lite/verl/entrypoint.py` — use verl's `TaskRunner` pattern
+- [x] `config.yaml` — add `model_endpoint`, `timeout_seconds`
+- [x] Fix `dataset.py` — `LoadedDataset` for verl 0.7.1 serialization
+- [x] Fix Ray isolation — `RAY_GCS_SERVER_PORT=0`, `RAY_tmpdir`, `working_dir=None`
+- [x] Fix import paths — `verl.utils.ray_utils.auto_await`
+
+E2E progress:
+- [x] Ray init (separate cluster on shared machine)
+- [x] FSDP model loaded (Qwen2.5-1.5B-Instruct)
+- [x] vLLMHttpServer launched by VERL
+- [ ] vLLM engine core startup — fails with `Engine core initialization failed`.
+      Likely GPU memory contention: FSDP + vLLM on same GPU in hybrid mode.
+      Need to tune `gpu_memory_utilization`, or use more GPUs (`n_gpus_per_node: 2+`).
+- [ ] Agent rollout execution via agl-lite
+- [ ] PPO update completion
+
+Environment note: requires `python3.12-dev` for triton JIT compilation.
+
 VERL 0.7.1 introduced `AgentLoopManager` — a built-in agent orchestration system
 that replaces the pattern of subclassing `RayPPOTrainer`. Our current code
 (`AgentLightningTrainer` + custom `_train_step` + custom `fit`) overrides half
