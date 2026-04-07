@@ -106,7 +106,7 @@ Each sub-item is one commit. Implement in order.
       keep `scalar_are_results_same` and `evaluate` as pure functions;
       `evaluate` becomes sync (drop `async`, not needed in hooks)
 
-#### 5c.2: Agent container [ready]
+#### 5c.2: Agent container [completed]
 
 - [ ] `agents/calc_agent.py` — standalone container agent (no agl-lite imports):
       reads `AGL_TASK_INPUT` (JSON: `{question, id}`), starts MCP calculator
