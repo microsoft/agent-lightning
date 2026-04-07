@@ -28,23 +28,6 @@
 
 ---
 
-## Gateway streaming assembly: multi-format support [completed]
-
-### Summary
-
-Refactored streaming assembly into `agl_lite/gateway/assemblers/` sub-package:
-
-- `__init__.py` — assembler registry (`select_assembler`) mapping path suffixes to format-specific assembler functions
-- `chat_completion.py` — OpenAI `/v1/chat/completions` (moved from `proxy.py`)
-- `completion.py` — legacy `/v1/completions` (new)
-- `anthropic.py` — Anthropic `/v1/messages` (new)
-
-`proxy.py` now calls `select_assembler(path)` instead of inline `is_chat` check. Unknown paths fall back to raw `{"chunks": [...]}`. Adding a new format = one new file + one line in the registry.
-
-Tests: 19 new unit tests in `tests/gateway/test_assemblers.py` (registry dispatch, each assembler, edge cases). Existing proxy integration tests updated and passing.
-
----
-
 ## Anthropic `/v1/messages` + vLLM token IDs [discuss]
 
 vLLM's `/v1/messages` (Anthropic-compatible) interface does not appear to support `return_token_ids` yet — unlike `/v1/chat/completions` which returns `prompt_token_ids` and per-choice `token_ids` when enabled. If we want to train with vLLM through the Anthropic interface, we need token IDs for triplet extraction.
@@ -107,23 +90,9 @@ Questions to resolve:
 
 ---
 
-## Settings refactor: BaseModel + CLI owns env mapping [completed]
-
-(Done — see Completed section above.)
-
----
-
 ## Logging persistence [backlog]
 
 Goal: logs survive pod deletion and are easy to find without a log aggregation stack.
-
-### 7a: Structured logging for server [completed]
-
-(Done — see Completed section above.)
-
-### 7b: Per-pod log volume for agents [completed]
-
-(Done — see Completed section above.)
 
 ---
 
