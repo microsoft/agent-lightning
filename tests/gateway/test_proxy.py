@@ -303,19 +303,27 @@ class TestProxyStreaming:
         assert response_data["chunks"][0]["choices"][0]["text"] == " world"
 
     def test_streaming_preserves_token_ids(self, client: TestClient, auth: dict, httpx_mock):
-        """Streaming assembly preserves prompt_token_ids and per-choice token_ids."""
+        """Streaming assembly preserves prompt_token_ids and per-choice token_ids.
+
+        Mirrors real vLLM output: chunk[0] has prompt_token_ids at top level
+        AND choices with role+content+token_ids; subsequent chunks have delta
+        content + token_ids.
+        """
         rid = _enqueue(client, auth)
         _register_model(client, auth)
 
+        # Realistic vLLM shape: chunk[0] carries prompt_token_ids and may
+        # include content + token_ids in choices (e.g. when echo or first
+        # token is generated alongside the role init).
         sse_chunks = [
             {
                 "id": "chatcmpl-1",
-                "choices": [{"delta": {"role": "assistant", "content": ""}}],
+                "choices": [{"delta": {"role": "assistant", "content": "Hi"}, "token_ids": [100]}],
                 "prompt_token_ids": [10, 20, 30],
             },
             {
                 "id": "chatcmpl-1",
-                "choices": [{"delta": {"content": "Hi"}, "token_ids": [100, 200]}],
+                "choices": [{"delta": {"content": " there"}, "token_ids": [200, 201]}],
             },
             {
                 "id": "chatcmpl-1",
@@ -341,10 +349,10 @@ class TestProxyStreaming:
 
         # prompt_token_ids from first chunk preserved at top level
         assert response_data["prompt_token_ids"] == [10, 20, 30]
-        # token_ids concatenated across chunks into the choice
-        assert response_data["choices"][0]["token_ids"] == [100, 200, 300]
-        # text still assembled correctly
-        assert response_data["choices"][0]["message"]["content"] == "Hi!"
+        # token_ids from ALL chunks (including chunk[0]) concatenated into the choice
+        assert response_data["choices"][0]["token_ids"] == [100, 200, 201, 300]
+        # text from ALL chunks (including chunk[0]) assembled correctly
+        assert response_data["choices"][0]["message"]["content"] == "Hi there!"
 
     def test_streaming_token_ids_triplet_roundtrip(self, client: TestClient, auth: dict, httpx_mock):
         """Token IDs survive gateway assembly → triplet extraction."""
