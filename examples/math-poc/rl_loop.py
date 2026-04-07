@@ -34,6 +34,7 @@ NUM_ITERATIONS = int(os.environ.get("AGL_NUM_ITERATIONS", "1"))
 POLL_INTERVAL = int(os.environ.get("AGL_POLL_INTERVAL_SEC", "5"))
 MAX_POLL_TIME = int(os.environ.get("AGL_MAX_POLL_TIME", "300"))
 LOG_DIR = os.environ.get("AGL_LOG_DIR")
+DATA_DIR = Path(__file__).resolve().parent / "data"
 
 _log_file = None
 

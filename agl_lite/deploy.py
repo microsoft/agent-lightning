@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import typer
+from dotenv import dotenv_values
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -238,10 +239,25 @@ def deploy(env_file: str, cleanup: bool) -> None:
             cmd += ["--gateway-config", cfg.gateway_config]
         if cfg.hooks:
             cmd += ["--hooks", cfg.hooks]
+        # Build server env: env-file vars < os.environ < explicit overrides.
+        # This ensures hook-specific vars (e.g. AGL_POD_SPEC_TEMPLATE) from the
+        # .env file reach the server even if they weren't exported in the shell.
+        server_env = {
+            **dotenv_values(str(env_file_path)),
+            **os.environ,
+            "AGL_KEY": agl_key,
+            "AGL_LOG_DIR": resolved_log_dir,
+        }
+        # Detach stdout/stderr so the server doesn't inherit the caller's pipe.
+        # Logs go to resolved_log_dir/server.log via configure_logging().
+        # Without this, any `cmd | tee file` in the caller's shell keeps
+        # its pipe open until the server exits (never), blocking the script.
         p = subprocess.Popen(
                 cmd,
-                env={**os.environ, "AGL_KEY": agl_key, "AGL_LOG_DIR": resolved_log_dir},
+                env=server_env,
                 start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         pid_file.write_text(str(p.pid))
 
