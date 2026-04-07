@@ -160,12 +160,26 @@ Each sub-item is one commit. Implement in order.
 - [ ] Delete old files: `calc_agent.py` (old), `tests/` (Agent Lightning tests)
 - [ ] Update `README.md` with new usage instructions
 
-#### 5c.6: Smoke test and validation [ready]
+#### 5c.6: Smoke test and validation [ongoing]
 
-- [ ] Verify with `--ci-fast`: single PPO step, 1 GPU, tiny batch
-      - agl-lite serve starts, controller reconciles, agent pods run,
-        gateway captures token IDs, triplets extracted, PPO update completes
-- [ ] Verify reward signal: non-zero rewards from Calc-X eval, visible in VERL metrics
+Blocked on VERL API migration. The entrypoint/trainer code was ported from Agent Lightning
+which used verl 0.6.0. We need verl 0.7.1 (for vllm>=0.10.2 compat), but 0.7.1 has breaking
+API changes:
+
+- [x] `load_reward_manager` — `num_examine` kwarg removed
+- [ ] `RayPPOTrainer.__init__` — `reward_fn`/`val_reward_fn` kwargs removed or renamed
+- [ ] `create_rl_sampler` — signature may have changed
+- [ ] Other potential changes in trainer.py / entrypoint.py
+
+Need to diff `verl/trainer/ppo/ray_trainer.py` between 0.6.0 and 0.7.1 to identify all
+breaking changes and update `agl_lite/verl/trainer.py` + `agl_lite/verl/entrypoint.py`.
+
+Environment issues resolved:
+- [x] Ray cluster conflict on shared machine (RAY_GCS_SERVER_PORT=0, RAY_tmpdir)
+- [x] Ray worker venv isolation (working_dir=None)
+- [x] flash-attn two-phase install (uv pip install --no-build-isolation after uv sync)
+- [x] CUDA auto-detect in setup_verl.sh (cu128 fallback)
+- [x] verl/vllm version alignment (verl 0.7.1 + vllm 0.12.0)
 
 ### Future (separate items)
 
