@@ -91,6 +91,22 @@ assembler = _select_assembler(path)
 response_body = assembler(chunks) if assembler else {"chunks": chunks}
 ```
 
+### Token IDs (vLLM-specific fields, now handled)
+
+vLLM streaming chunks include training-critical fields not in the OpenAI spec:
+- `chunks[0].prompt_token_ids: list[int]` — tokenized prompt in the first chunk
+- `choices[i].token_ids: list[int]` — per-chunk response token IDs
+
+`_assemble_chat_completion` now preserves both:
+- `prompt_token_ids` lifted from first chunk to top-level dict
+- `token_ids` concatenated across all chunks into each choice
+
+`_trim_model_request` (triplet extraction) reads them from the assembled dict
+the same way it reads non-streaming — no branching needed.
+
+Each new assembler must define its own token-ID-carrying convention (or omit
+them if the provider doesn't supply them).
+
 ### Assembler functions (scope: 3 formats)
 
 **1. `_assemble_chat_completion`** — already exists, handles `choices[i].delta.content`

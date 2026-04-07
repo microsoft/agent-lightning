@@ -218,6 +218,7 @@ def _assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
     last = chunks[-1]
 
     contents: dict[int, list[str]] = {}
+    token_ids: dict[int, list[int]] = {}
     finish_reasons: dict[int, str | None] = {}
     role: str = "assistant"
     for chunk in chunks:
@@ -227,6 +228,10 @@ def _assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
             if "role" in delta:
                 role = delta["role"]
             contents.setdefault(idx, []).append(delta.get("content") or "")
+            # vLLM includes per-chunk token_ids in each choice.
+            tids = choice.get("token_ids")
+            if tids:
+                token_ids.setdefault(idx, []).extend(tids)
             if choice.get("finish_reason"):
                 finish_reasons[idx] = choice["finish_reason"]
 
@@ -235,13 +240,15 @@ def _assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
             "index": idx,
             "message": {"role": role, "content": "".join(parts)},
             "finish_reason": finish_reasons.get(idx),
+            # Concatenated response token IDs (all chunks for this choice index).
+            **(  {"token_ids": token_ids[idx]} if idx in token_ids else {}),
         }
         for idx, parts in sorted(contents.items())
     ]
     if not choices:
         choices = [{"index": 0, "message": {"role": role, "content": ""}, "finish_reason": None}]
 
-    return {
+    result: dict[str, Any] = {
         "id": first.get("id", ""),
         "object": "chat.completion",
         "created": first.get("created"),
@@ -249,3 +256,7 @@ def _assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
         "choices": choices,
         "usage": last.get("usage"),
     }
+    # vLLM sends prompt_token_ids in the first chunk.
+    if first.get("prompt_token_ids"):
+        result["prompt_token_ids"] = first["prompt_token_ids"]
+    return result

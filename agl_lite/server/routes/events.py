@@ -28,15 +28,22 @@ def _get_store(request: Request) -> InMemoryStore:
 def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     """Extract prompt_token_ids and response_token_ids from a model_request event.
 
-    Handles both streaming (response is list of SSE chunks) and non-streaming
-    (response is a single dict) formats from vLLM.
+    After gateway assembly, both streaming and non-streaming responses share the
+    same dict shape with prompt_token_ids at top level and token_ids per choice.
+    Legacy raw-chunk format (list) is also supported for backward compatibility.
     """
     resp = data.get("response")
     prompt_token_ids: list[int] = []
     response_token_ids: list[int] = []
 
-    if isinstance(resp, list):
-        # Streaming: gather from SSE chunks
+    if isinstance(resp, dict):
+        # Assembled dict (streaming or non-streaming) — unified shape.
+        prompt_token_ids = resp.get("prompt_token_ids", [])
+        choices = resp.get("choices", [])
+        if choices:
+            response_token_ids = choices[0].get("token_ids", [])
+    elif isinstance(resp, list):
+        # Legacy: raw SSE chunks (pre-assembly format, backward compat).
         for chunk in resp:
             if not prompt_token_ids and chunk.get("prompt_token_ids"):
                 prompt_token_ids = chunk["prompt_token_ids"]
@@ -45,12 +52,6 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
                 tids = choices[0].get("token_ids")
                 if tids:
                     response_token_ids.extend(tids)
-    elif isinstance(resp, dict):
-        # Non-streaming
-        prompt_token_ids = resp.get("prompt_token_ids", [])
-        choices = resp.get("choices", [])
-        if choices:
-            response_token_ids = choices[0].get("token_ids", [])
 
     srv = data.get("server", {})
     return {

@@ -301,3 +301,80 @@ class TestProxyStreaming:
         assert isinstance(response_data["chunks"], list)
         assert len(response_data["chunks"]) == 1
         assert response_data["chunks"][0]["choices"][0]["text"] == " world"
+
+    def test_streaming_preserves_token_ids(self, client: TestClient, auth: dict, httpx_mock):
+        """Streaming assembly preserves prompt_token_ids and per-choice token_ids."""
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        sse_chunks = [
+            {
+                "id": "chatcmpl-1",
+                "choices": [{"delta": {"role": "assistant", "content": ""}}],
+                "prompt_token_ids": [10, 20, 30],
+            },
+            {
+                "id": "chatcmpl-1",
+                "choices": [{"delta": {"content": "Hi"}, "token_ids": [100, 200]}],
+            },
+            {
+                "id": "chatcmpl-1",
+                "choices": [{"delta": {"content": "!"}, "token_ids": [300], "finish_reason": "stop"}],
+            },
+        ]
+        sse_bytes = self._make_sse(sse_chunks)
+        httpx_mock.add_response(
+            url="http://mock:8000/v1/chat/completions",
+            content=sse_bytes,
+            headers={"content-type": "text/event-stream"},
+        )
+
+        resp = client.post(
+            f"/rollout/{rid}/attempt/pod-1/v1/chat/completions",
+            json={"model": "gpt-4", "messages": [{"role": "user", "content": "hey"}], "stream": True},
+            headers=auth,
+        )
+        assert resp.status_code == 200
+
+        events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
+        response_data = events[0]["data"]["response"]
+
+        # prompt_token_ids from first chunk preserved at top level
+        assert response_data["prompt_token_ids"] == [10, 20, 30]
+        # token_ids concatenated across chunks into the choice
+        assert response_data["choices"][0]["token_ids"] == [100, 200, 300]
+        # text still assembled correctly
+        assert response_data["choices"][0]["message"]["content"] == "Hi!"
+
+    def test_streaming_token_ids_triplet_roundtrip(self, client: TestClient, auth: dict, httpx_mock):
+        """Token IDs survive gateway assembly → triplet extraction."""
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        sse_chunks = [
+            {"id": "c1", "choices": [{"delta": {"role": "assistant", "content": ""}}],
+             "prompt_token_ids": [5, 6, 7]},
+            {"id": "c1", "choices": [{"delta": {"content": "ok"}, "token_ids": [50]}]},
+        ]
+        httpx_mock.add_response(
+            url="http://mock:8000/v1/chat/completions",
+            content=self._make_sse(sse_chunks),
+            headers={"content-type": "text/event-stream"},
+        )
+
+        client.post(
+            f"/rollout/{rid}/attempt/pod-1/v1/chat/completions",
+            json={"model": "gpt-4", "messages": [], "stream": True},
+            headers=auth,
+        )
+
+        # Query with format=triplet
+        resp = client.get(
+            f"/api/events?rollout_id={rid}&attempt_id=pod-1&format=triplet",
+            headers=auth,
+        )
+        events = resp.json()
+        assert len(events) == 1
+        data = events[0]["data"]
+        assert data["prompt_token_ids"] == [5, 6, 7]
+        assert data["response_token_ids"] == [50]
