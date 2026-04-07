@@ -45,6 +45,17 @@ Tests: 19 new unit tests in `tests/gateway/test_assemblers.py` (registry dispatc
 
 ---
 
+## Anthropic `/v1/messages` + vLLM token IDs [discuss]
+
+vLLM's `/v1/messages` (Anthropic-compatible) interface does not appear to support `return_token_ids` yet — unlike `/v1/chat/completions` which returns `prompt_token_ids` and per-choice `token_ids` when enabled. If we want to train with vLLM through the Anthropic interface, we need token IDs for triplet extraction.
+
+Questions to resolve:
+- Does vLLM plan to add `return_token_ids` support to the `/v1/messages` endpoint?
+- If not, should agents using the Anthropic SDK fall back to `/v1/chat/completions` for training runs?
+- Should `assemble_anthropic_message` include placeholder logic for token IDs in anticipation, or stay clean until vLLM adds support?
+
+---
+
 - [ ] **Cancel test**: enqueue → cancel mid-run → verify cancelled status
 - [ ] **Retry test**: agent with `CRASH_ON_FIRST=1` → K8s Job retries → succeeds on second attempt
 - [ ] **503 test**: agents hitting gateway during model deregistration window
