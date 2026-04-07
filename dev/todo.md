@@ -160,19 +160,9 @@ Each sub-item is one commit. Implement in order.
 - [ ] Delete old files: `calc_agent.py` (old), `tests/` (Agent Lightning tests)
 - [ ] Update `README.md` with new usage instructions
 
-#### 5c.6: Smoke test and validation [ongoing]
+#### 5c.6: Smoke test and validation [blocked]
 
-Blocked on VERL API migration. The entrypoint/trainer code was ported from Agent Lightning
-which used verl 0.6.0. We need verl 0.7.1 (for vllm>=0.10.2 compat), but 0.7.1 has breaking
-API changes:
-
-- [x] `load_reward_manager` — `num_examine` kwarg removed
-- [ ] `RayPPOTrainer.__init__` — `reward_fn`/`val_reward_fn` kwargs removed or renamed
-- [ ] `create_rl_sampler` — signature may have changed
-- [ ] Other potential changes in trainer.py / entrypoint.py
-
-Need to diff `verl/trainer/ppo/ray_trainer.py` between 0.6.0 and 0.7.1 to identify all
-breaking changes and update `agl_lite/verl/trainer.py` + `agl_lite/verl/entrypoint.py`.
+Blocked on VERL 0.7.1 API migration (see 5c.7 below).
 
 Environment issues resolved:
 - [x] Ray cluster conflict on shared machine (RAY_GCS_SERVER_PORT=0, RAY_tmpdir)
@@ -180,6 +170,81 @@ Environment issues resolved:
 - [x] flash-attn two-phase install (uv pip install --no-build-isolation after uv sync)
 - [x] CUDA auto-detect in setup_verl.sh (cu128 fallback)
 - [x] verl/vllm version alignment (verl 0.7.1 + vllm 0.12.0)
+
+#### 5c.7: Migrate VERL integration to 0.7.1 AgentLoopManager API [ready]
+
+VERL 0.7.1 introduced `AgentLoopManager` — a built-in agent orchestration system
+that replaces the pattern of subclassing `RayPPOTrainer`. Our current code
+(`AgentLightningTrainer` + custom `_train_step` + custom `fit`) overrides half
+the trainer internals, all of which changed in 0.7.1.
+
+##### Architecture change
+
+```
+Before (verl 0.6.0 pattern):
+  AgentLightningTrainer(RayPPOTrainer)
+    ├── __init__(reward_fn, val_reward_fn, ...)     ← removed in 0.7.1
+    ├── _train_step() override                      ← calls AglLiteDaemon directly
+    ├── _validate() override                        ← calls AglLiteDaemon directly
+    └── fit() override                              ← heavily customized loop
+
+After (verl 0.7.1 pattern):
+  Standard RayPPOTrainer (no subclass needed)
+    └── AgentLoopManager.generate_sequences()
+          └── custom AglLiteAgentLoopManager
+                └── AglLiteDaemon (HTTP → agl-lite server)
+```
+
+The integration point moves from "override the trainer" to "provide a custom
+`AgentLoopManager`" — a designed extension point in verl 0.7.1.
+
+##### Specific breaking changes
+
+| Change | Old (0.6.0) | New (0.7.1) |
+|--------|-------------|-------------|
+| Trainer init | `RayPPOTrainer(reward_fn=..., val_reward_fn=...)` | No reward_fn args |
+| Reward flow | `reward_fn()` called in `_train_step` | `rm_scores` populated by `AgentLoopWorker`, extracted via `extract_reward()` |
+| Rollout orchestration | Custom `_train_step` calls daemon | `AgentLoopManager.generate_sequences()` returns `DataProto` with `rm_scores` |
+| Custom manager config | N/A | `rollout.agent.agent_loop_manager_class` FQN |
+| Validation | Custom `_validate` calls daemon | Standard `_validate` uses `generate_sequences` + `extract_reward` |
+
+##### Implementation plan
+
+- [ ] **Create `agl_lite/verl/agent_loop.py`** — `AglLiteAgentLoopManager(AgentLoopManager)`:
+      - `generate_sequences(prompts: DataProto) -> DataProto`:
+        1. Register model servers (from `self.config` / server addresses)
+        2. Enqueue rollouts via `AglLiteDaemon`
+        3. Poll until all complete
+        4. Fetch triplets, build padded tensors
+        5. Populate `rm_scores` from reward events
+        6. Return `DataProto` in the format `RayPPOTrainer.fit()` expects
+      - Reuse `AglLiteDaemon` internally for HTTP communication + tensor construction
+      - Key: `generate_sequences` must return data matching what the standard
+        training loop expects (`input_ids`, `attention_mask`, `position_ids`,
+        `responses`, `rm_scores`, `response_mask`, etc.)
+
+- [ ] **Delete `agl_lite/verl/trainer.py`** — `AgentLightningTrainer` no longer needed;
+      standard `RayPPOTrainer` handles the training loop
+
+- [ ] **Simplify `agl_lite/verl/entrypoint.py`** — use verl's `main_ppo.TaskRunner`
+      or minimal wrapper; remove reward_fn/val_reward_fn plumbing, worker setup
+      duplication. Key addition: set `agent_loop_manager_class` in config.
+
+- [ ] **Update `train_calc_agent.py`** — add to VERL config:
+      ```python
+      "actor_rollout_ref": {
+          "rollout": {
+              "agent": {
+                  "agent_loop_manager_class": "agl_lite.verl.agent_loop.AglLiteAgentLoopManager",
+              },
+          },
+      }
+      ```
+
+- [ ] **Update `agl_lite/verl/config.yaml`** — add agent loop defaults
+
+- [ ] **Update tests** — `tests/verl/test_daemon.py` may need adjustment
+      if daemon interface changes
 
 ### Future (separate items)
 
