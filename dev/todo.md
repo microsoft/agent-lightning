@@ -97,7 +97,7 @@ For iterative development, run `train_calc_agent.py` directly (infra already up)
 
 Each sub-item is one commit. Implement in order.
 
-#### 5c.1: Dataset and eval utils [ready]
+#### 5c.1: Dataset and eval utils [completed]
 
 - [ ] `data/` — parquet files already downloaded; keep download instructions in README
       (Google Drive link, manual download). Add `data/` to `.gitignore`.

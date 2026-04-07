@@ -64,4 +64,5 @@ dev = [
     "mkdocstrings>=1.0.3",
     "mkdocstrings-python>=2.0.3",
     "pytest-httpx>=0.36.0",
+    "sympy>=1.14.0",
 ]
