@@ -270,4 +270,34 @@ class TestProxyStreaming:
 
         events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
         assert len(events) == 1
-        assert events[0]["data"]["response"] == {}  # no chunks parsed
+        assert events[0]["data"]["response"] == {}  # no chunks -> assembled but empty
+
+    def test_streaming_non_chat_path_stores_raw_chunks(self, client: TestClient, auth: dict, httpx_mock):
+        """Non-chat paths store raw parsed chunks, not an assembled ChatCompletion."""
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        # Legacy /v1/completions chunk: uses 'text', not 'delta'
+        legacy_chunk = {"id": "cmpl-1", "choices": [{"text": " world", "finish_reason": None}]}
+        sse_bytes = self._make_sse([legacy_chunk])
+        httpx_mock.add_response(
+            url="http://mock:8000/v1/completions",
+            content=sse_bytes,
+            headers={"content-type": "text/event-stream"},
+        )
+
+        resp = client.post(
+            f"/rollout/{rid}/attempt/pod-1/v1/completions",
+            json={"model": "gpt-4", "prompt": "hello", "stream": True},
+            headers=auth,
+        )
+        assert resp.status_code == 200
+
+        events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
+        assert len(events) == 1
+        response_data = events[0]["data"]["response"]
+        # Raw chunks stored under 'chunks' key — not assembled
+        assert "chunks" in response_data
+        assert isinstance(response_data["chunks"], list)
+        assert len(response_data["chunks"]) == 1
+        assert response_data["chunks"][0]["choices"][0]["text"] == " world"

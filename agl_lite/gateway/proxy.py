@@ -43,6 +43,7 @@ async def forward_request(
         return await _forward_streaming(
             client=client,
             url=url,
+            path=path,
             headers=headers,
             body=body,
             store=store,
@@ -97,6 +98,7 @@ async def _forward_streaming(
     *,
     client: httpx.AsyncClient,
     url: str,
+    path: str,
     headers: dict[str, str],
     body: dict[str, Any],
     store: InMemoryStore,
@@ -121,9 +123,14 @@ async def _forward_streaming(
         finally:
             await upstream.aclose()
 
-            # Assemble buffered chunks and capture event.
+            # Parse SSE into raw chunks (format-agnostic), then attempt
+            # chat-completion assembly only for the known path.
             raw = b"".join(buffer)
-            response_body = _parse_sse_response(raw)
+            chunks = _parse_sse_chunks(raw)
+            is_chat = path.rstrip("/").endswith("chat/completions")
+            response_body: dict[str, Any] = (
+                _assemble_chat_completion(chunks) if is_chat else {"chunks": chunks}
+            )
 
             _capture_event(
                 store=store,
@@ -163,26 +170,11 @@ def _capture_event(
     )
 
 
-def _parse_sse_response(raw: bytes) -> dict[str, Any]:
-    """Parse SSE stream bytes into an assembled ChatCompletion-shaped dict.
+def _parse_sse_chunks(raw: bytes) -> list[dict[str, Any]]:
+    """Parse raw SSE bytes into a list of JSON data objects.
 
-    Streaming and non-streaming responses are stored with the same shape so
-    that consumers (hooks, VERL, archive inspection) don't need to branch.
-
-    SSE format: lines starting with "data: " followed by JSON.
-    The final line is "data: [DONE]".
-
-    Assembled shape mirrors the non-streaming OpenAI response::
-
-        {
-          "id": "chatcmpl-...",
-          "object": "chat.completion",
-          "created": <int>,
-          "model": "<model>",
-          "choices": [{"index": 0, "message": {"role": "assistant", "content": "<full text>"},
-                       "finish_reason": "stop"}],
-          "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
-        }
+    Format-agnostic: extracts every ``data: <json>`` line, skips ``[DONE]``.
+    Does not interpret the payload structure.
     """
     import contextlib
     import json
@@ -193,14 +185,38 @@ def _parse_sse_response(raw: bytes) -> dict[str, Any]:
         if line.startswith("data: ") and line != "data: [DONE]":
             with contextlib.suppress(json.JSONDecodeError):
                 chunks.append(json.loads(line[6:]))
+    return chunks
 
+
+def _assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Assemble OpenAI chat-completion SSE chunks into a ChatCompletion-shaped dict.
+
+    Only call this for ``/v1/chat/completions`` paths.  Other endpoints use
+    different delta structures (e.g. ``choices[0].text`` for legacy completions)
+    and must not go through this function.
+
+    Assembled shape mirrors the non-streaming OpenAI response::
+
+        {
+          "id": "chatcmpl-...",
+          "object": "chat.completion",
+          "created": <int>,
+          "model": "<model>",
+          "choices": [{"index": 0,
+                       "message": {"role": "assistant", "content": "<full text>"},
+                       "finish_reason": "stop"}],
+          "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
+        }
+
+    ``usage`` is ``None`` when not provided by the upstream (vLLM only sends it
+    when ``stream_options.include_usage=True`` is set by the caller).
+    """
     if not chunks:
         return {}
 
     first = chunks[0]
     last = chunks[-1]
 
-    # Assemble full content from delta.content across all choices (index-keyed).
     contents: dict[int, list[str]] = {}
     finish_reasons: dict[int, str | None] = {}
     role: str = "assistant"
@@ -231,7 +247,5 @@ def _parse_sse_response(raw: bytes) -> dict[str, Any]:
         "created": first.get("created"),
         "model": first.get("model", ""),
         "choices": choices,
-        # vLLM sends usage in the last chunk when stream_options.include_usage=True;
-        # fall back to None so callers can detect absence.
         "usage": last.get("usage"),
     }
