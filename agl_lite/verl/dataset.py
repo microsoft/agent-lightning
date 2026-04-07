@@ -6,40 +6,39 @@ from typing import Any, Sequence
 
 import torch
 from datasets import Dataset as HuggingFaceDataset
-from omegaconf import DictConfig
 from verl.utils.dataset.rl_dataset import RLHFDataset
 
 
 __all__ = [
-    "AgentDataset",
     "LoadedDataset",
 ]
 
 
-class AgentDataset(RLHFDataset):
+class LoadedDataset(RLHFDataset):
+    """Dataset wrapper for pre-loaded in-memory data sequences.
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    Bypasses RLHFDataset's file-based initialization and directly sets
+    ``self.dataframe`` from the provided sequence.
+    """
 
+    def __init__(self, dataset: Sequence[Any]):
+        # Skip RLHFDataset.__init__ entirely — it requires tokenizer, data_files, etc.
+        # We only need self.dataframe and compatible __getitem__ / __len__.
+        dataset_copy = [dataset[i] for i in range(len(dataset))]
+        self.dataframe = HuggingFaceDataset.from_list(dataset_copy)
         self.filter_overlong_prompts = False
+
+    def __len__(self):
+        return len(self.dataframe)
 
     def __getitem__(self, item):
         row_dict: dict = self.dataframe[item]
-
         # add index for each prompt
         index = row_dict.get("extra_info", {}).get("index", 0)
         row_dict["index"] = index
         # Workaround for data proto. At least one tensor is needed.
         row_dict["fake_ids"] = torch.ones(1, dtype=torch.int)
         return row_dict
-
-
-class LoadedDataset(AgentDataset):
-
-    def __init__(self, dataset: Sequence[Any]):
-        super().__init__([], None, DictConfig({}))  # type: ignore
-        dataset_copy = [dataset[i] for i in range(len(dataset))]
-        self.dataframe = HuggingFaceDataset.from_list(dataset_copy)
 
     def _read_files_and_tokenize(self):
         pass
