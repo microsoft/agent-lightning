@@ -27,6 +27,8 @@ class LoadedDataset(RLHFDataset):
         dataset_copy = [dataset[i] for i in range(len(dataset))]
         self.dataframe = HuggingFaceDataset.from_list(dataset_copy)
         self.filter_overlong_prompts = False
+        self.serialize_dataset = True  # Tell __getstate__ to serialize inline
+        self.original_data_files = None  # Not file-backed
 
     def __len__(self):
         return len(self.dataframe)

@@ -25,17 +25,11 @@ from uuid import uuid4
 
 import numpy as np
 
-try:
-    import torch
-    from tensordict import TensorDict
-    from verl import DataProto
-    from verl.experimental.agent_loop import AgentLoopManager
-    from verl.utils.async_utils import auto_await
-except ImportError:
-    raise ImportError(
-        "agl_lite.verl.agent_loop requires torch, verl, and tensordict. "
-        "Install with: scripts/setup_verl.sh"
-    )
+import torch
+from tensordict import TensorDict
+from verl import DataProto
+from verl.experimental.agent_loop import AgentLoopManager
+from verl.utils.ray_utils import auto_await
 
 from agl_lite.client import AglLiteClient
 from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
