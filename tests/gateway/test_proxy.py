@@ -272,14 +272,18 @@ class TestProxyStreaming:
         assert len(events) == 1
         assert events[0]["data"]["response"] == {}  # no chunks -> assembled but empty
 
-    def test_streaming_non_chat_path_stores_raw_chunks(self, client: TestClient, auth: dict, httpx_mock):
-        """Non-chat paths store raw parsed chunks, not an assembled ChatCompletion."""
+    def test_streaming_legacy_completions_assembled(self, client: TestClient, auth: dict, httpx_mock):
+        """Legacy /v1/completions streaming is assembled into a Completion-shaped dict."""
         rid = _enqueue(client, auth)
         _register_model(client, auth)
 
-        # Legacy /v1/completions chunk: uses 'text', not 'delta'
-        legacy_chunk = {"id": "cmpl-1", "choices": [{"text": " world", "finish_reason": None}]}
-        sse_bytes = self._make_sse([legacy_chunk])
+        sse_chunks = [
+            {"id": "cmpl-1", "created": 1700000000, "model": "qwen-7b",
+             "choices": [{"text": "Hello", "index": 0, "finish_reason": None}]},
+            {"id": "cmpl-1", "created": 1700000000, "model": "qwen-7b",
+             "choices": [{"text": " world", "index": 0, "finish_reason": "stop"}]},
+        ]
+        sse_bytes = self._make_sse(sse_chunks)
         httpx_mock.add_response(
             url="http://mock:8000/v1/completions",
             content=sse_bytes,
@@ -296,11 +300,39 @@ class TestProxyStreaming:
         events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
         assert len(events) == 1
         response_data = events[0]["data"]["response"]
-        # Raw chunks stored under 'chunks' key — not assembled
+        # Now assembled into a Completion-shaped dict
+        assert response_data["id"] == "cmpl-1"
+        assert response_data["object"] == "text_completion"
+        assert len(response_data["choices"]) == 1
+        assert response_data["choices"][0]["text"] == "Hello world"
+        assert response_data["choices"][0]["finish_reason"] == "stop"
+
+    def test_streaming_unknown_path_stores_raw_chunks(self, client: TestClient, auth: dict, httpx_mock):
+        """Unknown paths store raw parsed chunks — no assembly attempted."""
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        raw_chunk = {"id": "x-1", "data": "something"}
+        sse_bytes = self._make_sse([raw_chunk])
+        httpx_mock.add_response(
+            url="http://mock:8000/v1/some/custom/endpoint",
+            content=sse_bytes,
+            headers={"content-type": "text/event-stream"},
+        )
+
+        resp = client.post(
+            f"/rollout/{rid}/attempt/pod-1/v1/some/custom/endpoint",
+            json={"model": "gpt-4", "prompt": "hello", "stream": True},
+            headers=auth,
+        )
+        assert resp.status_code == 200
+
+        events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
+        assert len(events) == 1
+        response_data = events[0]["data"]["response"]
         assert "chunks" in response_data
-        assert isinstance(response_data["chunks"], list)
         assert len(response_data["chunks"]) == 1
-        assert response_data["chunks"][0]["choices"][0]["text"] == " world"
+        assert response_data["chunks"][0]["id"] == "x-1"
 
     def test_streaming_preserves_token_ids(self, client: TestClient, auth: dict, httpx_mock):
         """Streaming assembly preserves prompt_token_ids and per-choice token_ids.

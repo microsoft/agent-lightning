@@ -28,139 +28,20 @@
 
 ---
 
-## Gateway streaming assembly: multi-format support [discuss]
+## Gateway streaming assembly: multi-format support [completed]
 
-### Problem
+### Summary
 
-The gateway proxy captures streaming responses as events. Currently `_forward_streaming` in `proxy.py` does:
-1. `_parse_sse_chunks(raw)` — format-agnostic SSE→JSON extraction
-2. `_assemble_chat_completion(chunks)` — OpenAI chat-completion-specific assembly (`choices[i].delta.content` → `choices[i].message.content`)
-3. Falls back to `{"chunks": [...]}` for unknown paths
+Refactored streaming assembly into `agl_lite/gateway/assemblers/` sub-package:
 
-This is path-dependent (`path.endswith("chat/completions")`) and only supports one format. But the gateway already documents support for multiple LLM API formats (architecture doc §LLM proxy paths), and real agents use different SDKs:
+- `__init__.py` — assembler registry (`select_assembler`) mapping path suffixes to format-specific assembler functions
+- `chat_completion.py` — OpenAI `/v1/chat/completions` (moved from `proxy.py`)
+- `completion.py` — legacy `/v1/completions` (new)
+- `anthropic.py` — Anthropic `/v1/messages` (new)
 
-| Endpoint path | Provider | Streaming delta location | Assembled shape |
-|---|---|---|---|
-| `chat/completions` | OpenAI / vLLM | `choices[i].delta.content` | `ChatCompletion` dict |
-| `completions` | OpenAI / vLLM (legacy) | `choices[i].text` (string) | `Completion` dict |
-| `messages` | Anthropic / Claude | event-typed SSE: `content_block_delta → delta.text` | `Message` dict |
-| `responses` | OpenAI Responses API | multi-event-type SSE | `Response` dict (complex) |
+`proxy.py` now calls `select_assembler(path)` instead of inline `is_chat` check. Unknown paths fall back to raw `{"chunks": [...]}`. Adding a new format = one new file + one line in the registry.
 
-Key differences:
-- **OpenAI chat/completions**: `data: {"choices":[{"delta":{"content":"..."}}]}` — each line is `data: <json>`
-- **OpenAI completions**: `data: {"choices":[{"text":"..."}]}` — simpler, no delta wrapper
-- **Anthropic messages**: uses SSE `event:` lines (`message_start`, `content_block_delta`, `message_delta`, `message_stop`) with typed data payloads — NOT just `data: <json>` lines. `_parse_sse_chunks` ignores the `event:` line and only grabs `data:` payloads, but the assembly logic needs to dispatch on event type.
-- **OpenAI responses**: similar multi-event-type structure, not yet widely adopted by vLLM
-
-### Design goals
-
-1. **Uniform stored shape per format** — streaming and non-streaming events for the same endpoint should produce the same response shape (already achieved for chat/completions)
-2. **No false assembly** — unknown paths fall back to raw chunks, never silently corrupt data
-3. **SSE parsing stays generic** — `_parse_sse_chunks` remains format-agnostic (extract `data:` lines as JSON)
-4. **Extensible without combinatorial explosion** — adding a new format should be one assembler function + one path match, not cross-cutting changes
-
-### Proposed solution: assembler registry
-
-A dict mapping path suffixes to assembler functions. Each assembler has the same signature:
-
-```python
-# Type alias
-Assembler = Callable[[list[dict[str, Any]]], dict[str, Any]]
-
-# Registry — evaluated in order, first suffix match wins
-_ASSEMBLERS: list[tuple[str, Assembler]] = [
-    ("chat/completions", _assemble_chat_completion),
-    ("completions",      _assemble_completion),
-    ("messages",         _assemble_anthropic_message),
-    # Future: ("responses", _assemble_responses),
-]
-
-def _select_assembler(path: str) -> Assembler | None:
-    """Return the assembler for the given path, or None for raw fallback."""
-    normalized = path.rstrip("/")
-    for suffix, assembler in _ASSEMBLERS:
-        if normalized.endswith(suffix):
-            return assembler
-    return None
-```
-
-In `_forward_streaming`:
-```python
-chunks = _parse_sse_chunks(raw)
-assembler = _select_assembler(path)
-response_body = assembler(chunks) if assembler else {"chunks": chunks}
-```
-
-### Token IDs (vLLM-specific fields, now handled)
-
-vLLM streaming chunks include training-critical fields not in the OpenAI spec:
-- `chunks[0].prompt_token_ids: list[int]` — tokenized prompt in the first chunk
-- `choices[i].token_ids: list[int]` — per-chunk response token IDs
-
-`_assemble_chat_completion` now preserves both:
-- `prompt_token_ids` lifted from first chunk to top-level dict
-- `token_ids` concatenated across all chunks into each choice
-
-`_trim_model_request` (triplet extraction) reads them from the assembled dict
-the same way it reads non-streaming — no branching needed.
-
-Each new assembler must define its own token-ID-carrying convention (or omit
-them if the provider doesn't supply them).
-
-### Assembler functions (scope: 3 formats)
-
-**1. `_assemble_chat_completion`** — already exists, handles `choices[i].delta.content`
-
-**2. `_assemble_completion`** — new, for legacy `/v1/completions`:
-```python
-def _assemble_completion(chunks: list[dict]) -> dict:
-    # choices[i].text (string, no delta wrapper)
-    # Assembled shape: {id, object: "text_completion", choices: [{text: "full text", finish_reason}], usage}
-```
-
-**3. `_assemble_anthropic_message`** — new, for `/v1/messages`:
-```python
-def _assemble_anthropic_message(chunks: list[dict]) -> dict:
-    # SSE events: message_start (has message shell), content_block_delta (has delta.text),
-    #             message_delta (has stop_reason + usage), message_stop
-    # Note: _parse_sse_chunks only captures the `data:` JSON, not the `event:` type line.
-    #       The event type is detectable from the data payload structure:
-    #       - has "type": "message_start" / "content_block_delta" / etc.
-    # Assembled shape mirrors Anthropic non-streaming Message:
-    #   {id, type: "message", role: "assistant", content: [{type: "text", text: "..."}],
-    #    stop_reason, usage: {input_tokens, output_tokens}}
-```
-
-### SSE parsing for Anthropic
-
-`_parse_sse_chunks` currently works for Anthropic because it extracts all `data: <json>` lines. Anthropic SSE looks like:
-```
-event: message_start
-data: {"type": "message_start", "message": {...}}
-
-event: content_block_delta  
-data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}
-```
-
-The `event:` lines are ignored (not `data:` prefix), and the `data:` lines are valid JSON with a `type` field that identifies the event. So `_parse_sse_chunks` works as-is — the assembler dispatches on `chunk["type"]`.
-
-### Non-streaming response: also needs format awareness
-
-Currently `_forward_non_streaming` stores `resp.json()` as-is. This is fine — non-streaming responses are already in their final shape regardless of format. No changes needed there.
-
-### Ordering in `_ASSEMBLERS`
-
-`chat/completions` must come before `completions` (since `completions` is a suffix of `chat/completions`). The list order guarantees first-match semantics.
-
-### Scope
-
-- Phase 1: `chat/completions` (done), `completions`, `messages` — covers vLLM + Anthropic
-- Phase 2 (future): `responses` (OpenAI Responses API) when vLLM or agents adopt it
-
-### Files to change
-
-- `agl_lite/gateway/proxy.py` — add `_assemble_completion`, `_assemble_anthropic_message`, `_ASSEMBLERS` registry, `_select_assembler`; update `_forward_streaming`
-- `tests/gateway/test_proxy.py` — add tests for legacy completions streaming assembly, Anthropic messages streaming assembly, unknown path fallback
+Tests: 19 new unit tests in `tests/gateway/test_assemblers.py` (registry dispatch, each assembler, edge cases). Existing proxy integration tests updated and passing.
 
 ---
 

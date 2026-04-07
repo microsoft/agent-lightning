@@ -9,6 +9,7 @@ import structlog
 from fastapi import Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from agl_lite.gateway.assemblers import select_assembler
 from agl_lite.schemas.model_server import ModelServer
 from agl_lite.store.memory import InMemoryStore
 
@@ -123,13 +124,13 @@ async def _forward_streaming(
         finally:
             await upstream.aclose()
 
-            # Parse SSE into raw chunks (format-agnostic), then attempt
-            # chat-completion assembly only for the known path.
+            # Parse SSE into raw chunks (format-agnostic), then assemble
+            # using the format-specific assembler for this path.
             raw = b"".join(buffer)
             chunks = _parse_sse_chunks(raw)
-            is_chat = path.rstrip("/").endswith("chat/completions")
+            assembler = select_assembler(path)
             response_body: dict[str, Any] = (
-                _assemble_chat_completion(chunks) if is_chat else {"chunks": chunks}
+                assembler(chunks) if assembler else {"chunks": chunks}
             )
 
             _capture_event(
@@ -188,75 +189,4 @@ def _parse_sse_chunks(raw: bytes) -> list[dict[str, Any]]:
     return chunks
 
 
-def _assemble_chat_completion(chunks: list[dict[str, Any]]) -> dict[str, Any]:
-    """Assemble OpenAI chat-completion SSE chunks into a ChatCompletion-shaped dict.
 
-    Only call this for ``/v1/chat/completions`` paths.  Other endpoints use
-    different delta structures (e.g. ``choices[0].text`` for legacy completions)
-    and must not go through this function.
-
-    Assembled shape mirrors the non-streaming OpenAI response::
-
-        {
-          "id": "chatcmpl-...",
-          "object": "chat.completion",
-          "created": <int>,
-          "model": "<model>",
-          "choices": [{"index": 0,
-                       "message": {"role": "assistant", "content": "<full text>"},
-                       "finish_reason": "stop"}],
-          "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
-        }
-
-    ``usage`` is ``None`` when not provided by the upstream (vLLM only sends it
-    when ``stream_options.include_usage=True`` is set by the caller).
-    """
-    if not chunks:
-        return {}
-
-    first = chunks[0]
-    last = chunks[-1]
-
-    contents: dict[int, list[str]] = {}
-    token_ids: dict[int, list[int]] = {}
-    finish_reasons: dict[int, str | None] = {}
-    role: str = "assistant"
-    for chunk in chunks:
-        for choice in chunk.get("choices", []):
-            idx = choice.get("index", 0)
-            delta = choice.get("delta", {})
-            if "role" in delta:
-                role = delta["role"]
-            contents.setdefault(idx, []).append(delta.get("content") or "")
-            # vLLM includes per-chunk token_ids in each choice.
-            tids = choice.get("token_ids")
-            if tids:
-                token_ids.setdefault(idx, []).extend(tids)
-            if choice.get("finish_reason"):
-                finish_reasons[idx] = choice["finish_reason"]
-
-    choices = [
-        {
-            "index": idx,
-            "message": {"role": role, "content": "".join(parts)},
-            "finish_reason": finish_reasons.get(idx),
-            # Concatenated response token IDs (all chunks for this choice index).
-            **(  {"token_ids": token_ids[idx]} if idx in token_ids else {}),
-        }
-        for idx, parts in sorted(contents.items())
-    ]
-    if not choices:
-        choices = [{"index": 0, "message": {"role": role, "content": ""}, "finish_reason": None}]
-
-    result: dict[str, Any] = {
-        "id": first.get("id", ""),
-        "object": "chat.completion",
-        "created": first.get("created"),
-        "model": first.get("model", ""),
-        "choices": choices,
-        "usage": last.get("usage"),
-    }
-    # vLLM sends prompt_token_ids in the first chunk.
-    if first.get("prompt_token_ids"):
-        result["prompt_token_ids"] = first["prompt_token_ids"]
-    return result
