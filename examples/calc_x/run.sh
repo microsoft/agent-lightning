@@ -42,19 +42,14 @@ if [ -z "${AGL_KEY:-}" ]; then
     exit 1
 fi
 
-VLLM_PORT="${AGL_VLLM_PORT:-8010}"
-echo "=== Checking vLLM on localhost:$VLLM_PORT ==="
-if ! curl -sf "http://localhost:$VLLM_PORT/v1/models" > /dev/null 2>&1; then
-    echo "ERROR: vLLM not reachable at localhost:$VLLM_PORT"
-    echo "Start it with: scripts/start_vllm.sh"
-    exit 1
-fi
-echo "  vLLM OK"
+# Note: vLLM is managed internally by VERL (hybrid mode), not started externally.
+# The AglLiteAgentLoopManager registers VERL's vLLM server addresses with the
+# agl-lite gateway at runtime.
 
 # --- Build images ---
 echo ""
 echo "=== Building images ==="
-scripts/build_images.sh --include-example calc-x
+scripts/build_images.sh --include-example calc_x
 
 # --- Deploy K8s infra + start host agl-lite ---
 NS="$(grep -E '^AGL_NAMESPACE=' "$DEPLOY_CONFIG" | cut -d= -f2 | tr -d '[:space:]')"
@@ -89,14 +84,16 @@ export AGL_BASE_URL=http://localhost:8080
 export AGL_KEY
 
 # Avoid conflicts with existing Ray clusters on shared machines.
-# Use a separate temp dir and auto-pick a free GCS port.
 export RAY_GCS_SERVER_PORT=${RAY_GCS_SERVER_PORT:-0}
 export RAY_tmpdir=${RAY_tmpdir:-/tmp/ray_agl_lite_$$}
+
+# Clean up any leftover Ray processes from previous runs.
+.venv/bin/ray stop --force 2>/dev/null || true
 
 # --- Run training ---
 echo ""
 echo "=== Running VERL training ==="
-exec uv run python examples/calc_x/train_calc_agent.py \
+exec .venv/bin/python examples/calc_x/train_calc_agent.py \
     --train-file "${AGL_TRAIN_FILE:-examples/calc_x/data/train.parquet}" \
     --val-file "${AGL_VAL_FILE:-examples/calc_x/data/test.parquet}" \
     "$@"

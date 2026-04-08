@@ -94,7 +94,7 @@ def verl_default_config() -> Dict[str, Any]:
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console", "wandb"],
+            "logger": ["console"],
             "project_name": "agl-lite",
             "experiment_name": "calc_x",
             "nnodes": 1,

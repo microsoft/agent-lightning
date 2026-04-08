@@ -64,6 +64,12 @@ def run_ppo(
         )
         runtime_env_kwargs = ray_init_kwargs.pop("runtime_env", {})
         runtime_env = {**default_runtime_env, **runtime_env_kwargs}
+        # Pass agl-lite env vars to Ray workers.
+        runtime_env.setdefault("env_vars", {})
+        for var in ("AGL_KEY", "AGL_BASE_URL", "AGL_MODEL_ENDPOINT", "WANDB_MODE"):
+            val = os.environ.get(var)
+            if val:
+                runtime_env["env_vars"][var] = val
         _temp_dir = os.environ.get("RAY_tmpdir")
         ray.init(
             runtime_env=runtime_env,
