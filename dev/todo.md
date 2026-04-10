@@ -187,11 +187,15 @@ Completed:
 E2E progress:
 - [x] Ray init (separate cluster on shared machine)
 - [x] FSDP model loaded (Qwen2.5-1.5B-Instruct)
-- [x] vLLMHttpServer launched by VERL
-- [ ] vLLM engine core startup — fails with `Engine core initialization failed`.
-      Likely GPU memory contention: FSDP + vLLM on same GPU in hybrid mode.
-      Need to tune `gpu_memory_utilization`, or use more GPUs (`n_gpus_per_node: 2+`).
-- [ ] Agent rollout execution via agl-lite
+- [x] vLLMHttpServer launched by VERL (CUDA graphs captured)
+- [x] Model registered with agl-lite gateway
+- [x] Rollouts enqueued via AglLiteAgentLoopManager
+- [x] K8s Jobs created, agent pods started (calc-x-agent:dev)
+- [x] Validation completed: `val-core/unknown/reward/mean@1:0.0`
+- [ ] Training step — TCP transport error after validation.
+      Likely stale HTTP connection to agl-lite server (server restarted
+      during deploy cleanup). Need connection retry/reconnect logic in
+      AglLiteClient or keep server alive across deploy.
 - [ ] PPO update completion
 
 Environment note: requires `python3.12-dev` for triton JIT compilation.
