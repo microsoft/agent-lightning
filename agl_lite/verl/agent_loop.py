@@ -29,6 +29,9 @@ import torch
 from tensordict import TensorDict
 from verl import DataProto
 from verl.experimental.agent_loop import AgentLoopManager
+from verl.experimental.agent_loop.agent_loop import _get_rollout_and_model_config
+from verl.utils.config import omega_conf_to_dataclass
+from verl.utils.dataset.rl_dataset import get_dataset_class
 from verl.utils.ray_utils import auto_await
 
 from agl_lite.client import AglLiteClient
@@ -59,9 +62,22 @@ class AglLiteAgentLoopManager(AgentLoopManager):
 
     def __init__(self, config, worker_group=None, rollout_resource_pool=None,
                  reward_loop_worker_handles=None):
-        # Call parent __init__ — sets up config, rollout_config, etc.
-        # But we override _init_agent_loop_workers to skip Ray agent actors.
-        super().__init__(config, worker_group, rollout_resource_pool, reward_loop_worker_handles)
+        # Don't call super().__init__() — it expects (config, servers, load_balancer_handle)
+        # which are not available yet (create() sets them up later via
+        # _initialize_llm_servers). We initialize the fields we need directly.
+        self.config = config
+        rollout_config, model_config = _get_rollout_and_model_config(config)
+        self.rollout_config = omega_conf_to_dataclass(rollout_config)
+        self.model_config = omega_conf_to_dataclass(model_config)
+
+        # Stored for create() → _initialize_llm_servers
+        self.worker_group = worker_group
+        self.rollout_resource_pool = rollout_resource_pool
+        self.reward_loop_worker_handles = reward_loop_worker_handles
+
+        self.dataset_cls = get_dataset_class(config.data)
+        self.tokenizer = self.model_config.tokenizer
+        self.processor = self.model_config.processor
 
         # agl-lite connection — create a fresh client for each generate_sequences
         # call to avoid stale TCP connections (VERL pauses between val/train).
