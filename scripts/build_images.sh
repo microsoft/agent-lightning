@@ -7,8 +7,10 @@
 #   scripts/build_images.sh --include-example math-poc --include-example calc_x
 #
 # Convention for examples:
-#   examples/<name>/Dockerfile.agent  → image "<name-normalized>-agent:dev"
+#   Argument: the directory name under examples/ (e.g., calc_x, math-poc)
+#   examples/<name>/Dockerfile.agent  → image "<normalized>-agent:dev"
 #   examples/<name>/build-extra.sh    → optional hook for additional images
+#   Name normalization: underscores → hyphens (calc_x → calc-x-agent:dev)
 #
 # Legacy (still supported):
 #   scripts/build_images.sh --math-poc
@@ -54,7 +56,8 @@ minikube image build -t agl-lite:dev -f deploy/agl-lite/Dockerfile "$REPO_ROOT"
 # --- Example images (convention-driven) ---
 for example in "${EXAMPLES[@]}"; do
     example_dir="$REPO_ROOT/examples/$example"
-    # Normalize name for Docker tag: underscores → hyphens.
+    # Normalize directory name for Docker tag: underscores → hyphens.
+    # e.g., calc_x → calc-x, so image becomes calc-x-agent:dev
     tag_name="${example//_/-}"
 
     if [ ! -d "$example_dir" ]; then
