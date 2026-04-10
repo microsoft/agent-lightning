@@ -4,8 +4,9 @@
 
 FROM python:3.12-slim
 
-# uv is needed for MCP server: `uvx mcp-server-calculator`
+# uv + uvx are needed for MCP server: `uvx mcp-server-calculator`
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uvx /usr/local/bin/uvx
 
 RUN pip install --no-cache-dir \
     openai \

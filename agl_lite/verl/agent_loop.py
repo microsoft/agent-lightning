@@ -235,12 +235,18 @@ class AglLiteAgentLoopManager(AgentLoopManager):
             reward = item["reward"]
 
             if not triplets:
-                # No triplets — create empty padded entry
+                # No triplets (agent failed before any LLM call).
+                # Insert a single EOS token so VERL doesn't treat this as
+                # an aborted sequence (which would crash compute_data_metrics
+                # if ALL sequences are aborted).
+                eos_id = self._tokenizer.eos_token_id or pad_token_id
                 prompt_ids_list.append([pad_token_id] * max_prompt_length)
-                response_ids_list.append([pad_token_id] * max_response_length)
-                response_mask_list.append([0] * max_response_length)
-                input_ids_list.append([pad_token_id] * (max_prompt_length + max_response_length))
-                attention_mask_list.append([0] * (max_prompt_length + max_response_length))
+                resp = [eos_id] + [pad_token_id] * (max_response_length - 1)
+                resp_mask = [1] + [0] * (max_response_length - 1)
+                response_ids_list.append(resp)
+                response_mask_list.append(resp_mask)
+                input_ids_list.append([pad_token_id] * max_prompt_length + resp)
+                attention_mask_list.append([0] * max_prompt_length + resp_mask)
                 scores_list.append(reward)
                 continue
 
