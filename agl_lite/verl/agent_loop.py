@@ -63,10 +63,10 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         # But we override _init_agent_loop_workers to skip Ray agent actors.
         super().__init__(config, worker_group, rollout_resource_pool, reward_loop_worker_handles)
 
-        # agl-lite connection
-        agl_base_url = config.agentlightning.get("agl_base_url", "http://localhost:8080")
-        agl_key = config.agentlightning.get("agl_key", "")
-        self.client = AglLiteClient(base_url=agl_base_url, agl_key=agl_key)
+        # agl-lite connection — create a fresh client for each generate_sequences
+        # call to avoid stale TCP connections (VERL pauses between val/train).
+        self._agl_base_url = config.agentlightning.get("agl_base_url", "http://localhost:8080")
+        self._agl_key = config.agentlightning.get("agl_key", "")
         self.timeout_seconds = config.agentlightning.get("timeout_seconds", 1200.0)
 
         # Training config for tensor construction
@@ -93,7 +93,7 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         """
         self.agent_loop_workers = []
 
-    async def _register_models_if_needed(self):
+    async def _register_models_if_needed(self, client: AglLiteClient):
         """Register VERL's internal vLLM servers with the agl-lite gateway."""
         if self._models_registered:
             return
@@ -105,7 +105,7 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         for addr in self.server_addresses:
             endpoint = addr if addr.startswith("http") else f"http://{addr}/v1"
             regs.append(RegisterModelRequest(model=model_name, endpoint=endpoint))
-        await self.client.register_models(regs)
+        await client.register_models(regs)
         self._models_registered = True
         print(f"AglLiteAgentLoopManager: registered {len(regs)} model server(s) with gateway")
 
@@ -114,73 +114,78 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         """Enqueue rollouts via agl-lite, wait, fetch triplets, build DataProto.
 
         Called by RayPPOTrainer.fit() for both training and validation.
+        Uses a fresh HTTP client per call to avoid stale TCP connections
+        (VERL has long pauses between calls for FSDP weight sync).
         """
         start_time = time.time()
 
-        # 1. Register VERL's internal vLLM servers with agl-lite gateway
-        await self._register_models_if_needed()
+        async with AglLiteClient(
+            base_url=self._agl_base_url, agl_key=self._agl_key
+        ) as client:
+            # 1. Register VERL's internal vLLM servers with agl-lite gateway
+            await self._register_models_if_needed(client)
 
-        # 2. Build rollout requests from batch
-        num_samples = len(prompts)
-        rollout_requests: List[EnqueueRolloutRequest] = []
-        sample_map: Dict[str, Dict[str, Any]] = {}
+            # 2. Build rollout requests from batch
+            num_samples = len(prompts)
+            rollout_requests: List[EnqueueRolloutRequest] = []
+            sample_map: Dict[str, Dict[str, Any]] = {}
 
-        for i in range(num_samples):
-            original = {k: _to_native(v[i]) for k, v in prompts.non_tensor_batch.items()}
-            original["_sample_idx"] = i
+            for i in range(num_samples):
+                original = {k: _to_native(v[i]) for k, v in prompts.non_tensor_batch.items()}
+                original["_sample_idx"] = i
 
-            rollout_requests.append(EnqueueRolloutRequest(
-                input=original,
-                config={"timeout": int(self.timeout_seconds)},
-            ))
+                rollout_requests.append(EnqueueRolloutRequest(
+                    input=original,
+                    config={"timeout": int(self.timeout_seconds)},
+                ))
 
-        # 3. Enqueue
-        created = await self.client.enqueue_rollouts(rollout_requests)
-        rollout_ids = [r.rollout_id for r in created]
-        for r in created:
-            sample_map[r.rollout_id] = r.input if isinstance(r.input, dict) else {}
+            # 3. Enqueue
+            created = await client.enqueue_rollouts(rollout_requests)
+            rollout_ids = [r.rollout_id for r in created]
+            for r in created:
+                sample_map[r.rollout_id] = r.input if isinstance(r.input, dict) else {}
 
-        print(f"AglLiteAgentLoopManager: enqueued {len(rollout_ids)} rollouts, polling...")
+            print(f"AglLiteAgentLoopManager: enqueued {len(rollout_ids)} rollouts, polling...")
 
-        # 4. Poll until all complete
-        terminal = {RolloutStatus.SUCCEEDED, RolloutStatus.TERMINAL_FAILED, RolloutStatus.CANCELLED}
-        poll_start = time.time()
-        while time.time() - poll_start < self.timeout_seconds:
-            rollouts = await self.client.query_rollouts(ids=rollout_ids, limit=len(rollout_ids))
-            done = all(r.status in terminal for r in rollouts)
-            if done:
-                succeeded = sum(1 for r in rollouts if r.status == RolloutStatus.SUCCEEDED)
-                failed = sum(1 for r in rollouts if r.status != RolloutStatus.SUCCEEDED)
-                print(f"AglLiteAgentLoopManager: {succeeded} succeeded, {failed} failed")
-                break
-            await asyncio.sleep(5)
-        else:
-            print(f"WARNING: rollouts timed out after {self.timeout_seconds}s")
+            # 4. Poll until all complete
+            terminal = {RolloutStatus.SUCCEEDED, RolloutStatus.TERMINAL_FAILED, RolloutStatus.CANCELLED}
+            poll_start = time.time()
+            while time.time() - poll_start < self.timeout_seconds:
+                rollouts = await client.query_rollouts(ids=rollout_ids, limit=len(rollout_ids))
+                done = all(r.status in terminal for r in rollouts)
+                if done:
+                    succeeded = sum(1 for r in rollouts if r.status == RolloutStatus.SUCCEEDED)
+                    failed = sum(1 for r in rollouts if r.status != RolloutStatus.SUCCEEDED)
+                    print(f"AglLiteAgentLoopManager: {succeeded} succeeded, {failed} failed")
+                    break
+                await asyncio.sleep(5)
+            else:
+                print(f"WARNING: rollouts timed out after {self.timeout_seconds}s")
 
-        # 5. Fetch triplets and rewards
-        completed_data: List[Dict[str, Any]] = []
-        for rid in rollout_ids:
-            events = await self.client.get_events(rid, format="triplet")
-            triplets = []
-            final_reward: Optional[float] = None
-            for evt in events:
-                if evt.event_type == "model_request":
-                    d = evt.data
-                    triplets.append({
-                        "prompt_ids": d.get("prompt_token_ids", []),
-                        "response_ids": d.get("response_token_ids", []),
-                    })
-                elif evt.event_type == "reward":
-                    final_reward = evt.data.get("value")
+            # 5. Fetch triplets and rewards
+            completed_data: List[Dict[str, Any]] = []
+            for rid in rollout_ids:
+                events = await client.get_events(rid, format="triplet")
+                triplets = []
+                final_reward: Optional[float] = None
+                for evt in events:
+                    if evt.event_type == "model_request":
+                        d = evt.data
+                        triplets.append({
+                            "prompt_ids": d.get("prompt_token_ids", []),
+                            "response_ids": d.get("response_token_ids", []),
+                        })
+                    elif evt.event_type == "reward":
+                        final_reward = evt.data.get("value")
 
-            completed_data.append({
-                "rollout_id": rid,
-                "triplets": triplets,
-                "reward": final_reward if final_reward is not None else 0.0,
-                "original": sample_map.get(rid, {}),
-            })
+                completed_data.append({
+                    "rollout_id": rid,
+                    "triplets": triplets,
+                    "reward": final_reward if final_reward is not None else 0.0,
+                    "original": sample_map.get(rid, {}),
+                })
 
-        # 6. Build DataProto
+        # 6. Build DataProto (outside the client context — no more HTTP needed)
         output = self._build_data_proto(completed_data, prompts)
 
         elapsed = time.time() - start_time
