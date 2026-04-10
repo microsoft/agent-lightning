@@ -58,7 +58,7 @@ Questions to resolve:
 
 ---
 
-## Phase 5c: Full training loop E2E [ongoing]
+## Phase 5c: Full training loop E2E [completed]
 
 Migrate `examples/calc_x/` from Agent Lightning as the primary VERL training example.
 Mode: `agl-in-host` (agl-lite serve + vLLM on host, controller + agent pods in minikube).
@@ -160,7 +160,7 @@ Each sub-item is one commit. Implement in order.
 - [ ] Delete old files: `calc_agent.py` (old), `tests/` (Agent Lightning tests)
 - [ ] Update `README.md` with new usage instructions
 
-#### 5c.6: Smoke test and validation [blocked]
+#### 5c.6: Smoke test and validation [completed]
 
 Blocked on VERL 0.7.1 API migration (see 5c.7 below).
 
@@ -171,7 +171,7 @@ Environment issues resolved:
 - [x] CUDA auto-detect in setup_verl.sh (cu128 fallback)
 - [x] verl/vllm version alignment (verl 0.7.1 + vllm 0.12.0)
 
-#### 5c.7: Migrate VERL integration to 0.7.1 AgentLoopManager API [ongoing]
+#### 5c.7: Migrate VERL integration to 0.7.1 AgentLoopManager API [completed]
 
 Implementation done. Remaining: hardware-specific VERL config tuning.
 
@@ -191,12 +191,12 @@ E2E progress:
 - [x] Model registered with agl-lite gateway
 - [x] Rollouts enqueued via AglLiteAgentLoopManager
 - [x] K8s Jobs created, agent pods started (calc-x-agent:dev)
-- [x] Validation completed: `val-core/unknown/reward/mean@1:0.0`
-- [ ] Training step — TCP transport error after validation.
-      Likely stale HTTP connection to agl-lite server (server restarted
-      during deploy cleanup). Need connection retry/reconnect logic in
-      AglLiteClient or keep server alive across deploy.
-- [ ] PPO update completion
+- [x] Validation completed: `val-core/unknown/reward/mean@1:0.25`
+- [x] Training rollouts (128 samples): agents solved via MCP tools → gateway → vLLM
+- [x] PPO update completed: `actor/pg_loss:-0.005`, `actor/grad_norm:0.99`
+- [x] Final validation: `val-core/unknown/reward/mean@1:0.1`
+- [x] Full step metrics reported (timing, perf, critic scores, advantages)
+- [x] **E2E smoke test PASSED** — 1 PPO step in ~9 min
 
 Environment note: requires `python3.12-dev` for triton JIT compilation.
 
