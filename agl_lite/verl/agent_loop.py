@@ -72,18 +72,10 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         # Training config for tensor construction
         self.max_prompt_length = config.data.max_prompt_length
         self.max_response_length = config.data.max_response_length
-
-        # Tokenizer — set after init
-        self._tokenizer = None
-        self._pad_token_id = 0
+        self._pad_token_id = self.tokenizer.pad_token_id if self.tokenizer and self.tokenizer.pad_token_id is not None else 0
 
         # Track whether we've registered models with the gateway
         self._models_registered = False
-
-    def _set_tokenizer(self, tokenizer):
-        """Set tokenizer after construction (called from entrypoint)."""
-        self._tokenizer = tokenizer
-        self._pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
 
     async def _init_agent_loop_workers(self):
         """Override: skip creating Ray AgentLoopWorker actors.
@@ -239,7 +231,7 @@ class AglLiteAgentLoopManager(AgentLoopManager):
                 # Insert a single EOS token so VERL doesn't treat this as
                 # an aborted sequence (which would crash compute_data_metrics
                 # if ALL sequences are aborted).
-                eos_id = self._tokenizer.eos_token_id or pad_token_id
+                eos_id = (self.tokenizer.eos_token_id if self.tokenizer else None) or pad_token_id
                 prompt_ids_list.append([pad_token_id] * max_prompt_length)
                 resp = [eos_id] + [pad_token_id] * (max_response_length - 1)
                 resp_mask = [1] + [0] * (max_response_length - 1)
