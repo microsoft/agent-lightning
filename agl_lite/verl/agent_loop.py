@@ -29,9 +29,6 @@ import torch
 from tensordict import TensorDict
 from verl import DataProto
 from verl.experimental.agent_loop import AgentLoopManager
-from verl.experimental.agent_loop.agent_loop import _get_rollout_and_model_config
-from verl.utils.config import omega_conf_to_dataclass
-from verl.utils.dataset.rl_dataset import get_dataset_class
 from verl.utils.ray_utils import auto_await
 
 from agl_lite.client import AglLiteClient
@@ -62,22 +59,15 @@ class AglLiteAgentLoopManager(AgentLoopManager):
 
     def __init__(self, config, worker_group=None, rollout_resource_pool=None,
                  reward_loop_worker_handles=None):
-        # Don't call super().__init__() — it expects (config, servers, load_balancer_handle)
-        # which are not available yet (create() sets them up later via
-        # _initialize_llm_servers). We initialize the fields we need directly.
-        self.config = config
-        rollout_config, model_config = _get_rollout_and_model_config(config)
-        self.rollout_config = omega_conf_to_dataclass(rollout_config)
-        self.model_config = omega_conf_to_dataclass(model_config)
+        # Parent __init__ sets: config, rollout_config (OmegaConf), model_config (OmegaConf),
+        # worker_group, rollout_resource_pool, rollout_replica_class, agent_loop_workers_class
+        super().__init__(config, worker_group, rollout_resource_pool, reward_loop_worker_handles)
 
-        # Stored for create() → _initialize_llm_servers
-        self.worker_group = worker_group
-        self.rollout_resource_pool = rollout_resource_pool
-        self.reward_loop_worker_handles = reward_loop_worker_handles
-
-        self.dataset_cls = get_dataset_class(config.data)
-        self.tokenizer = self.model_config.tokenizer
-        self.processor = self.model_config.processor
+        # Load tokenizer — the parent AgentLoopManager doesn't set self.tokenizer
+        # (that's done in AgentLoopWorker). We need it for DataProto construction.
+        from transformers import AutoTokenizer
+        model_path = config.actor_rollout_ref.model.path
+        self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
         # agl-lite connection — create a fresh client for each generate_sequences
         # call to avoid stale TCP connections (VERL pauses between val/train).
@@ -88,7 +78,7 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         # Training config for tensor construction
         self.max_prompt_length = config.data.max_prompt_length
         self.max_response_length = config.data.max_response_length
-        self._pad_token_id = self.tokenizer.pad_token_id if self.tokenizer and self.tokenizer.pad_token_id is not None else 0
+        self._pad_token_id = self._tokenizer.pad_token_id if self._tokenizer.pad_token_id is not None else 0
 
         # Track whether we've registered models with the gateway
         self._models_registered = False
@@ -247,7 +237,7 @@ class AglLiteAgentLoopManager(AgentLoopManager):
                 # Insert a single EOS token so VERL doesn't treat this as
                 # an aborted sequence (which would crash compute_data_metrics
                 # if ALL sequences are aborted).
-                eos_id = (self.tokenizer.eos_token_id if self.tokenizer else None) or pad_token_id
+                eos_id = (self._tokenizer.eos_token_id if self._tokenizer else None) or pad_token_id
                 prompt_ids_list.append([pad_token_id] * max_prompt_length)
                 resp = [eos_id] + [pad_token_id] * (max_response_length - 1)
                 resp_mask = [1] + [0] * (max_response_length - 1)
