@@ -275,6 +275,9 @@ The integration point moves from "override the trainer" to "provide a custom
 - [ ] Multi-iteration training with measurable reward improvement
 - [ ] Pre-flight checks: healthz, auth, model registration, rollout completion,
       triplet extraction, non-empty PPO batch
+- [ ] Wandb integration: add `WANDB_API_KEY` propagation to Ray workers,
+      restore `"logger": ["console", "wandb"]` as default, support `--wandb` flag
+      in `train_calc_agent.py`. Essential for tracking training metrics across runs.
 
 ---
 
