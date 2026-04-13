@@ -17,8 +17,10 @@ RUN pip install --no-cache-dir \
 
 # Pre-install the MCP calculator package so `uvx mcp-server-calculator`
 # doesn't need to download it at runtime (which causes 5s init timeouts).
-RUN uvx --help > /dev/null 2>&1 && \
-    uv tool install mcp-server-calculator
+RUN uv tool install mcp-server-calculator
+
+# Make uv-installed tools available on PATH.
+ENV PATH="/root/.local/bin:$PATH"
 
 COPY agents/calc_agent.py /app/calc_agent.py
 
