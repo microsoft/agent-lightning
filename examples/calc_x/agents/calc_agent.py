@@ -83,7 +83,10 @@ async def solve(question: str, model: str, temperature: float) -> tuple[str, str
     from autogen_ext.models.openai import OpenAIChatCompletionClient
     from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-    calculator_mcp_server = StdioServerParams(command="mcp-server-calculator", args=[])
+    calculator_mcp_server = StdioServerParams(
+        command="mcp-server-calculator", args=[],
+        read_timeout_seconds=30,  # default 5s too short for cold start in containers
+    )
 
     async with McpWorkbench(calculator_mcp_server) as workbench:
         model_client = OpenAIChatCompletionClient(
