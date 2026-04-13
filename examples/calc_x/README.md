@@ -81,7 +81,7 @@ python examples/calc_x/train_calc_agent.py \
 | `run.sh` | E2E entrypoint — verify vLLM, build images, deploy, run training |
 | `Dockerfile.agent` | Agent container image |
 | `job-template.yaml` | K8s pod spec for agent jobs |
-| `vllm/hooks.py` | CalcXHooks — enqueue (inject task), on_succeeded (compute reward) |
-| `vllm/gateway-config.yaml` | Gateway config — inject `return_token_ids` for vLLM |
-| `vllm/.env.example` | Deploy + experiment configuration |
+| `hooks.py` | CalcXHooks — enqueue (inject task), on_succeeded (compute reward) |
+| `gateway-config.yaml` | Gateway config — inject `return_token_ids` for vLLM |
+| `.env.example` | Deploy + experiment configuration |
 | `data/` | Dataset directory (parquet files, gitignored except sample.jsonl) |

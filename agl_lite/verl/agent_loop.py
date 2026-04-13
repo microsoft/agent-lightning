@@ -18,12 +18,15 @@ back a ``DataProto`` with all the fields it needs.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 import torch
 from tensordict import TensorDict
@@ -187,6 +190,19 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         output = self._build_data_proto(completed_data, prompts)
 
         elapsed = time.time() - start_time
+
+        # Log batch summary
+        rewards = [d["reward"] for d in completed_data]
+        has_triplets = sum(1 for d in completed_data if d["triplets"])
+        empty_triplets = len(completed_data) - has_triplets
+        avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
+        log.info(
+            "Batch complete: %d samples, %d with triplets, %d empty, "
+            "reward mean=%.3f min=%.3f max=%.3f, elapsed=%.1fs",
+            len(completed_data), has_triplets, empty_triplets,
+            avg_reward, min(rewards) if rewards else 0.0,
+            max(rewards) if rewards else 0.0, elapsed,
+        )
         output.meta_info["timing"] = {
             "agent_loop/generate_sequences/mean": elapsed,
             "agent_loop/generate_sequences/min": elapsed,

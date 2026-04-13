@@ -18,7 +18,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MODE_DIR="$SCRIPT_DIR/vllm"
+MODE_DIR="$SCRIPT_DIR"
 
 cd "$REPO_ROOT"
 
@@ -103,9 +103,13 @@ export RAY_tmpdir=${RAY_tmpdir:-/tmp/ray_agl_lite_$$}
 .venv/bin/ray stop --force 2>/dev/null || true
 
 # --- Run training ---
+# Training output goes to both stdout and a log file in the run's log directory.
 echo ""
 echo "=== Running VERL training ==="
+echo "  Training log: $LOG_DIR/training.log"
+echo "  Server log:   $LOG_DIR/server.log"
 exec .venv/bin/python examples/calc_x/train_calc_agent.py \
     --train-file "${AGL_TRAIN_FILE:-examples/calc_x/data/train.parquet}" \
     --val-file "${AGL_VAL_FILE:-examples/calc_x/data/test.parquet}" \
-    "$@"
+    "$@" \
+    2>&1 | tee "$LOG_DIR/training.log"

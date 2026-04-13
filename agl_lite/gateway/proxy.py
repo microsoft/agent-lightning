@@ -40,6 +40,14 @@ async def forward_request(
 
     server_meta = {"model": server.model, "endpoint": server.endpoint, "version": server.version}
 
+    log.debug(
+        "Proxying request",
+        rollout_id=rollout_id,
+        model=server.model,
+        stream=is_stream,
+        path=path,
+    )
+
     if is_stream:
         return await _forward_streaming(
             client=client,
