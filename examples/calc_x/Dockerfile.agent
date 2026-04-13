@@ -15,6 +15,11 @@ RUN pip install --no-cache-dir \
     "autogen-ext[openai]" \
     "mcp>=1.10.0"
 
+# Pre-install the MCP calculator package so `uvx mcp-server-calculator`
+# doesn't need to download it at runtime (which causes 5s init timeouts).
+RUN uvx --help > /dev/null 2>&1 && \
+    uv tool install mcp-server-calculator
+
 COPY agents/calc_agent.py /app/calc_agent.py
 
 WORKDIR /app
