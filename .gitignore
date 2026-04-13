@@ -216,6 +216,7 @@ __marimo__/
 # data not maintained in the repo
 examples/calc_x/data/
 !examples/calc_x/data/sample.jsonl
+examples/calc_x/logs/
 
 # some sites building
 publicartifacts/
