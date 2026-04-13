@@ -86,10 +86,6 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         # Track whether we've registered models with the gateway
         self._models_registered = False
 
-        # Batch counter + log dir for rollout archives
-        self._batch_counter = 0
-        self._log_dir = os.environ.get("AGL_LOG_DIR")
-
     async def _init_agent_loop_workers(self):
         """Override: skip creating Ray AgentLoopWorker actors.
 
@@ -113,46 +109,6 @@ class AglLiteAgentLoopManager(AgentLoopManager):
         await client.register_models(regs)
         self._models_registered = True
         print(f"AglLiteAgentLoopManager: registered {len(regs)} model server(s) with gateway")
-
-    def _archive_batch(self, completed_data: List[Dict[str, Any]]) -> None:
-        """Append batch rollout data to rollouts.jsonl in the log directory.
-
-        Each line is one rollout: {rollout_id, reward, num_triplets, original_input,
-        triplet_lengths}. Token ID arrays are summarized (not dumped) to keep
-        the file human-readable.
-        """
-        if not self._log_dir:
-            return
-
-        import json
-        from pathlib import Path
-
-        self._batch_counter += 1
-        archive_path = Path(self._log_dir) / "rollouts.jsonl"
-
-        try:
-            with open(archive_path, "a") as f:
-                for item in completed_data:
-                    triplet_summary = [
-                        {
-                            "prompt_len": len(t["prompt_ids"]),
-                            "response_len": len(t["response_ids"]),
-                        }
-                        for t in item["triplets"]
-                    ]
-                    record = {
-                        "batch": self._batch_counter,
-                        "rollout_id": item["rollout_id"],
-                        "reward": item["reward"],
-                        "num_triplets": len(item["triplets"]),
-                        "triplet_lengths": triplet_summary,
-                        "original": item["original"],
-                    }
-                    f.write(json.dumps(record, default=str) + "\n")
-            log.info("Archived %d rollouts to %s (batch %d)",
-                     len(completed_data), archive_path, self._batch_counter)
-        except Exception:
-            log.exception("Failed to archive rollouts")
 
     @auto_await
     async def generate_sequences(self, prompts: DataProto) -> DataProto:
@@ -230,8 +186,15 @@ class AglLiteAgentLoopManager(AgentLoopManager):
                     "original": sample_map.get(rid, {}),
                 })
 
-        # 6. Archive rollouts to JSONL for debugging
-        self._archive_batch(completed_data)
+            # 6. Archive rollouts via the store API (writes JSONL + frees memory)
+            try:
+                archive_result = await client.archive_rollouts(rollout_ids)
+                log.info(
+                    "Archived %d rollouts (path=%s)",
+                    archive_result.archived, archive_result.path,
+                )
+            except Exception:
+                log.exception("Failed to archive rollouts (non-fatal)")
 
         # 7. Build DataProto (outside the client context — no more HTTP needed)
         output = self._build_data_proto(completed_data, prompts)
