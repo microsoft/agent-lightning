@@ -33,6 +33,16 @@ echo "=== Logs → $LOG_DIR ==="
 # minikube mount bridges that to the host filesystem so logs survive pod deletion.
 MOUNT_SRC="$LOG_DIR/agents"
 MOUNT_DST="/tmp/agl-lite/logs"
+
+# Kill any stale mount to the same destination (e.g., from a previous run
+# that was killed without cleanup).
+STALE_PIDS=$(pgrep -f "minikube mount.*:$MOUNT_DST" || true)
+if [ -n "$STALE_PIDS" ]; then
+    echo "=== Cleaning up stale minikube mount (PIDs: $STALE_PIDS) ==="
+    kill $STALE_PIDS 2>/dev/null || true
+    sleep 1
+fi
+
 echo "=== Mounting $MOUNT_SRC → minikube:$MOUNT_DST ==="
 minikube mount "$MOUNT_SRC:$MOUNT_DST" &
 MOUNT_PID=$!
