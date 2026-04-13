@@ -85,3 +85,19 @@ python examples/calc_x/train_calc_agent.py \
 | `gateway-config.yaml` | Gateway config — inject `return_token_ids` for vLLM |
 | `.env.example` | Deploy + experiment configuration |
 | `data/` | Dataset directory (parquet files, gitignored except sample.jsonl) |
+
+### Logs
+
+Each run creates a timestamped log directory under `logs/`:
+
+```
+logs/20260410-002043/
+  server.log       # agl-lite server (JSON, structlog)
+  training.log     # VERL training output (Ray workers, metrics, progress)
+  agents/          # Per-agent logs (mounted from minikube via hostPath)
+    <attempt-id>/
+      agent.log    # Agent stdout + structured logs
+```
+
+`run.sh` sets up `minikube mount` so agent pod logs (written to hostPath
+`/tmp/agl-lite/logs/` inside the VM) appear on the host filesystem.

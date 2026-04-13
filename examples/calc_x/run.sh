@@ -24,9 +24,24 @@ cd "$REPO_ROOT"
 
 # --- Setup log directory ---
 LOG_DIR="$SCRIPT_DIR/logs/$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR/agents"
 export AGL_LOG_DIR="$LOG_DIR"
 echo "=== Logs → $LOG_DIR ==="
+
+# --- Mount agent log directory into minikube ---
+# Agent pods write to hostPath /tmp/agl-lite/logs inside minikube VM.
+# minikube mount bridges that to the host filesystem so logs survive pod deletion.
+MOUNT_SRC="$LOG_DIR/agents"
+MOUNT_DST="/tmp/agl-lite/logs"
+echo "=== Mounting $MOUNT_SRC → minikube:$MOUNT_DST ==="
+minikube mount "$MOUNT_SRC:$MOUNT_DST" &
+MOUNT_PID=$!
+sleep 2
+if ! kill -0 $MOUNT_PID 2>/dev/null; then
+    echo "ERROR: minikube mount failed"
+    exit 1
+fi
+trap 'kill $MOUNT_PID 2>/dev/null; wait $MOUNT_PID 2>/dev/null' EXIT
 
 # --- Load config ---
 if [ ! -f "$MODE_DIR/.env.example" ]; then
