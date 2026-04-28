@@ -1,16 +1,17 @@
+from typing import Any, List
+
 import torch
-from typing import List, Any
+
 
 def is_sublist(sub, full):
     n, m = len(sub), len(full)
-    return any(full[i:i+n] == sub for i in range(m - n + 1))
+    return any(full[i : i + n] == sub for i in range(m - n + 1))
+
 
 # Function to remove segments of a list between a start pattern and an end pattern
-def remove_pattern_ranges(seq: List[Any],
-                        start_pat: List[Any],
-                        end_pat: List[Any]) -> List[Any]:
+def remove_pattern_ranges(seq: List[Any], start_pat: List[Any], end_pat: List[Any]) -> List[Any]:
     """Remove every [start_pat ... end_pat] slice (inclusive) from seq."""
-    
+
     out: List[Any] = []
     i = 0
     n = len(seq)
@@ -18,12 +19,12 @@ def remove_pattern_ranges(seq: List[Any],
 
     while i < n:
         # Check if the start pattern matches at the current position
-        if i + ls <= n and seq[i:i+ls] == start_pat:
+        if i + ls <= n and seq[i : i + ls] == start_pat:
             # Look for the first occurrence of the end pattern after the start pattern
             j = i + ls
             found_end = -1
             while j + le <= n:
-                if seq[j:j+le] == end_pat:
+                if seq[j : j + le] == end_pat:
                     found_end = j
                     break  # Stop when the end pattern is found
                 j += 1
@@ -44,10 +45,10 @@ def remove_pattern_ranges(seq: List[Any],
     # Return the filtered list with the start-end pattern segments removed
     return out
 
+
 def low_prob_token_masking(batch):
-    response_mask = batch.batch["response_mask"]       # [N, T]
-    old_log_prob = batch.batch["old_log_probs"]        # [N, T]
-    # advantages = batch.batch["advantages"]             # [N, T]
+    response_mask = batch.batch["response_mask"]  # [N, T]
+    old_log_prob = batch.batch["old_log_probs"]
 
     masked_old_log_prob = old_log_prob.masked_fill(response_mask == 0, 1e9)
     min_values, _ = torch.min(masked_old_log_prob, dim=1)  # [N]

@@ -2,18 +2,18 @@
 # Variable definitions
 # ==========================
 variables:
-  NUM_GPUS: 8
+  NUM_GPUS: 4
   MINI_BATCH_SIZE: 16
   PER_GPU_BATCH_SIZE: 1
   TENSOR_MODEL_PARALLEL_SIZE: 2
   NUM_ROLLOUTS: 8
   BASE_MODEL: Qwen/Qwen2.5-7B-Instruct
-  PROJECT_NAME: EMPO2-ScienceWorld2
+  PROJECT_NAME: EMPO2-ScienceWorld3
   TASK_NUM: ${oc.env:TASK_NUM,25}
   TRIAL: ${oc.env:TRIAL,0}
-  EXPERIMENT_NAME: (all-off-policy-final-reward)empo2-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
+  EXPERIMENT_NAME: empo2-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/0211/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: empo2_checkpoint/0325/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config

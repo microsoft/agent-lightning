@@ -1,10 +1,11 @@
+import random
+import time
+from collections import deque
+
+import numpy as np
+import uvicorn
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
-import uvicorn
-import numpy as np
-import time
-import random
-from collections import deque
 
 num_works = 1
 app = FastAPI()
@@ -12,11 +13,13 @@ app = FastAPI()
 mem_list = None
 content_set = None
 
+
 class MemRequest(BaseModel):
     key: list
     idx: int = None
     content: str = None
     score: float = None
+
 
 @app.post("/mem/")
 async def mem_handler(mem_req: MemRequest):
@@ -27,7 +30,7 @@ async def mem_handler(mem_req: MemRequest):
     content = mem_req.content
     score = mem_req.score
 
-    if content=="Reset":
+    if content == "Reset":
         mem_list_num = idx
         content_set = {id: set() for id in range(mem_list_num)}
         mem_list = {id: [] for id in range(mem_list_num)}
@@ -38,12 +41,14 @@ async def mem_handler(mem_req: MemRequest):
     if content is not None:
         if content not in content_set[idx]:
             content_set[idx].add(content)
-            mem_list[idx].append({
-                "cnt": cnt[idx],
-                "key": key,
-                "content": content,
-                "score": score,
-            })
+            mem_list[idx].append(
+                {
+                    "cnt": cnt[idx],
+                    "key": key,
+                    "content": content,
+                    "score": score,
+                }
+            )
             cnt[idx] += 1
             if len(mem_list[idx]) > 1000:
                 oldest_hash = mem_list[idx][0]["content"]
@@ -63,6 +68,7 @@ async def mem_handler(mem_req: MemRequest):
         count = len(data)
         print("Load", count, data)
         return count, data
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001, workers=num_works)
