@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 import numpy as np
 import requests
-from add_instruction import add_chat_all_tips, add_chat_instruction, add_chat_tips
+from add_instruction import add_chat_all_tips, add_chat_instruction
 from agl_envs import make_env_manager
 
 from agentlightning import LLM, NamedResources, Rollout, configure_logger, emit_reward, operation
@@ -58,17 +58,6 @@ def gather_chats(prompt):
 
 
 class EMPO2Agent(EnvAgent):
-    def __init__(self, config, trained_agents: str | None = None) -> None:
-        super().__init__(config=config, trained_agents=trained_agents)
-
-    def _get_tip_prompt(self, prompt, tips):
-        prompt_type = self.config.captioner.prompt_type
-
-        if prompt_type == "chat":
-            return add_chat_tips(prompt, tips)
-        else:
-            raise ValueError(f"Unsupported prompt_type '{prompt_type}' for _get_tip_obs (expected 'chat')")
-
     def _get_all_tip_prompt(self, prompt, tip_list):
         prompt_type = self.config.captioner.prompt_type
         if prompt_type == "chat":
@@ -125,10 +114,8 @@ class EMPO2Agent(EnvAgent):
 
             episode_reward, done = 0.0, False
 
-            pure_prompt_for_mem = []
             history_actions_for_mem = []
             tip_list = []
-
             step_count = 0
             while not done:
                 if use_tips:
@@ -159,11 +146,12 @@ class EMPO2Agent(EnvAgent):
                         intrinsic_reward = 1
 
                 try:
-                    if count > 0:
-                        tip_prompt = self._get_all_tip_prompt(prompt, tip_list)
-                        instructed_prompt = self._get_instructed_prompt(tip_prompt, sep="")
+                    if use_tips and any(t != "" for t in tip_list):
+                        llm_prompt = self._get_all_tip_prompt(prompt, tip_list)
                     else:
-                        instructed_prompt = self._get_instructed_prompt(prompt)
+                        llm_prompt = prompt
+
+                    instructed_prompt = self._get_instructed_prompt(llm_prompt)
 
                     # Main agent step
                     with operation(step_count=step_count):
@@ -175,15 +163,22 @@ class EMPO2Agent(EnvAgent):
                     logger.error(f"[Rollout {rollout_id}] Error during training rollout: {e}", exc_info=True)
                     break
 
-                # Environment step
-                pure_prompt_for_mem.append([copy.deepcopy(prompt), None])
                 env_obs, executed_action, is_valid, step_reward, terminated, truncated, info, available_actions_hint = (
-                    self.env.step(output, use_reasoning=self.config.captioner.type == "cot")
+                    self.env.step(
+                        output,
+                        use_reasoning=self.config.captioner.type == "cot",
+                        use_success_rate=self.config.use_success_rate,
+                    )
                 )
-                history_actions_for_mem.append(executed_action)
+
+                history_actions_for_mem.append(output)
+
+                action_for_history = (
+                    output if self.config.get("record_original_action", False) else executed_action
+                )
 
                 prompt_builder.update_step_count()
-                prompt_builder.update_action(executed_action)
+                prompt_builder.update_action(action_for_history)
                 prompt_builder.update_observation(env_obs)
                 # prompt_builder.update_admissible_actions(available_actions_hint)
 
@@ -217,37 +212,49 @@ class EMPO2Agent(EnvAgent):
             if rollout.mode == "train":
                 prompt_builder.prompt_type = "chat"
                 prompt_builder.max_history = -1
-                prompt = prompt_builder.get_prompt()
-                prompt.pop()
+                full_prompt = prompt_builder.get_prompt()
 
-                tip_generation_prompt = self._get_tip_generation_prompt(prompt)
+                # Add tips as raw text (no tags)
+                if use_tips and len(tip_list) > 0:
+                    tip_base_prompt = copy.deepcopy(full_prompt)
+                    tips_iter = iter(tip_list)
+                    for item in tip_base_prompt:
+                        if "User" in item.type:
+                            tip = next(tips_iter, None)
+                            if tip is None:
+                                break
+                            if tip != "":
+                                item.content += tip
+                else:
+                    tip_base_prompt = full_prompt
 
-                self.agent._model_client.max_tokens = 128
+                tip_generation_prompt = self._get_tip_generation_prompt(tip_base_prompt)
+
+                self.agent._model_client.max_tokens = 512
                 result = await self.agent._model_client.create(tip_generation_prompt)
                 tips = result.content
+
                 logger.info(f"Tips: {tips}")
 
-                #! Fill the ret and tip
-                for i in range(len(pure_prompt_for_mem)):
+                #! Fill the ret and tip, then save memory
+                #! Use final prompt state for ALL steps' keys
+                final_prompt_text = gather_chats(prompt)
+                final_key = (
+                    np.array(do_compress(final_prompt_text)["key"])
+                    .reshape(
+                        -1,
+                    )
+                    .tolist()
+                )
+
+                for i in range(len(history_actions_for_mem)):
                     max_score = 100 * reward_scale
-                    pure_prompt_for_mem[i][1] = (
+                    content = (
                         tips
                         + f"; At that timestep, the specific action your took was {history_actions_for_mem[i]}; Eventually you got the score {round(episode_reward, 1)}/{int(max_score)}."
                     )
-
-                #! Generate the tips and save the mem
-                for i in range(len(pure_prompt_for_mem)):
-                    text = gather_chats(pure_prompt_for_mem[i][0])
-                    key = (
-                        np.array(do_compress(text)["key"])
-                        .reshape(
-                            -1,
-                        )
-                        .tolist()
-                    )
-                    content = pure_prompt_for_mem[i][1]
                     score = episode_reward
-                    add_memory(variation_idx, key, content, round(score, 1))
+                    add_memory(variation_idx, final_key, content, round(score, 1))
 
             if self.config.use_success_rate:
                 return self.env.get_success_score() * reward_scale

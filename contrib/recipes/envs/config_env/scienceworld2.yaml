@@ -9,6 +9,7 @@ use_success_rate: False
 
 # only for scienceworld
 use_action_correction: True
+record_original_action: True
 
 captioner:
   type: naive # naive or cot

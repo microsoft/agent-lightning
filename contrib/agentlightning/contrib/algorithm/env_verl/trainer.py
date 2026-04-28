@@ -5,10 +5,11 @@
 from __future__ import annotations
 
 import random
+from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
 from pprint import pprint
-from typing import Dict, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type
 
 import numpy as np
 import torch
@@ -53,6 +54,56 @@ def _timer(name: str, timing_raw: Dict[str, float]):
     if name not in timing_raw:
         timing_raw[name] = 0
     timing_raw[name] += timer.last
+
+
+def compute_grpo_rollout_level_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    task_index: np.ndarray,
+    rollout_index: np.ndarray,
+    epsilon: float = 1e-6,
+    norm_adv_by_std: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    # Aggregates per-step rows into rollout-level scalars, then runs GRPO-style
+    # normalization over rollouts that share a task. Mirrors tool_utils semantics:
+    # group size == n_rollouts (uniform), scalar == episode_reward.
+    bsz, response_length = token_level_rewards.shape
+
+    rollout_score: Dict[Any, float] = defaultdict(float)
+    rollout_to_task: Dict[Any, Any] = {}
+    for i in range(bsz):
+        rid = rollout_index[i]
+        rollout_score[rid] += float(token_level_rewards[i].sum().item())
+        rollout_to_task[rid] = task_index[i]
+
+    task_to_rollouts: Dict[Any, List[Any]] = defaultdict(list)
+    for rid, tid in rollout_to_task.items():
+        task_to_rollouts[tid].append(rid)
+
+    rollout_adv: Dict[Any, float] = {}
+    for tid, rids in task_to_rollouts.items():
+        r_arr = np.array([rollout_score[rid] for rid in rids], dtype=np.float32)
+        if len(r_arr) == 1:
+            # Match verl.compute_grpo_outcome_advantage fallback.
+            mean, std = 0.0, 1.0
+        else:
+            mean = float(r_arr.mean())
+            # ddof=1 to match torch.std's default (unbiased, Bessel correction),
+            # which is what verl.compute_grpo_outcome_advantage uses.
+            std = float(r_arr.std(ddof=1))
+        denom = std + epsilon
+        for rid in rids:
+            a = rollout_score[rid] - mean
+            if norm_adv_by_std:
+                a = a / denom
+            rollout_adv[rid] = a
+
+    advantages = torch.zeros_like(token_level_rewards)
+    for i in range(bsz):
+        advantages[i] = rollout_adv[rollout_index[i]] * response_mask[i]
+
+    returns = advantages.clone()
+    return advantages, returns
 
 
 # This function is adapted from verl.
@@ -379,18 +430,40 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
                     "norm_adv_by_std_in_grpo", True
                 )  # GRPO adv normalization factor
 
-                batch = compute_advantage(
-                    batch,
-                    adv_estimator=self.config.algorithm.adv_estimator,
-                    gamma=self.config.algorithm.gamma,
-                    lam=self.config.algorithm.lam,
-                    num_repeat=self.config.actor_rollout_ref.rollout.n,
-                    norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
-                    config=self.config.algorithm,
+                # When using GRPO with per-step rewards, aggregate scalars at the
+                # rollout level so the group statistics use uniform group size = n_rollouts
+                # and scalar = episode_reward. When `use_final_reward_as_step_reward` is
+                # true, the stock compute_advantage path is kept intact.
+                is_step_reward_grpo = (
+                    self.config.algorithm.adv_estimator == AdvantageEstimator.GRPO
+                    and not self.config.algorithm.use_final_reward_as_step_reward
                 )
 
-                # if hasattr(self.config, "tips") and self.config.tips.use_tips:
-                #     batch = core_empo2.low_prob_token_masking(batch)
+                if is_step_reward_grpo:
+                    advantages, returns = compute_grpo_rollout_level_advantage(
+                        token_level_rewards=batch.batch["token_level_scores"],
+                        response_mask=batch.batch["response_mask"],
+                        task_index=batch.non_tensor_batch["uid"],
+                        rollout_index=batch.non_tensor_batch["rollout_id_list"],
+                        norm_adv_by_std=norm_adv_by_std_in_grpo,
+                    )
+                    batch.batch["advantages"] = advantages
+                    batch.batch["returns"] = returns
+                else:
+                    batch = compute_advantage(
+                        batch,
+                        adv_estimator=self.config.algorithm.adv_estimator,
+                        gamma=self.config.algorithm.gamma,
+                        lam=self.config.algorithm.lam,
+                        num_repeat=self.config.actor_rollout_ref.rollout.n,
+                        norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+                        config=self.config.algorithm,
+                    )
+
+                if hasattr(self.config, "tips") and self.config.tips.use_tips:
+                    if getattr(self.config.tips, "use_low_prob_masking", True):
+                        threshold = getattr(self.config.tips, "low_prob_threshold", -5.0)
+                        batch = core_empo2.low_prob_token_masking(batch, threshold=threshold)
 
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
             metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_before_processing"))

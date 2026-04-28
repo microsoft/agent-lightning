@@ -46,14 +46,14 @@ def remove_pattern_ranges(seq: List[Any], start_pat: List[Any], end_pat: List[An
     return out
 
 
-def low_prob_token_masking(batch):
+def low_prob_token_masking(batch, threshold: float = -5.0):
     response_mask = batch.batch["response_mask"]  # [N, T]
     old_log_prob = batch.batch["old_log_probs"]
 
     masked_old_log_prob = old_log_prob.masked_fill(response_mask == 0, 1e9)
     min_values, _ = torch.min(masked_old_log_prob, dim=1)  # [N]
 
-    mask = min_values < -5  # [N]
+    mask = min_values < threshold  # [N]
 
     combined_mask = mask.unsqueeze(1) & (response_mask == 1)
 

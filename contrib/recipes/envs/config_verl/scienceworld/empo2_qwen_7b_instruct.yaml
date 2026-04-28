@@ -2,18 +2,19 @@
 # Variable definitions
 # ==========================
 variables:
-  NUM_GPUS: 4
+  NUM_GPUS: 8
   MINI_BATCH_SIZE: 16
   PER_GPU_BATCH_SIZE: 1
   TENSOR_MODEL_PARALLEL_SIZE: 2
   NUM_ROLLOUTS: 8
   BASE_MODEL: Qwen/Qwen2.5-7B-Instruct
-  PROJECT_NAME: EMPO2-ScienceWorld3
+  PROJECT_NAME: EMPO2-ScienceWorld
   TASK_NUM: ${oc.env:TASK_NUM,25}
   TRIAL: ${oc.env:TRIAL,0}
+  USE_LOW_PROB_MASKING: false
   EXPERIMENT_NAME: empo2-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: empo2_checkpoint/0325/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: empo2_checkpoint/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -24,7 +25,7 @@ agentlightning:
 algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
-  use_final_reward_as_step_reward: true
+  use_final_reward_as_step_reward: false
   use_intrinsic_reward: true
 
 data:
@@ -32,9 +33,9 @@ data:
   val_files: ${variables.DATA_DIR}/test.parquet
   train_batch_size: 16
   val_batch_size: 80
-  max_prompt_length: 16384
+  max_prompt_length: 4500
   max_response_length: 32
-  max_train_length: 8192
+  max_train_length: 4500
   truncation: error
   return_raw_chat: true
 
@@ -64,19 +65,13 @@ actor_rollout_ref:
     clip_ratio_high: 0.30
     clip_ratio_low: 0.20
     clip_ratio_c: 10.0
-    entropy_checkpointing: true
-    entropy_from_logits_with_chunking: true
     fsdp_config:
       param_offload: true
       optimizer_offload: true
-      forward_prefetch: true
   ref:
     log_prob_micro_batch_size_per_gpu: ${variables.PER_GPU_BATCH_SIZE}
-    entropy_checkpointing: true
-    entropy_from_logits_with_chunking: true
     fsdp_config:
       param_offload: true
-      forward_prefetch: true
   model:
     path: ${variables.BASE_MODEL}
     use_remove_padding: true
@@ -99,3 +94,4 @@ trainer:
 
 tips:
   use_tips: true
+  use_low_prob_masking: ${variables.USE_LOW_PROB_MASKING}
