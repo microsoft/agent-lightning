@@ -71,11 +71,11 @@ if __name__ == "__main__":
         os.environ["TASK_NUM"] = str(args.task_num)
 
     # Load configs
-    agent_config_path = f"contrib/recipes/simulation/config_env/{args.env}.yaml"
+    agent_config_path = f"config_env/{args.env}.yaml"
     agent_config = get_config(agent_config_path)
 
     env_prefix = re.sub(r"\d+$", "", args.env)
-    trainer_config_path = f"contrib/recipes/simulation/config_verl/{env_prefix}/{args.algorithm}.yaml"
+    trainer_config_path = f"config_verl/{env_prefix}/{args.algorithm}.yaml"
     if "gigpo" in args.algorithm:
         agent_config.log_env_obs = True
     rl_training_config = get_config(trainer_config_path)
@@ -93,11 +93,11 @@ if __name__ == "__main__":
         os.makedirs("logs", exist_ok=True)
 
         subprocess.Popen(
-            f"nohup python contrib/recipes/simulation/empo2_server/server_bert.py > logs/bert_{args.task_num}.log 2>&1 &",
+            f"nohup python empo2_server/server_bert.py > logs/bert_{args.task_num}.log 2>&1 &",
             shell=True
         )
         subprocess.Popen(
-            f"nohup python contrib/recipes/simulation/empo2_server/server_mem.py > logs/mem_{args.task_num}.log 2>&1 &",
+            f"nohup python empo2_server/server_mem.py > logs/mem_{args.task_num}.log 2>&1 &",
             shell=True
         )
 

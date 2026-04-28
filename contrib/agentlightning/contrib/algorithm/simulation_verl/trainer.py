@@ -256,7 +256,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                 num_problems = self.config.data.train_batch_size
                 gen_batch.non_tensor_batch["global_steps"] = [self.global_steps for _ in range(num_problems)]
 
-                if self.config.tips.use_tips:
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
                     touzi = random.random()
                     if touzi < 0.17:
                         self.empo2_train_mode = "off-policy" # Update with Tips and give them to the pure_chats
@@ -274,10 +274,11 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
+                    max_total_length=self.config.data.max_total_length,
                     device=gen_batch.batch["fake_ids"].device,
                     use_final_reward_as_step_reward=self.config.algorithm.use_final_reward_as_step_reward,
                     use_intrinsic_reward=self.config.algorithm.use_intrinsic_reward,
-                    empo2_train_mode=getattr(self, "empo2_train_mode", None)
+                    empo2_train_mode=getattr(self, "empo2_train_mode", None),
                 )
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
@@ -320,7 +321,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
 
             # recompute old_log_probs
             with _timer("old_log_prob", timing_raw):
-                if self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
                     old_batch = deepcopy(batch)
                     old_batch.batch['input_ids'] = old_batch.batch['old_input_ids']
                     old_batch.batch['attention_mask'] = old_batch.batch['old_attention_mask']
@@ -386,8 +387,8 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     config=self.config.algorithm,
                 )
 
-                # if self.config.tips.use_tips:
-                #     batch = core_empo2.low_prob_token_masking(batch)
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
+                    batch = core_empo2.low_prob_token_masking(batch)
 
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
             metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_before_processing"))
@@ -527,7 +528,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                 # train step
                 metrics = self._train_step(batch_dict)
 
-                if self.config.tips.use_tips:
+                if hasattr(self.config, 'tips') and self.config.tips.use_tips:
                     mode_map = {
                         "off-policy": 0,
                         "on-policy-with-tips": 1,

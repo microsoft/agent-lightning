@@ -661,6 +661,7 @@ class SimulationAgentModeDaemon:
         max_prompt_length: int,
         max_response_length: int,
         device: torch.device,
+        max_total_length: int = -1,
         use_final_reward_as_step_reward: bool = True,
         use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
@@ -749,17 +750,20 @@ class SimulationAgentModeDaemon:
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
 
+                prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
+
+                if max_total_length > -1 and len(prompt_ids) + len(response_ids) > max_total_length:
+                    continue
+
                 final_reward_list.append(sample_info["final_reward"])
                 step_reward_list.append(trace["step_reward"])
                 step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
                 message_list.append(trace["message"])
 
-                prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
-
                 if empo2_train_mode == "off-policy":
                     old_prompt_ids = copy.deepcopy(prompt_ids)
                     START_PATTERN = self.tokenizer.encode("<tip>")
-                    END_PATTERN = self.tokenizer.encode("</tip>\n")
+                    END_PATTERN = self.tokenizer.encode("</tip>\n\n")
                     if core_empo2.is_sublist(START_PATTERN, prompt_ids):
                         prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN, END_PATTERN)
 

@@ -4,7 +4,7 @@
 variables:
   NUM_GPUS: 8
   MINI_BATCH_SIZE: 16
-  PER_GPU_BATCH_SIZE: 2
+  PER_GPU_BATCH_SIZE: 1
   TENSOR_MODEL_PARALLEL_SIZE: 2
   NUM_ROLLOUTS: 8
   BASE_MODEL: Qwen/Qwen2.5-7B-Instruct
@@ -13,7 +13,7 @@ variables:
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/1223/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: /mnt/jeonghyekim/empo2_grpo_checkpoint/0206/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -24,7 +24,7 @@ agentlightning:
 algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
-  use_final_reward_as_step_reward: false
+  use_final_reward_as_step_reward: true
   use_intrinsic_reward: true
 
 data:
@@ -33,7 +33,8 @@ data:
   train_batch_size: 16
   val_batch_size: 80
   max_prompt_length: 16384
-  max_response_length: 64
+  max_response_length: 32
+  max_total_length: 8192
   truncation: error
   return_raw_chat: true
 

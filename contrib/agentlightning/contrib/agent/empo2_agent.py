@@ -158,14 +158,14 @@ class EMPO2Agent(SimulationAgent):
                             ret_tips += mem+"\n"
 
                         tip_list.append(ret_tips)
-                        intrinsic_reward = 0.1 / (count+1)
+                        intrinsic_reward = 1 / (count+1)
                     else:
                         tip_list.append("")
-                        intrinsic_reward = 0.1
+                        intrinsic_reward = 1
 
                 try:
                     if count > 0:
-                        tip_prompt = self._get_tip_prompt(prompt, ret_tips)
+                        tip_prompt = self._get_all_tip_prompt(prompt, tip_list)
                         instructed_prompt = self._get_instructed_prompt(tip_prompt, sep="")
                     else:
                         instructed_prompt = self._get_instructed_prompt(prompt)
