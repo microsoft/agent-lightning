@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gzip
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
 
 from fastapi import Request, Response
 from google.protobuf import json_format
@@ -39,7 +39,6 @@ from agentlightning.types.tracer import (
     OtelResource,
     Span,
     SpanContext,
-    StatusCode,
     TraceStatus,
     convert_timestamp,
 )
@@ -414,7 +413,7 @@ def _kv_list_to_dict(kvs: Sequence[KeyValue]) -> Attributes:
     return {kv.key: _any_value_to_python(kv.value) for kv in kvs}
 
 
-_STATUS_CODE_MAP: Mapping[ProtoStatus.StatusCode.ValueType, StatusCode] = {
+_STATUS_CODE_MAP = {
     ProtoStatus.STATUS_CODE_UNSET: "UNSET",
     ProtoStatus.STATUS_CODE_OK: "OK",
     ProtoStatus.STATUS_CODE_ERROR: "ERROR",

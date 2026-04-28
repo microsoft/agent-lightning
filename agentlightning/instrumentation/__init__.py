@@ -6,7 +6,6 @@ AGENTOPS_INSTALLED: bool = False
 AGENTOPS_LANGCHAIN_INSTALLED: bool = False
 LITELLM_INSTALLED: bool = False
 VLLM_INSTALLED: bool = False
-WEAVE_INSTALLED: bool = False
 
 try:
     from . import agentops  # type: ignore

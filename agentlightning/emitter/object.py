@@ -6,15 +6,13 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentlightning.semconv import AGL_OBJECT, LightningSpanAttributes
-from agentlightning.tracer.base import get_active_tracer
-from agentlightning.tracer.dummy import DummyTracer
-from agentlightning.types import SpanCoreFields, SpanLike, TraceStatus
-from agentlightning.utils.otel import flatten_attributes, full_qualified_name, sanitize_attributes
+from agentlightning.types import SpanLike
+from agentlightning.utils.otel import full_qualified_name, get_tracer
 
 logger = logging.getLogger(__name__)
 
 
-def emit_object(object: Any, attributes: Optional[Dict[str, Any]] = None, propagate: bool = True) -> SpanCoreFields:
+def emit_object(object: Any, attributes: Optional[Dict[str, Any]] = None, propagate: bool = True) -> None:
     """Emit an object's serialized representation as an OpenTelemetry span.
 
     Args:
@@ -27,29 +25,20 @@ def emit_object(object: Any, attributes: Optional[Dict[str, Any]] = None, propag
     """
     span_attributes = encode_object(object)
     if attributes:
-        flattened = flatten_attributes(attributes, expand_leaf_lists=False)
-        span_attributes.update(sanitize_attributes(flattened))
-
+        span_attributes.update(attributes)
+    tracer = get_tracer(use_active_span_processor=propagate)
+    span = tracer.start_span(
+        AGL_OBJECT,
+        attributes=span_attributes,
+    )
     attr_length = 0
     if LightningSpanAttributes.OBJECT_JSON.value in span_attributes:
         attr_length = len(span_attributes[LightningSpanAttributes.OBJECT_JSON.value])
     elif LightningSpanAttributes.OBJECT_LITERAL.value in span_attributes:
         attr_length = len(span_attributes[LightningSpanAttributes.OBJECT_LITERAL.value])
     logger.debug("Emitting object span with payload size %d characters", attr_length)
-
-    if propagate:
-        tracer = get_active_tracer()
-        if tracer is None:
-            raise RuntimeError("No active tracer found. Cannot emit object span.")
-    else:
-        # Do not actually propagate to any store or tracer backend.
-        tracer = DummyTracer()
-
-    return tracer.create_span(
-        name=AGL_OBJECT,
-        attributes=span_attributes,
-        status=TraceStatus(status_code="OK"),
-    )
+    with span:
+        pass
 
 
 def encode_object(object: Any) -> Dict[str, Any]:

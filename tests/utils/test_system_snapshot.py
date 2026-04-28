@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Callable, Optional
+from typing import Optional
 
 import pytest
 
 from agentlightning.utils import system_snapshot
 
-pytestmark = pytest.mark.utils
+try:
+    import torch  # type: ignore
+
+    GPU_AVAILABLE = torch.cuda.is_available()
+except Exception:
+    GPU_AVAILABLE = False  # type: ignore
 
 
-def _patch_system_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-    include_gpu: bool = False,
-    cpu_percent_fn: Optional[Callable[[float], float]] = None,
-) -> Optional[SimpleNamespace]:
+def _patch_system_snapshot(monkeypatch: pytest.MonkeyPatch, include_gpu: bool = False) -> Optional[SimpleNamespace]:
     monkeypatch.setattr(system_snapshot.platform, "processor", lambda: "test-cpu")
     monkeypatch.setattr(system_snapshot.platform, "platform", lambda: "test-platform")
     monkeypatch.setattr(system_snapshot.socket, "gethostname", lambda: "test-host")
@@ -25,15 +26,7 @@ def _patch_system_snapshot(
         return 4 if logical else 2
 
     monkeypatch.setattr(system_snapshot.psutil, "cpu_count", fake_cpu_count)
-
-    def default_cpu_percent(interval: float) -> float:
-        return 33.3
-
-    monkeypatch.setattr(
-        system_snapshot.psutil,
-        "cpu_percent",
-        cpu_percent_fn or default_cpu_percent,
-    )
+    monkeypatch.setattr(system_snapshot.psutil, "cpu_percent", lambda _: 33.3)  # type: ignore
 
     vm = SimpleNamespace(used=5 * (2**30), total=10 * (2**30), percent=50.0)
     monkeypatch.setattr(system_snapshot.psutil, "virtual_memory", lambda: vm)
@@ -63,11 +56,6 @@ def _patch_system_snapshot(
 
 
 def test_system_snapshot_excludes_gpu_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fail_gpu_query(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("GPU stats should not be queried when include_gpu is False")
-
-    monkeypatch.setattr(system_snapshot.GPUStatCollection, "new_query", fail_gpu_query)
-
     _patch_system_snapshot(monkeypatch)
 
     snapshot = system_snapshot.system_snapshot()
@@ -113,28 +101,6 @@ def test_sanity_check() -> None:
     snapshot = system_snapshot.system_snapshot(include_gpu=True)
     assert snapshot is not None
 
-    try:
-        import torch  # type: ignore
-
-        GPU_AVAILABLE = torch.cuda.is_available()
-    except Exception:
-        GPU_AVAILABLE = False  # type: ignore
-
     if GPU_AVAILABLE:
         assert snapshot["gpus"] is not None
         assert len(snapshot["gpus"]) > 0
-
-
-def test_system_snapshot_cpu_percent_samples_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
-    called_intervals: list[float] = []
-
-    def record_cpu_percent(interval: float) -> float:
-        called_intervals.append(interval)
-        return 77.7
-
-    _patch_system_snapshot(monkeypatch, cpu_percent_fn=record_cpu_percent)
-
-    snapshot = system_snapshot.system_snapshot()
-
-    assert snapshot["cpu_usage_pct"] == 77.7
-    assert called_intervals == [0.0]

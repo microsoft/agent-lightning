@@ -34,8 +34,6 @@ from agentlightning.utils.server_launcher import (
     shutdown_uvicorn_server,
 )
 
-pytestmark = pytest.mark.utils
-
 
 def _make_app_health(always_ok: bool = True) -> FastAPI:
     app = FastAPI()

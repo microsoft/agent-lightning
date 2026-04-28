@@ -14,8 +14,6 @@ from agentlightning.types import (
     RolloutConfig,
 )
 
-pytestmark = [pytest.mark.store]
-
 # Tests for rollout_status_from_attempt function
 
 

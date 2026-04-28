@@ -9,9 +9,7 @@
     "agentlightning/algorithm/verl",
     "agentlightning/cli/vllm.py",
     "agentlightning/store/collection/mongo.py",
-    "agentlightning/store/mongo.py",
-    "agentlightning/tracer/weave.py",
-    "contrib/**"
+    "agentlightning/store/mongo.py"
   ],
 
   "pythonVersion": "3.12",

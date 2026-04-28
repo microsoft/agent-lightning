@@ -1,0 +1,76 @@
+agentlightning:
+  port: 9999
+
+algorithm:
+  adv_estimator: multi_step_gae
+  use_kl_in_reward: false
+
+data:
+  train_files: examples/simulation/task_data/alfworld/train.parquet
+  val_files: examples/simulation/task_data/alfworld/test.parquet
+  train_batch_size: 1
+  val_batch_size: 140
+  max_prompt_length: 2048
+  max_response_length: 512
+  truncation: error
+
+actor_rollout_ref:
+  rollout:
+    tensor_model_parallel_size: 1
+    n: 1
+    log_prob_micro_batch_size_per_gpu: 1
+    multi_turn:
+      format: hermes
+    name: vllm
+    gpu_memory_utilization: 0.55
+  actor:
+    ppo_mini_batch_size: 1
+    ppo_micro_batch_size_per_gpu: 1
+    optim:
+      lr: 1.0e-6
+    use_kl_loss: false
+    kl_loss_coef: 0.0
+    entropy_coeff: 0
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.3
+    fsdp_config:
+      param_offload: true
+      optimizer_offload: true
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    fsdp_config:
+      param_offload: true
+  model:
+    path: Qwen/Qwen2.5-1.5B-Instruct
+    use_remove_padding: true
+    enable_gradient_checkpointing: true
+
+critic:
+  ppo_mini_batch_size: 1
+  ppo_micro_batch_size_per_gpu: 1
+  use_last_token: True
+  num_critic_heads: 1
+  use_bce_loss: True
+  optim:
+    lr: 1e-5
+  model:
+    path: Qwen/Qwen2.5-1.5B-Instruct
+    use_remove_padding: True
+    enable_gradient_checkpointing: True
+    fsdp_config:
+      param_offload: True
+      optimizer_offload: True
+
+trainer:
+  n_gpus_per_node: 1
+  val_before_train: false
+  critic_warmup: 0
+  logger:
+    - console
+    - wandb
+  project_name: AGL-ALFWorld
+  experiment_name: alfworld_admissible_actions
+  nnodes: 1
+  save_freq: 256
+  test_freq: 5
+  total_epochs: 300

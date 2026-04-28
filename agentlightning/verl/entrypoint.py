@@ -1,16 +1,13 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-# pyright: reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false
-# pyright: reportUnknownArgumentType=false
+# type: ignore
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any, Type
+from importlib.metadata import version
+from typing import Any
 
 import hydra
 import ray
-from ray.actor import ActorClass
+from packaging import version as packaging_version
 from verl.trainer.main_ppo import create_rl_sampler
 from verl.trainer.ppo.reward import load_reward_manager
 
@@ -20,10 +17,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.types import Dataset
 
 from .dataset import AgentDataset, LoadedDataset
-
-if TYPE_CHECKING:
-    from .daemon import AgentModeDaemon
-    from .trainer import AgentLightningTrainer
+from .trainer import AgentLightningTrainer
 
 __all__ = [
     "main",
@@ -33,20 +27,8 @@ __all__ = [
 
 
 @hydra.main(config_path="pkg://agentlightning/verl", config_name="config", version_base=None)
-def main(config: Any):
-    from .daemon import AgentModeDaemon
-    from .trainer import AgentLightningTrainer
-
-    run_ppo(
-        config,
-        train_dataset=None,
-        val_dataset=None,
-        store=None,
-        llm_proxy=None,
-        adapter=None,
-        trainer_cls=AgentLightningTrainer,
-        daemon_cls=AgentModeDaemon,
-    )
+def main(config):
+    run_ppo(config, train_dataset=None, val_dataset=None, store=None, llm_proxy=None, adapter=None)
 
 
 def run_ppo(
@@ -56,8 +38,6 @@ def run_ppo(
     store: LightningStore | None,
     llm_proxy: LLMProxy | None,
     adapter: TraceAdapter[Any] | None,
-    trainer_cls: Type[AgentLightningTrainer],
-    daemon_cls: Type[AgentModeDaemon],
 ) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
@@ -76,15 +56,13 @@ def run_ppo(
 
     runner = TaskRunner.remote()
     ray.get(
-        runner.run.remote(  # type: ignore
+        runner.run.remote(
             config=config,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
             store=store,
             llm_proxy=llm_proxy,
             adapter=adapter,
-            trainer_cls=trainer_cls,
-            daemon_cls=daemon_cls,
         )
     )
 
@@ -94,13 +72,11 @@ class TaskRunner:
     def run(
         self,
         config: Any,
-        train_dataset: Dataset[Any] | None,
-        val_dataset: Dataset[Any] | None,
+        train_dataset: Dataset | None,
+        val_dataset: Dataset | None,
         store: LightningStore | None,
         llm_proxy: LLMProxy | None,
-        adapter: TraceAdapter[Any] | None,
-        trainer_cls: Type[AgentLightningTrainer],
-        daemon_cls: Type[AgentModeDaemon],
+        adapter: TraceAdapter | None,
     ):
         # print initial config
         from pprint import pprint
@@ -115,7 +91,7 @@ class TaskRunner:
         local_path = copy_to_local(config.actor_rollout_ref.model.path)
 
         # instantiate tokenizer
-        from verl.utils.tokenizer import hf_processor, hf_tokenizer
+        from verl.utils import hf_processor, hf_tokenizer
 
         trust_remote_code = config.data.get("trust_remote_code", False)
         tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
@@ -136,8 +112,7 @@ class TaskRunner:
 
         elif config.actor_rollout_ref.actor.strategy == "megatron":
             assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
-            # FIXME: This import is outdated
-            from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup  # type: ignore
+            from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
             from verl.workers.megatron_workers import ActorRolloutRefWorker, CriticWorker
 
             actor_rollout_cls = ActorRolloutRefWorker
@@ -146,16 +121,9 @@ class TaskRunner:
         else:
             raise NotImplementedError
 
-        from verl.trainer.ppo.ray_trainer import ResourcePoolManager
+        from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
 
-        try:
-            # verl >= 0.6.0
-            from verl.trainer.ppo.utils import Role
-        except ImportError:
-            # Fallback for verl <= 0.5.0
-            from verl.trainer.ppo.ray_trainer import Role  # type: ignore
-
-        role_worker_mapping: dict[Role, ActorClass[Any]] = {
+        role_worker_mapping = {
             Role.ActorRollout: ray.remote(actor_rollout_cls),
             Role.Critic: ray.remote(CriticWorker),
         }
@@ -222,7 +190,7 @@ class TaskRunner:
             val_dataset = LoadedDataset(val_dataset)
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
-        trainer = trainer_cls(
+        trainer = AgentLightningTrainer(
             config=config,
             tokenizer=tokenizer,
             processor=processor,
@@ -238,7 +206,6 @@ class TaskRunner:
             store=store,
             llm_proxy=llm_proxy,
             adapter=adapter,
-            daemon_cls=daemon_cls,
         )
         trainer.init_workers()
         trainer.fit()

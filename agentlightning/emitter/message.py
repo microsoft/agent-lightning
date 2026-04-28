@@ -4,10 +4,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentlightning.semconv import AGL_MESSAGE, LightningSpanAttributes
-from agentlightning.tracer.base import get_active_tracer
-from agentlightning.tracer.dummy import DummyTracer
-from agentlightning.types import Attributes, SpanLike
-from agentlightning.utils.otel import flatten_attributes, sanitize_attributes
+from agentlightning.types import SpanLike
+from agentlightning.utils.otel import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -29,21 +27,17 @@ def emit_message(message: str, attributes: Optional[Dict[str, Any]] = None, prop
     if not isinstance(message, str):  # type: ignore
         raise TypeError(f"Message must be a string or list of strings, got: {type(message)}.")
 
-    if propagate:
-        tracer = get_active_tracer()
-        if tracer is None:
-            raise RuntimeError("No active tracer found. Cannot emit message span.")
-    else:
-        tracer = DummyTracer()
-    span_attributes: Attributes = {LightningSpanAttributes.MESSAGE_BODY.value: message}
+    tracer = get_tracer(use_active_span_processor=propagate)
+    span_attributes = {LightningSpanAttributes.MESSAGE_BODY.value: message}
     if attributes:
-        flattened = flatten_attributes(attributes, expand_leaf_lists=False)
-        span_attributes.update(sanitize_attributes(flattened))
-    logger.debug("Emitting message span with message: %s", message)
-    tracer.create_span(
+        span_attributes.update(attributes)
+    span = tracer.start_span(
         AGL_MESSAGE,
         attributes=span_attributes,
     )
+    logger.debug("Emitting message span with message: %s", message)
+    with span:
+        pass
 
 
 def get_message_value(span: SpanLike) -> Optional[str]:

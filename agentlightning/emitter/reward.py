@@ -20,10 +20,13 @@ from typing import (
     cast,
 )
 
+import agentops
+from agentops.sdk.decorators import operation
+from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import TypeAdapter
 
 from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
-from agentlightning.types import SpanCoreFields, SpanLike
+from agentlightning.types import SpanLike
 from agentlightning.utils.otel import filter_and_unflatten_attributes
 
 from .annotation import emit_annotation
@@ -58,8 +61,6 @@ _FnType = TypeVar("_FnType", bound=Callable[..., Any])
 
 def _agentops_initialized() -> bool:
     """Return `True` when the AgentOps client has been configured."""
-    import agentops
-
     return agentops.get_client().initialized
 
 
@@ -80,8 +81,6 @@ def reward(fn: _FnType) -> _FnType:
         Wrapped callable that preserves the original signature.
     """
 
-    from agentops.sdk.decorators import operation
-
     def wrap_result(result: Optional[float]) -> _RewardSpanData:
         """Normalize the reward value into the span payload format."""
         if result is None:
@@ -92,11 +91,7 @@ def reward(fn: _FnType) -> _FnType:
         return {"type": "reward", "value": float(result)}
 
     # Check if the function is async
-    is_async = inspect.iscoroutinefunction(fn) or (
-        # For backwards compatibility.
-        hasattr(asyncio, "iscoroutinefunction")
-        and asyncio.iscoroutinefunction(fn)  # type: ignore
-    )
+    is_async = asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn)
 
     if is_async:
 
@@ -151,7 +146,7 @@ def emit_reward(
     primary_key: str | None = None,
     attributes: Dict[str, Any] | None = None,
     propagate: bool = True,
-) -> SpanCoreFields:
+) -> ReadableSpan:
     """Emit a reward value as an OpenTelemetry span.
 
     Examples:
@@ -177,7 +172,11 @@ def emit_reward(
         propagate: Whether to propagate the span to exporters automatically.
 
     Returns:
-        Span core fields capturing the recorded reward.
+        Readable span capturing the recorded reward.
+
+    Raises:
+        ValueError: If the provided reward cannot be interpreted as a float or the
+            resulting span is not a [`ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/) instance.
     """
     logger.debug(f"Emitting reward: {reward}")
     reward_dimensions: List[RewardDimension] = []

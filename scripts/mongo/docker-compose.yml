@@ -1,0 +1,10 @@
+services:
+  mongo:
+    image: mongo:latest
+    container_name: mongo-dev
+    ports:
+      - "27017:27017"
+    command: ["mongod", "--bind_ip_all", "--replSet", "rs0"]
+    volumes:
+      - ./data:/data/db
+      - ./init-rs.js:/docker-entrypoint-initdb.d/init-rs.js:ro

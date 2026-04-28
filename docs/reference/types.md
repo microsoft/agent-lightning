@@ -22,8 +22,6 @@
 
 ::: agentlightning.Rollout
 
-::: agentlightning.EnqueueRolloutRequest
-
 ::: agentlightning.Attempt
 
 ::: agentlightning.AttemptedRollout
@@ -82,9 +80,9 @@
 
 ::: agentlightning.SpanLike
 
-::: agentlightning.SpanCoreFields
+## Semantic Conventions
 
-::: agentlightning.SpanRecordingContext
+::: agentlightning.semconv
 
 ## Environment Variables
 
