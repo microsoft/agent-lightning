@@ -40,6 +40,8 @@ from agentlightning.store.base import LightningStore
 
 from .daemon import SimulationAgentModeDaemon
 
+import contrib.agentlightning.contrib.algorithm.simulation_verl.core_empo2 as core_empo2
+
 __all__ = [
     "SimulationAgentLightningTrainer",
 ]
@@ -250,6 +252,21 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
             # generate a batch
             with _timer("gen", timing_raw):
                 self.async_rollout_manager.wake_up()
+
+                num_problems = self.config.data.train_batch_size
+                gen_batch.non_tensor_batch["global_steps"] = [self.global_steps for _ in range(num_problems)]
+
+                if self.config.tips.use_tips:
+                    touzi = random.random()
+                    if touzi < 0.17:
+                        self.empo2_train_mode = "off-policy" # Update with Tips and give them to the pure_chats
+                    elif touzi < 0.25:
+                        self.empo2_train_mode = "on-policy-with-tips"
+                    else:
+                        self.empo2_train_mode = "on-policy" # Normal Update, No Tips
+
+                    gen_batch.non_tensor_batch["train_mode"] = [self.empo2_train_mode for _ in range(num_problems)]
+
                 self.agent_mode_daemon.set_up_data_and_server(
                     gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
                 )
@@ -258,6 +275,7 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
                     device=gen_batch.batch["fake_ids"].device,
+                    empo2_train_mode=getattr(self, "empo2_train_mode", None)
                 )
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
@@ -300,7 +318,15 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
 
             # recompute old_log_probs
             with _timer("old_log_prob", timing_raw):
-                old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
+                if self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
+                    old_batch = deepcopy(batch)
+                    old_batch.batch['input_ids'] = old_batch.batch['old_input_ids']
+                    old_batch.batch['attention_mask'] = old_batch.batch['old_attention_mask']
+                    old_batch.batch['position_ids'] = old_batch.batch['old_position_ids']
+                    old_log_prob = self.actor_rollout_wg.compute_log_prob(old_batch)
+                else:
+                    old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
+
                 entropys = old_log_prob.batch["entropys"]
                 response_masks = batch.batch["response_mask"]
                 loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
@@ -354,6 +380,9 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                     config=self.config.algorithm,
                 )
+
+                if self.config.tips.use_tips:
+                    batch = core_empo2.low_prob_token_masking(batch)
 
             # Calculate the metrics before processing. Refer to the comments of function `compute_data_metrics` for details.
             metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_before_processing"))
@@ -492,6 +521,14 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
 
                 # train step
                 metrics = self._train_step(batch_dict)
+
+                if self.config.tips.use_tips:
+                    mode_map = {
+                        "off-policy": 0,
+                        "on-policy-with-tips": 1,
+                        "on-policy": 2,
+                    }
+                    metrics["empo2/train_mode"] = mode_map.get(self.empo2_train_mode)
 
                 # validate
                 if (

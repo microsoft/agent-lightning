@@ -1,0 +1,15 @@
+env_name: scienceworld # scienceworld, babyai, alfworld
+seed: 0
+format_penalty: 0.0
+binary_reward: False
+save_rollout: False
+reawrd_scale: 1.0
+use_success_rate: False
+
+# only for scienceworld
+use_action_correction: True
+
+captioner:
+  type: naive # naive or cot
+  prompt_type: chat # chat or single
+  max_history: -1

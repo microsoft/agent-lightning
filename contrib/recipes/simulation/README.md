@@ -81,15 +81,24 @@ We follow the single-mode prompt for ALFWorld from [verl-agent](https://github.c
 
 &nbsp;
 
-## Run RL Training (GRPO)
+## Run RL Training
+
+### GRPO
 
 ```bash
 # Run alfworld 
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env alfworld
+python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env alfworld
 
 # Run scienceworld single task task_num 0
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env scienceworld --task_num 0
+python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num 0
 
 # Run scienceworld multi-task
-python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env scienceworld --task_num -1
+python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo_qwen_1.5b_instruct --env scienceworld --task_num -1
+```
+
+### EMPO2
+
+```bash
+# Run scienceworld single task task_num 25
+python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm empo2_qwen_7b_instruct --env scienceworld2 --task_num 25
 ```

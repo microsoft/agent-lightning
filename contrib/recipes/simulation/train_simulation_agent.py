@@ -1,7 +1,9 @@
-import argparse
 import os
-
+import re
+import time
+import argparse
 import subprocess
+
 from omegaconf import OmegaConf
 
 from agentlightning import Trainer
@@ -49,9 +51,8 @@ def get_config(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="scienceworld")
-    parser.add_argument("--algorithm", type=str, default="grpo")
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--env", type=str, default="scienceworld2")
+    parser.add_argument("--algorithm", type=str, default="empo2_qwen_7b_instruct")
     parser.add_argument("--n_workers", type=int, default=64, help="Number of workers for training")
     parser.add_argument("--trial", type=int, default=0, help="Number of trials")
     parser.add_argument("--task_num", type=int, default=25, help="ScienceWorld Task number to inject as env var")
@@ -66,17 +67,15 @@ if __name__ == "__main__":
 
     # set environment variable before loading configs
     os.environ["TRIAL"] = str(args.trial)
-    if args.env == "scienceworld":
+    if "scienceworld" in args.env:
         os.environ["TASK_NUM"] = str(args.task_num)
 
     # Load configs
     agent_config_path = f"contrib/recipes/simulation/config_env/{args.env}.yaml"
-    if args.debug:
-        trainer_config_path = f"contrib/recipes/simulation/config_verl/{args.env}/debug/{args.algorithm}.yaml"
-    else:
-        trainer_config_path = f"contrib/recipes/simulation/config_verl/{args.env}/{args.algorithm}.yaml"
     agent_config = get_config(agent_config_path)
 
+    env_prefix = re.sub(r"\d+$", "", args.env)
+    trainer_config_path = f"contrib/recipes/simulation/config_verl/{env_prefix}/{args.algorithm}.yaml"
     if "gigpo" in args.algorithm:
         agent_config.log_env_obs = True
     rl_training_config = get_config(trainer_config_path)
@@ -85,9 +84,31 @@ if __name__ == "__main__":
     train_dataset, val_dataset = train_val_dataset(rl_training_config)
 
     # Initialize agent
-    from contrib.agentlightning.contrib.agent.simulation_agent import SimulationAgent
+    if "empo2" in args.algorithm:
+        from contrib.agentlightning.contrib.agent.empo2_agent import EMPO2Agent, reset_memory
 
-    agent = SimulationAgent(agent_config)
+        kill_process_on_port(8000)
+        kill_process_on_port(8001)
+
+        os.makedirs("logs", exist_ok=True)
+
+        subprocess.Popen(
+            f"nohup python contrib/recipes/simulation/empo2_server/server_bert.py > logs/bert_{args.task_num}.log 2>&1 &",
+            shell=True
+        )
+        subprocess.Popen(
+            f"nohup python contrib/recipes/simulation/empo2_server/server_mem.py > logs/mem_{args.task_num}.log 2>&1 &",
+            shell=True
+        )
+
+        NUM_MEMORY = 5
+        time.sleep(1)
+        reset_memory(NUM_MEMORY)
+
+        agent = EMPO2Agent(agent_config)
+    else:
+        from contrib.agentlightning.contrib.agent.simulation_agent import SimulationAgent
+        agent = SimulationAgent(agent_config)
 
     # Initialize trainer and start training
     trainer = Trainer(
