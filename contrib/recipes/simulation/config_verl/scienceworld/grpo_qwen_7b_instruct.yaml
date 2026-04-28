@@ -8,12 +8,12 @@ variables:
   TENSOR_MODEL_PARALLEL_SIZE: 2
   NUM_ROLLOUTS: 8
   BASE_MODEL: Qwen/Qwen2.5-7B-Instruct
-  PROJECT_NAME: EMPO2-ScienceWorld
+  PROJECT_NAME: EMPO2-ScienceWorld2
   TASK_NUM: ${oc.env:TASK_NUM,25}
   TRIAL: ${oc.env:TRIAL,0}
-  EXPERIMENT_NAME: grpo-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
+  EXPERIMENT_NAME: (final-reward)grpo-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_grpo_checkpoint/0206/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: /mnt/jeonghyekim/empo2_grpo_checkpoint/0209/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -32,7 +32,7 @@ data:
   val_files: ${variables.DATA_DIR}/test.parquet
   train_batch_size: 16
   val_batch_size: 80
-  max_prompt_length: 16384
+  max_prompt_length: 8192
   max_response_length: 32
   max_total_length: 8192
   truncation: error

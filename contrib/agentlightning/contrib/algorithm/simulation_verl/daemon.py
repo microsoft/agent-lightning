@@ -762,10 +762,20 @@ class SimulationAgentModeDaemon:
 
                 if empo2_train_mode == "off-policy":
                     old_prompt_ids = copy.deepcopy(prompt_ids)
-                    START_PATTERN = self.tokenizer.encode("<tip>")
+                    START_PATTERN_1 = self.tokenizer.encode(".\n\n<tip>")
+                    START_PATTERN_2 = self.tokenizer.encode("<tip>")
                     END_PATTERN = self.tokenizer.encode("</tip>\n\n")
-                    if core_empo2.is_sublist(START_PATTERN, prompt_ids):
-                        prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN, END_PATTERN)
+                    DOT_PATTERN = self.tokenizer.encode(".")
+                    if core_empo2.is_sublist(START_PATTERN_2, prompt_ids):
+                        # count = sum(
+                        #     1 for i in range(len(prompt_ids) - len(START_PATTERN_2) + 1)
+                        #     if prompt_ids[i:i+len(START_PATTERN_2)] == START_PATTERN_2
+                        # )
+                        # if count >= 3:
+                        #     import pdb; pdb.set_trace()
+                        # self.tokenizer.decode(prompt_ids)
+                        # self.tokenizer.decode(core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN_1, START_PATTERN_2, END_PATTERN, DOT_PATTERN))
+                        prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN_1, START_PATTERN_2, END_PATTERN, DOT_PATTERN)
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
                 if len(prompt_ids) > max_prompt_length:

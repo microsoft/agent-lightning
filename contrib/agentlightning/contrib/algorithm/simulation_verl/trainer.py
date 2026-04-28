@@ -327,6 +327,9 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     old_batch.batch['attention_mask'] = old_batch.batch['old_attention_mask']
                     old_batch.batch['position_ids'] = old_batch.batch['old_position_ids']
                     old_log_prob = self.actor_rollout_wg.compute_log_prob(old_batch)
+
+                    old_log_prob_off_policy = self.actor_rollout_wg.compute_log_prob(batch)
+                    batch.batch["old_log_prob_off_policy"] = old_log_prob_off_policy.batch["old_log_probs"]
                 else:
                     old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
 
