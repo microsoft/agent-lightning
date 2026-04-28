@@ -5,14 +5,14 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
 from opentelemetry import trace as trace_api
-from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from opentelemetry.sdk.trace import TracerProvider
 
 from agentlightning.litagent import LitAgent
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import LLM, Hook, Rollout
+from agentlightning.types import LLM, Hook, Rollout, Span
 
 from ..common.tracer import clear_tracer_provider
 
@@ -31,7 +31,7 @@ class DummyTracer(Tracer):
 
     def __init__(self) -> None:
         super().__init__()
-        self._last_trace: List[ReadableSpan] = []
+        self._last_trace: List[Span] = []
         self.init_called = False
         self.init_worker_called = False
         self.teardown_called = False
@@ -51,7 +51,7 @@ class DummyTracer(Tracer):
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
         self.teardown_worker_called = True
 
-    def get_last_trace(self) -> List[ReadableSpan]:
+    def get_last_trace(self) -> List[Span]:
         return list(self._last_trace)
 
     @asynccontextmanager
@@ -62,7 +62,7 @@ class DummyTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[List[ReadableSpan], None]:
+    ) -> AsyncGenerator[List[Span], None]:
         self._last_trace = []
         try:
             yield self._last_trace

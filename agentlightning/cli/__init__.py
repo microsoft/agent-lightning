@@ -12,6 +12,7 @@ from typing import Dict, Iterable, Tuple
 _SUBCOMMANDS: Dict[str, Tuple[str, str]] = {
     "vllm": ("agentlightning.cli.vllm", "Run the vLLM CLI with Agent Lightning instrumentation."),
     "store": ("agentlightning.cli.store", "Run a LightningStore server."),
+    "prometheus": ("agentlightning.cli.prometheus", "Serve Prometheus metrics from the multiprocess registry."),
     "agentops": ("agentlightning.cli.agentops_server", "Start the AgentOps server manager."),
 }
 

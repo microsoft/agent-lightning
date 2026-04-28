@@ -1,0 +1,179 @@
+name: Examples - RAG
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 6 AM UTC+8
+    - cron: '0 22 * * *'
+
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-rag, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'RAG - PR #{0} - {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('RAG - {0}', github.event_name) }}
+
+jobs:
+  rag:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-rag' ||
+      github.event.action == 'ci-all'
+    name: RAG (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
+      fail-fast: false
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group rag --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group rag --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-rag-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Launch LiteLLM Proxy
+        run: |
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+
+      - name: Prepare RAG dataset
+        run: |
+          set -euo pipefail
+          cd examples/rag
+          mkdir -p data
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1Pq4Ag8zVoN8gUtLu0LcBfY35Dm5zL0hq/view?usp=drive_link" -O data/dataset_tiny.parquet
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS/view?usp=drive_link" -O data/chunks_candidate_tiny.pkl
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c/view?usp=drive_link" -O data/index_hnsw_faiss_n32e40_tiny.index
+
+      - name: Run WIKI Retriever MCP Server
+        run: |
+          set -euo pipefail
+          cd examples/rag
+          uv run python wiki_retriever_mcp.py &
+          for i in {1..20}; do
+            sleep 5
+            if nc -z localhost 8099; then
+              echo "MCP server is up!"
+              exit 0
+            else
+              echo "Waiting for MCP server to start..."
+            fi
+          done
+          echo "MCP server failed to start within expected time."
+          exit 1
+
+      - name: Run vLLM Server
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+            --enable-auto-tool-choice \
+            --tool-call-parser hermes \
+            --port 8000 &
+
+          VLLM_READY=0
+          for i in {1..100}; do
+            if curl -sSf http://localhost:8000/v1/models > /dev/null 2>&1; then
+              echo "vLLM server is ready!"
+              VLLM_READY=1
+              break
+            fi
+            echo "Waiting for vLLM server to be ready... (${i})"
+            sleep 5
+          done
+          if [[ "$VLLM_READY" != "1" ]]; then
+            echo "vLLM server failed to start!"
+            exit 1
+          fi
+
+      - name: Run RAG Sanity check
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/rag
+          uv run python rag_agent.py
+        shell: bash
+
+      - name: Stop vLLM Server
+        run: |
+          set -euo pipefail
+          pkill -f vllm
+          for i in {1..60}; do
+            if ! pgrep -f vllm; then
+              break
+            fi
+            sleep 5
+          done
+
+      - name: RAG training
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/rag
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_rag.py fast
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: rag_train
+
+      - name: Validate RAG training
+        run: |
+          set -ex
+          # Allow up to 5 rollouts to fail to produce rewards
+          uv run scripts/validate_example_wandb.py ${{ steps.rag_train.outputs.project_name }} ${{ steps.rag_train.outputs.run_name }} --reward-tolerance 5
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

@@ -940,9 +940,9 @@ class PythonServerLauncher:
                 ),  # Allow half the timeout for graceful shutdown
             }
             if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
-                from prometheus_client import multiprocess
+                from agentlightning.utils.metrics import shutdown_metrics
 
-                options["child_exit"] = lambda server, worker: multiprocess.mark_process_dead(worker.pid)  # type: ignore
+                options["child_exit"] = shutdown_metrics  # type: ignore
 
             self._gunicorn_app = GunicornApp(self.app, options)
 

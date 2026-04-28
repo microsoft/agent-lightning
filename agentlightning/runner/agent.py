@@ -33,8 +33,8 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
-from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import Tracer
+from agentlightning.tracer.otel import OtelTracer
 from agentlightning.types import (
     AttemptedRollout,
     Hook,
@@ -43,6 +43,7 @@ from agentlightning.types import (
     RolloutMode,
     RolloutRawResult,
     Span,
+    SpanCoreFields,
 )
 from agentlightning.utils.system_snapshot import system_snapshot
 
@@ -73,8 +74,9 @@ class LitAgentRunner(Runner[T_task]):
         max_rollouts: Optional[int] = None,
         poll_interval: float = 5.0,
         heartbeat_interval: float = 10.0,
-        interval_jitter: float = 0.1,
-        heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
+        interval_jitter: float = 0.5,
+        heartbeat_launch_mode: Literal["asyncio", "thread"] = "thread",
+        heartbeat_include_gpu: bool = False,
     ) -> None:
         """Initialize the agent runner.
 
@@ -88,7 +90,10 @@ class LitAgentRunner(Runner[T_task]):
                 poll_interval - interval_jitter and poll_interval + interval_jitter.
                 This is to avoid the overload caused by the synchronization of the runners.
             heartbeat_launch_mode: Launch mode for the heartbeat loop. Can be "asyncio" or "thread".
-                "asyncio" is the default and recommended mode. Use "thread" if you are experiencing blocking coroutines.
+                "thread" is the default and recommended mode as it prevents blocking the event loop
+                under load. Use "asyncio" for simpler deployments with low worker counts.
+            heartbeat_include_gpu: Whether to include GPU stats in heartbeat snapshots.
+                Querying GPU stats can be slow under load, so this is disabled by default.
         """
         super().__init__()
         self._tracer = tracer
@@ -97,6 +102,7 @@ class LitAgentRunner(Runner[T_task]):
         self._heartbeat_interval = heartbeat_interval
         self._interval_jitter = interval_jitter
         self._heartbeat_launch_mode = heartbeat_launch_mode
+        self._heartbeat_include_gpu = heartbeat_include_gpu
         self._random_state = random.Random()
 
         # Set later
@@ -276,50 +282,84 @@ class LitAgentRunner(Runner[T_task]):
         """
         store = self.get_store()
 
-        trace_spans: list[ReadableSpan] | list[Span] = []
+        trace_spans: list[Span] = []
+        result_recognized: bool = False
 
         # Case 0: result is None
         if raw_result is None:
             trace_spans = self._tracer.get_last_trace()
+            result_recognized = True
 
         # Case 1: result is a float (final reward)
-        if isinstance(raw_result, float):
+        if isinstance(raw_result, (bool, int, float)):
+            if isinstance(raw_result, (bool, int)):
+                logger.warning(
+                    f"{self._log_prefix(rollout.rollout_id)} Reward is not a number, got: {type(raw_result)}. "
+                    "Auto converting to float."
+                )
+                raw_result = float(raw_result)
             # Preserve the existing spans before another span is emitted
             trace_spans = list(self._tracer.get_last_trace())
             # This will NOT emit another span to the tracer
-            reward_span = emit_reward(raw_result, propagate=False)
+            reward_span_core_fields = emit_reward(raw_result, propagate=False)
             # We add it to the store manually
-            await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
-            trace_spans.append(reward_span)
+            sequence_id = await store.get_next_span_sequence_id(rollout.rollout_id, rollout.attempt.attempt_id)
+            reward_span = Span.from_core_fields(
+                reward_span_core_fields,
+                rollout_id=rollout.rollout_id,
+                attempt_id=rollout.attempt.attempt_id,
+                sequence_id=sequence_id,
+            )
+            await store.add_span(reward_span)
+            result_recognized = True
 
+        # Case 2-4: result is a list
         if isinstance(raw_result, list):
-            # For rollout methods that return a list, we assume that the returned spans
-            # are the complete span set from the whole rollout
-            trace_spans = raw_result
-
             # Case 2: result is a list of ReadableSpan (OpenTelemetry spans)
             if len(raw_result) > 0 and all(isinstance(t, ReadableSpan) for t in raw_result):
-
-                if not isinstance(
-                    self._tracer, AgentOpsTracer
-                ):  # TODO: this should be replaced with general OpenTelemetry tracer in next version
-                    for span in raw_result:
-                        await store.add_otel_span(
-                            rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
-                        )
-                else:
+                if isinstance(self._tracer, OtelTracer):
                     logger.warning(
                         f"{self._log_prefix(rollout.rollout_id)} Tracer is already an OpenTelemetry tracer. "
                         "The traces should have already been added to the store. "
-                        "No need to return anything from rollout."
+                        "Returning the traces from the rollout will result in duplicate spans."
                     )
+                for span in raw_result:
+                    added_span = await store.add_otel_span(
+                        rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
+                    )
+                    if added_span is not None:
+                        trace_spans.append(added_span)
+                    else:
+                        logger.error(
+                            f"{self._log_prefix(rollout.rollout_id)} Failed to add OpenTelemetry span to the store: {span}"
+                        )
+                result_recognized = True
 
             # Case 3: result is a list of Span (agentlightning spans)
             elif len(raw_result) > 0 and all(isinstance(t, Span) for t in raw_result):
                 # Add the spans directly to the store
                 for span in raw_result:
                     await store.add_span(cast(Span, span))
-                trace_spans = raw_result
+                trace_spans = [cast(Span, span) for span in raw_result]
+                result_recognized = True
+
+            # Case 4: result is a list of SpanCoreFields (agentlightning spans)
+            elif len(raw_result) > 0 and all(isinstance(t, SpanCoreFields) for t in raw_result):
+                # Add the spans directly to the store too, but needs to get sequence id first
+                sequence_ids = await store.get_many_span_sequence_ids(
+                    [(rollout.rollout_id, rollout.attempt.attempt_id) for _ in range(len(raw_result))]
+                )
+                trace_spans = [
+                    Span.from_core_fields(
+                        cast(SpanCoreFields, span_core_fields),
+                        rollout_id=rollout.rollout_id,
+                        attempt_id=rollout.attempt.attempt_id,
+                        sequence_id=sequence_id,
+                    )
+                    for span_core_fields, sequence_id in zip(raw_result, sequence_ids, strict=True)
+                ]
+                await store.add_many_spans(trace_spans)
+                result_recognized = True
 
             # Left over cases for list
             elif len(raw_result) == 0:
@@ -327,7 +367,8 @@ class LitAgentRunner(Runner[T_task]):
                     f"{self._log_prefix(rollout.rollout_id)} The rollout returns an empty list. "
                     "Please check your rollout implementation."
                 )
-                trace_spans = raw_result
+                trace_spans = []
+                result_recognized = True
 
             else:
                 types = [type(t).__name__ for t in raw_result][:10]
@@ -336,17 +377,55 @@ class LitAgentRunner(Runner[T_task]):
                     f"but got: {', '.join(types)}..."
                 )
 
+        if not result_recognized:
+            raise TypeError(
+                f"Invalid raw result type. It's expected to be none, float, or a list of ReadableSpan or Span, "
+                f"but got: {type(raw_result).__name__}..."
+            )
+
         return trace_spans
 
     async def _emit_heartbeat(self, store: LightningStore) -> None:
-        """Send a heartbeat tick to the store."""
+        """Send a heartbeat tick to the store.
+
+        Args:
+            store: The lightning store to update.
+        """
+        logger.debug(f"{self._log_prefix()} Preparing to emit heartbeat.")
         worker_id = self.get_worker_id()
 
         try:
-            await store.update_worker(worker_id, system_snapshot())
+            snapshot = await asyncio.wait_for(
+                asyncio.to_thread(system_snapshot, self._heartbeat_include_gpu),
+                timeout=self._heartbeat_interval,
+            )
+            logger.debug(f"{self._log_prefix()} Heartbeat snapshot acquired.")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "%s Heartbeat snapshot acquisition timed out after %.1fs, skipping.",
+                self._log_prefix(),
+                self._heartbeat_interval,
+            )
+            return
         except asyncio.CancelledError:
             # bypass the exception
             raise
+        except Exception:
+            logger.exception("%s Unable to acquire heartbeat snapshot.", self._log_prefix())
+            return
+
+        try:
+            await asyncio.wait_for(store.update_worker(worker_id, snapshot), timeout=self._heartbeat_interval)
+            logger.debug(f"{self._log_prefix()} Heartbeat updated successfully.")
+        except asyncio.CancelledError:
+            # bypass the exception
+            raise
+        except asyncio.TimeoutError:
+            logger.warning(
+                "%s update worker heartbeat timed out after %.1fs, skipping.",
+                self._log_prefix(),
+                self._heartbeat_interval,
+            )
         except Exception:
             logger.exception("%s Unable to update worker heartbeat.", self._log_prefix())
 
@@ -361,51 +440,161 @@ class LitAgentRunner(Runner[T_task]):
             return None
 
         if self._heartbeat_launch_mode == "asyncio":
-            stop_event = asyncio.Event()
-
-            async def heartbeat_loop() -> None:
-                while not stop_event.is_set():
-                    await self._emit_heartbeat(store)
-                    with suppress(asyncio.TimeoutError):
-                        interval = self._heartbeat_interval + self._random_state.uniform(
-                            -self._interval_jitter, self._interval_jitter
-                        )
-                        interval = max(interval, 0.01)
-                        await asyncio.wait_for(stop_event.wait(), timeout=interval)
-
-            task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
-
-            async def stop() -> None:
-                stop_event.set()
-                with suppress(asyncio.CancelledError):
-                    await task
-
-            return stop
-
+            return self._start_heartbeat_asyncio_loop(store)
         if self._heartbeat_launch_mode == "thread":
-            stop_evt = threading.Event()
+            return self._start_heartbeat_thread_loop(store)
+        raise ValueError(f"Unsupported heartbeat launch mode: {self._heartbeat_launch_mode}")
 
-            def thread_worker() -> None:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                while not stop_evt.is_set():
-                    loop.run_until_complete(self._emit_heartbeat(store))
+    def _start_heartbeat_asyncio_loop(self, store: LightningStore) -> Optional[Callable[[], Awaitable[None]]]:
+        """Start a background heartbeat loop using asyncio.
+
+        Args:
+            store: The lightning store to update.
+
+        Returns:
+            An async stopper function that can be used to stop the heartbeat loop.
+        """
+
+        stop_event = asyncio.Event()
+
+        async def heartbeat_loop() -> None:
+            while not stop_event.is_set():
+                try:
+                    # Run _emit_heartbeat in thread pool to avoid blocking the event loop.
+                    # Timeout at the interval - if it takes longer, the data is stale anyway.
+                    await self._emit_heartbeat(store)
+                except Exception:
+                    logger.exception("%s Heartbeat failed.", self._log_prefix())
+                with suppress(asyncio.TimeoutError):
                     interval = self._heartbeat_interval + self._random_state.uniform(
                         -self._interval_jitter, self._interval_jitter
                     )
                     interval = max(interval, 0.01)
-                    stop_evt.wait(interval)
+                    await asyncio.wait_for(stop_event.wait(), timeout=interval)
 
-            thread = threading.Thread(target=thread_worker, name=f"{self.get_worker_id()}-heartbeat", daemon=True)
-            thread.start()
+        task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
 
-            async def stop() -> None:
-                stop_evt.set()
-                await asyncio.to_thread(thread.join)
+        async def stop() -> None:
+            stop_event.set()
+            with suppress(asyncio.CancelledError):
+                await task
 
-            return stop
+        return stop
 
-        raise ValueError(f"Unsupported heartbeat launch mode: {self._heartbeat_launch_mode}")
+    def _start_heartbeat_thread_loop(self, store: LightningStore) -> Optional[Callable[[], Awaitable[None]]]:
+        """Start a background heartbeat loop using threading.
+
+        It uses two threads: one to produce the snapshot and one to consume it,
+        to avoid either of them blocking the event loop.
+
+        Args:
+            store: The lightning store to update.
+
+        Returns:
+            An async stopper function that can be used to stop the heartbeat loop.
+        """
+        stop_evt = threading.Event()
+        lock = threading.Lock()
+
+        latest_snapshot = None
+        latest_ts = 0.0  # time.monotonic() when snapshot was captured
+
+        # Consider snapshot stale after ~1 interval plus jitter slack.
+        stale_after = self._heartbeat_interval + self._interval_jitter + 1.0
+
+        worker_id = self.get_worker_id()
+
+        def producer() -> None:
+            nonlocal latest_snapshot, latest_ts
+            while not stop_evt.is_set():
+                try:
+                    logger.debug(f"{self._log_prefix()} Heartbeat producer: acquiring snapshot.")
+                    snap = system_snapshot(self._heartbeat_include_gpu)  # sync
+                    logger.debug(f"{self._log_prefix()} Heartbeat producer: snapshot acquired.")
+                    ts = time.monotonic()
+                    with lock:
+                        latest_snapshot = snap
+                        latest_ts = ts
+                except Exception:
+                    logger.warning("%s Heartbeat producer: system_snapshot failed.", self._log_prefix(), exc_info=True)
+
+                interval = self._heartbeat_interval + self._random_state.uniform(
+                    -self._interval_jitter, self._interval_jitter
+                )
+                stop_evt.wait(max(interval, 0.01))
+
+        def consumer() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            last_warned_ts = None  # Track which snapshot we've already warned about
+            try:
+                while not stop_evt.is_set():
+                    with lock:
+                        snap = latest_snapshot
+                        ts = latest_ts
+
+                    wait_interval = max(
+                        self._heartbeat_interval
+                        + self._random_state.uniform(-self._interval_jitter, self._interval_jitter),
+                        0.01,
+                    )
+
+                    if snap is None:
+                        # probably just started
+                        logger.debug("%s Heartbeat consumer: no snapshot yet; skipping update.", self._log_prefix())
+                        stop_evt.wait(wait_interval)
+                        continue
+
+                    age = time.monotonic() - ts
+                    if age > stale_after:
+                        # Only warn once per stale snapshot (check if we haven't warned about this timestamp yet)
+                        if last_warned_ts != ts:
+                            logger.warning(
+                                "%s Heartbeat consumer: snapshot stale (age=%.2fs > %.2fs); skipping update.",
+                                self._log_prefix(),
+                                age,
+                                stale_after,
+                            )
+                            last_warned_ts = ts
+                        stop_evt.wait(wait_interval)
+                        continue
+
+                    try:
+                        logger.debug(f"{self._log_prefix()} Heartbeat consumer: updating worker.")
+                        loop.run_until_complete(
+                            asyncio.wait_for(
+                                store.update_worker(worker_id, snap),
+                                timeout=self._heartbeat_interval,
+                            )
+                        )
+                        logger.debug(f"{self._log_prefix()} Heartbeat consumer: worker updated.")
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "%s Heartbeat consumer: update timed out after %.1fs.",
+                            self._log_prefix(),
+                            self._heartbeat_interval,
+                        )
+                    except Exception:
+                        logger.warning("%s Heartbeat consumer: update failed.", self._log_prefix(), exc_info=True)
+
+                    stop_evt.wait(wait_interval)
+            finally:
+                with suppress(Exception):
+                    loop.stop()
+                with suppress(Exception):
+                    loop.close()
+
+        t_prod = threading.Thread(target=producer, name=f"{worker_id}-heartbeat-producer", daemon=True)
+        t_cons = threading.Thread(target=consumer, name=f"{worker_id}-heartbeat-consumer", daemon=True)
+        t_prod.start()
+        t_cons.start()
+
+        async def stop() -> None:
+            stop_evt.set()
+            await asyncio.to_thread(t_prod.join)
+            await asyncio.to_thread(t_cons.join)
+
+        return stop
 
     async def _sleep_until_next_poll(self, event: Optional[ExecutionEvent] = None) -> None:
         """Sleep until the next poll interval, with optional event-based interruption.
@@ -461,6 +650,8 @@ class LitAgentRunner(Runner[T_task]):
                 logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
                 return rollout_id
 
+        logger.debug(f"{self._log_prefix(rollout_id)} Resources fetched (id={resources_update.resources_id}).")
+
         trace_spans: List[ReadableSpan] | List[Span] = []
         has_exception: bool = False
 
@@ -468,9 +659,11 @@ class LitAgentRunner(Runner[T_task]):
             await self._trigger_hooks(hook_type="on_rollout_start", agent=agent, runner=self, rollout=next_rollout)
 
             start_time = time.time()
+            logger.debug(f"{self._log_prefix(rollout_id)} Prepared for trace context.")
             async with self._tracer.trace_context(
                 name=rollout_id, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
+                logger.debug(f"{self._log_prefix(rollout_id)} Entered trace context.")
                 await self._trigger_hooks(
                     hook_type="on_trace_start", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
                 )
@@ -482,20 +675,26 @@ class LitAgentRunner(Runner[T_task]):
                     rollout_method = (
                         agent.training_rollout_async if next_rollout.mode == "train" else agent.validation_rollout_async
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Starting async rollout method.")
                     result = await rollout_method(
                         next_rollout.input, resources=resources_update.resources, rollout=next_rollout
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Async rollout method completed.")
                 else:
                     rollout_method = (
                         agent.training_rollout if next_rollout.mode == "train" else agent.validation_rollout
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Starting sync rollout method.")
                     result = rollout_method(
                         next_rollout.input, resources=resources_update.resources, rollout=next_rollout
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Sync rollout method completed.")
 
                 await self._trigger_hooks(
                     hook_type="on_trace_end", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
                 )
+
+            logger.debug(f"{self._log_prefix(rollout_id)} Trace context exited.")
 
             # Possible exceptions in post_process will be caught in the overall exception handler
             trace_spans = await self._post_process_rollout_result(next_rollout, result)
@@ -566,6 +765,7 @@ class LitAgentRunner(Runner[T_task]):
                 while not (event is not None and event.is_set()):
                     logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
                     next_rollout = await store.dequeue_rollout(worker_id=self.get_worker_id())
+                    logger.debug(f"{self._log_prefix()} Next rollout retrieved: {next_rollout}")
                     if next_rollout is None:
                         logger.debug(
                             f"{self._log_prefix()} No rollout to poll. Waiting for {self._poll_interval} seconds."
@@ -576,16 +776,6 @@ class LitAgentRunner(Runner[T_task]):
 
                 if next_rollout is None:
                     return
-
-                try:
-                    # Claim the rollout but updating the current worker id
-                    await store.update_attempt(
-                        next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
-                    )
-                except Exception:
-                    # This exception could happen if the rollout is dequeued and the other end died for some reason
-                    logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
-                    continue
 
                 # Execute the step
                 await self._step_impl(next_rollout)
@@ -640,12 +830,8 @@ class LitAgentRunner(Runner[T_task]):
         else:
             resources_id = None
 
-        attempted_rollout = await self.get_store().start_rollout(input=input, mode=mode, resources_id=resources_id)
-        # Register the attempt as running by the current worker
-        await self.get_store().update_attempt(
-            attempted_rollout.rollout_id,
-            attempted_rollout.attempt.attempt_id,
-            worker_id=self.get_worker_id(),
+        attempted_rollout = await self.get_store().start_rollout(
+            input=input, mode=mode, resources_id=resources_id, worker_id=self.get_worker_id()
         )
         rollout_id = await self._step_impl(attempted_rollout, raise_on_exception=True)
 

@@ -34,6 +34,9 @@ AGL_OPERATION = "agentlightning.operation"
 Wrap function or code-blocks as operations.
 """
 
+AGL_REWARD = "agentlightning.reward"
+"""Agent-lightning's standard span name for reward operations."""
+
 AGL_VIRTUAL = "agentlightning.virtual"
 """Agent-lightning's standard span name for virtual operations.
 
@@ -52,6 +55,9 @@ class LightningResourceAttributes(Enum):
 
     SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
     """Resource name for span sequence ID in Agent-lightning spans."""
+
+    TRACER_NAME = "agentlightning.tracer.name"
+    """Which tracer is used to create this span."""
 
 
 class LightningSpanAttributes(Enum):

@@ -11,6 +11,7 @@ Each module have been documented with its own CLI usage in the module-level docs
 | Component | Demonstrated In | Highlights |
 | --- | --- | --- |
 | LightningStore + OTLP ingestion | `write_traces.py` | Shows how `OtelTracer` and `AgentOpsTracer` open rollouts, emit spans, and optionally forward them to a remote store client. |
+| MultiMetrics backend | `write_metrics.py` | Emits counters/histograms through `ConsoleMetricsBackend` and `PrometheusMetricsBackend` simultaneously, exposing `/metrics` for scraping. |
 | LLM proxying | `llm_proxy.py` | Guards either OpenAI or a local vLLM deployment with `LLMProxy`, proving how requests are routed through `/rollout/<id>/attempt/<id>` namespaces and captured in the store. |
 | vLLM lifecycle | `vllm_server.py` | Minimal context manager that shells out to `vllm serve`, monitors readiness, and tears down the process safely. |
 

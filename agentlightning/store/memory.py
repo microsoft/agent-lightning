@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import threading
 from collections.abc import Iterable
 from collections.abc import Mapping as MappingABC
 from typing import (
@@ -25,9 +24,11 @@ from typing import (
     cast,
 )
 
+import aiologic
 from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, NamedResources, PaginatedResult, ResourcesUpdate, Rollout, Span
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import UNSET, LightningStoreCapabilities, LightningStoreStatistics, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
@@ -72,12 +73,16 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
     Thread-safe and async-compatible but data is not persistent.
 
     Args:
+        thread_safe: Whether the store is thread-safe.
         eviction_memory_threshold: The threshold for evicting spans in bytes.
             By default, it's 70% of the total VRAM available.
         safe_memory_threshold: The threshold for safe memory usage in bytes.
             By default, it's 80% of the eviction threshold.
         span_size_estimator: A function to estimate the size of a span in bytes.
             By default, it's a simple size estimator that uses sys.getsizeof.
+        tracker: The metrics tracker to use.
+        scan_debounce_seconds: The debounce time for the scan for unhealthy rollouts.
+            Set to 0 to disable debouncing.
     """
 
     def __init__(
@@ -87,11 +92,13 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         eviction_memory_threshold: float | int | None = None,
         safe_memory_threshold: float | int | None = None,
         span_size_estimator: Callable[[Span], int] | None = None,
-        prometheus: bool = False,
+        tracker: MetricsBackend | None = None,
+        scan_debounce_seconds: float = 10.0,
     ):
         super().__init__(
-            collections=InMemoryLightningCollections(lock_type="thread" if thread_safe else "asyncio"),
-            prometheus=prometheus,
+            collections=InMemoryLightningCollections(lock_type="thread" if thread_safe else "asyncio", tracker=tracker),
+            tracker=tracker,
+            scan_debounce_seconds=scan_debounce_seconds,
         )
 
         self._thread_safe = thread_safe
@@ -128,7 +135,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         self._custom_span_size_estimator = span_size_estimator
 
         # Completion tracking for wait_for_rollouts (cross-loop safe)
-        self._completion_events: Dict[str, threading.Event] = {}
+        self._completion_events: Dict[str, aiologic.Event] = {}
 
         # Running rollouts cache, including preparing and running rollouts
         self._running_rollout_ids: Set[str] = set()
@@ -211,9 +218,11 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         return ret
 
     @tracked("_post_update_rollout_inmemory")
-    async def _post_update_rollout(self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]]) -> None:
+    async def _post_update_rollout(
+        self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]], skip_enqueue: bool = False
+    ) -> None:
         """Update the running rollout ids set when the rollout updates."""
-        await super()._post_update_rollout(rollouts)
+        await super()._post_update_rollout(rollouts, skip_enqueue=skip_enqueue)
         async with self.collections.atomic(mode="rw", snapshot=self._read_snapshot, labels=["rollouts"]):
             for rollout, _ in rollouts:
                 if is_running(rollout):
@@ -222,15 +231,26 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
                     self._running_rollout_ids.discard(rollout.rollout_id)
 
                 if is_finished(rollout):
-                    self._completion_events.setdefault(rollout.rollout_id, threading.Event())
+                    self._completion_events.setdefault(rollout.rollout_id, aiologic.Event())
                     self._completion_events[rollout.rollout_id].set()
                 else:
-                    self._completion_events.setdefault(rollout.rollout_id, threading.Event())
+                    self._completion_events.setdefault(rollout.rollout_id, aiologic.Event())
                 # Rollout status can never transition from finished to running (unlike attempt)
                 # so we don't need to clear the completion event even in case of retrying.
 
                 if rollout.rollout_id not in self._start_time_by_rollout:
                     self._start_time_by_rollout[rollout.rollout_id] = rollout.start_time
+
+    @tracked("_unlocked_query_rollouts_by_rollout_ids")
+    async def _unlocked_query_rollouts_by_rollout_ids(
+        self, collections: InMemoryLightningCollections, rollout_ids: Sequence[str]
+    ) -> List[Rollout]:
+        """Always use exact. This is faster than within filter for in-memory store."""
+        if len(rollout_ids) == 0:
+            return []
+
+        rollouts = [await collections.rollouts.get({"rollout_id": {"exact": rollout_id}}) for rollout_id in rollout_ids]
+        return [rollout for rollout in rollouts if rollout is not None]
 
     @tracked("_unlocked_get_running_rollouts")
     async def _unlocked_get_running_rollouts(self, collections: InMemoryLightningCollections) -> List[AttemptedRollout]:
@@ -238,11 +258,9 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         async with self.collections.atomic(
             mode="r", snapshot=self._read_snapshot, labels=["rollouts", "attempts"]
         ) as collections:
-            rollouts = await collections.rollouts.query(
-                filter={"rollout_id": {"within": list(self._running_rollout_ids)}}
-            )
+            rollouts = await self._unlocked_query_rollouts_by_rollout_ids(collections, list(self._running_rollout_ids))
             running_rollouts: List[AttemptedRollout] = []
-            for rollout in rollouts.items:
+            for rollout in rollouts:
                 latest_attempt = await collections.attempts.get(
                     filter={"rollout_id": {"exact": rollout.rollout_id}},
                     sort={"name": "sequence_id", "order": "desc"},

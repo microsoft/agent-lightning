@@ -5,11 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, List, Literal, Optional
 
 from agentlightning.types import Attempt, Dataset, Rollout, RolloutStatus, Span
 
 from .base import Algorithm
+from .utils import with_llm_proxy, with_store
+
+if TYPE_CHECKING:
+    from agentlightning.llm_proxy import LLMProxy
+    from agentlightning.store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,8 @@ class Baseline(FastAlgorithm):
     The baseline algorithm batches task submissions, waits for each rollout to
     finish, and logs every collected span and reward. It is primarily useful as
     a smoke test for the platform plumbing rather than a performant trainer.
+
+    The baseline algorithm will auto-start a LLM proxy if one is provided and not yet started.
 
     Args:
         n_epochs: Number of dataset passes to execute for both the train and val
@@ -180,8 +187,12 @@ class Baseline(FastAlgorithm):
 
             await asyncio.sleep(self.polling_interval)
 
+    @with_llm_proxy()
+    @with_store
     async def run(
         self,
+        store: LightningStore,  # Injected by decorator - callers should not provide this parameter
+        llm_proxy: Optional[LLMProxy],  # Injected by decorator - callers should not provide this parameter
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
     ) -> None:
@@ -201,8 +212,6 @@ class Baseline(FastAlgorithm):
         val_indices = list(range(train_dataset_length, train_dataset_length + val_dataset_length))
         logger.debug(f"Train indices: {train_indices}")
         logger.debug(f"Val indices: {val_indices}")
-
-        store = self.get_store()
 
         # Currently we only supports a single resource update at the start.
         initial_resources = self.get_initial_resources()

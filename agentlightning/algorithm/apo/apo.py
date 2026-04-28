@@ -7,22 +7,43 @@ APO with textual gradients that read rollout spans and outputs to modify the pro
 - rollout: same pattern as your example, but task is a dict (T_task)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Counter, Dict, Generic, Iterator, List, Optional, Sequence, Set, Tuple, TypedDict, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Counter,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypedDict,
+    TypeVar,
+    cast,
+)
 
 import poml
 from openai import AsyncOpenAI
 
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import Algorithm
-from agentlightning.algorithm.utils import batch_iter_over_dataset
+from agentlightning.algorithm.utils import batch_iter_over_dataset, with_llm_proxy, with_store
 from agentlightning.reward import find_final_reward
 from agentlightning.types import Dataset, NamedResources, PromptTemplate, Rollout, RolloutMode, RolloutStatus
+
+if TYPE_CHECKING:
+    from agentlightning.llm_proxy import LLMProxy
+    from agentlightning.store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
@@ -360,8 +381,10 @@ class APO(Algorithm, Generic[T_task]):
             )
         return new_prompt
 
+    @with_store
     async def get_rollout_results(
         self,
+        store: LightningStore,
         rollout: List[Rollout],
         *,
         prefix: Optional[str] = None,
@@ -379,7 +402,6 @@ class APO(Algorithm, Generic[T_task]):
             List of rollout results formatted for APO processing.
         """
         rollout_results: List[RolloutResultForAPO] = []
-        store = self.get_store()
         adapter = self.get_adapter()
         for r in rollout:
             spans = await store.query_spans(r.rollout_id)
@@ -776,8 +798,12 @@ class APO(Algorithm, Generic[T_task]):
                 prefix=prefix,
             )
 
+    @with_llm_proxy()
+    @with_store
     async def run(
         self,
+        store: LightningStore,  # Injected by decorator - callers should not provide this parameter
+        llm_proxy: Optional[LLMProxy],  # Injected by decorator - callers should not provide this parameter
         train_dataset: Optional[Dataset[T_task]] = None,
         val_dataset: Optional[Dataset[T_task]] = None,
     ) -> None:

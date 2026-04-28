@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
 import numpy as np
 import requests
@@ -22,7 +22,7 @@ from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLeg
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Rollout, RolloutConfig, Task
+from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
 
 __all__ = [
     "AgentModeDaemon",
@@ -144,6 +144,8 @@ class AgentModeDaemon:
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
+        processor: Any = None,
+        image_base_dir: Optional[str] = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -183,7 +185,12 @@ class AgentModeDaemon:
         self.mini_batch_size = mini_batch_size
         self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
+        self.processor = processor
         self.reward_fillna_value = reward_fillna_value
+        self.image_base_dir = image_base_dir
+
+        # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
+        self._use_mrope = self._is_mrope_model()
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -201,6 +208,75 @@ class AgentModeDaemon:
         self._internal_loop = loop
         loop.run_forever()
         loop.close()
+
+    # Multimodal utilities for M-RoPE position embeddings
+
+    def _is_mrope_model(self) -> bool:
+        """Check if processor requires M-RoPE position embeddings."""
+        if self.processor is None or not hasattr(self.processor, "image_processor"):
+            return False
+        name = self.processor.image_processor.__class__.__name__
+        return "Qwen2VLImageProcessor" in name or "Qwen3VLImageProcessor" in name
+
+    def _resolve_image_path(self, path: str) -> str:
+        """Resolve relative image path with base directory."""
+        import os
+
+        if os.path.isabs(path):
+            return path
+        if self.image_base_dir is None:
+            raise ValueError(f"Relative path '{path}' requires 'image_base_dir' to be set.")
+        return os.path.join(self.image_base_dir, path)
+
+    def _get_image_grid_thw(self, image_urls: List[str]) -> Optional[torch.Tensor]:
+        """Compute image_grid_thw from image URLs for M-RoPE computation.
+
+        Args:
+            image_urls: List of image URLs extracted from triplet prompt payload.
+                URLs can be http(s):// URLs or file:// URIs, or data: URIs.
+        """
+        from PIL import Image
+        from verl.utils.dataset.vision_utils import process_image  # pyright: ignore[reportUnknownVariableType]
+
+        if self.processor is None or not image_urls:
+            return None
+
+        def to_image_uri(url: str) -> str:
+            # Already a proper URI (http, https, file, data)
+            if url.startswith(("http://", "https://", "file://", "data:")):
+                return url
+            # Treat as a file path that needs resolution
+            resolved = self._resolve_image_path(url)
+            return f"file://{resolved}"
+
+        images: List[Image.Image] = [process_image({"image": to_image_uri(url)}) for url in image_urls]
+        model_inputs = self.processor(text=["dummy"], images=images, return_tensors="pt")
+        return model_inputs.get("image_grid_thw")
+
+    def _compute_mrope_position_ids(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        image_grid_thw: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute 4D position_ids for M-RoPE models."""
+        from typing import Callable
+
+        get_rope_index: Callable[..., torch.Tensor]
+        if "Qwen3VL" in self.processor.__class__.__name__:
+            from verl.models.transformers.qwen3_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+        else:
+            from verl.models.transformers.qwen2_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+
+        vision_pos = get_rope_index(
+            self.processor, input_ids=input_ids, image_grid_thw=image_grid_thw, attention_mask=attention_mask
+        )
+
+        valid_mask = attention_mask.bool()
+        text_pos = torch.zeros((1, len(input_ids)), dtype=torch.long, device=input_ids.device)
+        text_pos[0, valid_mask] = torch.arange(valid_mask.sum().item(), device=input_ids.device)
+
+        return torch.cat([text_pos, vision_pos], dim=0)
 
     def _start_proxy_server_v0(self):
         """
@@ -377,42 +453,57 @@ class AgentModeDaemon:
         num_samples = len(data[keys[0]])
         rollouts_per_sample = self.train_rollout_n if is_train else 1
 
+        enqueue_rollout_requests: List[EnqueueRolloutRequest] = []
+        data_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
+
         for i in range(num_samples):
             data_id = str(uuid.uuid4())
             original_sample = {key: data[key][i] for key in keys}
             original_sample["data_id"] = data_id
+            data_id_to_original_sample[data_id] = original_sample
 
             # For training, each sample is rolled out multiple times
+            # Data ID is different from Rollout ID, as one data can have multiple rollouts.
             for _ in range(rollouts_per_sample):
                 task_metadata = {"data_id": data_id, "is_train": is_train}
-
-                # Data ID is different from Rollout ID, as one data can have multiple rollouts.
                 if self.mode == "v0":
+                    # Queue immediately
                     rollout_id = await self.server.queue_task(
                         sample=_to_native(original_sample),
                         mode="train" if is_train else "val",
                         resources_id=resources_id,
                         metadata=task_metadata,
                     )
-                else:
-                    rollout = await self.store.enqueue_rollout(
-                        input=_to_native(original_sample),
-                        mode="train" if is_train else "val",
-                        resources_id=resources_id,
-                        metadata=task_metadata,
-                    )
-                    await self.store.update_rollout(
-                        rollout_id=rollout.rollout_id,
-                        config=RolloutConfig(
-                            unresponsive_seconds=self.llm_timeout_seconds,
-                            timeout_seconds=self.llm_timeout_seconds,
-                        ),
-                    )
-                    rollout_id = rollout.rollout_id
 
-                # Store original sample data to reconstruct batch information later
-                self._task_id_to_original_sample[rollout_id] = original_sample
-                self._total_tasks_queued += 1
+                    # Store original sample data to reconstruct batch information later
+                    self._task_id_to_original_sample[rollout_id] = original_sample
+                    self._total_tasks_queued += 1
+                else:
+                    # Collect tasks to enqueue in batch and queue them later
+                    enqueue_rollout_requests.append(
+                        EnqueueRolloutRequest(
+                            input=_to_native(original_sample),
+                            mode="train" if is_train else "val",
+                            resources_id=resources_id,
+                            config=RolloutConfig(
+                                unresponsive_seconds=self.llm_timeout_seconds,
+                                timeout_seconds=self.llm_timeout_seconds,
+                            ),
+                            metadata=task_metadata,
+                        )
+                    )
+
+        if self.mode == "v1":
+            # Enqueue all the tasks in a single batch
+            rollouts = await self.store.enqueue_many_rollouts(enqueue_rollout_requests)
+            self._task_id_to_original_sample.update(
+                {
+                    # Recover the original data and store it for later use.
+                    rollout.rollout_id: data_id_to_original_sample[cast(Dict[str, Any], rollout.metadata)["data_id"]]
+                    for rollout in rollouts
+                }
+            )
+            self._total_tasks_queued += len(rollouts)
 
     def set_up_data_and_server(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
         """Synchronous wrapper for setting up data and server resources."""
@@ -429,7 +520,7 @@ class AgentModeDaemon:
                 raise RuntimeError("Internal loop is not running.")
             future = asyncio.run_coroutine_threadsafe(coro, self._internal_loop)
         try:
-            future.result(timeout=60)  # Wait for completion with a timeout
+            future.result(timeout=300)  # Wait for completion with a timeout
         except Exception as e:
             print(f"Failed to set up data on server: {e}")
             raise
@@ -448,66 +539,6 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
-    def _extract_span_groups(self, spans):
-        def resolve_step_count(span, next_span, spans, index):
-            """
-            Determine step_count for a given span using next_span or fallback search.
-            """
-            # CASE A: If next_span exists and parent_id matches
-            if next_span and span.parent_id == next_span.span_id:
-                return next_span.attributes.get("step_count")
-
-            # CASE B: Fallback — search forward for agentlightning.operation
-            for s in spans[index + 1 :]:
-                if s.name == "agentlightning.operation" and span.parent_id == s.span_id:
-                    return s.attributes.get("step_count")
-
-            return None
-
-        def extract_step_count_from_links(span):
-            """
-            Extract step_count from agentlightning.link.* attributes.
-            """
-            key = span.attributes.get("agentlightning.link.0.key_match")
-            if key == "step_count":
-                return span.attributes.get("agentlightning.link.0.value_match")
-            return None
-
-        span_groups = {}
-
-        for i, span in enumerate(spans):
-            next_span = spans[i + 1] if i + 1 < len(spans) else None
-            step_count = None
-
-            if span.name == "openai.chat.completion":
-                step_count = resolve_step_count(span, next_span, spans, i)
-                if step_count is None:
-                    continue
-
-                step_count = str(step_count)
-                span_groups.setdefault(step_count, {})
-                span_groups[step_count]["call_span"] = span
-
-            elif span.name == "agentlightning.object":
-                step_count = extract_step_count_from_links(span)
-                if step_count is None:
-                    continue
-
-                step_count = str(step_count)
-                span_groups.setdefault(step_count, {})
-                span_groups[step_count]["object_span"] = span
-
-            elif span.name == "agentlightning.annotation":
-                step_count = extract_step_count_from_links(span)
-                if step_count is None:
-                    continue
-
-                step_count = str(step_count)
-                span_groups.setdefault(step_count, {})
-                span_groups[step_count]["annotation_span"] = span
-
-        return span_groups
-
     async def _validate_data_v1(self, rollout: Rollout) -> RolloutLegacy:
         """Convert Rollout to RolloutLegacy and validate.
 
@@ -517,15 +548,13 @@ class AgentModeDaemon:
         """
         # Query spans for this rollout (latest attempt)
         spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
-        span_groups = self._extract_span_groups(spans)
 
         # Convert spans to triplets using the adapter
         if not spans:
             # No triplets found, will emit a warning later.
             triplets = []
         else:
-            # triplets = self.adapter.adapt(spans)
-            triplets = self.adapter.adapt_group(span_groups)
+            triplets = self.adapter.adapt(spans)
 
         # Extract final reward from triplets
         final_reward: Optional[float] = None
@@ -693,14 +722,7 @@ class AgentModeDaemon:
         )
         return metric_dict
 
-    def get_train_data_batch(
-        self,
-        max_prompt_length: int,
-        max_response_length: int,
-        device: torch.device,
-        use_final_reward_as_step_reward: bool = True,
-        is_gigpo: bool = False,
-    ):
+    def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
         """
         Processes completed rollouts to generate a training data batch.
 
@@ -726,34 +748,18 @@ class AgentModeDaemon:
                 continue
 
             # The client should report triplets that contain prompt_ids and response_ids.
-            # Example triplet.prompt: {"token_ids": [...]}
+            # Example triplet.prompt: {"token_ids": [...], "image_urls": [...]}
             # Example triplet.response: {"token_ids": [...]}
-            # trace_list = [
-            #     {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
-            #     for t in rollout.triplets
-            # ]
-            trace_list = []
-            for t in rollout.triplets:
-                trace_dict = {
+            trace_list = [
+                {
                     "prompt_ids": t.prompt.get("token_ids", []),
                     "response_ids": t.response.get("token_ids", []),
-                    "step_reward": t.reward,
+                    "image_urls": t.prompt.get("image_urls", []),
                 }
-
-                # Optional fields
-                intrinsic = t.metadata.get("intrinsic_reward")
-                message = t.metadata.get("message")
-
-                if intrinsic is not None:
-                    trace_dict["step_intrinsic_reward"] = intrinsic
-
-                if message is not None:
-                    trace_dict["message"] = message
-
-                trace_list.append(trace_dict)
-
+                for t in rollout.triplets
+            ]
             info = {
-                "final_reward": final_reward,
+                "reward": final_reward,
                 "trace_list": trace_list,
                 "data_id": original_sample["data_id"],
             }
@@ -774,28 +780,18 @@ class AgentModeDaemon:
         input_attention_mask_list: List[List[int]] = []
         response_ids_list: List[List[int]] = []
         response_attention_mask_list: List[List[int]] = []
-        final_reward_list: List[float] = []
-        step_reward_list: List[float] = []
+        reward_list: List[float] = []
         data_id_list: List[str] = []
         rollout_id_list: List[str] = []
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
+        image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
-
-        # optional fields
-        step_intrinsic_reward_list: List[float] = []
-        message_list: List[str] = []
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
 
-                final_reward_list.append(sample_info["final_reward"])
-                step_reward_list.append(trace["step_reward"])
-                if "step_intrinsic_reward" in trace:
-                    step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
-                if "message" in trace:
-                    message_list.append(trace["message"])
-
+                reward_list.append(sample_info["reward"])
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
@@ -826,6 +822,11 @@ class AgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
+                # Compute image_grid_thw for this triplet using image_urls from prompt
+                if self._use_mrope:
+                    image_urls = trace.get("image_urls", [])
+                    image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
+
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
@@ -835,49 +836,55 @@ class AgentModeDaemon:
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
-        position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
-        is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
-        if use_final_reward_as_step_reward:
-            scores = torch.tensor(final_reward_list, dtype=torch.float32).to(device)
+
+        # Compute position_ids - use mrope for Qwen2-VL, standard 2D otherwise
+        if self._use_mrope:
+            # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
+            position_ids_list: list[torch.Tensor] = []
+            for i in range(n_transition):
+                pos_ids = self._compute_mrope_position_ids(
+                    input_ids=batch_seq[i],
+                    attention_mask=attention_mask[i],
+                    image_grid_thw=image_grid_thw_list[i] if image_grid_thw_list else None,
+                )  # (4, seq_length)
+                position_ids_list.append(pos_ids)
+            # Stack to (batch_size, 4, seq_length)
+            position_ids = torch.stack(position_ids_list, dim=0)
         else:
-            scores = torch.tensor(step_reward_list, dtype=torch.float32).to(device)
+            # Standard 2D position_ids (batch_size, seq_length)
+            position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
+
+        is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
+        scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
 
         # Create token-level scores by placing the final reward at the last token position
         token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
+        # For mrope (3D position_ids), use the first dimension (text position_ids) for eos calculation
+        if self._use_mrope:
+            # position_ids is (batch_size, 4, seq_length), use first dim for text positions
+            text_position_ids = position_ids[:, 0, :]  # (batch_size, seq_length)
+            eos_mask_idx = torch.argmax(text_position_ids * attention_mask, dim=-1)  # (bsz,)
+        else:
+            eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
         # At the eos_mask_idx position of each sample, fill in the corresponding scores.
         # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
-        eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
         token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
         # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
         token_level_scores = token_level_scores[:, -max_response_length:]
 
-        # Create token-level intrinsic rewards
-        token_level_intrinsic_rewards = None
-        if len(intrinsic_reward_list) > 0:
-            intrinsic_reward_list = [0.0 if reward is None else reward for reward in intrinsic_reward_list]
-            intrinsic_rewards = torch.tensor(intrinsic_reward_list, dtype=torch.float32).to(device)
-            token_level_intrinsic_rewards = torch.zeros_like(attention_mask, dtype=intrinsic_rewards.dtype)
-            token_level_intrinsic_rewards[torch.arange(n_transition), eos_mask_idx] = intrinsic_rewards
-            token_level_intrinsic_rewards = token_level_intrinsic_rewards[:, -max_response_length:]
-
         # Form the final batch using TensorDict
-        batch_dict = {
-            "prompts": batch_input_ids,
-            "responses": batch_response_ids,
-            "input_ids": batch_seq,  # here input_ids become the whole sentences
-            "attention_mask": attention_mask,
-            "position_ids": position_ids,
-            "is_drop_mask": is_drop_mask,
-            "token_level_scores": token_level_scores.contiguous(),
-        }
-        batch_dict["step_rewards"] = torch.tensor(np.array(step_reward_list), dtype=torch.float32).to(device)
-        if token_level_intrinsic_rewards is not None:
-            batch_dict["step_intrinsic_rewards"] = torch.tensor(
-                np.array(step_intrinsic_reward_list), dtype=torch.float32
-            ).to(device)
-            batch_dict["token_level_intrinsic_rewards"] = token_level_intrinsic_rewards.contiguous()
-
-        batch = TensorDict(batch_dict, batch_size=n_transition)
+        batch = TensorDict(
+            {
+                "prompts": batch_input_ids,
+                "responses": batch_response_ids,
+                "input_ids": batch_seq,  # here input_ids become the whole sentences
+                "attention_mask": attention_mask,
+                "position_ids": position_ids,
+                "is_drop_mask": is_drop_mask,
+                "token_level_scores": token_level_scores.contiguous(),
+            },
+            batch_size=n_transition,
+        )
         data_proto = DataProto(batch=batch)
 
         data_metrics = {
@@ -893,10 +900,6 @@ class AgentModeDaemon:
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
         data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
-
-        data_proto.non_tensor_batch["step_rewards"] = np.array(step_reward_list)
-        if len(message_list) > 0 and is_gigpo:
-            data_proto.non_tensor_batch["anchor_obs"] = np.array(message_list)
 
         return data_proto, data_metrics
 

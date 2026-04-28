@@ -13,12 +13,20 @@ from gpustat import GPUStat, GPUStatCollection
 
 
 def system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
+    """Capture a snapshot of the system's hardware and software information.
+
+    Args:
+        include_gpu: Whether to include GPU information.
+
+    Returns:
+        A dictionary containing the system's hardware and software information.
+    """
     # CPU
     cpu = {
         "cpu_name": platform.processor(),
         "cpu_cores": psutil.cpu_count(logical=False),
         "cpu_threads": psutil.cpu_count(logical=True),
-        "cpu_usage_pct": psutil.cpu_percent(0.05),
+        "cpu_usage_pct": psutil.cpu_percent(0.0),
     }
 
     # Memory
@@ -37,20 +45,21 @@ def system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
         "disk_pct": du.percent,
     }
 
-    # GPU
+    # GPU (only query if explicitly requested)
     gpus: List[Dict[str, Any]] = []
-    with suppress(Exception):
-        for g in GPUStatCollection.new_query().gpus:  # type: ignore
-            g = cast(GPUStat, g)
-            gpus.append(
-                {
-                    "gpu": g.name,  # type: ignore
-                    "util_pct": g.utilization,
-                    "mem_used_mb": g.memory_used,
-                    "mem_total_mb": g.memory_total,
-                    "temp_c": g.temperature,
-                }
-            )
+    if include_gpu:
+        with suppress(Exception):
+            for g in GPUStatCollection.new_query().gpus:  # type: ignore
+                g = cast(GPUStat, g)
+                gpus.append(
+                    {
+                        "gpu": g.name,  # type: ignore
+                        "util_pct": g.utilization,
+                        "mem_used_mb": g.memory_used,
+                        "mem_total_mb": g.memory_total,
+                        "temp_c": g.temperature,
+                    }
+                )
 
     # Network
     net = psutil.net_io_counters()

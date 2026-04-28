@@ -17,6 +17,7 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    EnqueueRolloutRequest,
     NamedResources,
     OtelResource,
     ResourcesUpdate,
@@ -29,6 +30,8 @@ from agentlightning.types import (
 )
 
 from .dummy_store import DummyLightningStore
+
+pytestmark = [pytest.mark.store]
 
 
 class SlowAttemptStore(LightningStore):
@@ -271,6 +274,42 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "update_worker",
     ]
     assert [name for name, *_ in dummy_store.calls] == expected_order
+
+
+@pytest.mark.asyncio
+async def test_threaded_store_enqueue_many_rollouts_delegates() -> None:
+    requests = [
+        EnqueueRolloutRequest(input={"idx": 0}, mode="train", metadata={"batch": "left"}),
+        EnqueueRolloutRequest(input={"idx": 1}, mode=None, resources_id="resources-1"),
+    ]
+    rollouts = [
+        Rollout(rollout_id="bulk-0", input={"idx": 0}, start_time=0.0),
+        Rollout(rollout_id="bulk-1", input={"idx": 1}, start_time=1.0),
+    ]
+    dummy_store = DummyLightningStore({"enqueue_many_rollouts": rollouts})
+    threaded_store = LightningStoreThreaded(dummy_store)
+
+    result = await threaded_store.enqueue_many_rollouts(requests)
+    assert result == rollouts
+    assert dummy_store.calls[-1][0] == "enqueue_many_rollouts"
+    assert dummy_store.calls[-1][1][0] == requests
+
+
+@pytest.mark.asyncio
+async def test_threaded_store_dequeue_many_rollouts_delegates() -> None:
+    attempt_a = Attempt(rollout_id="bulk-0", attempt_id="attempt-0", sequence_id=1, start_time=0.0)
+    attempt_b = Attempt(rollout_id="bulk-1", attempt_id="attempt-1", sequence_id=1, start_time=0.0)
+    attempts = [
+        AttemptedRollout(rollout_id="bulk-0", input={"idx": 0}, start_time=0.0, attempt=attempt_a),
+        AttemptedRollout(rollout_id="bulk-1", input={"idx": 1}, start_time=0.0, attempt=attempt_b),
+    ]
+    dummy_store = DummyLightningStore({"dequeue_many_rollouts": attempts})
+    threaded_store = LightningStoreThreaded(dummy_store)
+
+    result = await threaded_store.dequeue_many_rollouts(limit=2, worker_id="thread-worker")
+    assert result == attempts
+    assert dummy_store.calls[-1][0] == "dequeue_many_rollouts"
+    assert dummy_store.calls[-1][2] == {"limit": 2, "worker_id": "thread-worker"}
 
 
 def test_threaded_store_serializes_update_attempt_calls() -> None:

@@ -7,24 +7,13 @@ import hashlib
 import logging
 import time
 import uuid
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    TypeVar,
-    Union,
-)
-
-from pymongo import AsyncMongoClient
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, TypeVar, Union
 
 from agentlightning.types import Attempt, AttemptedRollout, Rollout
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import LightningStoreCapabilities, is_finished
-from .collection.mongo import MongoClientPool, MongoLightningCollections, MongoOperationPrometheusTracker
+from .collection.mongo import MongoClientPool, MongoLightningCollections
 from .collection_based import CollectionBasedLightningStore, healthcheck_before, tracked
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -42,27 +31,28 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
     Data is persistent and can be shared between multiple processes.
 
     Args:
-        client: The MongoDB client. Could be a string URI or an instance of AsyncMongoClient.
-        database: The MongoDB database. Could be a string name or an instance of AsyncDatabase.
-            You must provide at least one of client or database.
+        mongo_uri: MongoDB connection string (defaults to local replica set).
+        mongo_client_kwargs: Extra keyword arguments forwarded to `AsyncMongoClient`.
+        database: The MongoDB database name. Defaults to ``agentlightning``.
         partition_id: The partition id. Useful when sharing the database among multiple Agent-lightning trainers.
+        tracker: The metrics tracker to use.
+        scan_debounce_seconds: The debounce time for the scan for unhealthy rollouts.
+            Set to 0 to disable debouncing.
     """
 
     def __init__(
         self,
         *,
-        client: AsyncMongoClient[Mapping[str, Any]] | str,
+        mongo_uri: str = "mongodb://localhost:27017/?replicaSet=rs0",
+        mongo_client_kwargs: Mapping[str, Any] | None = None,
         database_name: str | None = None,
         partition_id: str | None = None,
-        prometheus: bool = False,
+        tracker: MetricsBackend | None = None,
+        scan_debounce_seconds: float = 10.0,
     ) -> None:
-        self._enable_prometheus = prometheus
-        self._auto_created_client = False
-        if isinstance(client, str):
-            self._client = AsyncMongoClient[Mapping[str, Any]](client)
-            self._auto_created_client = True
-        else:
-            self._client = client
+        self._mongo_uri = mongo_uri
+        self._mongo_client_kwargs = dict(mongo_client_kwargs or {})
+
         if database_name is None:
             database_name = "agentlightning"
             logger.info("No database name provided, using default 'agentlightning'")
@@ -71,16 +61,20 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             partition_id = _generate_partition_id()
             logger.info("No partition id provided, generated a new one: %s", partition_id)
 
-        self._client_pool = MongoClientPool(self._client)
+        self._client_pool = MongoClientPool[Mapping[str, Any]](
+            mongo_uri=self._mongo_uri,
+            mongo_client_kwargs=self._mongo_client_kwargs,
+        )
 
         super().__init__(
             collections=MongoLightningCollections(
                 self._client_pool,
                 database_name,
                 partition_id,
-                prometheus_tracker=MongoOperationPrometheusTracker(enabled=self._enable_prometheus),
+                tracker=tracker,
             ),
-            prometheus=self._enable_prometheus,
+            tracker=tracker,
+            scan_debounce_seconds=scan_debounce_seconds,
         )
 
     @property
@@ -96,9 +90,6 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
     async def close(self) -> None:
         """Close the store by closing the client pool."""
         await self._client_pool.close()
-        # If I created the client, I should close it too.
-        if self._auto_created_client:
-            await self._client.close()
 
     @tracked("wait_for_rollouts")
     @healthcheck_before
@@ -135,6 +126,15 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             rest_time = max(0.01, min(deadline - time.time() - 0.1, 10.0)) if deadline is not None else 10.0
             await asyncio.sleep(rest_time)
             current_time = time.time()
+
+        # Logging will help debugging when there are stuck rollouts.
+        logger.debug(
+            "Waiting for rollouts. Number of finished rollouts: %d; number of unfinished rollouts: %d",
+            len(finished_rollouts),
+            len(unfinished_rollout_ids),
+        )
+        if len(unfinished_rollout_ids) < 30:
+            logger.debug("Unfinished rollouts: %s", unfinished_rollout_ids)
 
         # Reorder the rollouts to match the input order
         return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]
