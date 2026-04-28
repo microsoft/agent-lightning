@@ -74,7 +74,6 @@ class LitAgentRunner(Runner[T_task]):
         max_rollouts: Optional[int] = None,
         poll_interval: float = 5.0,
         heartbeat_interval: float = 10.0,
-        heartbeat_timeout: Optional[float] = None,
         interval_jitter: float = 0.5,
         heartbeat_launch_mode: Literal["asyncio", "thread"] = "thread",
         heartbeat_include_gpu: bool = False,
@@ -87,8 +86,6 @@ class LitAgentRunner(Runner[T_task]):
                 [`iter`][agentlightning.LitAgentRunner.iter].
             poll_interval: Seconds to wait between store polls when no work is available.
             heartbeat_interval: Seconds to wait between sending heartbeats to the store.
-            heartbeat_timeout: Seconds to wait for a single heartbeat update to complete.
-                Defaults to `3 * heartbeat_interval` when not set.
             interval_jitter: Jitter factor for the poll interval. The actual interval will be between
                 poll_interval - interval_jitter and poll_interval + interval_jitter.
                 This is to avoid the overload caused by the synchronization of the runners.
@@ -103,7 +100,6 @@ class LitAgentRunner(Runner[T_task]):
         self._max_rollouts = max_rollouts
         self._poll_interval = poll_interval
         self._heartbeat_interval = heartbeat_interval
-        self._heartbeat_timeout = heartbeat_timeout if heartbeat_timeout is not None else heartbeat_interval * 3
         self._interval_jitter = interval_jitter
         self._heartbeat_launch_mode = heartbeat_launch_mode
         self._heartbeat_include_gpu = heartbeat_include_gpu
@@ -401,14 +397,14 @@ class LitAgentRunner(Runner[T_task]):
         try:
             snapshot = await asyncio.wait_for(
                 asyncio.to_thread(system_snapshot, self._heartbeat_include_gpu),
-                timeout=self._heartbeat_timeout,
+                timeout=self._heartbeat_interval,
             )
             logger.debug(f"{self._log_prefix()} Heartbeat snapshot acquired.")
         except asyncio.TimeoutError:
             logger.warning(
                 "%s Heartbeat snapshot acquisition timed out after %.1fs, skipping.",
                 self._log_prefix(),
-                self._heartbeat_timeout,
+                self._heartbeat_interval,
             )
             return
         except asyncio.CancelledError:
@@ -419,7 +415,7 @@ class LitAgentRunner(Runner[T_task]):
             return
 
         try:
-            await asyncio.wait_for(store.update_worker(worker_id, snapshot), timeout=self._heartbeat_timeout)
+            await asyncio.wait_for(store.update_worker(worker_id, snapshot), timeout=self._heartbeat_interval)
             logger.debug(f"{self._log_prefix()} Heartbeat updated successfully.")
         except asyncio.CancelledError:
             # bypass the exception
@@ -428,7 +424,7 @@ class LitAgentRunner(Runner[T_task]):
             logger.warning(
                 "%s update worker heartbeat timed out after %.1fs, skipping.",
                 self._log_prefix(),
-                self._heartbeat_timeout,
+                self._heartbeat_interval,
             )
         except Exception:
             logger.exception("%s Unable to update worker heartbeat.", self._log_prefix())
@@ -568,7 +564,7 @@ class LitAgentRunner(Runner[T_task]):
                         loop.run_until_complete(
                             asyncio.wait_for(
                                 store.update_worker(worker_id, snap),
-                                timeout=self._heartbeat_timeout,
+                                timeout=self._heartbeat_interval,
                             )
                         )
                         logger.debug(f"{self._log_prefix()} Heartbeat consumer: worker updated.")
@@ -576,7 +572,7 @@ class LitAgentRunner(Runner[T_task]):
                         logger.warning(
                             "%s Heartbeat consumer: update timed out after %.1fs.",
                             self._log_prefix(),
-                            self._heartbeat_timeout,
+                            self._heartbeat_interval,
                         )
                     except Exception:
                         logger.warning("%s Heartbeat consumer: update failed.", self._log_prefix(), exc_info=True)

@@ -7,7 +7,6 @@ import logging
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar
 
 from fastapi import Request, Response
-from starlette.requests import ClientDisconnect
 from google.protobuf import json_format
 from google.rpc.status_pb2 import Status
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -76,11 +75,7 @@ async def handle_otlp_export(
             content_type=PROTOBUF_CT,
         )
 
-    try:
-        raw_body = await request.body()
-    except ClientDisconnect:
-        logger.debug("OTLP %s client disconnected before body was read; dropping request.", signal_name)
-        return Response(status_code=200)
+    raw_body = await request.body()
     body = _read_body_maybe_gzip(request, raw_body)
 
     # Empty request is allowed and should still succeed.

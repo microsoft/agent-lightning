@@ -127,9 +127,7 @@ class EnvAgent(LitAgent):
                     )
                 )
 
-                action_for_history = (
-                    output if self.config.get("record_original_action", False) else executed_action
-                )
+                action_for_history = output if self.config.get("record_original_action", False) else executed_action
 
                 prompt_builder.update_step_count()
                 prompt_builder.update_action(action_for_history)

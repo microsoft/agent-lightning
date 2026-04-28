@@ -755,7 +755,10 @@ class EnvAgentModeDaemon:
                 if max_train_length > -1 and len(prompt_ids) + len(response_ids) > max_train_length:
                     logger.debug(
                         "Skipping sample: prompt_len=%d, response_len=%d, total=%d > max_train_length=%d",
-                        len(prompt_ids), len(response_ids), len(prompt_ids) + len(response_ids), max_train_length,
+                        len(prompt_ids),
+                        len(response_ids),
+                        len(prompt_ids) + len(response_ids),
+                        max_train_length,
                     )
                     continue
 
@@ -868,11 +871,13 @@ class EnvAgentModeDaemon:
             batch_dict["token_level_intrinsic_rewards"] = token_level_intrinsic_rewards.contiguous()
 
         if empo2_train_mode == "off-policy":
-            batch_dict.update({
-                "old_input_ids": old_batch_seq,
-                "old_attention_mask": old_attention_mask,
-                "old_position_ids": old_position_ids,
-            })
+            batch_dict.update(
+                {
+                    "old_input_ids": old_batch_seq,
+                    "old_attention_mask": old_attention_mask,
+                    "old_position_ids": old_position_ids,
+                }
+            )
 
         batch = TensorDict(batch_dict, batch_size=n_transition)
         data_proto = DataProto(batch=batch)

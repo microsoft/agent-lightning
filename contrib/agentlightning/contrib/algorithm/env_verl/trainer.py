@@ -371,11 +371,11 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
 
             # recompute old_log_probs
             with _timer("old_log_prob", timing_raw):
-                if hasattr(self.config, 'tips') and self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
+                if hasattr(self.config, "tips") and self.config.tips.use_tips and self.empo2_train_mode == "off-policy":
                     old_batch = deepcopy(batch)
-                    old_batch.batch['input_ids'] = old_batch.batch['old_input_ids']
-                    old_batch.batch['attention_mask'] = old_batch.batch['old_attention_mask']
-                    old_batch.batch['position_ids'] = old_batch.batch['old_position_ids']
+                    old_batch.batch["input_ids"] = old_batch.batch["old_input_ids"]
+                    old_batch.batch["attention_mask"] = old_batch.batch["old_attention_mask"]
+                    old_batch.batch["position_ids"] = old_batch.batch["old_position_ids"]
                     old_log_prob = self.actor_rollout_wg.compute_log_prob(old_batch)
                     batch.batch["old_log_probs"] = old_log_prob.batch["old_log_probs"]
                 else:
