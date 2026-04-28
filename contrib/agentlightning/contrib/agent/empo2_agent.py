@@ -15,10 +15,10 @@ from agentlightning import (
 )
 from agentlightning.utils.otel import make_link_attributes
 
-from agl_envs.simulation import make_env_manager
-from contrib.recipes.simulation.prompt_builder import HistoryPromptBuilder
+from agl_envs import make_env_manager
+from contrib.recipes.envs.prompt_builder import HistoryPromptBuilder
 
-from contrib.agentlightning.contrib.agent.simulation_agent import SimulationAgent
+from contrib.agentlightning.contrib.agent.env_agent import EnvAgent
 
 configure_logger()
 logger = configure_logger(name=__name__, level=logging.ERROR)
@@ -70,7 +70,7 @@ def gather_chats(prompt):
     text = " ".join(chat_list)
     return text
 
-class EMPO2Agent(SimulationAgent):
+class EMPO2Agent(EnvAgent):
     def __init__(self, config, trained_agents: str | None = None) -> None:
         super().__init__(config=config, trained_agents=trained_agents)
 

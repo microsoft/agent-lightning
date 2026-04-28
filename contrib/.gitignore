@@ -1,1 +1,5 @@
 # Put contrib-related gitignore files here.
+
+# recipes/envs related
+recipes/envs/agl_envs/
+recipes/envs/wandb/

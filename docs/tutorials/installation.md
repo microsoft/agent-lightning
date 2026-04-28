@@ -34,7 +34,7 @@ This installs or upgrades Agent-Lightning to the newest stable version.
 Agent-Lightning also publishes **nightly builds**, which contain the latest experimental features and improvements from the main branch. These are available via **Test PyPI**.
 
 ```bash
-pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
+pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --pre agentlightning
 ```
 
 !!! warning

@@ -1,4 +1,4 @@
-# Using the Emitter
+# Using Emitters
 
 [](){ #using-emitter }
 

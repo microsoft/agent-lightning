@@ -80,7 +80,7 @@ async def debug_with_hooks():
 
 
 def debug_with_trainer():
-    """This appraoch integrates the trainer and is very similar to the real `fit()` loop.
+    """This approach integrates the trainer and is very similar to the real `fit()` loop.
 
     The trainer will create a mock algorithm which will communicates with the runner.
     Do this for end-to-end testing and debugging purposes.
