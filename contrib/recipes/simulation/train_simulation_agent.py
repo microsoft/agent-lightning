@@ -1,13 +1,33 @@
 import argparse
 import os
 
+import subprocess
 from omegaconf import OmegaConf
 
 from agentlightning import Trainer
 from agentlightning.algorithm.verl import VERL
 from contrib.agentlightning.contrib.algorithm.simulation_verl.trainer import SimulationAgentLightningTrainer
 from contrib.agentlightning.contrib.algorithm.simulation_verl.daemon import SimulationAgentModeDaemon
-from contrib.recipes.simulation.utils import kill_process_on_port, run_cmd
+
+
+def run_cmd(cmd):
+    """Execute a shell command and print its output"""
+    print(f"👉 Running: {cmd}")
+    result = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    return result
+
+
+def kill_process_on_port(port):
+    result = subprocess.run(f"sudo lsof -t -i :{port}", shell=True, capture_output=True, text=True)
+    pids = result.stdout.strip().split("\n")
+    for pid in pids:
+        if pid:
+            print(f"🔪 Killing process {pid} on port {port}")
+            subprocess.run(f"sudo kill -9 {pid}", shell=True)
 
 
 def train_val_dataset(cfg):
@@ -50,11 +70,11 @@ if __name__ == "__main__":
         os.environ["TASK_NUM"] = str(args.task_num)
 
     # Load configs
-    agent_config_path = f"contrib/recipes/simulation/env_config/{args.env}.yaml"
+    agent_config_path = f"contrib/recipes/simulation/config_env/{args.env}.yaml"
     if args.debug:
-        trainer_config_path = f"contrib/recipes/simulation/run/{args.env}/debug/{args.algorithm}.yaml"
+        trainer_config_path = f"contrib/recipes/simulation/config_verl/{args.env}/debug/{args.algorithm}.yaml"
     else:
-        trainer_config_path = f"contrib/recipes/simulation/run/{args.env}/{args.algorithm}.yaml"
+        trainer_config_path = f"contrib/recipes/simulation/config_verl/{args.env}/{args.algorithm}.yaml"
     agent_config = get_config(agent_config_path)
 
     if "gigpo" in args.algorithm:
