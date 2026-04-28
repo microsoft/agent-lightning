@@ -23,7 +23,8 @@ agentlightning:
 algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
-  use_return_as_reward: true
+  use_final_reward_as_step_reward: true
+  use_intrinsic_reward: true
 
 data:
   train_files: ${variables.DATA_DIR}/train.parquet

@@ -99,7 +99,6 @@ class EMPO2Agent(SimulationAgent):
         rollout: Rollout,
     ) -> float | None:
         rollout_id = rollout.rollout_id
-        global_steps = task["global_steps"]
         logger.info(f"[Rollout {rollout_id}] Task: {task}")
 
         reward_scale = float(self.config["reawrd_scale"])
@@ -111,6 +110,7 @@ class EMPO2Agent(SimulationAgent):
 
         if rollout.mode == "train":
             train_mode = task["train_mode"]
+            global_steps = task["global_steps"]
         else:
             train_mode = "on-policy"
 
@@ -211,7 +211,11 @@ class EMPO2Agent(SimulationAgent):
 
                 step_count += 1
 
-            if self.config.captioner.prompt_type == "chat" and self.config.save_rollout:
+            if (
+                rollout.mode == "train"
+                and self.config.captioner.prompt_type == "chat"
+                and self.config.save_rollout
+            ):
                 filename = f"empo2_rollouts/variant_{variation_idx}/step_{global_steps}/{rollout_id}_{round(episode_reward, 1)}_use_tip_{use_tips}.json"
                 if use_tips:
                     _rollout = self._get_all_tip_obs(obs, tip_list)

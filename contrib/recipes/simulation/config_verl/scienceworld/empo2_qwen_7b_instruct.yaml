@@ -13,7 +13,7 @@ variables:
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: empo2-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/1222/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/0114/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -24,7 +24,8 @@ agentlightning:
 algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
-  use_return_as_reward: true
+  use_final_reward_as_step_reward: true
+  use_intrinsic_reward: true
 
 data:
   train_files: ${variables.DATA_DIR}/train.parquet
@@ -62,13 +63,19 @@ actor_rollout_ref:
     clip_ratio_high: 0.30
     clip_ratio_low: 0.20
     clip_ratio_c: 10.0
+    entropy_checkpointing: true
+    entropy_from_logits_with_chunking: true
     fsdp_config:
       param_offload: true
       optimizer_offload: true
+      forward_prefetch: true
   ref:
     log_prob_micro_batch_size_per_gpu: ${variables.PER_GPU_BATCH_SIZE}
+    entropy_checkpointing: true
+    entropy_from_logits_with_chunking: true
     fsdp_config:
       param_offload: true
+      forward_prefetch: true
   model:
     path: ${variables.BASE_MODEL}
     use_remove_padding: true

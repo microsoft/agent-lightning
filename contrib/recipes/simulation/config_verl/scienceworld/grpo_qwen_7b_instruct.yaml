@@ -13,7 +13,7 @@ variables:
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-${variables.TASK_NUM}-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/single_data/${variables.TASK_NUM}
-  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/1222/${variables.EXPERIMENT_NAME}
+  OUTPUT_DIR: /mnt/jeonghyekim/empo2_checkpoint/1223/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -24,7 +24,8 @@ agentlightning:
 algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
-  use_return_as_reward: true
+  use_final_reward_as_step_reward: false
+  use_intrinsic_reward: true
 
 data:
   train_files: ${variables.DATA_DIR}/train.parquet
