@@ -666,7 +666,7 @@ class EnvAgentModeDaemon:
         use_final_reward_as_step_reward: bool = True,
         use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
-        empo2_train_mode: bool = False,
+        empo2_train_mode: Literal["off-policy", "on-policy-with-tips", "on-policy"] | None = None,
     ):
         """
         Processes completed rollouts to generate a training data batch.

@@ -1,10 +1,6 @@
-import random
-import time
-from collections import deque
-
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 
 num_works = 1

@@ -16,11 +16,11 @@ Please response with only one line with one sentence, following the possible act
 """.strip()
 
 TIP_INSTRUCTION = """
-Thanks for your playing.
+Thanks for playing.
 Now you have ended a trajectory and collect some meaningless or valuable information from the interactions with the environment.
-Please summary the trajectory, and also summary what information you get from this trajectory, and how far this trajectory is from fully completing the task.
-Please response with only one sentence with only one line, do not include any extra words.
-You sentence should be less than 100 words.
+Please summarize the trajectory, and also summarize what information you get from this trajectory, and how far this trajectory is from fully completing the task.
+Please respond with only one sentence with only one line, do not include any extra words.
+Your sentence should be less than 100 words.
 """.strip()
 
 # Mapping for instruction text types

@@ -199,14 +199,6 @@ class EMPO2Agent(EnvAgent):
 
                 step_count += 1
 
-            if rollout.mode == "train" and self.config.captioner.prompt_type == "chat" and self.config.save_rollout:
-                filename = f"empo2_rollouts/variant_{variation_idx}/step_{global_steps}/{rollout_id}_{round(episode_reward, 1)}_use_tip_{use_tips}.json"
-                if use_tips:
-                    _rollout = self._get_all_tip_obs(obs, tip_list)
-                else:
-                    _rollout = obs
-                self._save_chat_rollout(_rollout, filename)
-
             if rollout.mode == "train":
                 prompt_builder.prompt_type = "chat"
                 prompt_builder.max_history = -1
