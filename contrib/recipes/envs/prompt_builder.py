@@ -80,7 +80,7 @@ class HistoryPromptBuilder:
         self._events.clear()
 
         if self.prompt_type == "chat":
-            inst_prompt = env.get_instruction_prompt(info)
+            inst_prompt = env.get_instruction_prompt()
             self.update_instruction_prompt(inst_prompt)
         elif self.prompt_type == "single":
             template_wo_his, template = env.get_single_prompt_template()

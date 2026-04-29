@@ -127,8 +127,10 @@ class EnvAgent(LitAgent):
                     )
                 )
 
+                action_for_history = output if self.config.get("record_original_action", False) else executed_action
+
                 prompt_builder.update_step_count()
-                prompt_builder.update_action(executed_action)
+                prompt_builder.update_action(action_for_history)
                 prompt_builder.update_observation(env_obs)
                 prompt_builder.update_admissible_actions(available_actions_hint)
 
