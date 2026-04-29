@@ -11,13 +11,13 @@ python debug_chartqa_agent.py
 Example usage for self-hosted model.
 
 ```
-vllm serve Qwen/Qwen2-VL-2B-Instruct \
+vllm serve Qwen/Qwen2.5-VL-3B-Instruct \
     --gpu-memory-utilization 0.6 \
     --max-model-len 4096 \
     --allowed-local-media-path $CHARTQA_DATA_DIR \
     --enable-prefix-caching \
     --port 8088
-USE_LLM_PROXY=1 OPENAI_API_BASE=http://localhost:8088/v1 OPENAI_MODEL=Qwen/Qwen2-VL-2B-Instruct python debug_chartqa_agent.py
+OPENAI_API_BASE=http://localhost:8088/v1 OPENAI_MODEL=Qwen/Qwen2.5-VL-3B-Instruct python debug_chartqa_agent.py
 ```
 
 Ensure `CHARTQA_DATA_DIR` points to a directory with the prepared parquet file by running `python prepare_data.py` beforehand.
@@ -38,42 +38,16 @@ import agentlightning as agl
 logger = logging.getLogger("chartqa_agent")
 
 
-def create_llm_proxy_for_chartqa(vllm_endpoint: str, port: int = 8081) -> agl.LLMProxy:
-    """Create an LLMProxy configured for ChartQA with token ID capture.
-
-    Args:
-        vllm_endpoint: Base URL for the hosted vLLM server.
-        port: Local port where the proxy should listen.
-
-    Returns:
-        An [`LLMProxy`][agentlightning.LLMProxy] instance launched in a thread.
-    """
-    store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
-
-    llm_proxy = agl.LLMProxy(
-        port=port,
-        store=store,
-        model_list=[
-            {
-                "model_name": "Qwen/Qwen2-VL-2B-Instruct",
-                "litellm_params": {
-                    "model": "hosted_vllm/Qwen/Qwen2-VL-2B-Instruct",
-                    "api_base": vllm_endpoint,
-                },
-            }
-        ],
-        callbacks=["return_token_ids"],
-        launch_mode="thread",
-    )
-
-    return llm_proxy
+def is_local_endpoint(endpoint: str) -> bool:
+    """Check if the endpoint is a local vLLM server."""
+    return "localhost" in endpoint or "127.0.0.1" in endpoint
 
 
-def debug_chartqa_agent(use_llm_proxy: bool = False) -> None:
-    """Debug the ChartQA agent against cloud APIs or a local vLLM proxy.
+def debug_chartqa_agent() -> None:
+    """Debug the ChartQA agent against cloud APIs or a local vLLM server.
 
-    Args:
-        use_llm_proxy: When `True`, spin up an LLMProxy that points to a local vLLM endpoint.
+    Automatically detects local vs cloud based on the OPENAI_API_BASE endpoint.
+    For local vLLM, uses file:// paths. For cloud APIs, uses base64 encoding.
 
     Raises:
         FileNotFoundError: If the prepared ChartQA parquet file is missing.
@@ -88,37 +62,30 @@ def debug_chartqa_agent(use_llm_proxy: bool = False) -> None:
 
     model = chartqa_env_var.OPENAI_MODEL
     endpoint = chartqa_env_var.OPENAI_API_BASE
+    api_key = chartqa_env_var.OPENAI_API_KEY
+    use_local = is_local_endpoint(endpoint)
+
     logger.info(
-        "Debug data: %s samples, model: %s, endpoint: %s, llm_proxy=%s",
+        "Debug data: %s samples, model: %s, endpoint: %s, local=%s",
         len(test_data),
         model,
         endpoint,
-        use_llm_proxy,
+        use_local,
     )
 
-    llm_endpoint = endpoint
-    trainer_kwargs: Dict[str, Any] = {}
-
-    if use_llm_proxy:
-        proxy_port = 8089
-        llm_proxy = create_llm_proxy_for_chartqa(endpoint, port=proxy_port)
-        trainer_kwargs["llm_proxy"] = llm_proxy
-        trainer_kwargs["n_workers"] = 2
-        llm_endpoint = f"http://localhost:{proxy_port}/v1"
-        agent = ChartQAAgent()
-    else:
-        trainer_kwargs["n_workers"] = 1
-        agent = ChartQAAgent(use_base64_images=True)
+    # For local vLLM, use file:// paths; for cloud APIs, use base64 encoding
+    agent = ChartQAAgent(use_base64_images=not use_local)
 
     trainer = agl.Trainer(
         initial_resources={
             "main_llm": agl.LLM(
-                endpoint=llm_endpoint,
+                endpoint=endpoint,
                 model=model,
+                api_key=api_key,
                 sampling_parameters={"temperature": 0.0},
             )
         },
-        **trainer_kwargs,
+        n_workers=1,
     )
 
     trainer.dev(agent, test_data)
@@ -126,4 +93,4 @@ def debug_chartqa_agent(use_llm_proxy: bool = False) -> None:
 
 if __name__ == "__main__":
     agl.setup_logging(apply_to=["chartqa_agent"])
-    debug_chartqa_agent(use_llm_proxy=chartqa_env_var.USE_LLM_PROXY)
+    debug_chartqa_agent()
