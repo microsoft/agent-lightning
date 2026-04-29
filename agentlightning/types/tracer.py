@@ -477,6 +477,18 @@ class Span(BaseModel):
             status=core.status,
         )
 
+    def ensure_start_time(self) -> float:
+        """Get the start time or raise an error if it's not set."""
+        if self.start_time is None:
+            raise ValueError("Start time is not set. Try to use the `RepairTime` adapter to repair the span.")
+        return self.start_time
+
+    def ensure_end_time(self) -> float:
+        """Get the end time or raise an error if it's not set."""
+        if self.end_time is None:
+            raise ValueError("End time is not set. Try to use the `RepairTime` adapter to repair the span.")
+        return self.end_time
+
 
 class SpanNames(str, Enum):
     """Enumerated span names recognised by Agent-lightning. Deprecated in favor of [semconv][agentlightning.semconv]."""

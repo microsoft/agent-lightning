@@ -349,6 +349,11 @@ async def debug_room_selector(limit: int = 1):
             # Get the spans and convert them to messages
             # Useful for debugging and analysis
             spans = await store.query_spans(rollout.rollout_id)
+            for span in spans:
+                console.print(
+                    f"[bold blue]=== Span {span.span_id} ({span.name}, parent {span.parent_id}) ===[/bold blue]"
+                )
+                console.print(span.attributes)
             adapter = TraceToMessages()
             messages = adapter.adapt(spans)
             for message_idx, message in enumerate(messages):
