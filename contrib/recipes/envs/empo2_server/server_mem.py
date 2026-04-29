@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import numpy as np
 import uvicorn
 from fastapi import FastAPI

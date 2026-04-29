@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import copy
 import logging
 from typing import Any, Dict
