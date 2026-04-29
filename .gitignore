@@ -218,3 +218,5 @@ agentlightning/dashboard/**/*.svg
 
 # Docker data
 docker/data/
+.cache_xdg/
+.cache_uv/
