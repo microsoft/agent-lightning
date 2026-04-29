@@ -372,6 +372,11 @@ class AgentModeDaemon:
 
         @app.route("/v1/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
         def proxy(path: str):  # type: ignore
+            # Authorization check: require valid authorization before proxying requests
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header or not auth_header.startswith("Bearer "):
+                abort(401, description="Unauthorized: Valid authorization token required.")
+            
             if not self.backend_llm_server_addresses:
                 abort(503, description="No backend LLM servers available.")
 
