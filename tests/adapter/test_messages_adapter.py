@@ -391,3 +391,114 @@ def test_trace_messages_adapter_handles_multiple_tool_calls():
     ]
 
     assert adapter.adapt(spans) == expected
+
+
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
+def test_convert_to_openai_messages_skips_messages_missing_role():
+    """Messages without a role key and no tool_calls should be silently skipped."""
+    spans = [
+        make_span(
+            "openai.chat.completion",
+            {
+                "gen_ai.prompt.0.content": "orphaned content",
+                "gen_ai.prompt.1.role": "user",
+                "gen_ai.prompt.1.content": "Hello",
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "Hi there",
+                "gen_ai.completion.0.finish_reason": "stop",
+            },
+            0,
+        ),
+    ]
+
+    adapter = TraceToMessages()
+    result = adapter.adapt(spans)
+
+    assert len(result) == 1
+    assert result[0]["messages"] == [
+        {"content": "Hello", "role": "user"},
+        {"content": "Hi there", "role": "assistant"},
+    ]
+    assert result[0]["tools"] is None
+
+
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
+def test_convert_to_openai_messages_skips_tool_calls_missing_keys():
+    """Tool call entries missing required keys should be filtered out."""
+    spans = [
+        make_span(
+            "openai.chat.completion",
+            {
+                "gen_ai.prompt.0.role": "user",
+                "gen_ai.prompt.0.content": "Do something",
+                "gen_ai.prompt.1.role": "assistant",
+                "gen_ai.prompt.1.tool_calls.0.id": "call_abc",
+                "gen_ai.prompt.1.tool_calls.0.name": "my_tool",
+                "gen_ai.prompt.1.tool_calls.0.arguments": "{}",
+                "gen_ai.prompt.1.tool_calls.1.name": "bad_tool",
+                "gen_ai.prompt.1.tool_calls.1.arguments": "{}",
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "Done",
+                "gen_ai.completion.0.finish_reason": "stop",
+            },
+            0,
+        ),
+    ]
+
+    adapter = TraceToMessages()
+    result = adapter.adapt(spans)
+
+    assert len(result) == 1
+    assistant_msg = result[0]["messages"][1]
+    assert assistant_msg["role"] == "assistant"
+    assert len(assistant_msg["tool_calls"]) == 1
+    assert assistant_msg["tool_calls"][0]["id"] == "call_abc"
+
+
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
+def test_convert_to_openai_messages_infers_assistant_role_from_tool_calls():
+    """When role is missing but tool_calls are present, infer role=assistant."""
+    tool_name = "get_weather"
+    tool_call_id = "call_abc123"
+    tool_parameters = json.dumps({"location": "Seattle"})
+
+    spans = [
+        make_span(
+            "openai.chat.completion",
+            {
+                "gen_ai.prompt.0.role": "user",
+                "gen_ai.prompt.0.content": "What is the weather?",
+                "gen_ai.prompt.1.tool_calls.0.id": tool_call_id,
+                "gen_ai.prompt.1.tool_calls.0.name": tool_name,
+                "gen_ai.prompt.1.tool_calls.0.arguments": tool_parameters,
+                "gen_ai.prompt.2.role": "tool",
+                "gen_ai.prompt.2.content": '{"temp": 55}',
+                "gen_ai.prompt.2.tool_call_id": tool_call_id,
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "It is 55F.",
+                "gen_ai.completion.0.finish_reason": "stop",
+            },
+            0,
+        ),
+    ]
+
+    adapter = TraceToMessages()
+    result = adapter.adapt(spans)
+
+    assert len(result) == 1
+    messages = result[0]["messages"]
+    assert len(messages) == 4
+    roles = [m["role"] for m in messages]
+    assert roles == ["user", "assistant", "tool", "assistant"]
+    assert messages[1]["content"] is None
+    assert len(messages[1]["tool_calls"]) == 1
+    assert messages[1]["tool_calls"][0]["id"] == tool_call_id
