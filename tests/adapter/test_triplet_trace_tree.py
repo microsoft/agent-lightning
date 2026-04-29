@@ -696,3 +696,56 @@ def test_extract_prompt_image_urls_gracefully_handles_invalid_payloads():
 
     assert tree.extract_prompt_image_urls(invalid_prompt_content) == []
     assert tree.extract_prompt_image_urls("unexpected-string") == []
+
+
+def test_tracer_trace_to_triplet_matches_chat_model_llm_spans():
+    """Verify that spans named chat_model.llm (produced by LangChain
+    with_structured_output) are captured by the default llm_call_match pattern."""
+    root = make_span("root", "session", parent_id=None, start_time=0.0, end_time=10.0)
+    agent = make_span(
+        "agent",
+        "agent.node",
+        parent_id="root",
+        start_time=1.0,
+        end_time=9.0,
+        attributes={"agent.name": "langchain-agent"},
+    )
+    structured_llm = make_span(
+        "llm-structured",
+        "chat_model.llm",
+        parent_id="agent",
+        start_time=2.0,
+        end_time=3.0,
+        attributes={
+            "gen_ai.request.type": "chat",
+            "gen_ai.system": "OpenAI",
+            "gen_ai.request.model": "gpt-4.1-mini",
+            "gen_ai.prompt.0.role": "user",
+            "gen_ai.prompt.0.content": "Extract the key facts.",
+            "gen_ai.completion.0.role": "assistant",
+            "gen_ai.completion.0.content": '{"facts": ["sky is blue"]}',
+            "gen_ai.response.id": "resp-structured",
+            "prompt_token_ids": [1, 2, 3],
+            "response_token_ids": [4, 5, 6],
+        },
+    )
+    reward = make_span(
+        "reward",
+        "agent.reward",
+        parent_id="agent",
+        start_time=4.0,
+        end_time=4.1,
+        attributes=reward_attributes(0.9),
+    )
+    spans = [root, agent, structured_llm, reward]
+
+    # Default adapter should match chat_model.llm spans
+    adapter = TracerTraceToTriplet(agent_match="langchain-agent")
+    triplets = adapter.adapt(spans)
+
+    assert len(triplets) == 1
+    assert triplets[0].prompt["token_ids"] == [1, 2, 3]
+    assert triplets[0].response["token_ids"] == [4, 5, 6]
+    assert triplets[0].metadata["response_id"] == "resp-structured"
+    assert triplets[0].metadata["agent_name"] == "langchain-agent"
+    assert triplets[0].reward == 0.9

@@ -701,7 +701,7 @@ class TraceTree:
 
     def to_trajectory(
         self,
-        llm_call_match: str = r"openai\.chat\.completion",
+        llm_call_match: str = r"(openai\.chat\.completion|chat_model\.llm)",
         agent_match: Optional[str] = None,
         exclude_llm_call_in_reward: bool = True,
         dedup_llm_call: bool = True,
@@ -786,7 +786,7 @@ class TracerTraceToTriplet(TraceToTripletBase):
     def __init__(
         self,
         repair_hierarchy: bool = True,
-        llm_call_match: str = r"openai\.chat\.completion",
+        llm_call_match: str = r"(openai\.chat\.completion|chat_model\.llm)",
         agent_match: Optional[str] = None,
         exclude_llm_call_in_reward: bool = True,
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
