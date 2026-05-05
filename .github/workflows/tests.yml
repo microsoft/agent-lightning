@@ -154,7 +154,7 @@ jobs:
           # unmarked tests: adapter, execution engine, etc.
           - id: others
             display-name: Others
-            pytest-mark: 'not store and not agentops and not weave and not llmproxy and not utils'
+            pytest-mark: 'not store and not agentops and not weave and not llmproxy and not utils and not gepa'
         env:
           - python-version: '3.10'
             setup-script: 'legacy'
