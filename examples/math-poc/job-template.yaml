@@ -9,7 +9,7 @@
 
 containers:
   - name: agent
-    image: math-agent:dev
+    image: math-poc-agent:dev
     command: ["python", "/app/qa_agent.py"]
     imagePullPolicy: Never
     resources:

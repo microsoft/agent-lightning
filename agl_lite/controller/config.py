@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ControllerSettings(BaseModel):
@@ -22,5 +22,16 @@ class ControllerSettings(BaseModel):
     # Job defaults.
     ttl_after_finished: int = 3600  # AGL_TTL_AFTER_FINISHED — ttlSecondsAfterFinished on Jobs
 
+    # Pod creation rate limiting.
+    max_pods_per_window: int = 100       # AGL_MAX_PODS_PER_WINDOW
+    rate_limit_window_seconds: int = 10  # AGL_RATE_LIMIT_WINDOW_SECONDS
+
     # Job manifest template.
     job_manifest_template: str  # AGL_JOB_MANIFEST_TEMPLATE — always required
+
+    @field_validator("max_pods_per_window", "rate_limit_window_seconds")
+    @classmethod
+    def _positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("rate limit settings must be positive")
+        return value

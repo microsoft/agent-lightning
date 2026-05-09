@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -19,10 +20,8 @@ import structlog
 from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.controller.config import ControllerSettings
 from agl_lite.controller.job_builder import build_job_name, build_job_spec
-
 from agl_lite.schemas.api import PatchRolloutRequest
 from agl_lite.schemas.rollout import Rollout, RolloutStatus
-
 
 log = structlog.get_logger()
 
@@ -40,9 +39,7 @@ def _is_invalid_spec_error(exc: Exception) -> bool:
     """
     msg = str(exc).lower()
     # kr8s raises ServerError with status code info.
-    if "422" in msg or "unprocessable" in msg or "invalid" in msg:
-        return True
-    return False
+    return "422" in msg or "unprocessable" in msg or "invalid" in msg
 
 
 # --- K8s abstraction (for testability) ---
@@ -84,6 +81,7 @@ class Reconciler:
         self._settings = settings
         self._manifest_template: str = Path(settings.job_manifest_template).read_text()
         self._stop = asyncio.Event()
+        self._pod_creation_timestamps: deque[float] = deque()
 
     async def run(self) -> None:
         """Start both reconcile loops. Blocks until stop() is called."""
@@ -124,7 +122,9 @@ class Reconciler:
             if rollout.cancel_requested:
                 await self._cancel_rollout(rollout)
             else:
-                await self._maybe_create_job(rollout)
+                should_continue = await self._maybe_create_job(rollout)
+                if not should_continue:
+                    break
 
         # 2. Handle running rollouts with cancel_requested.
         running_cancelled = await self._api.query_rollouts(
@@ -142,6 +142,9 @@ class Reconciler:
         existing_job_names = {_job_name(j) for j in existing_jobs}
         for rollout in running:
             if rollout.job_name and rollout.job_name not in existing_job_names:
+                confirmed_job = await self._k8s.get_job(rollout.job_name, self._settings.namespace)
+                if confirmed_job is not None:
+                    continue
                 log.warning(
                     "Orphaned running rollout — Job gone",
                     rollout_id=rollout.rollout_id,
@@ -155,7 +158,7 @@ class Reconciler:
                     ),
                 )
 
-    async def _maybe_create_job(self, rollout: Rollout) -> None:
+    async def _maybe_create_job(self, rollout: Rollout) -> bool:
         """Create a K8s Job for a queuing rollout."""
         # Check max queue time.
         if time.time() - rollout.created_at > self._settings.max_queue_time:
@@ -167,7 +170,7 @@ class Reconciler:
                     error_message=f"Exceeded max queue time ({self._settings.max_queue_time}s)",
                 ),
             )
-            return
+            return True
 
         # Check if Job already exists (idempotency — crash recovery).
         job_name = build_job_name(rollout.rollout_id)
@@ -179,12 +182,23 @@ class Reconciler:
                 rollout.rollout_id,
                 PatchRolloutRequest(status=RolloutStatus.RUNNING, job_name=job_name),
             )
-            return
+            return True
+
+        if not self._can_create_pod():
+            log.info(
+                "Pod creation rate limit reached — deferring queued rollouts",
+                rollout_id=rollout.rollout_id,
+                pods_in_window=len(self._pod_creation_timestamps),
+                max_pods_per_window=self._settings.max_pods_per_window,
+                rate_limit_window_seconds=self._settings.rate_limit_window_seconds,
+            )
+            return False
 
         # Build and create Job.
         manifest = build_job_spec(rollout, self._settings, self._manifest_template)
         try:
             await self._k8s.create_job(manifest)
+            self._record_pod_creation()
             log.info("Job created", rollout_id=rollout.rollout_id, job_name=job_name)
             await self._patch_rollout(
                 rollout.rollout_id,
@@ -205,6 +219,22 @@ class Reconciler:
             else:
                 # Transient error (resource shortage, API timeout) — stay queuing, retry.
                 log.warning("Job creation failed — will retry", rollout_id=rollout.rollout_id, error=error_str)
+        return True
+
+    def _trim_pod_creation_timestamps(self, now: float | None = None) -> None:
+        """Remove Pod creation timestamps outside the current sliding window."""
+        now = time.monotonic() if now is None else now
+        window_start = now - self._settings.rate_limit_window_seconds
+        while self._pod_creation_timestamps and self._pod_creation_timestamps[0] <= window_start:
+            self._pod_creation_timestamps.popleft()
+
+    def _can_create_pod(self, now: float | None = None) -> bool:
+        self._trim_pod_creation_timestamps(now)
+        return len(self._pod_creation_timestamps) < self._settings.max_pods_per_window
+
+    def _record_pod_creation(self, now: float | None = None) -> None:
+        self._trim_pod_creation_timestamps(now)
+        self._pod_creation_timestamps.append(time.monotonic() if now is None else now)
 
     async def _cancel_rollout(self, rollout: Rollout) -> None:
         """Cancel a queuing rollout (no Job exists)."""

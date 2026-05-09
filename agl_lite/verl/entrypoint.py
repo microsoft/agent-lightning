@@ -1,21 +1,21 @@
-# Copyright (c) Microsoft. All rights reserved.
+"""VERL entrypoint for agl-lite — wraps verl's PPO setup with a custom trainer.
 
-# pyright: reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false
-# pyright: reportUnknownArgumentType=false
-
-"""VERL entrypoint for agl-lite — thin wrapper around verl's run_ppo.
-
-The only customization is:
-  1. Injecting AglLiteAgentLoopManager via ``agent_loop_manager_class``
-  2. Supporting pre-loaded in-memory datasets (verl's TaskRunner loads from files)
+Customizations:
+  1. Use AglLiteRayPPOTrainer (subclass of RayPPOTrainer) that drives rollouts
+     through the agl-lite HTTP API instead of stock VERL agent loop workers.
+  2. Support pre-loaded in-memory datasets (verl's TaskRunner loads from files).
 """
+
+# VERL's PPO entrypoint helpers are imported from its runtime module because
+# they are not exposed as a stable public API in verl 0.7.1.
+# pyright: reportPrivateImportUsage=false
 
 from __future__ import annotations
 
 import os
 import socket
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any, cast
 
 import hydra
 import ray
@@ -27,9 +27,6 @@ __all__ = [
     "main",
     "run_ppo",
 ]
-
-# FQN of our custom AgentLoopManager.
-_AGL_LITE_AGENT_LOOP_MANAGER = "agl_lite.verl.agent_loop.AglLiteAgentLoopManager"
 
 
 @hydra.main(config_path="pkg://agl_lite/verl", config_name="config", version_base=None)
@@ -44,33 +41,30 @@ def run_ppo(
 ) -> None:
     """Launch VERL PPO training with agl-lite agent orchestration.
 
-    Injects ``AglLiteAgentLoopManager`` into the config and delegates to
-    verl's standard training loop. Datasets can be passed as in-memory
-    sequences or loaded from files (via ``config.data.train_files``).
+    Datasets can be passed as in-memory sequences or loaded from files
+    (via ``config.data.train_files``).
     """
-    # Ensure our agent loop manager is set in the config.
-    OmegaConf.set_struct(config, False)
-    if not config.actor_rollout_ref.rollout.get("agent"):
-        config.actor_rollout_ref.rollout.agent = {}
-    config.actor_rollout_ref.rollout.agent.agent_loop_manager_class = _AGL_LITE_AGENT_LOOP_MANAGER
-    OmegaConf.set_struct(config, True)
-
     from verl.trainer.main_ppo import get_ppo_ray_runtime_env
 
     if not ray.is_initialized():
-        default_runtime_env = get_ppo_ray_runtime_env()
-        ray_init_kwargs = OmegaConf.to_container(
-            config.ray_kwargs.get("ray_init", OmegaConf.create({}))
+        default_runtime_env = cast(dict[str, Any], get_ppo_ray_runtime_env())
+        ray_init_config = OmegaConf.to_container(config.ray_kwargs.get("ray_init", OmegaConf.create({})), resolve=True)
+        ray_init_kwargs: dict[str, Any] = (
+            {str(key): value for key, value in ray_init_config.items()} if isinstance(ray_init_config, dict) else {}
         )
-        runtime_env_kwargs = ray_init_kwargs.pop("runtime_env", {})
+        runtime_env_config = ray_init_kwargs.pop("runtime_env", {})
+        runtime_env_kwargs = dict(runtime_env_config) if isinstance(runtime_env_config, dict) else {}
         runtime_env = {**default_runtime_env, **runtime_env_kwargs}
         # Pass agl-lite env vars to Ray workers.
-        runtime_env.setdefault("env_vars", {})
-        for var in ("AGL_KEY", "AGL_BASE_URL", "AGL_MODEL_ENDPOINT", "WANDB_MODE"):
+        env_vars = runtime_env.setdefault("env_vars", {})
+        if not isinstance(env_vars, dict):
+            env_vars = {}
+            runtime_env["env_vars"] = env_vars
+        for var in ("AGL_KEY", "AGL_BASE_URL", "AGL_MODEL_ENDPOINT", "AGL_NAMESPACE", "WANDB_MODE"):
             val = os.environ.get(var)
             if val:
-                runtime_env["env_vars"][var] = val
-        _temp_dir = os.environ.get("RAY_tmpdir")
+                env_vars[var] = val
+        _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
             runtime_env=runtime_env,
             **({"_temp_dir": _temp_dir} if _temp_dir else {}),
@@ -81,7 +75,7 @@ def run_ppo(
     train_ds = LoadedDataset(train_dataset) if train_dataset is not None else None
     val_ds = LoadedDataset(val_dataset) if val_dataset is not None else None
 
-    runner = _AglTaskRunner.remote()
+    runner = cast(Any, _AglTaskRunner).remote()
     ray.get(runner.run.remote(config, train_ds, val_ds))
 
 
@@ -103,10 +97,11 @@ class _AglTaskRunner:
             need_reference_policy,
             validate_config,
         )
-        from verl.trainer.ppo.ray_trainer import RayPPOTrainer, ResourcePoolManager
         from verl.utils.dataset.rl_dataset import collate_fn
         from verl.utils.fs import copy_to_local
         from verl.utils.tokenizer import hf_processor, hf_tokenizer
+
+        from agl_lite.verl.trainer import AglLiteRayPPOTrainer
 
         print(f"AglTaskRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
         pprint(OmegaConf.to_container(config, resolve=True))
@@ -154,7 +149,7 @@ class _AglTaskRunner:
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
 
-        trainer = RayPPOTrainer(
+        trainer = AglLiteRayPPOTrainer(
             config=config,
             tokenizer=tokenizer,
             processor=processor,

@@ -29,6 +29,16 @@ spec:
               value: "10"
             - name: AGL_MAX_QUEUE_TIME
               value: "3600"
+            - name: AGL_MAX_PODS_PER_WINDOW
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_MAX_PODS_PER_WINDOW
+            - name: AGL_RATE_LIMIT_WINDOW_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: agl-lite-config
+                  key: AGL_RATE_LIMIT_WINDOW_SECONDS
             - name: AGL_KEY
               valueFrom:
                 secretKeyRef:

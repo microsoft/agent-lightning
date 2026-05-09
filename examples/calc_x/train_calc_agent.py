@@ -27,15 +27,16 @@ from __future__ import annotations
 
 import argparse
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Dict, Optional, Sequence, cast
+from typing import Any, cast
 
 from datasets import Dataset as HuggingFaceDataset
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 
-def verl_default_config() -> Dict[str, Any]:
+def verl_default_config() -> dict[str, Any]:
     """VERL config overrides for Calc-X training.
 
     These are merged on top of agl-lite's base config
@@ -91,12 +92,12 @@ def verl_default_config() -> Dict[str, Any]:
             },
         },
         "trainer": {
-            "n_gpus_per_node": 1,
+            "n_gpus_per_node": 4,
             "val_before_train": True,
             "critic_warmup": 0,
             "logger": ["console"],
             "project_name": "agl-lite",
-            "experiment_name": "calc_x",
+            "experiment_name": "calc_x_v1",
             "nnodes": 1,
             "save_freq": 64,
             "test_freq": 32,
@@ -107,7 +108,7 @@ def verl_default_config() -> Dict[str, Any]:
 
 def build_config(
     *,
-    model: Optional[str] = None,
+    model: str | None = None,
     ci: bool = False,
     ci_fast: bool = False,
 ) -> Any:
@@ -157,7 +158,7 @@ def train(
     *,
     train_file: str,
     val_file: str,
-    model: Optional[str] = None,
+    model: str | None = None,
     ci: bool = False,
     ci_fast: bool = False,
 ) -> None:

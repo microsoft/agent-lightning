@@ -5,60 +5,88 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
-source "$SCRIPT_DIR/.env.example"
+DEPLOY_CONFIG="$SCRIPT_DIR/.env.example"
+if [ ! -f "$DEPLOY_CONFIG" ]; then
+  echo "ERROR: $DEPLOY_CONFIG not found"
+  exit 1
+fi
+source "$DEPLOY_CONFIG"
+CONFIG_NAMESPACE="${AGL_NAMESPACE:?AGL_NAMESPACE not set}"
+
+STATE_ENV="${AGL_LOCAL_STATE_DIR:-.local}/agl-lite.env"
+if [ -z "${AGL_KEY:-}" ] && [ -f "$STATE_ENV" ]; then
+  echo "=== Loading AGL_KEY from $STATE_ENV ==="
+  source "$STATE_ENV"
+fi
 
 if [ -z "${AGL_KEY:-}" ]; then
-  echo "ERROR: AGL_KEY not set. Run: export AGL_KEY=\$(openssl rand -hex 32)"
+  echo "ERROR: AGL_KEY not set. Either:"
+  echo "  export AGL_KEY=\$(openssl rand -hex 32)"
+  echo "  or run 'agl-lite deploy' first (stores key in $STATE_ENV)"
   exit 1
 fi
 
 LOG_DIR="$SCRIPT_DIR/logs/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$LOG_DIR"
+export AGL_LOG_DIR="$LOG_DIR"
 
 echo "=== math-verl training ==="
 echo "logs: $LOG_DIR"
 
-echo "Reminder: controller/minikube should already be running (e.g. scripts/deploy.sh --agl-in-host)"
+if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'agl-vllm'; then
+  echo "=== Stopping external agl-vllm; math-verl starts its own VERL vLLM server ==="
+  scripts/start_vllm.sh --stop
+fi
 
-SERVE_PID=""
-cleanup() {
-  [ -n "$SERVE_PID" ] && kill "$SERVE_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
+echo "=== Building images ==="
+scripts/build_images.sh --include-example math-poc
 
-# Start agl-lite serve on host
-SERVE_CMD=(uv run agl-lite serve --host 0.0.0.0 --port 8080)
-[ -n "${AGL_GATEWAY_CONFIG:-}" ] && SERVE_CMD+=(--gateway-config "$AGL_GATEWAY_CONFIG")
-[ -n "${AGL_HOOKS:-}" ] && SERVE_CMD+=(--hooks "$AGL_HOOKS")
+NS="$CONFIG_NAMESPACE"
+echo "=== Deploying agl-lite namespace: $NS ==="
+if kubectl get namespace "$NS" >/dev/null 2>&1; then
+  echo "=== Cleaning up previous deployment in namespace: $NS ==="
+  uv run agl-lite deploy --env-file "$DEPLOY_CONFIG" --cleanup
+fi
+uv run agl-lite deploy --env-file "$DEPLOY_CONFIG"
 
-echo "Starting agl-lite serve: ${SERVE_CMD[*]}"
-AGL_KEY="$AGL_KEY" "${SERVE_CMD[@]}" > "$LOG_DIR/agl-lite.log" 2>&1 &
-SERVE_PID=$!
-
-for i in $(seq 1 30); do
-  if curl -sf "$AGL_BASE_URL/healthz" >/dev/null 2>&1; then
-    echo "agl-lite ready"
+AGL_HOST_URL="http://localhost:${AGL_HOST_PORT:-8080}"
+echo "=== Waiting for agl-lite at $AGL_HOST_URL ==="
+READY=false
+for i in $(seq 1 40); do
+  if curl -sf "$AGL_HOST_URL/healthz" >/dev/null 2>&1; then
+    echo "  agl-lite ready"
+    READY=true
     break
-  fi
-  if ! kill -0 "$SERVE_PID" 2>/dev/null; then
-    echo "ERROR: agl-lite serve exited"
-    tail -40 "$LOG_DIR/agl-lite.log" || true
-    exit 1
   fi
   sleep 1
 done
+if [ "$READY" != true ]; then
+  echo "ERROR: agl-lite did not become ready"
+  exit 1
+fi
 
-export AGL_BASE_URL
+if [ -f "$STATE_ENV" ]; then
+  source "$STATE_ENV"
+fi
+
+export AGL_BASE_URL=${AGL_BASE_URL:-$AGL_HOST_URL}
 export AGL_MODEL_NAME
 export AGL_KEY
+export AGL_NAMESPACE="$NS"
+
+SMOKE_ARGS=()
+if [ "${AGL_VERL_SMOKE_ROLLOUT_CHECK:-false}" = "true" ]; then
+  SMOKE_ARGS+=(--smoke-rollout-check)
+fi
 
 echo "Running VERL training..."
-uv run python examples/math-verl/train.py \
+.venv/bin/python examples/math-verl/train.py \
   --total-steps "${AGL_VERL_TOTAL_STEPS:-1}" \
   --rollout-n "${AGL_VERL_ROLLOUT_N:-2}" \
   --val-size "${AGL_VERL_VAL_SIZE:-5}" \
   --experiment-name "${AGL_VERL_EXPERIMENT_NAME:-math_verl_smoke}" \
-  --smoke-rollout-check \
+  "${SMOKE_ARGS[@]}" \
   2>&1 | tee "$LOG_DIR/train.log"
 
 echo "Done. Logs: $LOG_DIR"
+echo "To tear down: uv run agl-lite deploy --env-file $DEPLOY_CONFIG --cleanup"

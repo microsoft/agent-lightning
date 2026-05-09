@@ -103,6 +103,9 @@ AGL_HOST_PORT=8080
 # optional: custom Jinja2 job manifest template for the controller
 # AGL_JOB_MANIFEST_TEMPLATE=/path/to/job-template.yaml.j2
 
+AGL_MAX_PODS_PER_WINDOW=100
+AGL_RATE_LIMIT_WINDOW_SECONDS=10
+
 # AGL_GATEWAY_CONFIG=
 # AGL_HOOKS=
 # AGL_ARTIFACT_DIR=
@@ -125,6 +128,8 @@ Field summary:
 | `AGL_HOST_IP_BIND` | `0.0.0.0` | bind IP for host `agl-lite serve` (host mode) |
 | `AGL_HOST_PORT` | `8080` | host serve port and local host-facing URL port |
 | `AGL_JOB_MANIFEST_TEMPLATE` | — | path to custom Jinja2 job manifest template; defaults to `deploy/controller/job-template.yaml.j2` |
+| `AGL_MAX_PODS_PER_WINDOW` | `100` | max agent Jobs the controller creates per rate-limit window |
+| `AGL_RATE_LIMIT_WINDOW_SECONDS` | `10` | sliding window size for controller Pod creation rate limiting |
 | `AGL_GATEWAY_CONFIG` | — | optional gateway config path |
 | `AGL_HOOKS` | — | optional hooks module path |
 | `AGL_ARTIFACT_DIR` | — | optional artifact directory |

@@ -1,48 +1,45 @@
 #!/bin/bash
-# Install VERL training dependencies with GPU support.
+# Install VERL training dependencies with a pinned GPU stack.
 #
-# Auto-detects CUDA version and uses the matching PyTorch wheel index.
+# Default stack:
+#   Mirrors the known-good .venv.bak environment:
+#   torch==2.8.0, torchvision==0.23.0, torchaudio==2.8.0,
+#   vllm==0.10.2, verl==0.7.1, transformers==4.57.1,
+#   ray==2.49.2, numpy==1.26.4, flash-attn==2.8.3.
+#
 # Run from the repo root:
 #
-#   scripts/setup_verl.sh              # auto-detect CUDA
-#   scripts/setup_verl.sh cu126        # force CUDA 12.6
-#   scripts/setup_verl.sh cpu          # CPU-only (no GPU)
+#   scripts/setup_verl.sh              # CUDA 12.8 PyTorch wheels
+#   scripts/setup_verl.sh cu126        # force CUDA 12.6 PyTorch wheels
+#   scripts/setup_verl.sh cpu          # CPU-only PyTorch wheels; skips flash-attn
 #
-# This installs the [verl] optional dependency group from pyproject.toml
-# with the correct PyTorch CUDA wheels.
+# This intentionally does not use `uv sync --extra verl`, because the resolver
+# can select newer torch/vllm versions that are binary-incompatible with an
+# already-built flash-attn extension.
 set -euo pipefail
 
-# --- Detect or accept CUDA variant ---
-if [ -n "${1:-}" ]; then
-    VARIANT="$1"
-    echo "Using specified variant: $VARIANT"
-else
-    # Auto-detect from nvcc
-    if command -v nvcc &> /dev/null; then
-        CUDA_VERSION=$(nvcc --version | grep -oP 'release \K[0-9]+\.[0-9]+')
-        CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
-        CUDA_MINOR=$(echo "$CUDA_VERSION" | cut -d. -f2)
-        EXACT="cu${CUDA_MAJOR}${CUDA_MINOR}"
+# --- Pinned versions ---
+PYTHON_BIN=".venv/bin/python"
+TORCH_VERSION="2.8.0"
+TORCHVISION_VERSION="0.23.0"
+TORCHAUDIO_VERSION="2.8.0"
+VERL_VERSION="0.7.1"
+VLLM_VERSION="0.10.2"
+FLASH_ATTN_VERSION="2.8.3"
+RAY_VERSION="2.49.2"
+TRANSFORMERS_VERSION="4.57.1"
+TOKENIZERS_VERSION="0.22.2"
+NUMPY_VERSION="1.26.4"
+TRITON_VERSION="3.4.0"
+ACCELERATE_VERSION="1.13.0"
+DATASETS_VERSION="4.8.4"
+HYDRA_CORE_VERSION="1.3.2"
+OMEGACONF_VERSION="2.3.0"
+XFORMERS_VERSION="0.0.32.post1"
 
-        # PyTorch only publishes certain indexes (e.g., cu126, cu128, cu130).
-        # Try exact match first, then round minor down to 0.
-        ROUNDED="cu${CUDA_MAJOR}0"
-        if curl -sf "https://download.pytorch.org/whl/${EXACT}/torch/" > /dev/null 2>&1; then
-            VARIANT="$EXACT"
-        elif curl -sf "https://download.pytorch.org/whl/${ROUNDED}/torch/" > /dev/null 2>&1; then
-            echo "Detected CUDA $CUDA_VERSION — exact index $EXACT not found, using $ROUNDED"
-            VARIANT="$ROUNDED"
-        else
-            VARIANT="$EXACT"  # let user decide
-        fi
-        echo "Detected CUDA $CUDA_VERSION → PyTorch index: $VARIANT"
-    else
-        echo "WARNING: nvcc not found. Falling back to CPU-only PyTorch."
-        echo "  For GPU support, install CUDA toolkit or specify variant:"
-        echo "    $0 cu130"
-        VARIANT="cpu"
-    fi
-fi
+# --- CUDA variant ---
+VARIANT="${1:-cu128}"
+echo "Using PyTorch wheel variant: $VARIANT"
 
 if [ "$VARIANT" = "cpu" ]; then
     TORCH_INDEX="https://download.pytorch.org/whl/cpu"
@@ -53,6 +50,15 @@ fi
 echo ""
 echo "=== Installing VERL deps ==="
 echo "  PyTorch index: $TORCH_INDEX"
+echo "  torch==$TORCH_VERSION"
+echo "  torchvision==$TORCHVISION_VERSION"
+echo "  torchaudio==$TORCHAUDIO_VERSION"
+echo "  verl==$VERL_VERSION"
+echo "  vllm==$VLLM_VERSION"
+echo "  transformers==$TRANSFORMERS_VERSION"
+echo "  ray==$RAY_VERSION"
+echo "  numpy==$NUMPY_VERSION"
+echo "  flash-attn==$FLASH_ATTN_VERSION"
 echo ""
 
 # Verify the index is reachable
@@ -68,24 +74,97 @@ if ! curl -sf "${TORCH_INDEX}/torch/" > /dev/null 2>&1; then
     fi
 fi
 
-uv sync --extra verl --extra dev --index "pytorch=${TORCH_INDEX}" --index-strategy unsafe-best-match
-
-# Phase 2: Install flash-attn (source-only on PyPI, needs torch at build time).
-# Must happen after torch is installed.
 echo ""
-echo "=== Installing flash-attn (requires compilation) ==="
-uv pip install "flash-attn>=2.8.3" --no-build-isolation
+echo "=== Syncing base project deps (without [verl] extra) ==="
+uv sync --extra controller --extra dev
+
+if [ ! -x "$PYTHON_BIN" ]; then
+    echo "ERROR: expected Python executable not found: $PYTHON_BIN"
+    exit 1
+fi
+
+echo ""
+echo "=== Installing pip into .venv ==="
+uv pip install --python "$PYTHON_BIN" pip
+
+echo ""
+echo "=== Installing pinned PyTorch stack ==="
+uv pip install --python "$PYTHON_BIN" \
+    "torch==$TORCH_VERSION" \
+    "torchvision==$TORCHVISION_VERSION" \
+    "torchaudio==$TORCHAUDIO_VERSION" \
+    --index-url "$TORCH_INDEX"
+
+echo ""
+echo "=== Installing pinned VERL runtime stack ==="
+RUNTIME_PACKAGES=(
+    "numpy==$NUMPY_VERSION"
+    "triton==$TRITON_VERSION"
+    "ray==$RAY_VERSION"
+    "transformers==$TRANSFORMERS_VERSION"
+    "tokenizers==$TOKENIZERS_VERSION"
+    "accelerate==$ACCELERATE_VERSION"
+    "datasets==$DATASETS_VERSION"
+    "hydra-core==$HYDRA_CORE_VERSION"
+    "omegaconf==$OMEGACONF_VERSION"
+    "verl==$VERL_VERSION"
+    "vllm==$VLLM_VERSION"
+)
+if [ "$VARIANT" != "cpu" ]; then
+    RUNTIME_PACKAGES+=("xformers==$XFORMERS_VERSION")
+fi
+uv pip install --python "$PYTHON_BIN" "${RUNTIME_PACKAGES[@]}"
+
+echo ""
+if [ "$VARIANT" = "cpu" ]; then
+    echo "=== Skipping flash-attn for CPU-only setup ==="
+else
+    # flash-attn must be installed after torch/verl/vllm settle on the final
+    # torch ABI. Installing it earlier can produce undefined-symbol crashes.
+    echo "=== Installing flash-attn against final torch ==="
+    uv pip install --python "$PYTHON_BIN" "flash-attn==$FLASH_ATTN_VERSION" --no-build-isolation
+fi
 
 echo ""
 echo "=== Verifying installation ==="
-uv run python -c "
+"$PYTHON_BIN" - <<'PY'
+import importlib.metadata as md
+
 import torch
-print(f'  torch={torch.__version__}, cuda={torch.cuda.is_available()}, devices={torch.cuda.device_count()}')
-import vllm; print(f'  vllm={vllm.__version__}')
-import verl; print(f'  verl={verl.__version__}')
-import ray; print(f'  ray={ray.__version__}')
-import transformers; print(f'  transformers={transformers.__version__}')
-"
+
+print(f"  torch={torch.__version__}, cuda={torch.cuda.is_available()}, devices={torch.cuda.device_count()}")
+for package in (
+    "torchvision",
+    "torchaudio",
+    "vllm",
+    "verl",
+    "ray",
+    "transformers",
+    "tokenizers",
+    "numpy",
+    "triton",
+    "accelerate",
+    "datasets",
+    "hydra-core",
+    "omegaconf",
+    "xformers",
+    "flash-attn",
+):
+    try:
+        print(f"  {package}={md.version(package)}")
+    except md.PackageNotFoundError:
+        print(f"  {package}=not installed")
+
+try:
+    import flash_attn_2_cuda  # noqa: F401
+except ImportError as exc:
+    if md.version("torch").endswith("+cpu"):
+        print("  flash_attn_2_cuda=skipped for CPU torch")
+    else:
+        raise SystemExit(f"flash_attn_2_cuda import failed: {exc}") from exc
+else:
+    print("  flash_attn_2_cuda=ok")
+PY
 
 echo ""
 echo "=== Done ==="

@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Train math task with VERL via agl-lite (math-verl example).
 
-This script is the Phase 5c bridge for the first training E2E:
-- Reuses math-poc dataset + vLLM job template
+This script is the training E2E bridge:
+- Reuses math-poc dataset + agent pod template
 - Registers `job_template` resources in agl-lite
 - Builds VERL config and calls `agl_lite.verl.entrypoint.run_ppo(...)`
 
 Prerequisites:
-- agl-lite serve running
-- controller running in K8s
-- hooks loaded in serve (default: examples/math-poc/vllm/hooks.py)
+- agl-lite deployed with examples/math-verl/.env.example
 - VERL dependencies available in current Python env
 
 Env vars:
 - AGL_BASE_URL (default: http://localhost:8080)
 - AGL_KEY (required)
+- AGL_NAMESPACE (required by VERL cleanup)
 - AGL_MODEL_NAME (default: Qwen/Qwen2.5-1.5B-Instruct)
 """
 
@@ -22,15 +22,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.resources
 import json
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import yaml
+from hydra import compose, initialize_config_dir
+from omegaconf import DictConfig, OmegaConf
 
 # Import from repo root when running as script
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -93,8 +96,7 @@ async def preflight_and_prepare_resources(
         _ = await client.list_models()
 
         # 3) add resources with math-poc job template
-        mode_dir = REPO_ROOT / "examples" / "math-poc" / "vllm"
-        template_path = mode_dir / "job-template.yaml"
+        template_path = REPO_ROOT / "examples" / "math-poc" / "job-template.yaml"
         with template_path.open() as f:
             job_template = yaml.safe_load(f)
         res = await client.add_resources({"job_template": job_template})
@@ -132,8 +134,8 @@ def build_verl_config(
     rollout_n: int,
     total_steps: int,
     experiment_name: str,
-) -> dict[str, Any]:
-    return {
+) -> DictConfig:
+    overrides = {
         "algorithm": {
             "adv_estimator": "grpo",
             "use_kl_in_reward": False,
@@ -195,7 +197,7 @@ def build_verl_config(
             "agl_key": agl_key,
             "resources_id": resources_id,
             "trace_aggregator": {
-                "level": "transition",
+                "level": "trajectory",
                 "trajectory_max_prompt_length": 2048,
                 "trajectory_max_response_length": 8192,
                 "debug": False,
@@ -203,6 +205,13 @@ def build_verl_config(
             },
         },
     }
+
+    verl_pkg = importlib.resources.files("agl_lite.verl")
+    with initialize_config_dir(config_dir=str(verl_pkg), version_base=None):
+        base_cfg = compose(config_name="config")
+
+    OmegaConf.set_struct(base_cfg, False)
+    return cast(DictConfig, OmegaConf.merge(base_cfg, OmegaConf.create(overrides)))
 
 
 def parse_args() -> argparse.Namespace:

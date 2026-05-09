@@ -106,7 +106,7 @@ PF_PID=""
 PF_PORT="${AGL_LOCAL_PORT:-18080}"
 PF_LOG="$LOG_DIR/port-forward.log"
 
-# vLLM mode: deploy.sh --agl-in-host launches agl-lite on host.
+# vLLM mode: agl-lite deploy starts agl-lite on the host.
 if [ "$MODE" = "vllm" ]; then
     echo ""
     echo "=== Waiting for host agl-lite service ==="
@@ -164,7 +164,7 @@ cleanup() {
     [ -n "$PF_PID" ] && kill $PF_PID 2>/dev/null || true
     [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
     echo "Logs saved to: $LOG_DIR"
-    echo "To tear down: uv run agl-lite deploy --config $DEPLOY_CONFIG --cleanup"
+    echo "To tear down: uv run agl-lite deploy --env-file $DEPLOY_CONFIG --cleanup"
 }
 trap cleanup EXIT
 

@@ -4,24 +4,22 @@
 
 FROM python:3.12-slim
 
-# uv + uvx are needed for MCP server: `uvx mcp-server-calculator`
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uvx /usr/local/bin/uvx
+ENV PYTHONUNBUFFERED=1
 
 RUN pip install --no-cache-dir \
     openai \
     httpx \
     "autogen-agentchat" \
     "autogen-ext[openai]" \
-    "mcp>=1.10.0"
-
-# Pre-install the MCP calculator package so `uvx mcp-server-calculator`
-# doesn't need to download it at runtime (which causes 5s init timeouts).
-RUN uv tool install mcp-server-calculator
-
-# Make uv-installed tools available on PATH.
-ENV PATH="/root/.local/bin:$PATH"
+    "mcp>=1.10.0" \
+    mcp-server-calculator
 
 COPY agents/calc_agent.py /app/calc_agent.py
 
 WORKDIR /app
+
+RUN python -m compileall -q "$(python -c 'import site; print(site.getsitepackages()[0])')" /app
+RUN python -c "import mcp_server_calculator" \
+    && timeout 3 python -m mcp_server_calculator; \
+    status=$?; \
+    if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agl_lite.client import AglLiteClient, AglLiteError
+from agl_lite.client import AglLiteClient
 from agl_lite.controller.config import ControllerSettings
 from agl_lite.controller.job_builder import build_job_name
 from agl_lite.controller.reconciler import Reconciler, _rollout_id_from_job
@@ -210,6 +210,75 @@ class TestReconcileCreateJobs:
         assert "max queue time" in patch.error_message
 
 
+class TestPodCreationRateLimit:
+    async def test_respects_max_pods_per_window(self, mock_api: AsyncMock, mock_k8s: MockK8s):
+        rollouts = [_rollout(f"r{i}") for i in range(3)]
+        mock_api.query_rollouts = AsyncMock(side_effect=[rollouts, [], []])
+
+        rec = Reconciler(mock_api, mock_k8s, _settings(max_pods_per_window=2, rate_limit_window_seconds=10))
+        await rec._reconcile_once()
+
+        assert mock_k8s.create_job.call_count == 2
+        assert set(mock_k8s.jobs) == {"agl-rollout-r0", "agl-rollout-r1"}
+        patched_ids = [call_args[0][0] for call_args in mock_api.patch_rollout.call_args_list]
+        assert patched_ids == ["r0", "r1"]
+
+    async def test_allows_creation_after_window_expires(self, mock_api: AsyncMock, mock_k8s: MockK8s):
+        r = _rollout("r1")
+        mock_api.query_rollouts = AsyncMock(side_effect=[[r], [], []])
+
+        rec = Reconciler(mock_api, mock_k8s, _settings(max_pods_per_window=1, rate_limit_window_seconds=10))
+        rec._record_pod_creation(now=time.monotonic() - 11)
+        await rec._reconcile_once()
+
+        mock_k8s.create_job.assert_called_once()
+        assert len(rec._pod_creation_timestamps) == 1
+
+    async def test_failed_creation_does_not_consume_capacity(self, mock_api: AsyncMock, mock_k8s: MockK8s):
+        rollouts = [_rollout("r1"), _rollout("r2")]
+        mock_api.query_rollouts = AsyncMock(side_effect=[rollouts, [], []])
+
+        async def create_job(manifest: dict) -> None:
+            if manifest["metadata"]["name"] == "agl-rollout-r1":
+                raise Exception("quota exceeded")
+            await mock_k8s._create_job(manifest)
+
+        mock_k8s.create_job = AsyncMock(side_effect=create_job)
+        rec = Reconciler(mock_api, mock_k8s, _settings(max_pods_per_window=1, rate_limit_window_seconds=10))
+        await rec._reconcile_once()
+
+        assert mock_k8s.create_job.call_count == 2
+        assert set(mock_k8s.jobs) == {"agl-rollout-r2"}
+        mock_api.patch_rollout.assert_called_once()
+        assert mock_api.patch_rollout.call_args[0][0] == "r2"
+        assert len(rec._pod_creation_timestamps) == 1
+
+    async def test_existing_job_status_repair_bypasses_rate_limit(self, mock_api: AsyncMock, mock_k8s: MockK8s):
+        r = _rollout("r1")
+        mock_api.query_rollouts = AsyncMock(side_effect=[[r], [], []])
+        mock_k8s.jobs["agl-rollout-r1"] = _job_dict("r1")
+
+        rec = Reconciler(mock_api, mock_k8s, _settings(max_pods_per_window=1, rate_limit_window_seconds=10))
+        rec._record_pod_creation()
+        await rec._reconcile_once()
+
+        mock_k8s.create_job.assert_not_called()
+        mock_api.patch_rollout.assert_called_once()
+        patch = mock_api.patch_rollout.call_args[0][1]
+        assert patch.status == RolloutStatus.RUNNING
+
+    async def test_rate_limited_rollout_stays_queuing(self, mock_api: AsyncMock, mock_k8s: MockK8s):
+        r = _rollout("r1")
+        mock_api.query_rollouts = AsyncMock(side_effect=[[r], [], []])
+
+        rec = Reconciler(mock_api, mock_k8s, _settings(max_pods_per_window=1, rate_limit_window_seconds=10))
+        rec._record_pod_creation()
+        await rec._reconcile_once()
+
+        mock_k8s.create_job.assert_not_called()
+        mock_api.patch_rollout.assert_not_called()
+
+
 class TestReconcileCancellation:
     async def test_cancel_queuing_rollout(self, mock_api: AsyncMock, mock_k8s: MockK8s):
         r = _rollout("r1", cancel_requested=True)
@@ -280,6 +349,29 @@ class TestCrashRecovery:
         rec = Reconciler(mock_api, mock_k8s, _settings())
         await rec._reconcile_once()
 
+        mock_api.patch_rollout.assert_not_called()
+
+    async def test_running_rollout_rechecks_job_when_list_is_stale(
+        self,
+        mock_api: AsyncMock,
+        mock_k8s: MockK8s,
+    ):
+        """A stale list_jobs result must not mark a live Job as disappeared."""
+        r = _rollout("r1", status=RolloutStatus.RUNNING, job_name="agl-rollout-r1")
+        mock_api.query_rollouts = AsyncMock(
+            side_effect=[
+                [],  # queuing
+                [],  # running+cancelled
+                [r],  # running (crash recovery)
+            ]
+        )
+        mock_k8s.jobs["agl-rollout-r1"] = _job_dict("r1")
+        mock_k8s.list_jobs = AsyncMock(return_value=[])
+
+        rec = Reconciler(mock_api, mock_k8s, _settings())
+        await rec._reconcile_once()
+
+        mock_k8s.get_job.assert_called_with("agl-rollout-r1", "default")
         mock_api.patch_rollout.assert_not_called()
 
 

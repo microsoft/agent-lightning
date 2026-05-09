@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, cast
 
 from swebench.harness.test_spec.test_spec import make_test_spec
 
@@ -31,15 +31,16 @@ class SWEBenchHooks(RolloutHooks):
             raise ValueError("SWE-bench input must be a dict with 'instance_id'")
 
         instance_id = instance["instance_id"]
-        safe_id = instance_id.lower().replace("__", "_1776_")
+        image_namespace = os.environ.get("AGL_SWEBENCH_IMAGE_NAMESPACE", "swebench")
+
+        # Generate eval script and image name from the same TestSpec so the hook
+        # matches the images built by examples/swe_bench/build_images.py.
+        test_spec = make_test_spec(cast(Any, instance), namespace=image_namespace)
 
         # 1. Deep copy template and set per-instance image.
         pod_spec = self.copy_pod_spec()
         agent = self.get_container(pod_spec, "agent")
-        agent["image"] = f"swebench/sweb.eval.x86_64.{safe_id}:latest"
-
-        # 2. Generate eval script via swebench (pure CPU, ~ms).
-        test_spec = make_test_spec(instance)
+        agent["image"] = test_spec.instance_image_key
 
         # 3. Inject per-sample env vars directly into the agent container.
         agent.setdefault("env", [])
