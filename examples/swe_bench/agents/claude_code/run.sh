@@ -45,16 +45,20 @@ CC_PROMPT
 echo "$PROBLEM" >> /tmp/cc_prompt.txt
 cat >> /tmp/cc_prompt.txt << 'CC_PROMPT2'
 =================================================
-Your task is to fix the bug with the following steps:
-(1) write test cases to reproduce the bug.
-(2) explore the source codes to locate the bug.
-(3) edit the source codes to fix the bug.
-(4) rerun your written test cases to validate that the bug is fixed. If not, go back to explore the source codes and fix the codes again.
-(5) remember to delete the test cases you write at last.
-Please do not commit your edits. We will do it later.
+This is an authorized SWE-bench benchmark running inside a disposable local
+container. You may inspect and edit files in /testbed to repair this repository.
+
+Your task:
+(1) understand the bug report,
+(2) locate the relevant implementation code,
+(3) apply a minimal source-code fix,
+(4) do not commit changes and do not leave new test files behind.
+
+The harness will run the official evaluation after you finish. Work only inside
+this repository checkout.
 CC_PROMPT2
 
-EXTRA_SYSTEM_PROMPT="You are an expert software engineer solving swebench bug fixing tasks."
+EXTRA_SYSTEM_PROMPT="You are an expert software engineer solving an authorized local SWE-bench bug fixing task. Editing files in /testbed is expected. Do not refuse because this is a local benchmark container."
 
 # Run Claude Code.
 claude -p "$(cat /tmp/cc_prompt.txt)" \

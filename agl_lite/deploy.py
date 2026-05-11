@@ -8,8 +8,10 @@ import shlex
 import subprocess
 import tempfile
 import time
-from enum import Enum
+from contextlib import suppress
+from enum import StrEnum
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import typer
@@ -20,7 +22,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 SECRET_NAME = "agl-lite-keys"
 
 
-class DeployMode(str, Enum):
+class DeployMode(StrEnum):
     IN_K8S = "agl-in-k8s"
     IN_HOST = "agl-in-host"
     EXTERNAL = "agl-external"
@@ -48,6 +50,8 @@ class DeploySettings(BaseSettings):
     host_port: int = 8080
 
     job_manifest_template: str = "deploy/controller/job-template.yaml.j2"
+    max_pods_per_window: int = 100
+    rate_limit_window_seconds: int = 10
 
     # User pod spec template — plain YAML file loaded by the base RolloutHooks.on_startup
     # into self._pod_spec (AGL_POD_SPEC_TEMPLATE).  Often the job-template.yaml in the
@@ -90,9 +94,8 @@ class DeploySettings(BaseSettings):
         if self.mode == DeployMode.IN_K8S:
             if self.base_url_k8s_accessible is not None:
                 raise ValueError("AGL_BASE_URL_K8S_ACCESSIBLE must be unset when mode=agl-in-k8s")
-        elif self.mode == DeployMode.EXTERNAL:
-            if not self.base_url_k8s_accessible:
-                raise ValueError("AGL_BASE_URL_K8S_ACCESSIBLE is required when mode=agl-external")
+        elif self.mode == DeployMode.EXTERNAL and not self.base_url_k8s_accessible:
+            raise ValueError("AGL_BASE_URL_K8S_ACCESSIBLE is required when mode=agl-external")
         return self
 
 
@@ -131,10 +134,8 @@ def _stop_host_server(pid_file: Path) -> None:
         return
 
     typer.echo(f"--- Stopping host agl-lite server (pid={pid}) ---")
-    try:
+    with suppress(OSError):
         os.kill(pid, 15)
-    except OSError:
-        pass
     pid_file.unlink(missing_ok=True)
 
 
@@ -191,7 +192,8 @@ def _load_settings(env_file: Path) -> DeploySettings:
     if not env_file.exists():
         raise typer.BadParameter(f"Env file not found: {env_file}")
     try:
-        return DeploySettings(_env_file=str(env_file))
+        settings_cls = cast(Any, DeploySettings)
+        return settings_cls(_env_file=str(env_file))
     except Exception as e:
         raise typer.BadParameter(f"Invalid deploy config: {e}") from e
 
@@ -312,6 +314,8 @@ def deploy(env_file: str, cleanup: bool) -> None:
     cm_env: dict[str, str] = {
         "AGL_NAMESPACE": ns,
         "AGL_BASE_URL": k8s_accessible_url,
+        "AGL_MAX_PODS_PER_WINDOW": str(cfg.max_pods_per_window),
+        "AGL_RATE_LIMIT_WINDOW_SECONDS": str(cfg.rate_limit_window_seconds),
     }
     if cfg.gateway_config:
         cm_env["AGL_GATEWAY_CONFIG"] = cfg.gateway_config
@@ -326,7 +330,9 @@ def deploy(env_file: str, cleanup: bool) -> None:
 
     try:
         _run_shell(
-            f"kubectl -n {shlex.quote(ns)} create configmap agl-lite-config --from-env-file={shlex.quote(tmp_env)} --dry-run=client -o yaml | kubectl apply -f -"
+            f"kubectl -n {shlex.quote(ns)} create configmap agl-lite-config"
+            f" --from-env-file={shlex.quote(tmp_env)}"
+            " --dry-run=client -o yaml | kubectl apply -f -"
         )
     finally:
         Path(tmp_env).unlink(missing_ok=True)
@@ -350,7 +356,15 @@ def deploy(env_file: str, cleanup: bool) -> None:
     timeout = f"{cfg.wait_ready_timeout_seconds}s"
     if cfg.mode == DeployMode.IN_K8S:
         _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-lite", f"--timeout={timeout}"])
-    _run(["kubectl", "-n", ns, "wait", "--for=condition=available", "deployment/agl-controller", f"--timeout={timeout}"])
+    _run([
+        "kubectl",
+        "-n",
+        ns,
+        "wait",
+        "--for=condition=available",
+        "deployment/agl-controller",
+        f"--timeout={timeout}",
+    ])
 
     local_state_dir.mkdir(parents=True, exist_ok=True)
     env_out.write_text(

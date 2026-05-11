@@ -101,7 +101,7 @@ The controller uses the standard K8s controller pattern — watch + periodic rec
    → on any Job status change, reconcile that rollout
 
 2. POLL Store: query rollouts in "queuing" or with cancel_requested
-   → create Jobs for new queuing rollouts
+  → create Jobs for new queuing rollouts, subject to Pod creation rate limits
    → process cancellations
 
 3. PERIODIC FULL RECONCILE (every N seconds):
@@ -128,6 +128,12 @@ def reconcile(rollout):
     elif rollout.status == RUNNING:
         sync_job_status(rollout)     # → succeeded / terminal_failed / no-op
 ```
+
+### Pod creation rate limit
+
+The controller keeps an in-memory sliding window of successful Job creation timestamps. By default, it creates at most 100 agent Jobs every 10 seconds (`AGL_MAX_PODS_PER_WINDOW=100`, `AGL_RATE_LIMIT_WINDOW_SECONDS=10`). A timestamp is recorded after the Kubernetes `create_job` call succeeds. Failed create attempts do not consume capacity, and rollouts that hit the limit remain `queuing` until a later reconcile cycle.
+
+This limiter is per controller process, matching the default single-replica controller deployment.
 
 ## Edge cases
 

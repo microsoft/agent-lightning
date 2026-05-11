@@ -716,13 +716,13 @@ layout: section
 # Part 5
 ## VERL Integration
 
-*AglLiteDaemon, trainer code, triplet format*
+*AglLiteRolloutBridge, trainer code, triplet format*
 
 ---
 
-# AglLiteDaemon: The Trainer Bridge
+# AglLiteRolloutBridge: The Trainer Bridge
 
-`AglLiteDaemon` provides the same interface as `AgentModeDaemon` — the trainer barely changes.
+`AglLiteRolloutBridge` provides the same trainer-facing methods as `AgentModeDaemon` — the trainer barely changes.
 
 <div class="grid grid-cols-2 gap-6 mt-2">
 <div>
@@ -735,7 +735,7 @@ Store interaction via `AglLiteClient`:
 
 - `set_up_data_and_server` → register models + enqueue rollouts
 - `run_until_all_finished` → poll rollout status until `succeeded`
-- `_validate_data` → fetch events with `format=triplet`
+- `_async_fetch_rollout_result` → fetch events with `format=triplet`
 - `clear_data_and_server` → reset state
 
 </div>
@@ -773,7 +773,7 @@ Tensor construction from Agent Lightning `AgentModeDaemon`:
 
 ```python
 # Using agl-lite
-daemon = AglLiteDaemon(
+rollout_bridge = AglLiteRolloutBridge(
     agl_base_url="http://agl-lite:8080",  # single HTTP endpoint
     agl_key="agl_xxx...",                  # shared API key
     train_rollout_n=4, tokenizer=tokenizer, mini_batch_size=64, pad_token_id=0,
@@ -781,18 +781,18 @@ daemon = AglLiteDaemon(
 
 # Training loop
 for batch in dataset:
-    daemon.set_up_data_and_server(batch, vllm_addresses)
-    daemon.run_until_all_finished()
-    data_proto = daemon.get_train_data_batch()
+    rollout_bridge.set_up_data_and_server(batch, vllm_addresses)
+    rollout_bridge.run_until_all_finished()
+    data_proto = rollout_bridge.get_train_data_batch()
     # → DataProto with padded tensors, ready for PPO / GRPO / REINFORCE
-    daemon.clear_data_and_server()
+    rollout_bridge.clear_data_and_server()
 ```
 
 </div>
 
 <div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
 
-💡 **Same four methods, same `DataProto` output.** The daemon constructor is the only difference — an HTTP URL instead of store/proxy/adapter objects.
+💡 **Same four methods, same `DataProto` output.** The rollout bridge constructor is the only difference — an HTTP URL instead of store/proxy/adapter objects.
 
 </div>
 
@@ -860,7 +860,7 @@ for batch in dataset:
 <div class="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
 <div class="compact-text">
 
-⚡ Server gathers `token_ids` across SSE chunks, extracts `prompt_token_ids` from first chunk, merges `response_token_ids` — the daemon receives ready-to-use IDs.
+⚡ Server gathers `token_ids` across SSE chunks, extracts `prompt_token_ids` from first chunk, merges `response_token_ids` — the rollout bridge receives ready-to-use IDs.
 
 </div>
 </div>
@@ -988,7 +988,7 @@ layout: section
 - In-memory store (rollouts, events, models, resources)
 - K8s controller (kr8s-based, Job lifecycle)
 - `AglLiteClient` library + `agl-client` CLI
-- `AglLiteDaemon` for VERL integration
+- `AglLiteRolloutBridge` for VERL integration
 - `format=triplet` on events API
 - Auth (shared API key)
 - Math PoC end-to-end (mock + real vLLM)

@@ -119,6 +119,7 @@ if [ -f "$STATE_ENV" ]; then
 fi
 export AGL_BASE_URL=${AGL_BASE_URL:-http://localhost:8080}
 export AGL_KEY
+export AGL_NAMESPACE
 
 # Avoid conflicts with existing Ray clusters on shared machines.
 export RAY_GCS_SERVER_PORT=${RAY_GCS_SERVER_PORT:-0}

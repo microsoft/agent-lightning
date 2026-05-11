@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import random
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 import structlog
-from fastapi import Response
+from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from agl_lite.gateway.assemblers import select_assembler
@@ -14,6 +17,79 @@ from agl_lite.schemas.model_server import ModelServer
 from agl_lite.store.memory import InMemoryStore
 
 log = structlog.get_logger()
+
+_UPSTREAM_MAX_ATTEMPTS = 6
+_RETRY_STATUS_CODES = {408, 409, 429}
+_RETRY_BACKOFF_BASE_SECONDS = 0.5
+_RETRY_BACKOFF_CAP_SECONDS = 8.0
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in _RETRY_STATUS_CODES or status_code >= 500
+
+
+def _retry_delay_seconds(attempt_index: int) -> float:
+    delay = min(_RETRY_BACKOFF_BASE_SECONDS * (2**attempt_index), _RETRY_BACKOFF_CAP_SECONDS)
+    return delay * random.uniform(0.75, 1.25)
+
+
+async def _send_upstream_with_retries(
+    send: Callable[[], Awaitable[httpx.Response]],
+    *,
+    stream: bool,
+    url: str,
+) -> httpx.Response:
+    """Send an upstream request with OpenAI-like transient-failure retry."""
+    for attempt_index in range(_UPSTREAM_MAX_ATTEMPTS):
+        try:
+            response = await send()
+        except httpx.TimeoutException as exc:
+            if attempt_index == _UPSTREAM_MAX_ATTEMPTS - 1:
+                raise HTTPException(status_code=504, detail="Upstream model server timed out") from exc
+            delay = _retry_delay_seconds(attempt_index)
+            log.warning(
+                "Retrying upstream request after timeout",
+                url=url,
+                stream=stream,
+                attempt=attempt_index + 1,
+                max_attempts=_UPSTREAM_MAX_ATTEMPTS,
+                delay_seconds=round(delay, 3),
+            )
+            await asyncio.sleep(delay)
+            continue
+        except httpx.TransportError as exc:
+            if attempt_index == _UPSTREAM_MAX_ATTEMPTS - 1:
+                raise HTTPException(status_code=502, detail="Upstream model server request failed") from exc
+            delay = _retry_delay_seconds(attempt_index)
+            log.warning(
+                "Retrying upstream request after transport error",
+                url=url,
+                stream=stream,
+                attempt=attempt_index + 1,
+                max_attempts=_UPSTREAM_MAX_ATTEMPTS,
+                delay_seconds=round(delay, 3),
+                error=str(exc),
+            )
+            await asyncio.sleep(delay)
+            continue
+
+        if not _is_retryable_status(response.status_code) or attempt_index == _UPSTREAM_MAX_ATTEMPTS - 1:
+            return response
+
+        delay = _retry_delay_seconds(attempt_index)
+        log.warning(
+            "Retrying upstream request after retryable status",
+            url=url,
+            stream=stream,
+            attempt=attempt_index + 1,
+            max_attempts=_UPSTREAM_MAX_ATTEMPTS,
+            status_code=response.status_code,
+            delay_seconds=round(delay, 3),
+        )
+        await response.aclose()
+        await asyncio.sleep(delay)
+
+    raise HTTPException(status_code=502, detail="Upstream model server request failed")
 
 
 async def forward_request(
@@ -88,7 +164,11 @@ async def _forward_non_streaming(
     server_meta: dict[str, Any],
 ) -> JSONResponse:
     """Forward non-streaming request. Capture full response as event."""
-    resp = await client.post(url, json=body, headers=headers)
+    resp = await _send_upstream_with_retries(
+        lambda: client.post(url, json=body, headers=headers),
+        stream=False,
+        url=url,
+    )
     response_body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
 
     _capture_event(
@@ -117,9 +197,10 @@ async def _forward_streaming(
     server_meta: dict[str, Any],
 ) -> StreamingResponse:
     """Forward streaming request. Tee chunks to client while buffering for event capture."""
-    upstream = await client.send(
-        client.build_request("POST", url, json=body, headers=headers),
+    upstream = await _send_upstream_with_retries(
+        lambda: client.send(client.build_request("POST", url, json=body, headers=headers), stream=True),
         stream=True,
+        url=url,
     )
 
     buffer: list[bytes] = []

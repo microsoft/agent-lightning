@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,7 +38,7 @@ def app(settings: ServerSettings):
 
 
 @pytest.fixture
-def client(app) -> TestClient:
+def client(app) -> Iterator[TestClient]:
     with TestClient(app) as c:
         yield c
 
@@ -168,6 +170,99 @@ class TestProxyNonStreaming:
             json={"model": "gpt-4"},
         )
         assert resp.status_code == 401
+
+
+class TestProxyRetry:
+    def test_non_streaming_retries_retryable_status(self, client: TestClient, auth: dict, httpx_mock):
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        httpx_mock.add_response(url="http://mock:8000/v1/chat/completions", status_code=503, json={"error": "busy"})
+        httpx_mock.add_response(
+            url="http://mock:8000/v1/chat/completions",
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+        )
+
+        with patch("agl_lite.gateway.proxy._retry_delay_seconds", return_value=0):
+            resp = client.post(
+                f"/rollout/{rid}/attempt/pod-1/v1/chat/completions",
+                json={"model": "gpt-4", "messages": []},
+                headers=auth,
+            )
+
+        assert resp.status_code == 200
+        assert len(httpx_mock.get_requests()) == 2
+        events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
+        assert len(events) == 1
+        assert events[0]["data"]["response"]["choices"][0]["message"]["content"] == "ok"
+
+    def test_non_streaming_does_not_retry_bad_request(self, client: TestClient, auth: dict, httpx_mock):
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        httpx_mock.add_response(url="http://mock:8000/v1/chat/completions", status_code=400, json={"error": "bad"})
+
+        with patch("agl_lite.gateway.proxy._retry_delay_seconds", return_value=0):
+            resp = client.post(
+                f"/rollout/{rid}/attempt/pod-1/v1/chat/completions",
+                json={"model": "gpt-4", "messages": []},
+                headers=auth,
+            )
+
+        assert resp.status_code == 400
+        assert len(httpx_mock.get_requests()) == 1
+
+    def test_non_streaming_final_retryable_response_is_returned_once(self, client: TestClient, auth: dict, httpx_mock):
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        for _ in range(6):
+            httpx_mock.add_response(
+                url="http://mock:8000/v1/chat/completions",
+                status_code=503,
+                json={"error": "busy"},
+            )
+
+        with patch("agl_lite.gateway.proxy._retry_delay_seconds", return_value=0):
+            resp = client.post(
+                f"/rollout/{rid}/attempt/pod-1/v1/chat/completions",
+                json={"model": "gpt-4", "messages": []},
+                headers=auth,
+            )
+
+        assert resp.status_code == 503
+        assert len(httpx_mock.get_requests()) == 6
+        events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
+        assert len(events) == 1
+        assert events[0]["data"]["response"] == {"error": "busy"}
+
+    def test_streaming_retries_initial_retryable_status(self, client: TestClient, auth: dict, httpx_mock):
+        rid = _enqueue(client, auth)
+        _register_model(client, auth)
+
+        httpx_mock.add_response(url="http://mock:8000/v1/chat/completions", status_code=503, json={"error": "busy"})
+        sse_bytes = "".join([
+            'data: {"id":"c1","choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n',
+            "data: [DONE]\n\n",
+        ]).encode()
+        httpx_mock.add_response(
+            url="http://mock:8000/v1/chat/completions",
+            content=sse_bytes,
+            headers={"content-type": "text/event-stream"},
+        )
+
+        with patch("agl_lite.gateway.proxy._retry_delay_seconds", return_value=0):
+            resp = client.post(
+                f"/rollout/{rid}/attempt/pod-1/v1/chat/completions",
+                json={"model": "gpt-4", "messages": [], "stream": True},
+                headers=auth,
+            )
+
+        assert resp.status_code == 200
+        assert len(httpx_mock.get_requests()) == 2
+        events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
+        assert len(events) == 1
+        assert events[0]["data"]["response"]["choices"][0]["message"]["content"] == "ok"
 
 
 class TestProxyStreaming:

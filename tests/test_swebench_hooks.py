@@ -33,11 +33,17 @@ _MINIMAL_POD_SPEC = {
 @pytest.fixture
 def hooks():
     """Load SWEBenchHooks module, mocking swebench imports."""
-    mock_test_spec = MagicMock()
-    mock_test_spec.eval_script = "#!/bin/bash\necho test"
-    mock_test_spec.FAIL_TO_PASS = ["test_foo"]
-    mock_test_spec.PASS_TO_PASS = ["test_bar"]
-    mock_test_spec.instance_id = "repo__issue-123"
+    def make_mock_test_spec(instance: dict[str, Any], namespace: str | None = None, **_: Any) -> MagicMock:
+        instance_id = instance["instance_id"]
+        safe_id = instance_id.lower().replace("__", "_1776_")
+        image_prefix = f"{namespace}/" if namespace else ""
+        mock_test_spec = MagicMock()
+        mock_test_spec.eval_script = "#!/bin/bash\necho test"
+        mock_test_spec.FAIL_TO_PASS = ["test_foo"]
+        mock_test_spec.PASS_TO_PASS = ["test_bar"]
+        mock_test_spec.instance_id = instance_id
+        mock_test_spec.instance_image_key = f"{image_prefix}sweb.eval.x86_64.{safe_id}:latest"
+        return mock_test_spec
 
     with patch.dict("sys.modules", {
         "swebench": MagicMock(),
@@ -47,9 +53,10 @@ def hooks():
         "swebench.harness.test_spec.test_spec": MagicMock(),
     }):
         import importlib
+
         import examples.swe_bench.hooks as hooks_mod
         importlib.reload(hooks_mod)
-        hooks_mod.make_test_spec = MagicMock(return_value=mock_test_spec)
+        hooks_mod.make_test_spec = MagicMock(side_effect=make_mock_test_spec)
         yield hooks_mod
 
 

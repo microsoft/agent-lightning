@@ -86,7 +86,7 @@ The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPEN
 - In-memory store (rollouts, events, models, resources)
 - K8s controller with Job lifecycle management
 - Python client library (`AglLiteClient`) and CLI (`agl-client`)
-- VERL integration (`AglLiteDaemon`) with triplet format
+- VERL integration (`AglLiteRolloutBridge`) with triplet format
 - Math PoC end-to-end (mock + real vLLM)
 - SWE-bench example with Claude Code
 

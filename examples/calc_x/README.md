@@ -13,7 +13,7 @@ run.sh → agl-lite deploy (agl-in-host) → train_calc_agent.py
               ├── K8s: controller                  ├── load Calc-X dataset
               └── Host: agl-lite serve             └── run_ppo() → VERL trainer
                     │                                        │
-                    │                               AglLiteDaemon (HTTP)
+                    │                               AglLiteRolloutBridge (HTTP)
                     │                                        │
                     ├── enqueue rollouts ←───────────────────┘
                     ├── controller creates K8s Jobs
@@ -29,6 +29,21 @@ run.sh → agl-lite deploy (agl-in-host) → train_calc_agent.py
 - minikube running with nvidia-container-toolkit
 - `uv` installed
 - Python 3.12+
+
+## Python / Conda Environment
+
+Use Python 3.12. The run script expects the repo-local `.venv`, so a fresh
+conda environment only needs to provide Python and `uv`; `setup_verl.sh` creates
+and installs the project `.venv` used by the script.
+
+```bash
+conda create -n agl-lite python=3.12 -y
+conda activate agl-lite
+python -m pip install -U pip uv
+
+# Pick the CUDA wheel index that matches the machine: cu126, cu128, cu130, or cpu.
+scripts/setup_verl.sh cu128
+```
 
 ## Dataset
 
@@ -52,7 +67,6 @@ The dataset contains:
 ```bash
 # Prerequisites
 export AGL_KEY=$(openssl rand -hex 32)
-scripts/start_vllm.sh  # Start vLLM inference server
 
 # Full training
 examples/calc_x/run.sh

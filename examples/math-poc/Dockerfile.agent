@@ -1,6 +1,6 @@
 # Agent image for math-poc.
 # Build context: examples/math-poc/
-#   minikube image build -t math-agent:dev examples/math-poc/
+#   minikube image build -t math-poc-agent:dev examples/math-poc/
 
 FROM python:3.12-slim
 

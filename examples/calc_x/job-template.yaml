@@ -5,7 +5,7 @@
 #   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL
 #
 # The agent uses AutoGen + MCP calculator tool (CPU-only, no GPU needed).
-# MCP server runs via `uvx mcp-server-calculator` inside the container.
+# MCP server runs via `python -m mcp_server_calculator` inside the container.
 
 containers:
   - name: agent

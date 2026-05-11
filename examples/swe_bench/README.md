@@ -40,31 +40,54 @@ to include the files in the ConfigMap.
 1. **K8s cluster** running (minikube for local dev)
 2. **SWE-bench Docker images** pre-built for the sample instances:
    ```bash
-   pip install swebench
-   python -m swebench.harness.docker_build \
-     --dataset_path examples/swe_bench/swebench_samples.jsonl \
-     --split dev
+  # Build directly inside minikube's Docker daemon so the rollout pods can see them.
+  eval "$(minikube -p minikube docker-env)"
+   .venv/bin/python examples/swe_bench/build_images.py --limit 1
+  eval "$(minikube -p minikube docker-env -u)"
    ```
 3. **vLLM** running with a code-capable model:
    ```bash
+   eval "$(minikube -p minikube docker-env -u)"  # vLLM needs host Docker + GPU access
    scripts/start_vllm.sh  # or manually start with your preferred model
    ```
+
+## Python / Conda Environment
+
+Use Python 3.12 with agl-lite controller dependencies plus `swebench`. The
+server loads `examples/swe_bench/hooks.py`, and those hooks import the
+`swebench` package for test-spec generation and grading.
+
+```bash
+conda create -n agl-lite-swebench python=3.12 -y
+conda activate agl-lite-swebench
+python -m pip install -U pip uv
+uv sync --extra controller
+uv pip install swebench
+```
+
+This example does not need the VERL extra. vLLM is normally run separately in
+Docker via `scripts/start_vllm.sh`, and the coding agent is installed inside the
+agent pod by the scripts under `agents/`.
 
 ## Quick Start
 
 ```bash
 # 1. Configure
-cp examples/swe_bench/.env.example deploy/.env
 export AGL_KEY=$(openssl rand -hex 32)
+$EDITOR examples/swe_bench/.env.example
 
 # 2. Run
 examples/swe_bench/run.sh
 ```
 
+The default `.env.example` runs one SWE-bench instance as a smoke test. Increase
+`AGL_BATCH_SIZE` after building the corresponding images.
+
 The `run.sh` script:
+- Checks the required SWE-bench images and prints the build command if any are missing
+- Runs `agl-lite deploy --env-file examples/swe_bench/.env.example`
 - Creates a ConfigMap with agent scripts
-- Deploys controller in K8s and launches agl-lite on host (`--agl-in-host` mode)
-- Starts the agl-lite server on the host (with SWE-bench hooks)
+- Launches agl-lite on host in `agl-in-host` mode with SWE-bench hooks
 - Runs `rl_loop.py` to enqueue instances and poll for results
 
 ## Files
@@ -77,6 +100,7 @@ examples/swe_bench/
 ├── Dockerfile.server       # agl-lite + swebench package (for in-cluster mode)
 ├── gateway-config.yaml     # Gateway routing config
 ├── job-template.yaml       # K8s pod spec (image overridden per rollout by hook)
+├── .dockerignore           # Docker build-context ignore rules
 ├── .env.example            # Environment config template
 ├── swebench_samples.jsonl  # 5 sample instances for testing
 └── agents/
@@ -90,10 +114,12 @@ examples/swe_bench/
 
 ## Configuration
 
-Key environment variables (set in `deploy/.env`):
+Key environment variables (set in `examples/swe_bench/.env.example`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `AGL_NAMESPACE` | K8s namespace for agl-lite and agent Jobs | `agl-swebench` |
+| `AGL_MODE` | Deploy topology | `agl-in-host` |
 | `AGL_CODING_AGENT` | Agent to use (`claude_code`) | `claude_code` |
 | `AGL_MODEL_NAME` | Model name for the agent | — |
 | `AGL_MODEL_ENDPOINT` | vLLM endpoint URL | — |

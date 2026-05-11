@@ -15,7 +15,11 @@ def serve(
     key: str = typer.Option("", envvar="AGL_KEY", help="Shared API key (empty = auth disabled)"),
     gateway_config: str | None = typer.Option(None, envvar="AGL_GATEWAY_CONFIG", help="Path to gateway YAML config"),
     hooks: str | None = typer.Option(None, envvar="AGL_HOOKS", help="Path to Python module with RolloutHooks subclass"),
-    log_dir: str | None = typer.Option(None, envvar="AGL_LOG_DIR", help="Directory for log files and default archive (AGL_LOG_DIR)"),
+    log_dir: str | None = typer.Option(
+        None,
+        envvar="AGL_LOG_DIR",
+        help="Directory for log files and default archive (AGL_LOG_DIR)",
+    ),
     log_level: str = typer.Option("INFO", envvar="AGL_LOG_LEVEL", help="Log level: DEBUG / INFO / WARNING / ERROR"),
 ) -> None:
     """Start the agl-lite HTTP service (store + gateway)."""
@@ -34,11 +38,33 @@ def serve(
 def controller(
     base_url: str = typer.Option(..., envvar="AGL_BASE_URL", help="agl-lite server base URL"),
     namespace: str = typer.Option(..., envvar="AGL_NAMESPACE", help="K8s namespace for agent Jobs"),
-    job_manifest_template: str = typer.Option(..., envvar="AGL_JOB_MANIFEST_TEMPLATE", help="Path to Jinja2 job manifest template"),
+    job_manifest_template: str = typer.Option(
+        ...,
+        envvar="AGL_JOB_MANIFEST_TEMPLATE",
+        help="Path to Jinja2 job manifest template",
+    ),
     key: str = typer.Option("", envvar="AGL_KEY", help="Shared API key (empty = auth disabled)"),
     poll_interval: int = typer.Option(10, envvar="AGL_POLL_INTERVAL", help="Seconds between reconcile cycles"),
-    max_queue_time: int = typer.Option(3600, envvar="AGL_MAX_QUEUE_TIME", help="Max seconds a rollout stays in queuing"),
-    ttl_after_finished: int = typer.Option(3600, envvar="AGL_TTL_AFTER_FINISHED", help="ttlSecondsAfterFinished on Jobs"),
+    max_queue_time: int = typer.Option(
+        3600,
+        envvar="AGL_MAX_QUEUE_TIME",
+        help="Max seconds a rollout stays in queuing",
+    ),
+    ttl_after_finished: int = typer.Option(
+        3600,
+        envvar="AGL_TTL_AFTER_FINISHED",
+        help="ttlSecondsAfterFinished on Jobs",
+    ),
+    max_pods_per_window: int = typer.Option(
+        100,
+        envvar="AGL_MAX_PODS_PER_WINDOW",
+        help="Max agent Pods to create per rate-limit window",
+    ),
+    rate_limit_window_seconds: int = typer.Option(
+        10,
+        envvar="AGL_RATE_LIMIT_WINDOW_SECONDS",
+        help="Pod creation rate-limit window in seconds",
+    ),
 ) -> None:
     """Start the K8s controller (reconcile loop)."""
     import asyncio
@@ -55,6 +81,8 @@ def controller(
         poll_interval=poll_interval,
         max_queue_time=max_queue_time,
         ttl_after_finished=ttl_after_finished,
+        max_pods_per_window=max_pods_per_window,
+        rate_limit_window_seconds=rate_limit_window_seconds,
     )
 
     async def _run() -> None:

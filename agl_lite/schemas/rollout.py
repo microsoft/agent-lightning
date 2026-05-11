@@ -56,7 +56,7 @@ class RolloutConfig(BaseModel):
 class RolloutMetadata(BaseModel):
     """Algorithm + hook facing context. Not sent to container.
 
-    Algorithm control fields help the daemon/trainer reconstruct batch structure.
+    Algorithm control fields help the rollout bridge/trainer reconstruct batch structure.
     Extra fields are allowed (``extra="allow"``) for hooks to stash task-specific
     context (e.g., ground_truth for grading in ``on_succeeded``).
     """

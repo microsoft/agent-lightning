@@ -97,6 +97,22 @@ model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm
 - minikube running (`minikube status`)
 - For vLLM mode: Docker + `nvidia-container-toolkit`
 
+### Python / Conda Environment
+
+Use Python 3.12 with the core agl-lite controller dependencies. This example
+does not need the VERL extra.
+
+```bash
+conda create -n agl-lite-math-poc python=3.12 -y
+conda activate agl-lite-math-poc
+python -m pip install -U pip uv
+uv sync --extra controller
+```
+
+Mock mode runs with only CPU/K8s dependencies. vLLM mode still uses this same
+Python environment; the model server is started separately by
+`scripts/start_vllm.sh` in Docker.
+
 ### 1. Configure
 
 ```bash
@@ -104,13 +120,13 @@ model_request (auto, gateway)  →  agent_output (agent)  →  reward (algorithm
 export AGL_KEY=$(openssl rand -hex 32)
 
 # Optional: adjust mode-specific configs
-$EDITOR examples/math-poc/mock/deploy.yaml
 $EDITOR examples/math-poc/mock/.env.example
+$EDITOR examples/math-poc/vllm/.env.example
 ```
 
-Deploy config now lives in `examples/math-poc/<mode>/deploy.yaml`.
-Runtime/experiment config lives in `examples/math-poc/<mode>/.env.example`.
-`run.sh` reads namespace directly from `deploy.yaml`.
+Each mode keeps deploy and experiment settings in
+`examples/math-poc/<mode>/.env.example`. `run.sh` passes that file to
+`agl-lite deploy --env-file` and reads `AGL_NAMESPACE` from it.
 
 ### 2. Run (mock mode)
 
@@ -140,12 +156,14 @@ Compare against reference outputs:
 
 ```bash
 # Mock mode:
-sed -E 's/[0-9a-f]{32}/<rollout-id>/g' examples/math-poc/logs/*/mock_rl_loop.log \
+latest_mock_log=$(ls -td examples/math-poc/logs/*-mock/rl_loop.log | head -n 1)
+grep -E '^  (--- Iteration|Rollouts:|Events:|Average reward:|Iterations:|Accuracy:|Iter [0-9]|Checks:|Math PoC)|^    \[PASS\]' "$latest_mock_log" \
   | diff - examples/math-poc/reference_output.log
 
 # vLLM mode (structure matches; LLM reasoning text may vary):
-diff <(grep -E '^\s*(✅|❌|Rollouts|Events|Accuracy|Iter |Checks:)' examples/math-poc/logs/*/rl_loop.log) \
-     <(grep -E '^\s*(✅|❌|Rollouts|Events|Accuracy|Iter |Checks:)' examples/math-poc/reference_output_vllm.log)
+latest_vllm_log=$(ls -td examples/math-poc/logs/*-vllm/rl_loop.log | head -n 1)
+grep -E '^  (--- Iteration|Rollouts:|Events:|Average reward:|Iterations:|Accuracy:|Iter [0-9]|Checks:|Math PoC)|^    \[PASS\]' "$latest_vllm_log" \
+  | diff - examples/math-poc/reference_output_vllm.log
 ```
 
 For mock mode the output is fully deterministic. For vLLM mode, the model's
@@ -162,10 +180,11 @@ reasoning text varies but the structure (events, checks, rewards) should match.
 | `agents/qa_agent.py` | Agent — streaming LLM call + `\boxed{}` parsing |
 | `job-template.yaml` | K8s pod spec for agent Jobs |
 | `Dockerfile.agent` | Agent container image |
+| `.dockerignore` | Docker build-context ignore rules for the agent image |
 | `k8s-mockai.yaml` | Mockai deployment + service (mock mode only) |
 | `data/gsm8k_sample.jsonl` | 30 GSM8K problems with ground truth |
-| `.env.mockai.example` | Complete config for mock mode → `cp` to `deploy/.env` |
-| `.env.vllm.example` | Complete config for vLLM mode → `cp` to `deploy/.env` |
+| `mock/.env.example` | Complete config for mock mode |
+| `vllm/.env.example` | Complete config for vLLM mode |
 | `run.sh` | One-command: build → deploy → run → verify → collect logs |
 | `reference_output.log` | Expected output — mock mode (redacted IDs) |
 | `reference_output_vllm.log` | Expected output — vLLM mode (redacted IDs) |
@@ -185,7 +204,7 @@ Our development/test environment:
 | **Minikube** | Docker driver, single node, no GPU passthrough |
 | **vLLM** | Docker container on host, GPU 0, `Qwen/Qwen2.5-1.5B-Instruct` |
 | **Docker image** | `vllm/vllm-openai:latest` (bundles CUDA runtime) |
-| **K8s namespace** | `agl-test` (configurable via `deploy/.env`) |
+| **K8s namespace** | `agl-test` (configurable via the mode `.env.example`) |
 | **Agent pods** | CPU-only in minikube, reach vLLM via `host.minikube.internal:8010` |
 
 Note: pip-installing vLLM on the host failed due to triton/gcc compilation

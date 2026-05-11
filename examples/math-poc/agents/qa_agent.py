@@ -103,7 +103,7 @@ def main() -> None:
         sys.exit(1)
 
     # --- Call LLM via gateway ---
-    client = OpenAI(max_retries=5, timeout=120.0)
+    client = OpenAI(max_retries=6, timeout=120.0)
 
     response = client.chat.completions.create(
         model=args.model,

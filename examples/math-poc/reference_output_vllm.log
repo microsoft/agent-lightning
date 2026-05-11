@@ -1,0 +1,12 @@
+  --- Iteration 1 Summary ---
+  Rollouts: 5 succeeded, 0 failed
+  Events: 5 model_request, 5 reward
+  Average reward: 0.60 (3/5 correct)
+  Iterations: 1
+  Rollouts: 5 succeeded, 0 failed
+  Accuracy: 3/5 = 60.0%
+  Iter 1: reward=0.60 (3/5)
+  Checks:
+    [PASS] Rollouts succeeded: 5/5
+    [PASS] Reward events: 5
+  Math PoC (vllm) completed successfully!

@@ -17,6 +17,9 @@ Usage (in container):
   python calc_agent.py --model Qwen/Qwen2.5-1.5B-Instruct
 """
 
+# AutoGen is an optional runtime dependency for this example container.
+# pyright: reportMissingImports=false
+
 from __future__ import annotations
 
 import argparse
@@ -84,14 +87,19 @@ async def solve(question: str, model: str, temperature: float) -> tuple[str, str
     from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
     calculator_mcp_server = StdioServerParams(
-        command="mcp-server-calculator", args=[],
-        read_timeout_seconds=30,  # default 5s too short for cold start in containers
+        command="python",
+        args=["-m", "mcp_server_calculator"],
+        read_timeout_seconds=120,
     )
 
     async with McpWorkbench(calculator_mcp_server) as workbench:
+        base_url = os.environ.get("OPENAI_BASE_URL")
+        if base_url is None:
+            raise RuntimeError("OPENAI_BASE_URL is required")
+
         model_client = OpenAIChatCompletionClient(
             model=model,
-            base_url=os.environ.get("OPENAI_BASE_URL"),
+            base_url=base_url,
             api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
             model_info={
                 "vision": False,
@@ -101,6 +109,7 @@ async def solve(question: str, model: str, temperature: float) -> tuple[str, str
                 "structured_output": False,
             },
             temperature=temperature,
+            max_retries=6,
         )
 
         agent = AssistantAgent(
@@ -117,7 +126,7 @@ async def solve(question: str, model: str, temperature: float) -> tuple[str, str
             last_message = cast(str, result.messages[-1].content)  # type: ignore
             match = ANSWER_PATTERN.search(last_message)
             answer = match.group(1).strip() if match else last_message.strip()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.error("Agent timed out after %.0fs", AGENT_TIMEOUT)
             answer = "None"
             last_message = "[TIMEOUT]"

@@ -11,4 +11,6 @@ routes:
     model_out: "${AGL_MODEL_NAME}"
     params:
       add:
+        max_tokens: 4096
+        max_completion_tokens: 4096
         return_token_ids: true

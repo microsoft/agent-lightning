@@ -19,7 +19,7 @@
 - [x] **Store Hooks**: `RolloutHooks` base class — `on_startup`, `on_enqueue`, `on_succeeded`, `on_failed`; base auto-loads `AGL_POD_SPEC_TEMPLATE`; `copy_pod_spec()` / `get_container()` helpers
 - [x] **Job builder**: Jinja2 template + `PodPatcher`; `RolloutConfig` simplified to `{pod_spec, timeout, max_retries}`
 - [x] **Deploy config**: YAML → `.env` format; `DeploySettings(BaseSettings)` with `AGL_*` prefix
-- [x] **Phase 5a–5b**: Triplet API + `AglLiteDaemon` (VERL bridge)
+- [x] **Phase 5a–5b**: Triplet API + `AglLiteRolloutBridge` (VERL bridge)
 - [x] **Config hygiene**: no defaults in CLI or settings for pod-side values; `AGL_SECRET_NAME` removed (hardcoded `agl-lite-keys`); `AGL_K8S_NAMESPACE` → `AGL_NAMESPACE`; `lite_url` → `base_url`
 - [x] **Math-poc**: updated hooks, deploy.env, run.sh, rl_loop.py for new API
 - [x] **Settings refactor**: `ServerSettings` + `ControllerSettings` → plain `BaseModel`; `cli.py` is the sole env boundary via `typer.Option(default, envvar="AGL_*")`; `agl_key` → `key`
@@ -82,7 +82,7 @@ train_calc_agent.py             ← VERL training (assumes infra is up)
   │     └── agentlightning.agl_base_url / agl_key from env
   └── run_ppo(config, train_dataset, val_dataset)
         └── Ray → AgentLightningTrainer.fit()
-              └── AglLiteDaemon (HTTP → agl-lite server)
+              └── AglLiteRolloutBridge (HTTP → agl-lite server)
                     ├── register model servers
                     ├── enqueue rollouts → controller creates K8s Jobs
                     │     └── agent pod: AutoGen + MCP calculator → gateway → vLLM
@@ -211,15 +211,15 @@ the trainer internals, all of which changed in 0.7.1.
 Before (verl 0.6.0 pattern):
   AgentLightningTrainer(RayPPOTrainer)
     ├── __init__(reward_fn, val_reward_fn, ...)     ← removed in 0.7.1
-    ├── _train_step() override                      ← calls AglLiteDaemon directly
-    ├── _validate() override                        ← calls AglLiteDaemon directly
+    ├── _train_step() override                      ← calls AglLiteRolloutBridge directly
+    ├── _validate() override                        ← calls AglLiteRolloutBridge directly
     └── fit() override                              ← heavily customized loop
 
 After (verl 0.7.1 pattern):
   Standard RayPPOTrainer (no subclass needed)
     └── AgentLoopManager.generate_sequences()
           └── custom AglLiteAgentLoopManager
-                └── AglLiteDaemon (HTTP → agl-lite server)
+                └── AglLiteRolloutBridge (HTTP → agl-lite server)
 ```
 
 The integration point moves from "override the trainer" to "provide a custom
@@ -231,21 +231,21 @@ The integration point moves from "override the trainer" to "provide a custom
 |--------|-------------|-------------|
 | Trainer init | `RayPPOTrainer(reward_fn=..., val_reward_fn=...)` | No reward_fn args |
 | Reward flow | `reward_fn()` called in `_train_step` | `rm_scores` populated by `AgentLoopWorker`, extracted via `extract_reward()` |
-| Rollout orchestration | Custom `_train_step` calls daemon | `AgentLoopManager.generate_sequences()` returns `DataProto` with `rm_scores` |
+| Rollout orchestration | Custom `_train_step` calls rollout bridge | `AgentLoopManager.generate_sequences()` returns `DataProto` with `rm_scores` |
 | Custom manager config | N/A | `rollout.agent.agent_loop_manager_class` FQN |
-| Validation | Custom `_validate` calls daemon | Standard `_validate` uses `generate_sequences` + `extract_reward` |
+| Validation | Custom `_validate` calls rollout bridge | Standard `_validate` uses `generate_sequences` + `extract_reward` |
 
 ##### Implementation plan
 
 - [ ] **Create `agl_lite/verl/agent_loop.py`** — `AglLiteAgentLoopManager(AgentLoopManager)`:
       - `generate_sequences(prompts: DataProto) -> DataProto`:
         1. Register model servers (from `self.config` / server addresses)
-        2. Enqueue rollouts via `AglLiteDaemon`
+        2. Enqueue rollouts via `AglLiteRolloutBridge`
         3. Poll until all complete
         4. Fetch triplets, build padded tensors
         5. Populate `rm_scores` from reward events
         6. Return `DataProto` in the format `RayPPOTrainer.fit()` expects
-      - Reuse `AglLiteDaemon` internally for HTTP communication + tensor construction
+      - Reuse `AglLiteRolloutBridge` internally for HTTP communication + tensor construction
       - Key: `generate_sequences` must return data matching what the standard
         training loop expects (`input_ids`, `attention_mask`, `position_ids`,
         `responses`, `rm_scores`, `response_mask`, etc.)
@@ -270,8 +270,8 @@ The integration point moves from "override the trainer" to "provide a custom
 
 - [ ] **Update `agl_lite/verl/config.yaml`** — add agent loop defaults
 
-- [ ] **Update tests** — `tests/verl/test_daemon.py` may need adjustment
-      if daemon interface changes
+- [ ] **Update tests** — `tests/verl/test_rollout_bridge.py` may need adjustment
+      if rollout bridge interface changes
 
 ### Future (separate items)
 
