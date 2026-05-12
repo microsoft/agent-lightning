@@ -54,6 +54,8 @@ class RolloutLegacy(BaseModel):
     rollout_id: str
     task: Task | None = None
     final_reward: float | None = None
+    reward_source: str | None = None
+    reward_reason: str | None = None
     triplets: list[Triplet] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -77,6 +79,7 @@ _AGL_LITE_MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 _AGL_LITE_MANAGED_BY_VALUE = "agl-lite"
 _AGL_LITE_MANAGED_BY_SELECTOR = f"{_AGL_LITE_MANAGED_BY_LABEL}={_AGL_LITE_MANAGED_BY_VALUE}"
 _AGL_LITE_ROLLOUT_ID_LABEL = "agl-lite/rollout-id"
+_FALLBACK_REWARD_REASONS = {"no_reward_posted_by_agent", "terminal_failed"}
 
 
 def ids_startswith(
@@ -516,9 +519,14 @@ class AglLiteRolloutBridge:
 
         # Match rewards to triplets (last reward wins)
         final_reward: float | None = None
+        reward_source: str | None = None
+        reward_reason: str | None = None
         reward_events = [e for e in events if e.event_type == "reward"]
         if reward_events:
-            final_reward = reward_events[-1].data.get("value")
+            reward_data = reward_events[-1].data
+            final_reward = reward_data.get("value")
+            reward_source = reward_data.get("source")
+            reward_reason = reward_data.get("reason")
 
         # Assign reward to last triplet (same as Agent Lightning convention)
         if triplets and final_reward is not None:
@@ -533,6 +541,8 @@ class AglLiteRolloutBridge:
                 metadata=original.get("metadata", {}),
             ),
             final_reward=final_reward,
+            reward_source=reward_source,
+            reward_reason=reward_reason,
             triplets=triplets,
             metadata=original.get("metadata", {}),
         )
@@ -653,13 +663,29 @@ class AglLiteRolloutBridge:
             rollout = self._completed_rollouts.get(rollout_id)
             if rollout is None:
                 # failed / cancelled / timeout — fillna-reward, no triplets.
-                sample_stat_list.append({"reward": self.reward_fillna_value, "has_reward": False})
+                sample_stat_list.append(
+                    {
+                        "reward": self.reward_fillna_value,
+                        "has_reward": False,
+                        "has_any_reward": False,
+                        "has_fallback_reward": False,
+                    }
+                )
                 continue
             final_reward_raw: float | None = rollout.final_reward
             final_reward = self._fillna_reward(rollout)
+            has_agent_reward = self._has_agent_reward(rollout)
+            has_fallback_reward = self._has_fallback_reward(rollout)
             if not rollout.triplets:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
-                sample_stat_list.append({"reward": final_reward, "has_reward": final_reward_raw is not None})
+                sample_stat_list.append(
+                    {
+                        "reward": final_reward,
+                        "has_reward": has_agent_reward,
+                        "has_any_reward": final_reward_raw is not None,
+                        "has_fallback_reward": has_fallback_reward,
+                    }
+                )
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
 
@@ -673,7 +699,9 @@ class AglLiteRolloutBridge:
                         "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                         "turn_count": len(rollout.triplets),
                         "reward": final_reward,
-                        "has_reward": final_reward_raw is not None,
+                        "has_reward": has_agent_reward,
+                        "has_any_reward": final_reward_raw is not None,
+                        "has_fallback_reward": has_fallback_reward,
                     }
                 )
             sample_stat_list.append(
@@ -682,7 +710,9 @@ class AglLiteRolloutBridge:
                     "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                     "turn_count": len(rollout.triplets),
                     "reward": final_reward,
-                    "has_reward": final_reward_raw is not None,
+                    "has_reward": has_agent_reward,
+                    "has_any_reward": final_reward_raw is not None,
+                    "has_fallback_reward": has_fallback_reward,
                 }
             )
         metric_dict: dict[str, Any] = {}
@@ -699,6 +729,12 @@ class AglLiteRolloutBridge:
                     f"val/{data_source}/n_rollouts_w_trace": len(stats_w_trace_by_source[data_source]),
                     f"val/{data_source}/n_rollouts_w_reward": len(
                         [stat for stat in sample_stats if stat["has_reward"]]
+                    ),
+                    f"val/{data_source}/n_rollouts_w_any_reward": len(
+                        [stat for stat in sample_stats if stat["has_any_reward"]]
+                    ),
+                    f"val/{data_source}/n_rollouts_w_fallback_reward": len(
+                        [stat for stat in sample_stats if stat["has_fallback_reward"]]
                     ),
                     f"val/{data_source}/reward": np.mean(
                         [stat["reward"] for stat in sample_stats]
@@ -719,6 +755,10 @@ class AglLiteRolloutBridge:
                 "val/n_rollouts": len(sample_stat_list),
                 "val/n_rollouts_w_trace": len(stats_w_trace),
                 "val/n_rollouts_w_reward": len([stat for stat in sample_stat_list if stat["has_reward"]]),
+                "val/n_rollouts_w_any_reward": len([stat for stat in sample_stat_list if stat["has_any_reward"]]),
+                "val/n_rollouts_w_fallback_reward": len(
+                    [stat for stat in sample_stat_list if stat["has_fallback_reward"]]
+                ),
                 "val/reward": np.mean(
                     [stat["reward"] for stat in sample_stat_list]
                 ),  # each rollout must have a reward (fillna if missing)
@@ -755,7 +795,9 @@ class AglLiteRolloutBridge:
 
         finished_id_to_sample_info: dict[str, dict[str, Any]] = {}
         finished_id_to_final_reward: dict[str, float] = {}
-        sample_with_reward_count = 0
+        sample_with_agent_reward_count = 0
+        sample_with_any_reward_count = 0
+        sample_with_fallback_reward_count = 0
 
         for rid in self._enqueue_order:
             rollout = self._completed_rollouts.get(rid)
@@ -764,7 +806,9 @@ class AglLiteRolloutBridge:
                 finished_id_to_final_reward[rid] = self.reward_fillna_value
                 continue
 
-            sample_with_reward_count += int(rollout.final_reward is not None)
+            sample_with_any_reward_count += int(rollout.final_reward is not None)
+            sample_with_agent_reward_count += int(self._has_agent_reward(rollout))
+            sample_with_fallback_reward_count += int(self._has_fallback_reward(rollout))
             final_reward = self._fillna_reward(rollout)
             finished_id_to_final_reward[rid] = final_reward
 
@@ -1035,7 +1079,9 @@ class AglLiteRolloutBridge:
             else 0.0,
             "training/n_rollouts": self._total_tasks_queued,
             "training/n_rollouts_w_trace": len(finished_id_to_sample_info),
-            "training/n_rollouts_w_reward": sample_with_reward_count,
+            "training/n_rollouts_w_reward": sample_with_agent_reward_count,
+            "training/n_rollouts_w_any_reward": sample_with_any_reward_count,
+            "training/n_rollouts_w_fallback_reward": sample_with_fallback_reward_count,
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
             "training/n_placeholder_rows": n_placeholder_rows,
@@ -1171,3 +1217,14 @@ class AglLiteRolloutBridge:
         if rollout.final_reward is not None:
             return rollout.final_reward
         return self.reward_fillna_value
+
+    @staticmethod
+    def _has_fallback_reward(rollout: RolloutLegacy) -> bool:
+        if rollout.final_reward is None:
+            return False
+        if rollout.reward_source == "fallback":
+            return True
+        return rollout.reward_reason in _FALLBACK_REWARD_REASONS
+
+    def _has_agent_reward(self, rollout: RolloutLegacy) -> bool:
+        return rollout.final_reward is not None and not self._has_fallback_reward(rollout)
