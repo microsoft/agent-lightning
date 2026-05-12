@@ -27,6 +27,7 @@ Per training step:
 from __future__ import annotations
 
 import logging
+import random
 import uuid
 from pprint import pprint
 from typing import Any
@@ -232,10 +233,14 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
             metrics["training/n_triplets_prompt_too_long"] = len(batch) - len(keep)
             batch = batch[keep]
-        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size
-        trunc = (len(batch) // mini_bs) * mini_bs
-        metrics["training/n_triplets_dropped_remainder"] = len(batch) - trunc
-        batch = batch[:trunc] if trunc > 0 else batch[:0]
+        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
+        n_transition = len(batch)
+        random_indices = list(range(n_transition))
+        random.shuffle(random_indices)
+        batch.reorder(torch.tensor(random_indices).type(torch.int32))
+        n_remained_transition = n_transition // mini_bs * mini_bs
+        metrics["training/n_triplets_dropped_remainder"] = n_transition - n_remained_transition
+        batch = batch[list(range(n_remained_transition))]
         if len(batch) == 0:
             metrics["agent/zero_after_drop"] = 1
             log.warning("batch empty after drop+floor; skipping update this step")
