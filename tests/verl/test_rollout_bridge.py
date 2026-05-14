@@ -273,7 +273,7 @@ class TestBridgeStoreInteraction:
             "pod-1",
             PostEventRequest(
                 event_type="reward",
-                data={"value": 0.85, "message": "correct"},
+                data={"value": 0.85, "message": "correct", "source": "agent", "reason": "computed"},
             ),
         )
 
@@ -282,6 +282,12 @@ class TestBridgeStoreInteraction:
         assert isinstance(legacy, RolloutLegacy)
         assert legacy.rollout_id == rid
         assert legacy.final_reward == 0.85
+        assert legacy.reward_source == "agent"
+        assert legacy.reward_reason == "computed"
+        assert len(legacy.events) == 2
+        assert len(legacy.triplet_events) == 2
+        assert legacy.events[0]["data"]["request"]["model"] == "m"
+        assert legacy.triplet_events[0]["data"]["prompt_token_ids"] == [1, 2, 3]
         assert legacy.triplets is not None
         assert len(legacy.triplets) == 1
 
