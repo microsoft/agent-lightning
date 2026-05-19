@@ -2,14 +2,15 @@
 # Install VERL training dependencies with a pinned GPU stack.
 #
 # Default stack:
-#   Mirrors the known-good .venv.bak environment:
-#   torch==2.8.0, torchvision==0.23.0, torchaudio==2.8.0,
-#   vllm==0.10.2, verl==0.7.1, transformers==4.57.1,
-#   ray==2.49.2, numpy==1.26.4, flash-attn==2.8.3.
+#   torch==2.9.0, torchvision==0.24.0, torchaudio==2.9.0,
+#   vllm==0.12.0, verl==0.7.1, transformers==4.57.1,
+#   ray==2.49.2, numpy==1.26.4, flash-attn==2.8.3,
+#   xformers==0.0.33.post1, triton==3.5.0.
 #
 # Run from the repo root:
 #
-#   scripts/setup_verl.sh              # CUDA 12.8 PyTorch wheels
+#   scripts/setup_verl.sh              # CUDA 13.0 PyTorch wheels (default)
+#   scripts/setup_verl.sh cu128        # force CUDA 12.8 PyTorch wheels
 #   scripts/setup_verl.sh cu126        # force CUDA 12.6 PyTorch wheels
 #   scripts/setup_verl.sh cpu          # CPU-only PyTorch wheels; skips flash-attn
 #
@@ -20,25 +21,25 @@ set -euo pipefail
 
 # --- Pinned versions ---
 PYTHON_BIN=".venv/bin/python"
-TORCH_VERSION="2.8.0"
-TORCHVISION_VERSION="0.23.0"
-TORCHAUDIO_VERSION="2.8.0"
+TORCH_VERSION="2.9.0"
+TORCHVISION_VERSION="0.24.0"
+TORCHAUDIO_VERSION="2.9.0"
 VERL_VERSION="0.7.1"
-VLLM_VERSION="0.10.2"
+VLLM_VERSION="0.12.0"
 FLASH_ATTN_VERSION="2.8.3"
 RAY_VERSION="2.49.2"
 TRANSFORMERS_VERSION="4.57.1"
 TOKENIZERS_VERSION="0.22.2"
 NUMPY_VERSION="1.26.4"
-TRITON_VERSION="3.4.0"
+TRITON_VERSION="3.5.0"
 ACCELERATE_VERSION="1.13.0"
 DATASETS_VERSION="4.8.4"
 HYDRA_CORE_VERSION="1.3.2"
 OMEGACONF_VERSION="2.3.0"
-XFORMERS_VERSION="0.0.32.post1"
+XFORMERS_VERSION="0.0.33.post1"
 
 # --- CUDA variant ---
-VARIANT="${1:-cu128}"
+VARIANT="${1:-cu130}"
 echo "Using PyTorch wheel variant: $VARIANT"
 
 if [ "$VARIANT" = "cpu" ]; then
