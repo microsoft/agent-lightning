@@ -1,4 +1,4 @@
-"""Training script for Calc-X agent with VERL on agl-lite.
+"""Training script for Calc-X agent with VERL on agl-lite (async-rollout).
 
 Loads the Calc-X dataset, builds a VERL config, and calls run_ppo().
 Assumes agl-lite serve + controller + vLLM are already running
@@ -6,21 +6,22 @@ Assumes agl-lite serve + controller + vLLM are already running
 
 Usage:
   # Full E2E (via run.sh):
-  examples/calc_x/run.sh
+  examples/async_calc_x/run.sh
 
   # Standalone (infra already up):
-  python examples/calc_x/train_calc_agent.py \\
-      --train-file examples/calc_x/data/train.parquet \\
-      --val-file examples/calc_x/data/test.parquet
+  python examples/async_calc_x/train_calc_agent.py \\
+      --train-file examples/async_calc_x/data/train.parquet \\
+      --val-file examples/async_calc_x/data/test.parquet
 
   # CI smoke test:
-  python examples/calc_x/train_calc_agent.py --ci-fast \\
-      --train-file examples/calc_x/data/train.parquet \\
-      --val-file examples/calc_x/data/test_mini.parquet
+  python examples/async_calc_x/train_calc_agent.py --ci-fast \\
+      --train-file examples/async_calc_x/data/train.parquet \\
+      --val-file examples/async_calc_x/data/test_mini.parquet
 
 Environment variables:
   AGL_BASE_URL   — agl-lite server URL (default: http://localhost:8080)
   AGL_KEY        — auth key for agl-lite
+  AGL_ADMIN_KEY  — trainer-only admin key for /admin/gateway/* (required by async)
 """
 
 from __future__ import annotations
@@ -92,16 +93,25 @@ def verl_default_config() -> dict[str, Any]:
             },
         },
         "trainer": {
-            "n_gpus_per_node": 4,
-            "val_before_train": True,
+            "n_gpus_per_node": 1,
+            "val_before_train": False,
             "critic_warmup": 0,
-            "logger": ["console"],
+            "logger": ["console", "wandb"],
             "project_name": "agl-lite",
-            "experiment_name": "calc_x_v1",
+            "experiment_name": "async_calc_x_v1",
             "nnodes": 1,
             "save_freq": 64,
             "test_freq": 32,
             "total_epochs": 2,
+        },
+        "agentlightning": {
+            "timeout_seconds": 1800,
+            "async_rollout": {
+                "enabled": True,
+                "async_train_batch_size": 48,  # train_batch_size=32 × 1.5
+                "gateway_retry_after_seconds": 5,
+                "gateway_drain_timeout_seconds": 30,
+            },
         },
     }
 
@@ -136,7 +146,7 @@ def build_config(
         random_suffix = uuid.uuid4().hex[:8]
 
         overrides["trainer"]["project_name"] = "agl-lite-CI"
-        overrides["trainer"]["experiment_name"] = f"calc_x_{timestamp}_{random_suffix}"
+        overrides["trainer"]["experiment_name"] = f"async_calc_x_{timestamp}_{random_suffix}"
         overrides["trainer"]["total_epochs"] = 1
         overrides["trainer"]["total_training_steps"] = 20
         overrides["trainer"]["test_freq"] = 20
@@ -196,13 +206,13 @@ def main() -> None:
     parser.add_argument(
         "--train-file",
         type=str,
-        default="examples/calc_x/data/train.parquet",
+        default="examples/async_calc_x/data/train.parquet",
         help="Path to training parquet file",
     )
     parser.add_argument(
         "--val-file",
         type=str,
-        default="examples/calc_x/data/test.parquet",
+        default="examples/async_calc_x/data/test.parquet",
         help="Path to validation parquet file",
     )
     parser.add_argument(

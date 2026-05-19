@@ -17,11 +17,12 @@ from agl_lite.server.app import create_app
 from agl_lite.server.config import ServerSettings
 
 AGL_KEY = "test-key"
+ADMIN_KEY = "test-admin-key"
 
 
 @pytest.fixture
 def app():
-    return create_app(ServerSettings(key=AGL_KEY))
+    return create_app(ServerSettings(key=AGL_KEY, admin_key=ADMIN_KEY))
 
 
 @pytest.fixture

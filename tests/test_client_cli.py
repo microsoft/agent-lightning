@@ -13,6 +13,7 @@ from agl_lite.server.app import create_app
 from agl_lite.server.config import ServerSettings
 
 AGL_KEY = "test-key-cli"
+ADMIN_KEY = "test-admin-key-cli"
 
 
 @pytest.fixture(scope="module")
@@ -21,7 +22,7 @@ def server():
     import threading
     import time
 
-    settings = ServerSettings(key=AGL_KEY)
+    settings = ServerSettings(key=AGL_KEY, admin_key=ADMIN_KEY)
     application = create_app(settings)
     config = uvicorn.Config(application, host="127.0.0.1", port=18923, log_level="error")
     server = uvicorn.Server(config)

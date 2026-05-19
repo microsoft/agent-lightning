@@ -1,0 +1,47 @@
+# Keep the calc_x agent image context small.
+# Dockerfile.agent currently only copies agents/calc_agent.py.
+
+# Data, logs, and generated outputs
+data
+logs
+outputs
+wandb
+mlruns
+*.log
+
+# Local environment and secrets
+.env
+*.env.local
+.venv
+.venv.bak
+venv
+env
+
+# Python/editor caches
+__pycache__
+**/__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.pyright
+.ipynb_checkpoints
+**/.ipynb_checkpoints
+
+# Notebooks and build artifacts
+*.ipynb
+*.egg-info
+.eggs
+build
+dist
+
+# Editor/OS files
+.vscode
+.idea
+.DS_Store
+**/.DS_Store
+*.swp
+*.swo
+*~
