@@ -6,14 +6,15 @@ and .sleep_replicas() instead of async_rollout_manager.wake_up()/sleep().
 
 Per training step:
     1. (already awake, weights synced from prior step or initial _load_checkpoint)
-    2. rollout_bridge.set_up_data_and_server   — register vLLM endpoints + enqueue rollouts
-    3. rollout_bridge.run_until_all_finished   — poll until terminal
-    4. rollout_bridge.get_train_data_batch     — assemble DataProto
-    5. rollout_bridge.cleanup_agent_jobs       — delete tracked agent Jobs when enabled
-    6. rollout_bridge.clear_data_and_server    — reset local bridge state
-    7. self.checkpoint_manager.sleep_replicas()  — offload vLLM
-    8. log-prob / KL / advantage / actor+critic update (stock VERL helpers)
-    9. self.checkpoint_manager.update_weights(global_steps)  — wake + sync for next step
+    2. rollout replicas resume_generation()  — accept new requests after prior abort
+    3. rollout_bridge.set_up_data_and_server   — register vLLM endpoints + enqueue rollouts
+    4. rollout_bridge.run_until_all_finished   — poll until terminal
+    5. rollout_bridge.get_train_data_batch     — assemble DataProto
+    6. rollout replicas abort_all_requests()  — kill residual requests; may pause vLLM generation
+    7. rollout_bridge.clear_data_and_server    — reset local bridge state
+    8. self.checkpoint_manager.sleep_replicas()  — offload vLLM
+    9. log-prob / KL / advantage / actor+critic update (stock VERL helpers)
+    10. self.checkpoint_manager.update_weights(global_steps)  — wake + sync for next step
 """
 
 # pyright: reportPrivateImportUsage=false
@@ -26,7 +27,10 @@ Per training step:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import random
 import uuid
 from pprint import pprint
 from typing import Any
@@ -37,6 +41,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
+from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics
 from verl.trainer.ppo.ray_trainer import (
     AdvantageEstimator,
     RayPPOTrainer,
@@ -46,11 +51,48 @@ from verl.trainer.ppo.ray_trainer import (
 )
 from verl.utils.metric import reduce_metrics
 from verl.utils.profiler.performance import marked_timer
+from verl.utils.ray_utils import auto_await
 from verl.utils.tracking import Tracking
+
+from agl_lite.hooks import RolloutHooks, load_hooks
+from agl_lite.store.memory import InMemoryStore
 
 from .rollout_bridge import AglLiteRolloutBridge
 
 log = logging.getLogger(__name__)
+
+
+def _tracking_backends_with_wandb(configured: Any, wandb_mode: str | None = None) -> list[str]:
+    if configured is None:
+        backends: list[str] = ["console"]
+    elif isinstance(configured, str):
+        backends = [configured]
+    else:
+        backends = [str(backend) for backend in configured]
+
+    normalized_mode = (wandb_mode if wandb_mode is not None else os.environ.get("WANDB_MODE", "")).lower()
+    if normalized_mode == "disabled":
+        return [backend for backend in backends if backend != "wandb"] or ["console"]
+    if "wandb" not in backends:
+        backends.append("wandb")
+    return backends
+
+
+def _suffix_metrics(metrics: dict[str, Any], suffix: str) -> dict[str, Any]:
+    return {f"{key}{suffix}": value for key, value in metrics.items()}
+
+
+def _n_gpus_for_metrics(trainer: Any) -> int:
+    resource_pool_manager = getattr(trainer, "resource_pool_manager", None)
+    if resource_pool_manager is not None and hasattr(resource_pool_manager, "get_n_gpus"):
+        try:
+            return int(resource_pool_manager.get_n_gpus())
+        except Exception:
+            pass
+    trainer_config = getattr(trainer.config, "trainer", {})
+    n_gpus_per_node = int(trainer_config.get("n_gpus_per_node", 1))
+    nnodes = int(trainer_config.get("nnodes", 1))
+    return max(1, n_gpus_per_node * nnodes)
 
 
 class AglLiteRayPPOTrainer(RayPPOTrainer):
@@ -63,11 +105,24 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._rollout_bridge: AglLiteRolloutBridge | None = None
+        self._hooks: RolloutHooks | None = None
+
+    def _ensure_hooks(self) -> RolloutHooks | None:
+        if self._hooks is not None:
+            return self._hooks
+        hooks_path = self.config.agentlightning.get("hooks", None)
+        if not hooks_path:
+            return None
+        self._hooks = load_hooks(hooks_path)
+        # Keep the existing hook contract where on_startup receives a store-like object.
+        self._hooks.on_startup(InMemoryStore())
+        return self._hooks
 
     def _ensure_rollout_bridge(self) -> AglLiteRolloutBridge:
         if self._rollout_bridge is not None:
             return self._rollout_bridge
         al = self.config.agentlightning
+        hooks = self._ensure_hooks()
         pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
         trace_aggregator = al.get("trace_aggregator", None)
         if trace_aggregator is not None:
@@ -88,21 +143,28 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             processor=self.processor,
             image_base_dir=self.config.data.get("image_base_dir"),
             trace_aggregator=trace_aggregator,
-            cleanup_agent_jobs=al.get("cleanup_agent_jobs", False),
-            cleanup_namespace=al.get("cleanup_namespace", None),
+            hooks=hooks,
         )
         return self._rollout_bridge
+
+    @auto_await
+    async def _abort_all_rollout_requests(self) -> None:
+        await asyncio.gather(*[replica.abort_all_requests() for replica in self.async_rollout_manager.rollout_replicas])
+
+    @auto_await
+    async def _resume_all_rollout_generation(self) -> None:
+        await asyncio.gather(*[replica.resume_generation() for replica in self.async_rollout_manager.rollout_replicas])
 
     def _rollout(self, gen_batch: DataProto, is_train: bool) -> tuple[DataProto, dict[str, Any]]:
         """Run the agl-lite rollout flow and return (DataProto, metrics).
 
         Training returns the DataProto assembled from agl-lite triplets plus
         rollout metrics. Validation returns metrics from ``get_test_metrics()``
-        and an empty DataProto placeholder. In both paths, optional Job cleanup
-        runs after results are extracted and before local bridge state is reset.
+        and an empty DataProto placeholder.
         """
         rollout_bridge = self._ensure_rollout_bridge()
         server_addresses = list(self.async_rollout_manager.server_addresses)
+        self._resume_all_rollout_generation()
         data_dict = dict(gen_batch.non_tensor_batch)
         rollout_bridge.set_up_data_and_server(
             data=data_dict,
@@ -130,12 +192,16 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 device=torch.device("cpu"),
                 global_steps=self.global_steps,
             )
-            rollout_bridge.cleanup_agent_jobs()
+            print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
+            self._abort_all_rollout_requests()
+            print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
             rollout_bridge.clear_data_and_server()
             return out, metrics
         # validation: caller will pull metrics via rollout_bridge.get_test_metrics()
         metrics = rollout_bridge.get_test_metrics()
-        rollout_bridge.cleanup_agent_jobs()
+        print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
+        self._abort_all_rollout_requests()
+        print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
         rollout_bridge.clear_data_and_server()
         return DataProto(batch=None), metrics
 
@@ -160,7 +226,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 self.async_rollout_manager.start_profile()
 
             gen_batch_output, agent_metrics = self._rollout(gen_batch, is_train=True)
+            print("AglLiteRayPPOTrainer: sleeping rollout replicas.")
             self.checkpoint_manager.sleep_replicas()
+            print("AglLiteRayPPOTrainer: rollout replicas slept.")
             if curr_step_profile:
                 self.async_rollout_manager.stop_profile()
             metrics.update(agent_metrics)
@@ -227,15 +295,28 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 config=self.config.algorithm,
             )
 
+        metrics.update(
+            _suffix_metrics(
+                compute_data_metrics(batch=batch, use_critic=self.use_critic),
+                "_before_processing",
+            )
+        )
+
         # ── 4. Drop is_drop_mask + floor to ppo_mini_batch_size ────────────
+        metrics["critic/n_transition_before_dropping"] = len(batch)
         if "is_drop_mask" in batch.batch:
             keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
             metrics["training/n_triplets_prompt_too_long"] = len(batch) - len(keep)
             batch = batch[keep]
-        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size
-        trunc = (len(batch) // mini_bs) * mini_bs
-        metrics["training/n_triplets_dropped_remainder"] = len(batch) - trunc
-        batch = batch[:trunc] if trunc > 0 else batch[:0]
+        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
+        n_transition = len(batch)
+        random_indices = list(range(n_transition))
+        random.shuffle(random_indices)
+        batch.reorder(torch.tensor(random_indices).type(torch.int32))
+        n_remained_transition = n_transition // mini_bs * mini_bs
+        metrics["training/n_triplets_dropped_remainder"] = n_transition - n_remained_transition
+        batch = batch[list(range(n_remained_transition))]
+        metrics["critic/n_transition_after_dropping"] = len(batch)
         if len(batch) == 0:
             metrics["agent/zero_after_drop"] = 1
             log.warning("batch empty after drop+floor; skipping update this step")
@@ -243,6 +324,13 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
         if self.config.trainer.balance_batch:
             self._balance_batch(batch, metrics=metrics)
+
+        metrics.update(
+            _suffix_metrics(
+                compute_data_metrics(batch=batch, use_critic=self.use_critic),
+                "_after_processing",
+            )
+        )
 
         # ── 5. update critic / actor ───────────────────────────────────────
         if self.use_critic:
@@ -259,6 +347,12 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         with marked_timer("update_weights", timing_raw, color="red"):
             self.checkpoint_manager.update_weights(self.global_steps)
 
+        batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+        n_gpus = _n_gpus_for_metrics(self)
+        if n_gpus > 0 and "step" in timing_raw:
+            metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
         return metrics
 
     def fit(self):
@@ -268,7 +362,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         logger = Tracking(
             project_name=self.config.trainer.project_name,
             experiment_name=self.config.trainer.experiment_name,
-            default_backend=self.config.trainer.logger,
+            default_backend=_tracking_backends_with_wandb(self.config.trainer.logger),
             config=OmegaConf.to_container(self.config, resolve=True),
         )
 
@@ -293,7 +387,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self.global_steps += 1
         last_val_metrics = None
 
-        for epoch in range(self.config.trainer.total_epochs):
+        for _epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 timing_raw: dict[str, float] = {}
                 is_last_step = self.global_steps >= self.total_training_steps
@@ -322,12 +416,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                     with marked_timer("save_checkpoint", timing_raw):
                         self._save_checkpoint()
 
-                metrics.update(
-                    {
-                        "training/global_step": self.global_steps,
-                        "training/epoch": epoch,
-                    }
-                )
                 logger.log(data=metrics, step=self.global_steps)
 
                 if is_last_step:
@@ -342,12 +430,14 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         """Validation via agl-lite rollout bridge.
 
         Wake/sleep contract:
-          - vLLM is expected to be awake on current weights when this is called
-            (fit() calls update_weights before val_before_train and after each
-            actor update).
-          - This method does NOT wake or sleep vLLM. It only registers/enqueues/
-            polls/clears via the bridge. The next training step will sleep
-            replicas at the end of its rollout block.
+                    - vLLM is expected to be awake on current weights when this is called
+                        (fit() calls update_weights before val_before_train and after each
+                        actor update).
+                    - _rollout() resumes generation before enqueueing requests, because
+                        abort_all_requests() can leave newer vLLM engines paused.
+                    - This method does NOT wake, sleep, or sync vLLM weights. It only
+                        registers/enqueues/polls/clears via the bridge. The next training
+                        step will sleep replicas at the end of its rollout block.
           - If a future change inserts sleep_replicas() between actor-update and
             validation, that branch must call update_weights again before
             entering _validate.
