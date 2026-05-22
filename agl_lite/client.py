@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 import httpx
+import structlog
 
 from agl_lite.schemas.api import (
     ArchiveBackend,
@@ -27,6 +28,8 @@ from agl_lite.schemas.model_server import ModelServer
 from agl_lite.schemas.resources import ResourcesUpdate
 from agl_lite.schemas.rollout import Rollout, RolloutStatus
 
+log = structlog.get_logger()
+
 
 class AglLiteError(Exception):
     """Error from agl-lite API."""
@@ -35,6 +38,83 @@ class AglLiteError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"HTTP {status_code}: {detail}")
+
+
+# Transport-layer errors that indicate the request did not complete a
+# round-trip. By the time httpx raises these, either the request was never
+# sent (ConnectError / PoolTimeout / WriteError), or the server closed the
+# connection before any response headers were received (ReadError /
+# RemoteProtocolError). The most common cause in practice is a stale
+# keep-alive socket reaped by the server's ``timeout_keep_alive``.
+#
+# These are safe to retry: the server has not produced any response yet, so
+# even non-idempotent operations (POST) cannot have produced partial side
+# effects on the application layer.
+_TRANSIENT_TRANSPORT_ERRORS: tuple[type[Exception], ...] = (
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.RemoteProtocolError,
+    httpx.PoolTimeout,
+)
+
+
+class _RetryingTransport(httpx.AsyncBaseTransport):
+    """An httpx transport that retries on transient transport-layer errors.
+
+    Wraps another async transport and retries failed requests with exponential
+    backoff. Designed primarily for long-running poll loops (e.g. the
+    trainer's rollout bridge), where a single stale keep-alive socket race
+    would otherwise raise ``httpx.ReadError`` / ``RemoteProtocolError`` and
+    propagate as an unhandled exception that crashes the entire training run.
+
+    Only transport-layer errors are retried. HTTP-level errors (4xx/5xx
+    responses) are returned as-is so application code can decide how to
+    handle them.
+    """
+
+    def __init__(
+        self,
+        wrapped: httpx.AsyncBaseTransport,
+        *,
+        max_attempts: int = 4,
+        initial_backoff_seconds: float = 0.1,
+        backoff_multiplier: float = 2.0,
+    ) -> None:
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be >= 1")
+        self._wrapped = wrapped
+        self._max_attempts = max_attempts
+        self._initial_backoff_seconds = initial_backoff_seconds
+        self._backoff_multiplier = backoff_multiplier
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        backoff = self._initial_backoff_seconds
+        last_exc: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                return await self._wrapped.handle_async_request(request)
+            except _TRANSIENT_TRANSPORT_ERRORS as exc:
+                last_exc = exc
+                if attempt >= self._max_attempts:
+                    break
+                log.warning(
+                    "agl-lite client retrying after transient transport error",
+                    method=request.method,
+                    url=str(request.url),
+                    error=type(exc).__name__,
+                    error_detail=str(exc),
+                    attempt=attempt,
+                    max_attempts=self._max_attempts,
+                    sleep_seconds=backoff,
+                )
+                await asyncio.sleep(backoff)
+                backoff *= self._backoff_multiplier
+        assert last_exc is not None
+        raise last_exc
+
+    async def aclose(self) -> None:
+        await self._wrapped.aclose()
 
 
 class AglLiteClient:
@@ -60,7 +140,20 @@ class AglLiteClient:
         headers: dict[str, str] = {}
         if agl_key:
             headers["Authorization"] = f"Bearer {agl_key}"
-        self._client = client or httpx.AsyncClient(base_url=self._base_url, headers=headers, timeout=30.0)
+        if client is None:
+            # Wrap the default transport so transient transport-layer errors
+            # (most often a stale keep-alive socket closed by the server) are
+            # retried transparently before they can crash long-running poll
+            # loops. See `_RetryingTransport` for details.
+            transport = _RetryingTransport(httpx.AsyncHTTPTransport())
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                headers=headers,
+                timeout=30.0,
+                transport=transport,
+            )
+        else:
+            self._client = client
         self._owns_client = client is None
 
     async def close(self) -> None:

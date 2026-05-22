@@ -45,7 +45,23 @@ def serve(
         log_dir=log_dir,
     )
     application = create_app(settings)
-    uvicorn.run(application, host=host, port=port, workers=1)
+    # ``timeout_keep_alive`` controls how long uvicorn keeps an idle HTTP/1.1
+    # keep-alive connection open before closing it. The library default (5s)
+    # is too aggressive for long-running async-rollout poll loops: when the
+    # trainer's httpx client holds an idle pooled socket for >5s and then
+    # reuses it, uvicorn has already half-closed the connection and the next
+    # request raises ``httpx.ReadError`` / ``RemoteProtocolError`` ("Server
+    # disconnected without sending a response"). The client also retries
+    # transient transport errors (see ``_RetryingTransport`` in client.py),
+    # but giving the server a much longer keep-alive window eliminates the
+    # race in the common case rather than relying on retries.
+    uvicorn.run(
+        application,
+        host=host,
+        port=port,
+        workers=1,
+        timeout_keep_alive=120,
+    )
 
 
 @app.command()
