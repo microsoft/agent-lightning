@@ -229,3 +229,83 @@ class TestResources:
     async def test_get_resources_not_found(self, client: AglLiteClient):
         with pytest.raises(AglLiteError, match="404"):
             await client.get_resources("nonexistent")
+
+
+class _ScriptedTransport(httpx.AsyncBaseTransport):
+    """Transport that raises a scripted sequence of errors before succeeding."""
+
+    def __init__(self, errors: list[Exception]) -> None:
+        self._errors = list(errors)
+        self.calls = 0
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        if self._errors:
+            raise self._errors.pop(0)
+        return httpx.Response(200, json={"ok": True})
+
+
+class TestRetryingTransport:
+    """Regression coverage for the keep-alive race that crashed step 92.
+
+    Bug repro: under a long-lived ``httpx.AsyncClient`` polling
+    ``/api/rollouts/{rid}``, uvicorn's default 5s ``timeout_keep_alive`` closes
+    idle pooled sockets, so the next request raises ``httpx.ReadError`` /
+    ``RemoteProtocolError``. Before the fix, this single transient error
+    propagated up to the Ray driver and tore down the entire training job.
+    The ``_RetryingTransport`` wrapper must transparently retry it.
+    """
+
+    async def test_retries_read_error_then_succeeds(self) -> None:
+        from agl_lite.client import _RetryingTransport
+
+        scripted = _ScriptedTransport(
+            [
+                httpx.ReadError("simulated stale keep-alive"),
+                httpx.RemoteProtocolError("server disconnected without response"),
+            ]
+        )
+        transport = _RetryingTransport(scripted, initial_backoff_seconds=0.0)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            resp = await c.get("/api/rollouts/x")
+        assert resp.status_code == 200
+        assert scripted.calls == 3
+
+    async def test_retries_connect_error(self) -> None:
+        from agl_lite.client import _RetryingTransport
+
+        scripted = _ScriptedTransport([httpx.ConnectError("ECONNREFUSED")])
+        transport = _RetryingTransport(scripted, initial_backoff_seconds=0.0)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            resp = await c.get("/healthz")
+        assert resp.status_code == 200
+        assert scripted.calls == 2
+
+    async def test_raises_after_max_attempts(self) -> None:
+        from agl_lite.client import _RetryingTransport
+
+        scripted = _ScriptedTransport([httpx.ReadError("persistent")] * 10)
+        transport = _RetryingTransport(scripted, max_attempts=3, initial_backoff_seconds=0.0)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            with pytest.raises(httpx.ReadError):
+                await c.get("/api/rollouts/x")
+        assert scripted.calls == 3
+
+    async def test_does_not_retry_application_errors(self) -> None:
+        """5xx must NOT be retried — that's an application-level signal."""
+        from agl_lite.client import _RetryingTransport
+
+        class _Status500Transport(httpx.AsyncBaseTransport):
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                self.calls += 1
+                return httpx.Response(500, json={"detail": "boom"})
+
+        inner = _Status500Transport()
+        transport = _RetryingTransport(inner, initial_backoff_seconds=0.0)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            resp = await c.get("/api/rollouts/x")
+        assert resp.status_code == 500
+        assert inner.calls == 1
