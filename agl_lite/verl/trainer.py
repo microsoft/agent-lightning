@@ -27,6 +27,8 @@ Per training step:
 from __future__ import annotations
 
 import logging
+import os
+import random
 import uuid
 from pprint import pprint
 from typing import Any, cast
@@ -37,6 +39,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from verl import DataProto
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
+from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics
 from verl.trainer.ppo.ray_trainer import (
     AdvantageEstimator,
     RayPPOTrainer,
@@ -54,6 +57,37 @@ from .sample_iterator import SampleIterator
 log = logging.getLogger(__name__)
 
 
+def _tracking_backends_with_wandb(configured: Any, wandb_mode: str | None = None) -> list[str]:
+    if configured is None:
+        backends: list[str] = ["console"]
+    elif isinstance(configured, str):
+        backends = [configured]
+    else:
+        backends = [str(backend) for backend in configured]
+
+    normalized_mode = (wandb_mode if wandb_mode is not None else os.environ.get("WANDB_MODE", "")).lower()
+    if normalized_mode == "disabled":
+        return [backend for backend in backends if backend != "wandb"] or ["console"]
+    if "wandb" not in backends:
+        backends.append("wandb")
+    return backends
+
+
+def _suffix_metrics(metrics: dict[str, Any], suffix: str) -> dict[str, Any]:
+    return {f"{key}{suffix}": value for key, value in metrics.items()}
+
+
+def _n_gpus_for_metrics(trainer: Any) -> int:
+    resource_pool_manager = getattr(trainer, "resource_pool_manager", None)
+    if resource_pool_manager is not None and hasattr(resource_pool_manager, "get_n_gpus"):
+        try:
+            return int(resource_pool_manager.get_n_gpus())
+        except Exception:
+            pass
+    trainer_config = getattr(trainer.config, "trainer", {})
+    n_gpus_per_node = int(trainer_config.get("n_gpus_per_node", 1))
+    nnodes = int(trainer_config.get("nnodes", 1))
+    return max(1, n_gpus_per_node * nnodes)
 def _batch_dict_len(batch: dict[str, Any]) -> int:
     """Leading-dim length of a dataloader batch dict (0 if empty)."""
     if not batch:
@@ -238,15 +272,28 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 config=self.config.algorithm,
             )
 
+        metrics.update(
+            _suffix_metrics(
+                compute_data_metrics(batch=batch, use_critic=self.use_critic),
+                "_before_processing",
+            )
+        )
+
         # ── 4. Drop is_drop_mask + floor to ppo_mini_batch_size ────────────
+        metrics["critic/n_transition_before_dropping"] = len(batch)
         if "is_drop_mask" in batch.batch:
             keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
             metrics["training/n_triplets_prompt_too_long"] = len(batch) - len(keep)
             batch = batch[keep]
-        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size
-        trunc = (len(batch) // mini_bs) * mini_bs
-        metrics["training/n_triplets_dropped_remainder"] = len(batch) - trunc
-        batch = cast(Any, batch)[:trunc] if trunc > 0 else cast(Any, batch)[:0]
+        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
+        n_transition = len(batch)
+        random_indices = list(range(n_transition))
+        random.shuffle(random_indices)
+        batch.reorder(torch.tensor(random_indices).type(torch.int32))
+        n_remained_transition = n_transition // mini_bs * mini_bs
+        metrics["training/n_triplets_dropped_remainder"] = n_transition - n_remained_transition
+        batch = batch[list(range(n_remained_transition))]
+        metrics["critic/n_transition_after_dropping"] = len(batch)
         if len(batch) == 0:
             metrics["agent/zero_after_drop"] = 1
             log.warning("batch empty after drop+floor; skipping update this step")
@@ -254,6 +301,13 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
         if self.config.trainer.balance_batch:
             self._balance_batch(batch, metrics=metrics)
+
+        metrics.update(
+            _suffix_metrics(
+                compute_data_metrics(batch=batch, use_critic=self.use_critic),
+                "_after_processing",
+            )
+        )
 
         # ── 5. update critic / actor ───────────────────────────────────────
         if self.use_critic:
@@ -270,6 +324,12 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         with marked_timer("update_weights", timing_raw, color="red"):
             self.checkpoint_manager.update_weights(self.global_steps)
 
+        batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+        n_gpus = _n_gpus_for_metrics(self)
+        if n_gpus > 0 and "step" in timing_raw:
+            metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
         return metrics
 
     def fit(self):
@@ -279,7 +339,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         logger = Tracking(
             project_name=self.config.trainer.project_name,
             experiment_name=self.config.trainer.experiment_name,
-            default_backend=self.config.trainer.logger,
+            default_backend=_tracking_backends_with_wandb(self.config.trainer.logger),
             config=OmegaConf.to_container(self.config, resolve=True),
         )
 
@@ -304,7 +364,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self.global_steps += 1
         last_val_metrics = None
 
-        for epoch in range(self.config.trainer.total_epochs):
+        for _epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 timing_raw: dict[str, float] = {}
                 is_last_step = self.global_steps >= self.total_training_steps
@@ -333,12 +393,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                     with marked_timer("save_checkpoint", timing_raw):
                         self._save_checkpoint()
 
-                metrics.update(
-                    {
-                        "training/global_step": self.global_steps,
-                        "training/epoch": epoch,
-                    }
-                )
                 logger.log(data=metrics, step=self.global_steps)
 
                 if is_last_step:

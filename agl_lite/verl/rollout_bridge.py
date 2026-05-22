@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 
 # AglLiteRolloutBridge talks to agl-lite over HTTP instead of using LightningStore,
 # LLMProxy, and Adapter directly.
 import os
+import re
 import threading
 import time
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -54,8 +56,12 @@ class RolloutLegacy(BaseModel):
     rollout_id: str
     task: Task | None = None
     final_reward: float | None = None
+    reward_source: str | None = None
+    reward_reason: str | None = None
     triplets: list[Triplet] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    triplet_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AgentJobK8sClient(Protocol):
@@ -77,6 +83,92 @@ _AGL_LITE_MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 _AGL_LITE_MANAGED_BY_VALUE = "agl-lite"
 _AGL_LITE_MANAGED_BY_SELECTOR = f"{_AGL_LITE_MANAGED_BY_LABEL}={_AGL_LITE_MANAGED_BY_VALUE}"
 _AGL_LITE_ROLLOUT_ID_LABEL = "agl-lite/rollout-id"
+_FALLBACK_REWARD_REASONS = {"no_reward_posted_by_agent", "terminal_failed"}
+
+
+def _safe_metric_name(value: Any, *, default: str = "unknown", max_length: int = 80) -> str:
+    text = str(value) if value is not None else default
+    text = re.sub(r"[^0-9A-Za-z_.-]+", "_", text).strip("._-")
+    if not text:
+        text = default
+    return text[:max_length]
+
+
+def _bounded_counts(values: list[Any], max_keys: int = 20) -> dict[str, int]:
+    counter = Counter(_safe_metric_name(value) for value in values)
+    result = {key: count for key, count in counter.most_common(max_keys)}
+    remainder = sum(counter.values()) - sum(result.values())
+    if remainder:
+        result["other"] = remainder
+    return result
+
+
+def _as_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float | np.number):
+        return float(value)
+    return None
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    return float(np.percentile(values, percentile)) if values else 0.0
+
+
+def _finish_reason_from_response(response: Any) -> str | None:
+    if not isinstance(response, dict):
+        return None
+    choices = response.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            reason = choice.get("finish_reason")
+            if isinstance(reason, str) and reason:
+                return reason
+    stop_reason = response.get("stop_reason")
+    return stop_reason if isinstance(stop_reason, str) and stop_reason else None
+
+
+def _token_count_from_choices(response: dict[str, Any]) -> int:
+    choices = response.get("choices")
+    if not isinstance(choices, list):
+        return 0
+    total = 0
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        token_ids = choice.get("token_ids")
+        if isinstance(token_ids, list):
+            total += len(token_ids)
+    return total
+
+
+def _usage_from_model_request(data: dict[str, Any]) -> dict[str, int]:
+    response_raw = data.get("response")
+    response: dict[str, Any] = response_raw if isinstance(response_raw, dict) else {}
+    usage_raw = data.get("usage") if isinstance(data.get("usage"), dict) else response.get("usage", {})
+    usage = usage_raw if isinstance(usage_raw, dict) else {}
+    result: dict[str, int] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            result[key] = int(value)
+
+    if "prompt_tokens" not in result:
+        prompt_token_ids = response.get("prompt_token_ids")
+        if isinstance(prompt_token_ids, list):
+            result["prompt_tokens"] = len(prompt_token_ids)
+    if "completion_tokens" not in result:
+        response_tokens = _token_count_from_choices(response)
+        if response_tokens:
+            result["completion_tokens"] = response_tokens
+    if "total_tokens" not in result:
+        prompt_tokens = result.get("prompt_tokens", result.get("input_tokens", 0))
+        completion_tokens = result.get("completion_tokens", result.get("output_tokens", 0))
+        if prompt_tokens or completion_tokens:
+            result["total_tokens"] = prompt_tokens + completion_tokens
+    return result
 
 
 def ids_startswith(
@@ -318,6 +410,8 @@ class AglLiteRolloutBridge:
         self._rollout_error: dict[str, str] = {}
         self._rollout_start_time: dict[str, float] = {}
         self._rollout_end_time: dict[str, float] = {}
+        self._raw_events_by_rollout: dict[str, list[dict[str, Any]]] = {}
+        self._triplet_events_by_rollout: dict[str, list[dict[str, Any]]] = {}
         self._timeout_rids: set[str] = set()
         self._num_succeeded = 0
         self._num_failed = 0
@@ -412,11 +506,13 @@ class AglLiteRolloutBridge:
         """Compute 4D position_ids for M-RoPE models."""
         from collections.abc import Callable
 
-        get_rope_index: Callable[..., torch.Tensor]
-        if "Qwen3VL" in self.processor.__class__.__name__:
-            from verl.models.transformers.qwen3_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
-        else:
-            from verl.models.transformers.qwen2_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+        module_name = (
+            "verl.models.transformers.qwen3_vl"
+            if "Qwen3VL" in self.processor.__class__.__name__
+            else "verl.models.transformers.qwen2_vl"
+        )
+        module = importlib.import_module(module_name)
+        get_rope_index: Callable[..., torch.Tensor] = module.get_rope_index  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
         vision_pos = get_rope_index(
             self.processor, input_ids=input_ids, image_grid_thw=image_grid_thw, attention_mask=attention_mask
@@ -514,6 +610,13 @@ class AglLiteRolloutBridge:
         )
         future.result()
 
+    async def _async_fetch_rollout_events(self, rollout_id: str) -> tuple[list[Any], list[Any]]:
+        raw_events = await self.client.get_events(rollout_id)
+        triplet_events = await self.client.get_events(rollout_id, format="triplet")
+        self._raw_events_by_rollout[rollout_id] = [event.model_dump() for event in raw_events]
+        self._triplet_events_by_rollout[rollout_id] = [event.model_dump() for event in triplet_events]
+        return raw_events, triplet_events
+
     async def _async_fetch_rollout_result(self, rollout_id: str) -> RolloutLegacy:
         """Fetch triplets for a completed rollout via AglLiteClient.
 
@@ -522,7 +625,7 @@ class AglLiteRolloutBridge:
 
         In agl-lite, the server does event→triplet conversion via format=triplet.
         """
-        events = await self.client.get_events(rollout_id, format="triplet")
+        raw_events, events = await self._async_fetch_rollout_events(rollout_id)
 
         # Convert trimmed events to Triplet objects
         triplets: list[Triplet] = []
@@ -540,9 +643,14 @@ class AglLiteRolloutBridge:
 
         # Match rewards to triplets (last reward wins)
         final_reward: float | None = None
+        reward_source: str | None = None
+        reward_reason: str | None = None
         reward_events = [e for e in events if e.event_type == "reward"]
         if reward_events:
-            final_reward = reward_events[-1].data.get("value")
+            reward_data = reward_events[-1].data
+            final_reward = reward_data.get("value")
+            reward_source = reward_data.get("source")
+            reward_reason = reward_data.get("reason")
 
         # Assign reward to last triplet (same as Agent Lightning convention)
         if triplets and final_reward is not None:
@@ -557,8 +665,12 @@ class AglLiteRolloutBridge:
                 metadata=original.get("metadata", {}),
             ),
             final_reward=final_reward,
+            reward_source=reward_source,
+            reward_reason=reward_reason,
             triplets=triplets,
             metadata=original.get("metadata", {}),
+            events=[event.model_dump() for event in raw_events],
+            triplet_events=[event.model_dump() for event in events],
         )
 
         if result.final_reward is None:
@@ -626,9 +738,11 @@ class AglLiteRolloutBridge:
                     self._completed_rollouts[rid] = legacy
                     self._num_succeeded += 1
                 elif status == RolloutStatus.TERMINAL_FAILED:
+                    await self._async_fetch_rollout_events(rid)
                     self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
                     self._num_failed += 1
                 elif status == RolloutStatus.CANCELLED:
+                    await self._async_fetch_rollout_events(rid)
                     self._rollout_error[rid] = getattr(rollout, "error_message", None) or "cancelled"
                     self._num_cancelled += 1
 
@@ -677,27 +791,45 @@ class AglLiteRolloutBridge:
             rollout = self._completed_rollouts.get(rollout_id)
             if rollout is None:
                 # failed / cancelled / timeout — fillna-reward, no triplets.
-                sample_stat_list.append({"reward": self.reward_fillna_value, "has_reward": False})
+                sample_stat_list.append(
+                    {
+                        "reward": self.reward_fillna_value,
+                        "has_reward": False,
+                        "has_any_reward": False,
+                        "has_fallback_reward": False,
+                    }
+                )
                 continue
             final_reward_raw: float | None = rollout.final_reward
             final_reward = self._fillna_reward(rollout)
+            has_agent_reward = self._has_agent_reward(rollout)
+            has_fallback_reward = self._has_fallback_reward(rollout)
             if not rollout.triplets:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
-                sample_stat_list.append({"reward": final_reward, "has_reward": final_reward_raw is not None})
+                sample_stat_list.append(
+                    {
+                        "reward": final_reward,
+                        "has_reward": has_agent_reward,
+                        "has_any_reward": final_reward_raw is not None,
+                        "has_fallback_reward": has_fallback_reward,
+                    }
+                )
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
 
             if "data_source" in self._task_id_to_original_sample[rollout_id]:
                 # When a test sample includes a 'data_source' field, record per-source statistics for test results.
                 # TODO: This is a flawed design. We should have a better way to handle this.
-                data_source = self._task_id_to_original_sample[rollout_id]["data_source"]
+                data_source = _safe_metric_name(self._task_id_to_original_sample[rollout_id]["data_source"])
                 sample_stat_list_by_source[data_source].append(
                     {
                         "sum_response_length": np.sum(response_length_list),
                         "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                         "turn_count": len(rollout.triplets),
                         "reward": final_reward,
-                        "has_reward": final_reward_raw is not None,
+                        "has_reward": has_agent_reward,
+                        "has_any_reward": final_reward_raw is not None,
+                        "has_fallback_reward": has_fallback_reward,
                     }
                 )
             sample_stat_list.append(
@@ -706,7 +838,9 @@ class AglLiteRolloutBridge:
                     "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                     "turn_count": len(rollout.triplets),
                     "reward": final_reward,
-                    "has_reward": final_reward_raw is not None,
+                    "has_reward": has_agent_reward,
+                    "has_any_reward": final_reward_raw is not None,
+                    "has_fallback_reward": has_fallback_reward,
                 }
             )
         metric_dict: dict[str, Any] = {}
@@ -716,13 +850,19 @@ class AglLiteRolloutBridge:
             data_source: [stat for stat in sample_stats if "sum_response_length" in stat]
             for data_source, sample_stats in sample_stat_list_by_source.items()
         }
-        for data_source, sample_stats in sample_stat_list_by_source.items():
+        for data_source, sample_stats in list(sample_stat_list_by_source.items())[:20]:
             metric_dict.update(
                 {
                     f"val/{data_source}/n_rollouts": len(sample_stats),
                     f"val/{data_source}/n_rollouts_w_trace": len(stats_w_trace_by_source[data_source]),
                     f"val/{data_source}/n_rollouts_w_reward": len(
                         [stat for stat in sample_stats if stat["has_reward"]]
+                    ),
+                    f"val/{data_source}/n_rollouts_w_any_reward": len(
+                        [stat for stat in sample_stats if stat["has_any_reward"]]
+                    ),
+                    f"val/{data_source}/n_rollouts_w_fallback_reward": len(
+                        [stat for stat in sample_stats if stat["has_fallback_reward"]]
                     ),
                     f"val/{data_source}/reward": np.mean(
                         [stat["reward"] for stat in sample_stats]
@@ -743,6 +883,10 @@ class AglLiteRolloutBridge:
                 "val/n_rollouts": len(sample_stat_list),
                 "val/n_rollouts_w_trace": len(stats_w_trace),
                 "val/n_rollouts_w_reward": len([stat for stat in sample_stat_list if stat["has_reward"]]),
+                "val/n_rollouts_w_any_reward": len([stat for stat in sample_stat_list if stat["has_any_reward"]]),
+                "val/n_rollouts_w_fallback_reward": len(
+                    [stat for stat in sample_stat_list if stat["has_fallback_reward"]]
+                ),
                 "val/reward": np.mean(
                     [stat["reward"] for stat in sample_stat_list]
                 ),  # each rollout must have a reward (fillna if missing)
@@ -756,6 +900,7 @@ class AglLiteRolloutBridge:
             }
         )
         metric_dict.update(self._polling_metrics("val"))
+        metric_dict.update(self._event_metrics("val"))
         return metric_dict
 
     def get_train_data_batch(
@@ -779,7 +924,9 @@ class AglLiteRolloutBridge:
 
         finished_id_to_sample_info: dict[str, dict[str, Any]] = {}
         finished_id_to_final_reward: dict[str, float] = {}
-        sample_with_reward_count = 0
+        sample_with_agent_reward_count = 0
+        sample_with_any_reward_count = 0
+        sample_with_fallback_reward_count = 0
 
         for rid in self._enqueue_order:
             rollout = self._completed_rollouts.get(rid)
@@ -788,7 +935,9 @@ class AglLiteRolloutBridge:
                 finished_id_to_final_reward[rid] = self.reward_fillna_value
                 continue
 
-            sample_with_reward_count += int(rollout.final_reward is not None)
+            sample_with_any_reward_count += int(rollout.final_reward is not None)
+            sample_with_agent_reward_count += int(self._has_agent_reward(rollout))
+            sample_with_fallback_reward_count += int(self._has_fallback_reward(rollout))
             final_reward = self._fillna_reward(rollout)
             finished_id_to_final_reward[rid] = final_reward
 
@@ -823,7 +972,6 @@ class AglLiteRolloutBridge:
         is_drop_list: list[bool] = []
         image_grid_thw_list: list[torch.Tensor | None] = []
         n_trunc_sample_because_of_response = 0
-        n_placeholder_rows = 0
         unmerged_count = 0
         template_mismatch_count = 0
         retoken_mismatch_count = 0
@@ -842,9 +990,8 @@ class AglLiteRolloutBridge:
             reward: float,
             response_mask: list[int] | None = None,
             image_urls: list[str] | None = None,
-            is_placeholder: bool = False,
         ) -> None:
-            nonlocal n_trunc_sample_because_of_response, n_placeholder_rows
+            nonlocal n_trunc_sample_because_of_response
             if len(prompt_ids) > max_prompt_length:
                 prompt_ids = prompt_ids[:max_prompt_length]
                 is_drop_list.append(True)
@@ -877,8 +1024,6 @@ class AglLiteRolloutBridge:
                 turn_index_list.append(turn_index)
             if self._use_mrope:
                 image_grid_thw_list.append(self._get_image_grid_thw(image_urls or []))
-            if is_placeholder:
-                n_placeholder_rows += 1
 
         def append_placeholder(rid: str) -> None:
             original_sample = self._task_id_to_original_sample.get(rid, {})
@@ -891,7 +1036,6 @@ class AglLiteRolloutBridge:
                 response_ids=[eos_id],
                 reward=finished_id_to_final_reward.get(rid, self.reward_fillna_value),
                 response_mask=[1] if level == "trajectory" else None,
-                is_placeholder=True,
             )
 
         if level == "transition":
@@ -1059,21 +1203,22 @@ class AglLiteRolloutBridge:
             else 0.0,
             "training/n_rollouts": self._total_tasks_queued,
             "training/n_rollouts_w_trace": len(finished_id_to_sample_info),
-            "training/n_rollouts_w_reward": sample_with_reward_count,
+            "training/n_rollouts_w_reward": sample_with_agent_reward_count,
+            "training/n_rollouts_w_any_reward": sample_with_any_reward_count,
+            "training/n_rollouts_w_fallback_reward": sample_with_fallback_reward_count,
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
-            "training/n_placeholder_rows": n_placeholder_rows,
             **(
                 {
                     "training/n_unmerged_rollouts": unmerged_count,
                     "training/n_triplets_by_turn": n_response_turns,
-                    "training/avg_response_length_by_turn": float(np.mean(response_per_turn_list))
+                    "response_length/training/avg_by_turn": float(np.mean(response_per_turn_list))
                     if response_per_turn_list
                     else 0.0,
-                    "training/max_response_length_by_turn": int(np.max(response_per_turn_list))
+                    "response_length/training/max_by_turn": int(np.max(response_per_turn_list))
                     if response_per_turn_list
                     else 0,
-                    "training/min_response_length_by_turn": int(np.min(response_per_turn_list))
+                    "response_length/training/min_by_turn": int(np.min(response_per_turn_list))
                     if response_per_turn_list
                     else 0,
                 }
@@ -1100,11 +1245,94 @@ class AglLiteRolloutBridge:
             ),
         }
         data_metrics.update(self._polling_metrics("training"))
+        data_metrics.update(self._event_metrics("training"))
 
         return data_proto, data_metrics
 
-    def _polling_metrics(self, prefix: str) -> dict[str, Any]:
+    def _iter_event_records(self) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for rid in self._enqueue_order:
+            rollout = self._completed_rollouts.get(rid)
+            if rollout is not None and rollout.events:
+                records.extend(rollout.events)
+            else:
+                records.extend(self._raw_events_by_rollout.get(rid, []))
+        return records
+
+    def _event_metrics(self, phase: str) -> dict[str, Any]:
+        records = self._iter_event_records()
+        model_requests = [record for record in records if record.get("event_type") == "model_request"]
+        return self._gateway_metrics(phase, model_requests)
+
+    def _gateway_metrics(self, phase: str, model_requests: list[dict[str, Any]]) -> dict[str, Any]:
+        gateway_prefix = f"gateway/{phase}"
+        llm_prefix = f"llm/{phase}"
+        metrics: dict[str, Any] = {
+            f"{gateway_prefix}/request_count": len(model_requests),
+            f"{gateway_prefix}/success_count": 0,
+            f"{gateway_prefix}/error_count": 0,
+        }
+        if not model_requests:
+            return metrics
+
+        latencies: list[float] = []
+        retry_count = 0
+        status_codes: list[Any] = []
+        finish_reasons: list[Any] = []
+        models: list[Any] = []
+        token_totals = Counter(
+            {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+            }
+        )
+        token_request_count = 0
+        for record in model_requests:
+            data = record.get("data", {}) if isinstance(record.get("data"), dict) else {}
+            http_status = data.get("http_status")
+            status_codes.append(http_status or "unknown")
+            status = data.get("status") or ("ok" if not isinstance(http_status, int) or http_status < 400 else "error")
+            is_success = status == "ok" and (not isinstance(http_status, int) or http_status < 400)
+            metrics[f"{gateway_prefix}/success_count"] += int(is_success)
+            metrics[f"{gateway_prefix}/error_count"] += int(not is_success)
+            latency = _as_float(data.get("latency_ms"))
+            if latency is not None:
+                latencies.append(latency)
+            retry_value = _as_float(data.get("retry_count"))
+            retry_count += int(retry_value or 0)
+            finish_reason = data.get("finish_reason") or _finish_reason_from_response(data.get("response"))
+            if finish_reason:
+                finish_reasons.append(finish_reason)
+            server = data.get("server", {}) if isinstance(data.get("server"), dict) else {}
+            models.append(data.get("model") or server.get("model") or "unknown")
+            usage = _usage_from_model_request(data)
+            if usage:
+                token_request_count += 1
+                token_totals.update(usage)
+
+        if latencies:
+            metrics[f"{gateway_prefix}/latency_ms_mean"] = float(np.mean(latencies))
+            metrics[f"{gateway_prefix}/latency_ms_p50"] = _percentile(latencies, 50)
+            metrics[f"{gateway_prefix}/latency_ms_p95"] = _percentile(latencies, 95)
+        metrics[f"{gateway_prefix}/retry_count"] = retry_count
+        for status_code, count in _bounded_counts(status_codes, max_keys=16).items():
+            metrics[f"{gateway_prefix}/http_status/{status_code}_count"] = count
+        for reason, count in _bounded_counts(finish_reasons, max_keys=16).items():
+            metrics[f"{gateway_prefix}/finish_reason/{reason}_count"] = count
+        for model, count in _bounded_counts(models, max_keys=20).items():
+            metrics[f"{gateway_prefix}/model/{model}/request_count"] = count
+        for token_name, value in token_totals.items():
+            metrics[f"{llm_prefix}/{token_name}"] = int(value)
+        if token_request_count:
+            metrics[f"{llm_prefix}/tokens_per_request_mean"] = float(token_totals["total_tokens"] / token_request_count)
+        return metrics
+
+    def _polling_metrics(self, phase: str) -> dict[str, Any]:
         """Aggregate per-rollout terminal-state + latency metrics."""
+        gateway_prefix = f"gateway/{phase}"
         total = self._total_tasks_queued
         latencies = [
             self._rollout_end_time[r] - self._rollout_start_time[r]
@@ -1112,12 +1340,12 @@ class AglLiteRolloutBridge:
             if r in self._rollout_start_time
         ]
         return {
-            f"{prefix}/num_succeeded_rollouts": self._num_succeeded,
-            f"{prefix}/num_failed_rollouts": self._num_failed,
-            f"{prefix}/num_cancelled_rollouts": self._num_cancelled,
-            f"{prefix}/num_timeout_rollouts": self._num_timeout,
-            f"{prefix}/avg_rollout_latency": float(np.mean(latencies)) if latencies else 0.0,
-            f"{prefix}/rollout_completion_rate": (self._num_succeeded / total if total else 0.0),
+            f"{gateway_prefix}/num_succeeded_rollouts": self._num_succeeded,
+            f"{gateway_prefix}/num_failed_rollouts": self._num_failed,
+            f"{gateway_prefix}/num_cancelled_rollouts": self._num_cancelled,
+            f"{gateway_prefix}/num_timeout_rollouts": self._num_timeout,
+            f"{gateway_prefix}/avg_rollout_latency": float(np.mean(latencies)) if latencies else 0.0,
+            f"{gateway_prefix}/rollout_completion_rate": (self._num_succeeded / total if total else 0.0),
         }
 
     def _get_cleanup_k8s_client(self) -> AgentJobK8sClient:
@@ -1183,6 +1411,8 @@ class AglLiteRolloutBridge:
         self._rollout_error.clear()
         self._rollout_start_time.clear()
         self._rollout_end_time.clear()
+        self._raw_events_by_rollout.clear()
+        self._triplet_events_by_rollout.clear()
         self._timeout_rids.clear()
         self._num_succeeded = 0
         self._num_failed = 0
@@ -1197,6 +1427,16 @@ class AglLiteRolloutBridge:
             return rollout.final_reward
         return self.reward_fillna_value
 
+    @staticmethod
+    def _has_fallback_reward(rollout: RolloutLegacy) -> bool:
+        if rollout.final_reward is None:
+            return False
+        if rollout.reward_source == "fallback":
+            return True
+        return rollout.reward_reason in _FALLBACK_REWARD_REASONS
+
+    def _has_agent_reward(self, rollout: RolloutLegacy) -> bool:
+        return rollout.final_reward is not None and not self._has_fallback_reward(rollout)
     # =========================================================================
     # Async-rollout (carry-over) path — parallel methods, sync path untouched.
     # =========================================================================

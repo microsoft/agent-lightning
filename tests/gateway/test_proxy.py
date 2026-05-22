@@ -123,8 +123,9 @@ class TestProxyNonStreaming:
         # Mock the model server response.
         mock_response = {
             "id": "chatcmpl-123",
-            "choices": [{"message": {"role": "assistant", "content": "Hello!"}}],
+            "choices": [{"message": {"role": "assistant", "content": "Hello!"}, "finish_reason": "stop"}],
             "model": "qwen-7b",
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
         }
         httpx_mock.add_response(
             url="http://mock:8000/v1/chat/completions",
@@ -147,6 +148,13 @@ class TestProxyNonStreaming:
         assert event["data"]["request"]["model"] == "qwen-7b"  # prepared (rewritten) model
         assert event["data"]["server"]["model"] == "qwen-7b"
         assert event["data"]["server"]["endpoint"] == "http://mock:8000/v1"
+        assert event["data"]["model"] == "qwen-7b"
+        assert event["data"]["status"] == "ok"
+        assert event["data"]["http_status"] == 200
+        assert event["data"]["retry_count"] == 0
+        assert event["data"]["latency_ms"] >= 0
+        assert event["data"]["usage"] == {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
+        assert event["data"]["finish_reason"] == "stop"
 
     def test_route_rewrite_and_params(self, client: TestClient, auth: dict, httpx_mock):
         """Verify model rewrite and param adjustment in forwarded request."""
@@ -217,6 +225,8 @@ class TestProxyRetry:
         events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
         assert len(events) == 1
         assert events[0]["data"]["response"]["choices"][0]["message"]["content"] == "ok"
+        assert events[0]["data"]["retry_count"] == 1
+        assert events[0]["data"]["status"] == "ok"
 
     def test_non_streaming_does_not_retry_bad_request(self, client: TestClient, auth: dict, httpx_mock):
         rid = _enqueue(client, auth)
@@ -257,16 +267,21 @@ class TestProxyRetry:
         events = client.get(f"/api/events?rollout_id={rid}&attempt_id=pod-1", headers=auth).json()
         assert len(events) == 1
         assert events[0]["data"]["response"] == {"error": "busy"}
+        assert events[0]["data"]["retry_count"] == 5
+        assert events[0]["data"]["status"] == "error"
+        assert events[0]["data"]["http_status"] == 503
 
     def test_streaming_retries_initial_retryable_status(self, client: TestClient, auth: dict, httpx_mock):
         rid = _enqueue(client, auth)
         _register_model(client, auth)
 
         httpx_mock.add_response(url="http://mock:8000/v1/chat/completions", status_code=503, json={"error": "busy"})
-        sse_bytes = "".join([
-            'data: {"id":"c1","choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n',
-            "data: [DONE]\n\n",
-        ]).encode()
+        sse_bytes = "".join(
+            [
+                'data: {"id":"c1","choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n',
+                "data: [DONE]\n\n",
+            ]
+        ).encode()
         httpx_mock.add_response(
             url="http://mock:8000/v1/chat/completions",
             content=sse_bytes,
@@ -333,6 +348,9 @@ class TestProxyStreaming:
         assert event["data"]["request"]["stream"] is True
         assert event["data"]["request"]["model"] == "qwen-7b"  # prepared (rewritten) model
         assert event["data"]["server"]["model"] == "qwen-7b"
+        assert event["data"]["status"] == "ok"
+        assert event["data"]["http_status"] == 200
+        assert event["data"]["latency_ms"] >= 0
 
         # Response is now assembled into a ChatCompletion-shaped dict (same shape as non-streaming).
         response_data = event["data"]["response"]
@@ -395,10 +413,18 @@ class TestProxyStreaming:
         _register_model(client, auth)
 
         sse_chunks = [
-            {"id": "cmpl-1", "created": 1700000000, "model": "qwen-7b",
-             "choices": [{"text": "Hello", "index": 0, "finish_reason": None}]},
-            {"id": "cmpl-1", "created": 1700000000, "model": "qwen-7b",
-             "choices": [{"text": " world", "index": 0, "finish_reason": "stop"}]},
+            {
+                "id": "cmpl-1",
+                "created": 1700000000,
+                "model": "qwen-7b",
+                "choices": [{"text": "Hello", "index": 0, "finish_reason": None}],
+            },
+            {
+                "id": "cmpl-1",
+                "created": 1700000000,
+                "model": "qwen-7b",
+                "choices": [{"text": " world", "index": 0, "finish_reason": "stop"}],
+            },
         ]
         sse_bytes = self._make_sse(sse_chunks)
         httpx_mock.add_response(
@@ -509,8 +535,7 @@ class TestProxyStreaming:
         _register_model(client, auth)
 
         sse_chunks = [
-            {"id": "c1", "choices": [{"delta": {"role": "assistant", "content": ""}}],
-             "prompt_token_ids": [5, 6, 7]},
+            {"id": "c1", "choices": [{"delta": {"role": "assistant", "content": ""}}], "prompt_token_ids": [5, 6, 7]},
             {"id": "c1", "choices": [{"delta": {"content": "ok"}, "token_ids": [50]}]},
         ]
         httpx_mock.add_response(

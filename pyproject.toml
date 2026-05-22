@@ -46,6 +46,7 @@ verl = [
     "omegaconf==2.3.0",
     "xformers==0.0.32.post1",
     "codetiming>=1.4.0",
+    "wandb>=0.18.0",
     "autogen-agentchat",
     "autogen-ext[openai]",
     "mcp>=1.10.0",

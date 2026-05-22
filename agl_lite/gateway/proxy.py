@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -109,6 +110,7 @@ async def _send_upstream_with_retries(
             continue
 
         if not _is_retryable_status(response.status_code) or attempt_index == _UPSTREAM_MAX_ATTEMPTS - 1:
+            response.extensions["agl_retry_count"] = attempt_index
             return response
 
         delay = _retry_delay_seconds(attempt_index)
@@ -245,11 +247,13 @@ async def _forward_non_streaming(
     server_meta: dict[str, Any],
 ) -> JSONResponse:
     """Forward non-streaming request. Capture full response as event."""
+    started_at = time.perf_counter()
     resp = await _send_upstream_with_retries(
         lambda: client.post(url, json=body, headers=headers),
         stream=False,
         url=url,
     )
+    latency_ms = (time.perf_counter() - started_at) * 1000
     response_body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
 
     _capture_event(
@@ -259,6 +263,10 @@ async def _forward_non_streaming(
         original_body=original_body,
         response_body=response_body,
         server_meta=server_meta,
+        latency_ms=latency_ms,
+        http_status=resp.status_code,
+        status=_status_from_http_status(resp.status_code),
+        retry_count=int(resp.extensions.get("agl_retry_count", 0)),
     )
 
     return JSONResponse(content=response_body, status_code=resp.status_code)
@@ -294,8 +302,10 @@ async def _forward_streaming(
         raise
 
     buffer: list[bytes] = []
+    stream_status = _status_from_http_status(upstream.status_code)
 
     async def stream_and_capture():
+        nonlocal stream_status
         try:
             async for chunk in upstream.aiter_bytes():
                 # Stop streaming if the client has disconnected, so the
@@ -308,6 +318,12 @@ async def _forward_streaming(
                         pass
                 buffer.append(chunk)
                 yield chunk
+        except asyncio.CancelledError:
+            stream_status = "client_disconnected"
+            raise
+        except Exception:
+            stream_status = "stream_error"
+            raise
         finally:
             await upstream.aclose()
 
@@ -316,9 +332,7 @@ async def _forward_streaming(
             raw = b"".join(buffer)
             chunks = _parse_sse_chunks(raw)
             assembler = select_assembler(path)
-            response_body: dict[str, Any] = (
-                assembler(chunks) if assembler else {"chunks": chunks}
-            )
+            response_body: dict[str, Any] = assembler(chunks) if assembler else {"chunks": chunks}
 
             _capture_event(
                 store=store,
@@ -327,6 +341,10 @@ async def _forward_streaming(
                 original_body=original_body,
                 response_body=response_body,
                 server_meta=server_meta,
+                latency_ms=(time.perf_counter() - started_at) * 1000,
+                http_status=upstream.status_code,
+                status=stream_status,
+                retry_count=int(upstream.extensions.get("agl_retry_count", 0)),
             )
 
             # Release the pause-drain inflight slot only after the full
@@ -351,6 +369,10 @@ def _capture_event(
     original_body: dict[str, Any],
     response_body: dict[str, Any],
     server_meta: dict[str, Any],
+    latency_ms: float,
+    http_status: int,
+    status: str,
+    retry_count: int,
 ) -> None:
     """Write a model_request event to the store."""
     store.add_event(
@@ -358,11 +380,38 @@ def _capture_event(
         attempt_id,
         "model_request",
         {
+            "model": server_meta.get("model", ""),
+            "model_version": server_meta.get("version"),
             "request": original_body,
             "response": response_body,
             "server": server_meta,
+            "latency_ms": latency_ms,
+            "http_status": http_status,
+            "status": status,
+            "retry_count": retry_count,
+            "usage": _extract_usage(response_body),
+            "finish_reason": _extract_finish_reason(response_body),
         },
     )
+
+
+def _status_from_http_status(http_status: int) -> str:
+    return "ok" if http_status < 400 else "error"
+
+
+def _extract_usage(response_body: dict[str, Any]) -> dict[str, Any] | None:
+    usage = response_body.get("usage") if isinstance(response_body, dict) else None
+    return usage if isinstance(usage, dict) else None
+
+
+def _extract_finish_reason(response_body: dict[str, Any]) -> str | None:
+    choices = response_body.get("choices") if isinstance(response_body, dict) else None
+    if isinstance(choices, list) and choices:
+        reason = choices[0].get("finish_reason") if isinstance(choices[0], dict) else None
+        if isinstance(reason, str) and reason:
+            return reason
+    stop_reason = response_body.get("stop_reason") if isinstance(response_body, dict) else None
+    return stop_reason if isinstance(stop_reason, str) and stop_reason else None
 
 
 def _parse_sse_chunks(raw: bytes) -> list[dict[str, Any]]:
@@ -381,5 +430,3 @@ def _parse_sse_chunks(raw: bytes) -> list[dict[str, Any]]:
             with contextlib.suppress(json.JSONDecodeError):
                 chunks.append(json.loads(line[6:]))
     return chunks
-
-
