@@ -52,10 +52,30 @@ def serve(
 def controller(
     base_url: str = typer.Option(..., envvar="AGL_BASE_URL", help="agl-lite server base URL"),
     namespace: str = typer.Option(..., envvar="AGL_NAMESPACE", help="K8s namespace for agent Jobs"),
-    job_manifest_template: str = typer.Option(
-        ...,
+    runner_type: str = typer.Option(
+        "k8s",
+        envvar="AGL_RUNNER_TYPE",
+        help="Runner backend: k8s | local",
+    ),
+    job_manifest_template: str | None = typer.Option(
+        None,
         envvar="AGL_JOB_MANIFEST_TEMPLATE",
-        help="Path to Jinja2 job manifest template",
+        help="Path to Jinja2 job manifest template (required for k8s runner)",
+    ),
+    local_pool_size: int | None = typer.Option(
+        None,
+        envvar="AGL_LOCAL_POOL_SIZE",
+        help="Max concurrent local subprocesses (required when runner_type=local)",
+    ),
+    local_agent_class: str | None = typer.Option(
+        None,
+        envvar="AGL_LOCAL_AGENT_CLASS",
+        help=("Python agent class path, e.g. examples.calc_x.agent:CalcAgent (required when runner_type=local)"),
+    ),
+    local_tick_interval: float = typer.Option(
+        5.0,
+        envvar="AGL_LOCAL_TICK_INTERVAL",
+        help="Seconds between local runner reap / enforce / admit ticks",
     ),
     key: str = typer.Option("", envvar="AGL_KEY", help="Shared API key (empty = auth disabled)"),
     poll_interval: int = typer.Option(10, envvar="AGL_POLL_INTERVAL", help="Seconds between reconcile cycles"),
@@ -80,17 +100,21 @@ def controller(
         help="Pod creation rate-limit window in seconds",
     ),
 ) -> None:
-    """Start the K8s controller (reconcile loop)."""
+    """Start the controller (reconcile loop)."""
     import asyncio
+    import os
 
     from agl_lite.client import AglLiteClient
-    from agl_lite.controller.config import ControllerSettings
-    from agl_lite.controller.reconciler import Reconciler
+    from agl_lite.controller.config import ControllerSettings, RunnerType
 
     settings = ControllerSettings(
         base_url=base_url,
         namespace=namespace,
+        runner_type=RunnerType(runner_type),
         job_manifest_template=job_manifest_template,
+        local_pool_size=local_pool_size,
+        local_agent_class=local_agent_class,
+        local_tick_interval=local_tick_interval,
         key=key,
         poll_interval=poll_interval,
         max_queue_time=max_queue_time,
@@ -102,15 +126,26 @@ def controller(
     async def _run() -> None:
         api = AglLiteClient(base_url=settings.base_url, agl_key=settings.key or None)
         try:
-            from agl_lite.controller.kr8s_adapter import Kr8sClient
+            if settings.runner_type == RunnerType.K8S:
+                if not settings.job_manifest_template:
+                    raise typer.BadParameter("k8s runner requires --job-manifest-template / AGL_JOB_MANIFEST_TEMPLATE")
+                try:
+                    from agl_lite.controller.kr8s_adapter import Kr8sClient
+                except ImportError:
+                    typer.echo("kr8s adapter not yet implemented — install kr8s and implement Kr8sClient")
+                    raise typer.Exit(code=1) from None
+                from agl_lite.controller.reconciler import Reconciler
 
-            k8s = Kr8sClient(namespace=settings.namespace)
-        except ImportError:
-            typer.echo("kr8s adapter not yet implemented — install kr8s and implement Kr8sClient")
-            raise typer.Exit(code=1) from None
+                k8s = Kr8sClient(namespace=settings.namespace)
+                reconciler = Reconciler(api=api, k8s=k8s, settings=settings)
+            else:
+                from agl_lite.controller.local_reconciler import LocalReconciler
 
-        reconciler = Reconciler(api=api, k8s=k8s, settings=settings)
-        try:
+                reconciler = LocalReconciler(
+                    api=api,
+                    settings=settings,
+                    base_env={**os.environ},
+                )
             await reconciler.run()
         finally:
             await api.close()
