@@ -120,10 +120,16 @@ echo ""
 if [ "$VARIANT" = "cpu" ]; then
     echo "=== Skipping flash-attn for CPU-only setup ==="
 else
-    # flash-attn must be installed after torch/verl/vllm settle on the final
-    # torch ABI. Installing it earlier can produce undefined-symbol crashes.
-    echo "=== Installing flash-attn against final torch ==="
-    uv pip install --python "$PYTHON_BIN" "flash-attn==$FLASH_ATTN_VERSION" --no-build-isolation
+    # Build flash-attn locally against the pinned torch ABI. --no-deps keeps uv
+    # from upgrading torch while resolving flash-attn's broad dependency range.
+    echo "=== Building and installing flash-attn against final torch ==="
+    FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install --python "$PYTHON_BIN" \
+        "flash-attn==$FLASH_ATTN_VERSION" \
+        --force-reinstall \
+        --no-cache \
+        --no-binary flash-attn \
+        --no-build-isolation \
+        --no-deps
 fi
 
 echo ""
