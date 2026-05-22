@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterator
+from typing import Any, cast
 from unittest.mock import patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from agl_lite.gateway.proxy import GatewayPauseState, forward_request
+from agl_lite.schemas.api import EnqueueRolloutRequest
+from agl_lite.schemas.model_server import ModelServer
 from agl_lite.server.app import create_app
 from agl_lite.server.config import ServerSettings
+from agl_lite.store.memory import InMemoryStore
 
 AGL_KEY = "test-key"
+ADMIN_KEY = "test-admin-key"
 
 
 @pytest.fixture
@@ -29,7 +37,7 @@ routes:
       drop:
         - frequency_penalty
 """)
-    return ServerSettings(key=AGL_KEY, gateway_config=str(config_file))
+    return ServerSettings(key=AGL_KEY, admin_key=ADMIN_KEY, gateway_config=str(config_file))
 
 
 @pytest.fixture
@@ -48,6 +56,11 @@ def auth() -> dict[str, str]:
     return {"Authorization": f"Bearer {AGL_KEY}"}
 
 
+@pytest.fixture
+def admin_auth() -> dict[str, str]:
+    return {"Authorization": f"Bearer {ADMIN_KEY}"}
+
+
 def _enqueue(client: TestClient, auth: dict) -> str:
     """Enqueue a rollout and return its ID."""
     resp = client.post(
@@ -61,6 +74,15 @@ def _enqueue(client: TestClient, auth: dict) -> str:
 def _register_model(client: TestClient, auth: dict, model: str = "qwen-7b", endpoint: str = "http://mock:8000/v1"):
     """Register a model server."""
     client.post("/api/models", json=[{"model": model, "endpoint": endpoint}], headers=auth)
+
+
+class _AsyncIteratorByteStream(httpx.AsyncByteStream):
+    def __init__(self, iterator):
+        self._iterator = iterator
+
+    async def __aiter__(self):
+        async for chunk in self._iterator:
+            yield chunk
 
 
 class TestProxyValidation:
@@ -538,3 +560,141 @@ class TestProxyStreaming:
         data = events[0]["data"]
         assert data["prompt_token_ids"] == [5, 6, 7]
         assert data["response_token_ids"] == [50]
+
+
+class TestGatewayPauseInflight:
+    async def test_pause_counts_only_already_started_requests_and_blocks_new_ones(self):
+        """Concurrent forward + pause invariant required by docs §3.1."""
+        pause_state = GatewayPauseState()
+        release_upstream = asyncio.Event()
+        upstream_started = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal upstream_started
+            upstream_started += 1
+            await release_upstream.wait()
+            return httpx.Response(200, json={"ok": True})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as http_client:
+            store = InMemoryStore()
+            rollouts = store.enqueue_rollouts([
+                EnqueueRolloutRequest(input={"i": i}) for i in range(4)
+            ])
+            server = ModelServer(
+                model="qwen-7b",
+                endpoint="http://mock:8000/v1",
+                version=0,
+                created_at=0.0,
+            )
+
+            tasks = [
+                asyncio.create_task(
+                    forward_request(
+                        client=http_client,
+                        server=server,
+                        path="chat/completions",
+                        body={"model": "qwen-7b", "messages": []},
+                        store=store,
+                        rollout_id=rollouts[i].rollout_id,
+                        attempt_id="pod-1",
+                        original_body={"model": "qwen-7b", "messages": []},
+                        pause_state=pause_state,
+                    )
+                )
+                for i in range(3)
+            ]
+
+            for _ in range(100):
+                async with pause_state.lock:
+                    if pause_state.inflight == 3:
+                        break
+                await asyncio.sleep(0.01)
+
+            async with pause_state.lock:
+                assert pause_state.inflight == 3
+                pause_state.paused = True
+                pause_state.retry_after_seconds = 7
+                pause_state.reason = "unit-test"
+                inflight_at_pause = pause_state.inflight
+
+            blocked = await forward_request(
+                client=http_client,
+                server=server,
+                path="chat/completions",
+                body={"model": "qwen-7b", "messages": []},
+                store=store,
+                rollout_id=rollouts[3].rollout_id,
+                attempt_id="pod-1",
+                original_body={"model": "qwen-7b", "messages": []},
+                pause_state=pause_state,
+            )
+
+            assert inflight_at_pause == 3
+            assert blocked.status_code == 429
+            assert blocked.headers["Retry-After"] == "7"
+            assert blocked.headers["X-Agl-Paused"] == "true"
+            assert upstream_started == 3
+            async with pause_state.lock:
+                assert pause_state.inflight == 3
+
+            release_upstream.set()
+            responses = await asyncio.gather(*tasks)
+            assert [r.status_code for r in responses] == [200, 200, 200]
+            async with pause_state.lock:
+                assert pause_state.inflight == 0
+                assert pause_state.drained.is_set()
+
+    async def test_streaming_inflight_lives_until_stream_is_consumed(self):
+        pause_state = GatewayPauseState()
+        release_second_chunk = asyncio.Event()
+
+        async def stream_body():
+            yield b'data: {"id":"c1","choices":[{"delta":{"content":"a"}}]}\n\n'
+            await release_second_chunk.wait()
+            yield b'data: {"id":"c1","choices":[{"delta":{"content":"b"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, stream=_AsyncIteratorByteStream(stream_body()))
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as http_client:
+            store = InMemoryStore()
+            [rollout] = store.enqueue_rollouts([EnqueueRolloutRequest(input={"stream": True})])
+            server = ModelServer(
+                model="qwen-7b",
+                endpoint="http://mock:8000/v1",
+                version=0,
+                created_at=0.0,
+            )
+            response = await forward_request(
+                client=http_client,
+                server=server,
+                path="chat/completions",
+                body={"model": "qwen-7b", "messages": [], "stream": True},
+                store=store,
+                rollout_id=rollout.rollout_id,
+                attempt_id="pod-1",
+                original_body={"model": "qwen-7b", "messages": [], "stream": True},
+                pause_state=pause_state,
+            )
+
+            async with pause_state.lock:
+                assert pause_state.inflight == 1
+
+            chunks = []
+            streaming_response = cast(Any, response)
+            iterator = streaming_response.body_iterator.__aiter__()
+            chunks.append(await iterator.__anext__())
+            async with pause_state.lock:
+                assert pause_state.inflight == 1
+
+            release_second_chunk.set()
+            async for chunk in iterator:
+                chunks.append(chunk)
+
+            assert b"".join(chunks).endswith(b"data: [DONE]\n\n")
+            async with pause_state.lock:
+                assert pause_state.inflight == 0
+                assert pause_state.drained.is_set()

@@ -6,6 +6,8 @@ with typed methods using the same Pydantic schemas as the server.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 
 import httpx
@@ -40,7 +42,9 @@ class AglLiteClient:
 
     Args:
         base_url: agl-lite server URL (e.g., "http://localhost:8000").
-        agl_key: API key for authentication. None = no auth.
+        agl_key: API key for agent-facing endpoints. None = no auth.
+        agl_admin_key: Trainer-only key for /admin/gateway/* routes. None
+            disables admin methods (calling them raises ``AglLiteError``).
         client: Optional pre-configured httpx.AsyncClient (for testing).
     """
 
@@ -48,9 +52,11 @@ class AglLiteClient:
         self,
         base_url: str,
         agl_key: str | None = None,
+        agl_admin_key: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._agl_admin_key = agl_admin_key
         headers: dict[str, str] = {}
         if agl_key:
             headers["Authorization"] = f"Bearer {agl_key}"
@@ -227,3 +233,78 @@ class AglLiteClient:
         self._raise_for_status(resp)
         data = resp.json()
         return ResourcesUpdate.model_validate(data) if data else None
+
+    # --- Admin (gateway pause/drain) ---
+
+    def _admin_headers(self) -> dict[str, str]:
+        if self._agl_admin_key is None:
+            raise AglLiteError(
+                status_code=401,
+                detail=(
+                    "Admin method called but agl_admin_key was not provided to "
+                    "AglLiteClient. Pass agl_admin_key explicitly (e.g. from "
+                    "AGL_ADMIN_KEY) — agent-facing agl_key cannot reach admin endpoints."
+                ),
+            )
+        return {"Authorization": f"Bearer {self._agl_admin_key}"}
+
+    async def pause_gateway(
+        self,
+        *,
+        retry_after_seconds: int = 5,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Flip the gateway into paused state.
+
+        Subsequent agent /v1/* calls receive 429 with ``Retry-After``. Requests
+        already in flight at the flip continue to upstream and are counted in
+        ``inflight`` so the bridge can drain them before sleeping vLLM.
+        """
+        resp = await self._client.post(
+            "/admin/gateway/pause",
+            json={"retry_after_seconds": retry_after_seconds, "reason": reason},
+            headers=self._admin_headers(),
+        )
+        self._raise_for_status(resp)
+        return resp.json()
+
+    async def resume_gateway(self) -> dict[str, Any]:
+        """Flip the gateway back to running state."""
+        resp = await self._client.post(
+            "/admin/gateway/resume",
+            headers=self._admin_headers(),
+        )
+        self._raise_for_status(resp)
+        return resp.json()
+
+    async def get_gateway_state(self) -> dict[str, Any]:
+        """Snapshot of {paused, retry_after_seconds, reason, inflight}."""
+        resp = await self._client.get(
+            "/admin/gateway/state",
+            headers=self._admin_headers(),
+        )
+        self._raise_for_status(resp)
+        return resp.json()
+
+    async def wait_until_inflight_drained(
+        self,
+        *,
+        timeout: float = 30.0,
+        poll_interval: float = 0.1,
+    ) -> int:
+        """Poll /admin/gateway/state until ``inflight == 0`` or timeout.
+
+        Returns the residual in-flight count when the wait ends. 0 means a
+        clean drain; >0 means timeout — the caller should record a metric and
+        proceed (training stalls are worse than a few hung upstream requests).
+        """
+        deadline = time.monotonic() + timeout
+        last_inflight = 0
+        while True:
+            state = await self.get_gateway_state()
+            last_inflight = int(state.get("inflight", 0))
+            if last_inflight == 0:
+                return 0
+            if time.monotonic() >= deadline:
+                return last_inflight
+            await asyncio.sleep(poll_interval)

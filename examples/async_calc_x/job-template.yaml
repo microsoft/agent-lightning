@@ -1,0 +1,18 @@
+# K8s Pod spec for calc_x agent jobs.
+# See https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#PodSpec
+#
+# The controller injects into the "agent" container:
+#   env vars: OPENAI_BASE_URL, OPENAI_API_KEY, AGL_TASK_INPUT, AGL_EVENT_URL
+#
+# The agent uses AutoGen + MCP calculator tool (CPU-only, no GPU needed).
+# MCP server runs via `python -m mcp_server_calculator` inside the container.
+
+containers:
+  - name: agent
+    image: async-calc-x-agent:dev
+    command: ["python", "/app/calc_agent.py"]
+    imagePullPolicy: Never
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"

@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from agl_lite.client import AglLiteClient
+from agl_lite.schemas.rollout import RolloutStatus
 from agl_lite.verl.rollout_bridge import (
     AglLiteRolloutBridge,
     RolloutLegacy,
@@ -162,6 +163,69 @@ class TestAgentJobCleanup:
         assert set(k8s.jobs) == {"job-r1"}
 
 
+class TestAsyncGroupFinishSelection:
+    def _bridge(self) -> AglLiteRolloutBridge:
+        return AglLiteRolloutBridge(
+            agl_base_url="http://test",
+            agl_key="test-key",
+            train_rollout_n=2,
+            train_information={"model": "test-model"},
+            tokenizer=None,
+            mini_batch_size=2,
+            pad_token_id=0,
+        )
+
+    def test_timeout_rids_make_group_consumable_via_placeholder(self) -> None:
+        bridge = self._bridge()
+        bridge._rid_to_data_id = {"r1": "d1", "r2": "d1", "r3": "d2", "r4": "d2"}
+        bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
+        bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
+        bridge._rollout_status = {
+            "r1": RolloutStatus.SUCCEEDED,
+            "r3": RolloutStatus.SUCCEEDED,
+            "r4": RolloutStatus.TERMINAL_FAILED,
+        }
+        bridge._timeout_rids = {"r2"}
+
+        assert bridge._finished_data_ids(bridge._active_groups()) == {"d1", "d2"}
+        assert "r2" not in bridge._completed_rollouts
+
+    @pytest.mark.asyncio
+    async def test_timeout_path_marks_groups_finished_reached_zero(self) -> None:
+        class FakeAdminClient:
+            async def pause_gateway(self, **_: Any) -> dict[str, Any]:
+                return {"inflight": 0}
+
+            async def wait_until_inflight_drained(self, **_: Any) -> int:
+                return 0
+
+        bridge = self._bridge()
+        bridge._rid_to_data_id = {"r1": "d1", "r2": "d1", "r3": "d2", "r4": "d2"}
+        bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
+        bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
+        bridge._enqueue_order = ["r1", "r2", "r3", "r4"]
+
+        async def no_status_updates(_: AglLiteClient, __: set[str]) -> None:
+            return None
+
+        bridge._poll_status_for = no_status_updates  # type: ignore[method-assign]
+
+        selected_rids, carry_over_rids, metrics = await bridge._async_run_until_groups_finished(
+            target_groups=2,
+            rollout_n=2,
+            admin_client=FakeAdminClient(),  # type: ignore[arg-type]
+            timeout_seconds=0,
+            drain_timeout=0.01,
+            verbose=False,
+        )
+
+        assert metrics["training/async/groups_finished_reached"] == 0
+        assert metrics["training/async/n_selected_groups"] == 2
+        assert selected_rids == {"r1", "r2", "r3", "r4"}
+        assert carry_over_rids == set()
+        assert bridge._timeout_rids == {"r1", "r2", "r3", "r4"}
+
+
 # ---- Bridge store-interaction tests ----
 
 
@@ -176,7 +240,7 @@ class TestBridgeStoreInteraction:
         from agl_lite.server.app import create_app
         from agl_lite.server.config import ServerSettings
 
-        return create_app(ServerSettings(key="test-key"))
+        return create_app(ServerSettings(key="test-key", admin_key="test-admin-key"))
 
     @pytest.fixture()
     def bridge(self, app):

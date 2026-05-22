@@ -185,4 +185,13 @@ class _AglTaskRunner:
             train_sampler=train_sampler,
         )
         trainer.init_workers()
-        trainer.fit()
+
+        # Entry dispatch: async-rollout path is a fully independent training
+        # loop. When async_rollout.enabled=false (default) the new code is
+        # never called and sync RL behavior is byte-level equivalent to the
+        # pre-async version.
+        async_cfg = config.agentlightning.get("async_rollout", None)
+        if async_cfg is not None and async_cfg.get("enabled", False):
+            trainer.async_fit()
+        else:
+            trainer.fit()

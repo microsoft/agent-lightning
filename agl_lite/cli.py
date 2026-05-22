@@ -13,6 +13,14 @@ def serve(
     host: str = typer.Option(..., help="Bind host"),
     port: int = typer.Option(..., help="Bind port"),
     key: str = typer.Option("", envvar="AGL_KEY", help="Shared API key (empty = auth disabled)"),
+    admin_key: str | None = typer.Option(
+        None,
+        envvar="AGL_ADMIN_KEY",
+        help=(
+            "Admin-only API key for /admin/gateway/* routes (used by the trainer for "
+            "async-rollout pause/drain). Required whenever AGL_KEY is set."
+        ),
+    ),
     gateway_config: str | None = typer.Option(None, envvar="AGL_GATEWAY_CONFIG", help="Path to gateway YAML config"),
     hooks: str | None = typer.Option(None, envvar="AGL_HOOKS", help="Path to Python module with RolloutHooks subclass"),
     log_dir: str | None = typer.Option(
@@ -29,7 +37,13 @@ def serve(
 
     configure_logging(log_dir=log_dir, log_level=log_level, component="server")
 
-    settings = ServerSettings(key=key, gateway_config=gateway_config, hooks=hooks, log_dir=log_dir)
+    settings = ServerSettings(
+        key=key,
+        admin_key=admin_key,
+        gateway_config=gateway_config,
+        hooks=hooks,
+        log_dir=log_dir,
+    )
     application = create_app(settings)
     uvicorn.run(application, host=host, port=port, workers=1)
 
