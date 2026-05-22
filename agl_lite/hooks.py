@@ -1,8 +1,8 @@
-"""Rollout lifecycle hooks — task-specific logic injected into the store.
+"""Rollout lifecycle hooks — task-specific logic used by enqueue/fit flows.
 
-Hooks run synchronously inside store methods. Since the store is single-threaded
-(plain ``def``, called from ``async def`` route handlers on one event loop),
-hooks execute atomically — no reader can see intermediate state.
+Hooks are synchronous extension points used by the algorithm path (for example,
+VERL fit/bridge) to transform enqueue requests and to post rewards after
+terminal rollout states.
 
 Users subclass ``RolloutHooks`` and override the methods they need. The server
 loads the module at startup via ``--hooks path/to/hooks.py``.
@@ -27,7 +27,7 @@ from __future__ import annotations
 import copy
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import yaml
 
@@ -36,6 +36,10 @@ from agl_lite.schemas.api import EnqueueRolloutRequest
 if TYPE_CHECKING:
     from agl_lite.schemas.rollout import Rollout
     from agl_lite.store.memory import InMemoryStore
+
+
+class TraceWriter(Protocol):
+    def add_event(self, rollout_id: str, attempt_id: str, event_type: str, data: dict[str, Any]) -> Any: ...
 
 
 class RolloutHooks:
@@ -118,12 +122,8 @@ class RolloutHooks:
         """
         return request
 
-    def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
+    def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: TraceWriter) -> None:
         """Post-transition hook: called when a rollout transitions to SUCCEEDED.
-
-        Runs synchronously inside ``update_rollout()``, after the transition is
-        committed. Since the store is single-threaded, no reader can interleave —
-        the transition and this hook are atomic from any external observer.
 
         ``events`` is the raw events dict for this rollout: ``{attempt_id: [Event, ...]}``.
 
@@ -132,7 +132,7 @@ class RolloutHooks:
           - Post a reward event via ``store.add_event(rollout.rollout_id, ...)``
         """
 
-    def on_failed(self, rollout: Rollout, store: InMemoryStore) -> None:
+    def on_failed(self, rollout: Rollout, store: TraceWriter) -> None:
         """Post-transition hook: called when a rollout transitions to TERMINAL_FAILED.
 
         Typical uses:

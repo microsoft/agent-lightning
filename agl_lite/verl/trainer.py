@@ -6,14 +6,15 @@ and .sleep_replicas() instead of async_rollout_manager.wake_up()/sleep().
 
 Per training step:
     1. (already awake, weights synced from prior step or initial _load_checkpoint)
-    2. rollout_bridge.set_up_data_and_server   — register vLLM endpoints + enqueue rollouts
-    3. rollout_bridge.run_until_all_finished   — poll until terminal
-    4. rollout_bridge.get_train_data_batch     — assemble DataProto
-    5. rollout_bridge.cleanup_agent_jobs       — delete tracked agent Jobs when enabled
-    6. rollout_bridge.clear_data_and_server    — reset local bridge state
-    7. self.checkpoint_manager.sleep_replicas()  — offload vLLM
-    8. log-prob / KL / advantage / actor+critic update (stock VERL helpers)
-    9. self.checkpoint_manager.update_weights(global_steps)  — wake + sync for next step
+    2. rollout replicas resume_generation()  — accept new requests after prior abort
+    3. rollout_bridge.set_up_data_and_server   — register vLLM endpoints + enqueue rollouts
+    4. rollout_bridge.run_until_all_finished   — poll until terminal
+    5. rollout_bridge.get_train_data_batch     — assemble DataProto
+    6. rollout replicas abort_all_requests()  — kill residual requests; may pause vLLM generation
+    7. rollout_bridge.clear_data_and_server    — reset local bridge state
+    8. self.checkpoint_manager.sleep_replicas()  — offload vLLM
+    9. log-prob / KL / advantage / actor+critic update (stock VERL helpers)
+    10. self.checkpoint_manager.update_weights(global_steps)  — wake + sync for next step
 """
 
 # pyright: reportPrivateImportUsage=false
@@ -26,6 +27,7 @@ Per training step:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import random
@@ -49,7 +51,11 @@ from verl.trainer.ppo.ray_trainer import (
 )
 from verl.utils.metric import reduce_metrics
 from verl.utils.profiler.performance import marked_timer
+from verl.utils.ray_utils import auto_await
 from verl.utils.tracking import Tracking
+
+from agl_lite.hooks import RolloutHooks, load_hooks
+from agl_lite.store.memory import InMemoryStore
 
 from .rollout_bridge import AglLiteRolloutBridge
 from .sample_iterator import SampleIterator
@@ -88,7 +94,8 @@ def _n_gpus_for_metrics(trainer: Any) -> int:
     n_gpus_per_node = int(trainer_config.get("n_gpus_per_node", 1))
     nnodes = int(trainer_config.get("nnodes", 1))
     return max(1, n_gpus_per_node * nnodes)
-def _batch_dict_len(batch: dict[str, Any]) -> int:
+  
+  def _batch_dict_len(batch: dict[str, Any]) -> int:
     """Leading-dim length of a dataloader batch dict (0 if empty)."""
     if not batch:
         return 0
@@ -108,11 +115,24 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._rollout_bridge: AglLiteRolloutBridge | None = None
+        self._hooks: RolloutHooks | None = None
+
+    def _ensure_hooks(self) -> RolloutHooks | None:
+        if self._hooks is not None:
+            return self._hooks
+        hooks_path = self.config.agentlightning.get("hooks", None)
+        if not hooks_path:
+            return None
+        self._hooks = load_hooks(hooks_path)
+        # Keep the existing hook contract where on_startup receives a store-like object.
+        self._hooks.on_startup(InMemoryStore())
+        return self._hooks
 
     def _ensure_rollout_bridge(self) -> AglLiteRolloutBridge:
         if self._rollout_bridge is not None:
             return self._rollout_bridge
         al = self.config.agentlightning
+        hooks = self._ensure_hooks()
         pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
         trace_aggregator = al.get("trace_aggregator", None)
         if trace_aggregator is not None:
@@ -133,21 +153,28 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             processor=self.processor,
             image_base_dir=self.config.data.get("image_base_dir"),
             trace_aggregator=trace_aggregator,
-            cleanup_agent_jobs=al.get("cleanup_agent_jobs", False),
-            cleanup_namespace=al.get("cleanup_namespace", None),
+            hooks=hooks,
         )
         return self._rollout_bridge
+
+    @auto_await
+    async def _abort_all_rollout_requests(self) -> None:
+        await asyncio.gather(*[replica.abort_all_requests() for replica in self.async_rollout_manager.rollout_replicas])
+
+    @auto_await
+    async def _resume_all_rollout_generation(self) -> None:
+        await asyncio.gather(*[replica.resume_generation() for replica in self.async_rollout_manager.rollout_replicas])
 
     def _rollout(self, gen_batch: DataProto, is_train: bool) -> tuple[DataProto, dict[str, Any]]:
         """Run the agl-lite rollout flow and return (DataProto, metrics).
 
         Training returns the DataProto assembled from agl-lite triplets plus
         rollout metrics. Validation returns metrics from ``get_test_metrics()``
-        and an empty DataProto placeholder. In both paths, optional Job cleanup
-        runs after results are extracted and before local bridge state is reset.
+        and an empty DataProto placeholder.
         """
         rollout_bridge = self._ensure_rollout_bridge()
         server_addresses = list(self.async_rollout_manager.server_addresses)
+        self._resume_all_rollout_generation()
         data_dict = dict(gen_batch.non_tensor_batch)
         rollout_bridge.set_up_data_and_server(
             data=data_dict,
@@ -175,12 +202,16 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 device=torch.device("cpu"),
                 global_steps=self.global_steps,
             )
-            rollout_bridge.cleanup_agent_jobs()
+            print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
+            self._abort_all_rollout_requests()
+            print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
             rollout_bridge.clear_data_and_server()
             return out, metrics
         # validation: caller will pull metrics via rollout_bridge.get_test_metrics()
         metrics = rollout_bridge.get_test_metrics()
-        rollout_bridge.cleanup_agent_jobs()
+        print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
+        self._abort_all_rollout_requests()
+        print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
         rollout_bridge.clear_data_and_server()
         return DataProto(batch=None), metrics
 
@@ -205,7 +236,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 self.async_rollout_manager.start_profile()
 
             gen_batch_output, agent_metrics = self._rollout(gen_batch, is_train=True)
+            print("AglLiteRayPPOTrainer: sleeping rollout replicas.")
             self.checkpoint_manager.sleep_replicas()
+            print("AglLiteRayPPOTrainer: rollout replicas slept.")
             if curr_step_profile:
                 self.async_rollout_manager.stop_profile()
             metrics.update(agent_metrics)
@@ -840,12 +873,14 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         """Validation via agl-lite rollout bridge.
 
         Wake/sleep contract:
-          - vLLM is expected to be awake on current weights when this is called
-            (fit() calls update_weights before val_before_train and after each
-            actor update).
-          - This method does NOT wake or sleep vLLM. It only registers/enqueues/
-            polls/clears via the bridge. The next training step will sleep
-            replicas at the end of its rollout block.
+                    - vLLM is expected to be awake on current weights when this is called
+                        (fit() calls update_weights before val_before_train and after each
+                        actor update).
+                    - _rollout() resumes generation before enqueueing requests, because
+                        abort_all_requests() can leave newer vLLM engines paused.
+                    - This method does NOT wake, sleep, or sync vLLM weights. It only
+                        registers/enqueues/polls/clears via the bridge. The next training
+                        step will sleep replicas at the end of its rollout block.
           - If a future change inserts sleep_replicas() between actor-update and
             validation, that branch must call update_weights again before
             entering _validate.

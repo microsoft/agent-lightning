@@ -63,7 +63,11 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
 
 def _trim_reward(data: dict[str, Any]) -> dict[str, Any]:
     """Keep only the scalar value from a reward event."""
-    return {"value": data.get("value")}
+    trimmed = {"value": data.get("value")}
+    for key in ("source", "reason"):
+        if key in data:
+            trimmed[key] = data[key]
+    return trimmed
 
 
 def _to_triplet_format(event: Event) -> Event:

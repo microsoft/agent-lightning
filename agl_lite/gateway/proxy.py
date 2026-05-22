@@ -288,6 +288,7 @@ async def _forward_streaming(
     request: Request | None = None,
 ) -> StreamingResponse:
     """Forward streaming request. Tee chunks to client while buffering for event capture."""
+    started_at = time.perf_counter()
     try:
         upstream = await _send_upstream_with_retries(
             lambda: client.send(client.build_request("POST", url, json=body, headers=headers), stream=True),

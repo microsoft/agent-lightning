@@ -14,7 +14,8 @@ import time
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Mapping
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -27,8 +28,13 @@ from tensordict import TensorDict
 from verl import DataProto
 
 from agl_lite.client import AglLiteClient
-from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
+from agl_lite.schemas.api import EnqueueRolloutRequest, PostEventRequest, RegisterModelRequest
 from agl_lite.schemas.rollout import TERMINAL_STATUSES, RolloutConfig, RolloutStatus
+
+if TYPE_CHECKING:
+    from agl_lite.hooks import RolloutHooks
+    from agl_lite.schemas.event import Event
+    from agl_lite.schemas.rollout import Rollout
 
 
 class Triplet(BaseModel):
@@ -77,6 +83,35 @@ __all__ = [
     "get_left_padded_ids_and_attention_mask",
     "get_right_padded_ids_and_attention_mask",
 ]
+
+
+_FALLBACK_REWARD_REASONS = {"no_reward_posted_by_agent", "terminal_failed"}
+
+
+@dataclass
+class _TraceEvent:
+    rollout_id: str
+    attempt_id: str
+    event_type: str
+    data: dict[str, Any]
+
+
+class _SyncTraceSink:
+    """Minimal synchronous sink for hooks; bridge flushes queued events asynchronously."""
+
+    def __init__(self) -> None:
+        self._queued: list[_TraceEvent] = []
+
+    def add_event(self, rollout_id: str, attempt_id: str, event_type: str, data: dict[str, Any]) -> None:
+        self._queued.append(_TraceEvent(rollout_id=rollout_id, attempt_id=attempt_id, event_type=event_type, data=data))
+
+    async def flush(self, client: AglLiteClient) -> None:
+        for event in self._queued:
+            await client.post_event(
+                event.rollout_id,
+                event.attempt_id,
+                PostEventRequest(event_type=event.event_type, data=event.data),
+            )
 
 
 _AGL_LITE_MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
@@ -345,8 +380,7 @@ class AglLiteRolloutBridge:
       1. set_up_data_and_server()  — register model + enqueue rollouts
       2. run_until_all_finished()  — poll until all rollouts complete
       3. get_train_data_batch() / get_test_metrics()  — assemble trainer outputs
-      4. cleanup_agent_jobs()     — optionally delete tracked agl-lite Jobs
-            5. clear_data_and_server()  — reset local state only
+            4. clear_data_and_server()  — reset local state only
 
         The bridge uses a fresh AglLiteClient per call (async context manager)
     to avoid stale TCP connections — VERL has long pauses between calls for FSDP weight sync.
@@ -366,13 +400,8 @@ class AglLiteRolloutBridge:
         processor: Any = None,
         image_base_dir: str | None = None,
         trace_aggregator: dict[str, Any] | None = None,
-        cleanup_agent_jobs: bool = False,
-        cleanup_namespace: str | None = None,
-        cleanup_k8s_client: AgentJobK8sClient | None = None,
+        hooks: RolloutHooks | None = None,
     ):
-        if cleanup_agent_jobs and not cleanup_namespace:
-            raise ValueError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
-
         # --- agl-lite connection (replaces store + proxy + adapter) ---
         # Connection params are kept so each rollout call opens a fresh
         # `async with AglLiteClient(...)` — VERL has long pauses between
@@ -392,11 +421,7 @@ class AglLiteRolloutBridge:
         self.reward_fillna_value = reward_fillna_value
         self.image_base_dir = image_base_dir
         self.trace_aggregator = trace_aggregator or {"level": "transition"}
-
-        # --- Optional cleanup for agent Jobs created by the agl-lite controller ---
-        self._cleanup_agent_jobs_enabled = cleanup_agent_jobs
-        self._cleanup_namespace = cleanup_namespace
-        self._cleanup_k8s_client = cleanup_k8s_client
+        self._hooks = hooks
 
         # --- Multimodal ---
         self._use_mrope = self._is_mrope_model()
@@ -571,19 +596,20 @@ class AglLiteRolloutBridge:
             original["data_id"] = data_id
             original["_sample_idx"] = i
             for trial_idx in range(rollouts_per_sample):
-                rollout_requests.append(
-                    EnqueueRolloutRequest(
-                        input=_to_native(original),
-                        resources_id=resources_id,
-                        config=RolloutConfig(timeout=int(self.timeout_seconds)),
-                        metadata={
-                            "data_id": data_id,
-                            "is_train": is_train,
-                            "sample_idx_in_batch": i,
-                            "trial_idx_in_group": trial_idx,
-                        },
-                    )
+                request = EnqueueRolloutRequest(
+                    input=_to_native(original),
+                    resources_id=resources_id,
+                    config=RolloutConfig(timeout=int(self.timeout_seconds)),
+                    metadata={
+                        "data_id": data_id,
+                        "is_train": is_train,
+                        "sample_idx_in_batch": i,
+                        "trial_idx_in_group": trial_idx,
+                    },
                 )
+                if self._hooks is not None:
+                    request = self._hooks.on_enqueue(request)
+                rollout_requests.append(request)
 
         # 3. Enqueue
         created = await client.enqueue_rollouts(rollout_requests)
@@ -616,6 +642,38 @@ class AglLiteRolloutBridge:
         self._raw_events_by_rollout[rollout_id] = [event.model_dump() for event in raw_events]
         self._triplet_events_by_rollout[rollout_id] = [event.model_dump() for event in triplet_events]
         return raw_events, triplet_events
+
+    @staticmethod
+    def _events_by_attempt(raw_events: list[Event], fallback_attempt_id: str) -> dict[str, list[Event]]:
+        grouped: dict[str, list[Event]] = defaultdict(list)
+        for event in raw_events:
+            grouped[event.attempt_id or fallback_attempt_id].append(event)
+        if not grouped:
+            grouped[fallback_attempt_id] = []
+        return dict(grouped)
+
+    async def _run_succeeded_hook(self, rollout: Rollout) -> None:
+        if self._hooks is None:
+            return
+        attempt_id = rollout.succeeded_attempt_id or "unknown"
+        sink = _SyncTraceSink()
+        raw_events = await self.client.get_events(rollout.rollout_id)
+        events_by_attempt = self._events_by_attempt(raw_events, attempt_id)
+        try:
+            self._hooks.on_succeeded(rollout, events_by_attempt, sink)
+            await sink.flush(self.client)
+        except Exception:
+            print(f"AglLiteRolloutBridge: on_succeeded hook failed for rollout {rollout.rollout_id}")
+
+    async def _run_failed_hook(self, rollout: Rollout) -> None:
+        if self._hooks is None:
+            return
+        sink = _SyncTraceSink()
+        try:
+            self._hooks.on_failed(rollout, sink)
+            await sink.flush(self.client)
+        except Exception:
+            print(f"AglLiteRolloutBridge: on_failed hook failed for rollout {rollout.rollout_id}")
 
     async def _async_fetch_rollout_result(self, rollout_id: str) -> RolloutLegacy:
         """Fetch triplets for a completed rollout via AglLiteClient.
@@ -734,10 +792,12 @@ class AglLiteRolloutBridge:
                 self._rollout_status[rid] = status
                 self._rollout_end_time[rid] = time.time()
                 if status == RolloutStatus.SUCCEEDED:
+                    await self._run_succeeded_hook(rollout)
                     legacy = await self._async_fetch_rollout_result(rid)
                     self._completed_rollouts[rid] = legacy
                     self._num_succeeded += 1
                 elif status == RolloutStatus.TERMINAL_FAILED:
+                    await self._run_failed_hook(rollout)
                     await self._async_fetch_rollout_events(rid)
                     self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
                     self._num_failed += 1
@@ -1348,61 +1408,8 @@ class AglLiteRolloutBridge:
             f"{gateway_prefix}/rollout_completion_rate": (self._num_succeeded / total if total else 0.0),
         }
 
-    def _get_cleanup_k8s_client(self) -> AgentJobK8sClient:
-        """Return the K8s client used for optional agent Job cleanup."""
-        if self._cleanup_k8s_client is not None:
-            return self._cleanup_k8s_client
-        if not self._cleanup_namespace:
-            raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
-        try:
-            from agl_lite.controller.kr8s_adapter import Kr8sClient
-        except ImportError as exc:
-            raise RuntimeError("cleanup_agent_jobs requires the controller extra with kr8s installed") from exc
-
-        self._cleanup_k8s_client = Kr8sClient(namespace=self._cleanup_namespace)
-        return self._cleanup_k8s_client
-
-    async def _async_cleanup_tracked_agent_jobs(self) -> None:
-        """Delete only agl-lite Jobs for rollout IDs tracked by this bridge batch."""
-        if not self._cleanup_agent_jobs_enabled:
-            return
-        if not self._enqueue_order:
-            return
-        if not self._cleanup_namespace:
-            raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
-
-        tracked_rollout_ids = set(self._enqueue_order)
-        k8s = self._get_cleanup_k8s_client()
-        jobs = await k8s.list_jobs(
-            namespace=self._cleanup_namespace,
-            label_selector=_AGL_LITE_MANAGED_BY_SELECTOR,
-        )
-
-        deleted_count = 0
-        for job in jobs:
-            metadata = job.get("metadata", {})
-            labels = metadata.get("labels", {})
-            if labels.get(_AGL_LITE_MANAGED_BY_LABEL) != _AGL_LITE_MANAGED_BY_VALUE:
-                continue
-            rollout_id = labels.get(_AGL_LITE_ROLLOUT_ID_LABEL)
-            job_name = metadata.get("name")
-            if rollout_id in tracked_rollout_ids and job_name:
-                await k8s.delete_job(job_name, self._cleanup_namespace)
-                deleted_count += 1
-
-        if deleted_count:
-            print(f"AglLiteRolloutBridge: deleted {deleted_count} tracked agent Jobs.")
-
-    def cleanup_agent_jobs(self) -> None:
-        """Synchronously clean up tracked agl-lite agent Jobs when enabled."""
-        if not self._cleanup_agent_jobs_enabled:
-            return
-        assert self._loop is not None
-        future = asyncio.run_coroutine_threadsafe(self._async_cleanup_tracked_agent_jobs(), self._loop)
-        future.result()
-
     def clear_data_and_server(self) -> None:
-        """Reset local state for the next iteration without touching Kubernetes."""
+        """Reset local state for the next iteration."""
         self._total_tasks_queued = 0
         self._completed_rollouts.clear()
         self._task_id_to_original_sample.clear()
@@ -1437,6 +1444,7 @@ class AglLiteRolloutBridge:
 
     def _has_agent_reward(self, rollout: RolloutLegacy) -> bool:
         return rollout.final_reward is not None and not self._has_fallback_reward(rollout)
+
     # =========================================================================
     # Async-rollout (carry-over) path — parallel methods, sync path untouched.
     # =========================================================================

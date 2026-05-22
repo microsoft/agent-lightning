@@ -7,11 +7,10 @@ handlers on the event loop thread. See docs/dev_guidelines.md § Concurrency Mod
 from __future__ import annotations
 
 import json
-import structlog
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from agl_lite.schemas.api import (
     ArchiveBackend,
@@ -30,14 +29,7 @@ from agl_lite.schemas.rollout import (
     Rollout,
     RolloutConfig,
     RolloutMetadata,
-    RolloutStatus,
 )
-
-if TYPE_CHECKING:
-    from agl_lite.hooks import RolloutHooks
-
-log = structlog.get_logger()
-
 
 class InMemoryStore:
     """In-memory implementation of the agl-lite Store.
@@ -49,13 +41,12 @@ class InMemoryStore:
       models:    dict[model, dict[endpoint, ModelServer]]  (nested)
     """
 
-    def __init__(self, hooks: RolloutHooks | None = None, log_dir: str | None = None) -> None:
+    def __init__(self, log_dir: str | None = None) -> None:
         self._rollouts: dict[str, Rollout] = {}
         self._events: dict[str, dict[str, list[Event]]] = {}
         self._resources: dict[str, ResourcesUpdate] = {}
         self._latest_resources_id: str | None = None
         self._models: dict[str, dict[str, ModelServer]] = {}
-        self._hooks = hooks
         self._log_dir = Path(log_dir) if log_dir else None
 
     # ── Rollout management ───────────────────────────────────────────
@@ -64,10 +55,6 @@ class InMemoryStore:
         """Create new rollouts in QUEUING status."""
         results: list[Rollout] = []
         for req in requests:
-            # Pre-processor hook: transform request before persist.
-            if self._hooks:
-                req = self._hooks.on_enqueue(req)
-
             now = time.time()
             rollout_id = uuid.uuid4().hex
             rollout = Rollout(
@@ -127,18 +114,6 @@ class InMemoryStore:
             }
         )
         self._rollouts[rollout_id] = updated
-
-        # Post-transition hooks — still inside the sync method,
-        # no reader can interleave (single-threaded event loop).
-        if self._hooks and "status" in updates and updated.status != rollout.status:
-            try:
-                if updated.status == RolloutStatus.SUCCEEDED:
-                    events = self._events.get(rollout_id, {})
-                    self._hooks.on_succeeded(updated, events, self)
-                elif updated.status == RolloutStatus.TERMINAL_FAILED:
-                    self._hooks.on_failed(updated, self)
-            except Exception:
-                log.exception("Hook error for rollout", rollout_id=rollout_id)
 
         return updated
 

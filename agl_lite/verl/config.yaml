@@ -9,14 +9,13 @@ defaults:
 agentlightning:
   agl_base_url: ${oc.env:AGL_BASE_URL,http://localhost:8080}
   agl_key: ${oc.env:AGL_KEY,""}
+  hooks: ${oc.env:AGL_HOOKS,null}
   agl_admin_key: ${oc.env:AGL_ADMIN_KEY,""}  # trainer-only admin credential for /admin/gateway/* — required when async_rollout.enabled=true
   model_endpoint: ${oc.env:AGL_MODEL_ENDPOINT,""}  # external model endpoint (if not using VERL's internal vLLM)
   timeout_seconds: 1800
   poll_timeout_seconds: null  # null → fall back to timeout_seconds
   resources_id: null
   reward_fillna_value: 0.0
-  cleanup_agent_jobs: true  # cleanup tracked agent Jobs after each rollout batch
-  cleanup_namespace: ${oc.env:AGL_NAMESPACE,""}
   trace_aggregator:
     level: transition # transition | trajectory
     trajectory_max_prompt_length: 2048
