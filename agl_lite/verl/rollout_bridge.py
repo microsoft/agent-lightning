@@ -70,6 +70,14 @@ class RolloutLegacy(BaseModel):
     triplet_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class AgentJobK8sClient(Protocol):
+    """K8s operations needed to clean up tracked agent Jobs."""
+
+    async def list_jobs(self, namespace: str, label_selector: str) -> list[dict[str, Any]]: ...
+
+    async def delete_job(self, name: str, namespace: str) -> None: ...
+
+
 __all__ = [
     "AglLiteRolloutBridge",
     "get_left_padded_ids_and_attention_mask",
@@ -104,6 +112,13 @@ class _SyncTraceSink:
                 event.attempt_id,
                 PostEventRequest(event_type=event.event_type, data=event.data),
             )
+
+
+_AGL_LITE_MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
+_AGL_LITE_MANAGED_BY_VALUE = "agl-lite"
+_AGL_LITE_MANAGED_BY_SELECTOR = f"{_AGL_LITE_MANAGED_BY_LABEL}={_AGL_LITE_MANAGED_BY_VALUE}"
+_AGL_LITE_ROLLOUT_ID_LABEL = "agl-lite/rollout-id"
+_FALLBACK_REWARD_REASONS = {"no_reward_posted_by_agent", "terminal_failed"}
 
 
 def _safe_metric_name(value: Any, *, default: str = "unknown", max_length: int = 80) -> str:
@@ -428,6 +443,30 @@ class AglLiteRolloutBridge:
         self._num_cancelled = 0
         self._num_timeout = 0
         self.is_train = True
+
+        # --- Async-rollout (carry-over) state ---
+        # rid -> data_id (the group id this rollout belongs to)
+        self._rid_to_data_id: dict[str, str] = {}
+        # data_id -> set of rids enqueued for that group (across all steps)
+        self._data_id_to_rids: dict[str, set[str]] = defaultdict(set)
+        # data_id -> wall-clock time when the group first reached "all rids
+        # in TERMINAL_STATUSES". Tie-breaker is enqueue order, then data_id.
+        self._group_finish_time: dict[str, float] = {}
+        # Rids enqueued this step (cleared at the start of each async step).
+        self._step_new_rids: set[str] = set()
+        # Rids whose data_id group was selected this step (consumed by
+        # async_get_train_data_batch / async_cleanup_consumed).
+        self._selected_rids: set[str] = set()
+        # Rids that have been enqueued but whose group has not yet been
+        # selected by any past step. Persists across steps until consumed.
+        self._carry_over_rids: set[str] = set()
+        # Step index at which a rid first entered _carry_over_rids — used by
+        # async metrics (carry_over_age_max_steps) and the soft-limit warning.
+        self._carry_over_birth_step: dict[str, int] = {}
+        # Snapshot of "this step's rollouts to run" for `training/n_rollouts`
+        # under the async path: captured at async_set_up_data_and_server entry
+        # and read by async_get_train_data_batch. None outside async steps.
+        self._async_n_rollouts_this_step: int | None = None
 
         # --- Async event loop for _async methods ---
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -1387,6 +1426,7 @@ class AglLiteRolloutBridge:
         self._num_cancelled = 0
         self._num_timeout = 0
         self.is_train = True
+        self._async_n_rollouts_this_step = None
 
     def _fillna_reward(self, rollout: RolloutLegacy) -> float:
         """Return final_reward or the fill value."""
@@ -1404,3 +1444,624 @@ class AglLiteRolloutBridge:
 
     def _has_agent_reward(self, rollout: RolloutLegacy) -> bool:
         return rollout.final_reward is not None and not self._has_fallback_reward(rollout)
+
+    # =========================================================================
+    # Async-rollout (carry-over) path — parallel methods, sync path untouched.
+    # =========================================================================
+    #
+    # These methods implement the "overshoot sampling + group-finish early
+    # stop + cross-step carry-over" feature described in
+    # doc_auto/new_async.md. They live alongside the sync methods above and
+    # share state fields only where it is safe to do so. The sync path never
+    # calls anything below, and these methods never call the sync `clear_*` /
+    # `cleanup_agent_jobs` / `get_train_data_batch`.
+
+    def _active_rids(self) -> set[str]:
+        """All rids currently in the active pool: this step's new rids plus
+        carry-over rids retained from earlier steps."""
+        return set(self._step_new_rids) | set(self._carry_over_rids)
+
+    def _active_groups(self) -> dict[str, set[str]]:
+        """Map data_id -> rids in the active pool."""
+        groups: dict[str, set[str]] = defaultdict(set)
+        for rid in self._active_rids():
+            did = self._rid_to_data_id.get(rid)
+            if did is not None:
+                groups[did].add(rid)
+        return groups
+
+    def _finished_data_ids(self, active_groups: dict[str, set[str]]) -> set[str]:
+        """Data groups whose active rids are all consumable.
+
+        Store/controller terminal states live in ``_rollout_status``. Trainer-
+        side wall-clock timeouts live in ``_timeout_rids`` and are consumable
+        via the same placeholder path as failed/cancelled rollouts.
+        """
+        return {
+            did for did, rids in active_groups.items()
+            if rids and all((r in self._rollout_status) or (r in self._timeout_rids) for r in rids)
+        }
+
+    def _mark_active_unfinished_as_timeout(self, active_rids: set[str]) -> None:
+        """Mark active non-terminal rids as trainer-side timeout.
+
+        This mirrors the sync ``run_until_all_finished`` timeout path: timeout
+        rids do not enter ``_completed_rollouts`` and therefore become
+        placeholder rows when selected for training.
+        """
+        now = time.time()
+        for rid in active_rids:
+            if rid in self._rollout_status or rid in self._timeout_rids:
+                continue
+            self._timeout_rids.add(rid)
+            self._rollout_error[rid] = "trainer-side wall-clock timeout"
+            self._rollout_end_time[rid] = now
+            self._num_timeout += 1
+
+    async def _async_register_and_enqueue_diff(
+        self,
+        client: AglLiteClient,
+        data: dict[str, Any],
+        server_addresses: list[str],
+        async_train_batch_size: int,
+    ) -> int:
+        """Enqueue only the rollouts needed to top up the active pool to
+        ``async_train_batch_size`` distinct data_ids.
+
+        Returns the number of *new* data_ids enqueued this step. Carry-over
+        data_ids are not re-enqueued — their agent pods are still running
+        (or in 429 backoff) on K8s.
+        """
+        # Always (re-)register the current vLLM endpoints so weight-swap
+        # between steps lands on the correct addresses.
+        model_name = self.train_information.get("model", "default-model")
+        resources_id = self.train_information.get("resources_id")
+        regs: list[RegisterModelRequest] = []
+        for addr in server_addresses:
+            endpoint = addr if addr.startswith("http") else f"http://{addr}/v1"
+            regs.append(RegisterModelRequest(model=model_name, endpoint=endpoint))
+        await client.register_models(regs)
+
+        # Compute how many new data_ids this step needs.
+        carry_over_dids = {self._rid_to_data_id[r] for r in self._carry_over_rids if r in self._rid_to_data_id}
+        n_carry_over_dids = len(carry_over_dids)
+        n_new_dids = max(0, async_train_batch_size - n_carry_over_dids)
+        if n_new_dids == 0:
+            print(
+                f"AglLiteRolloutBridge.async: carry-over saturated ({n_carry_over_dids} data_ids) — "
+                "no new samples this step."
+            )
+            return 0
+
+        keys = list(data.keys())
+        if not keys:
+            return 0
+        num_samples = len(data[keys[0]])
+        # The trainer is responsible for providing exactly n_new_dids samples
+        # via the take(n) sample_iterator; enforce that here defensively.
+        if num_samples != n_new_dids:
+            raise RuntimeError(
+                f"async_register_and_enqueue_diff: dataloader provided {num_samples} samples but "
+                f"async_train_batch_size - n_carry_over_dids = {n_new_dids}"
+            )
+
+        rollouts_per_sample = self.train_rollout_n
+        rollout_requests: list[EnqueueRolloutRequest] = []
+        for i in range(num_samples):
+            original = {key: _to_native(data[key][i]) for key in keys}
+            data_id = str(original.get("data_id") or original.get("uid") or uuid.uuid4())
+            original["data_id"] = data_id
+            original["_sample_idx"] = i
+            for trial_idx in range(rollouts_per_sample):
+                rollout_requests.append(
+                    EnqueueRolloutRequest(
+                        input=_to_native(original),
+                        resources_id=resources_id,
+                        config=RolloutConfig(timeout=int(self.timeout_seconds)),
+                        metadata={
+                            "data_id": data_id,
+                            "is_train": True,
+                            "sample_idx_in_batch": i,
+                            "trial_idx_in_group": trial_idx,
+                        },
+                    )
+                )
+
+        created = await client.enqueue_rollouts(rollout_requests)
+        expected = num_samples * rollouts_per_sample
+        assert len(created) == expected, (
+            f"agl-lite returned {len(created)} rollouts, expected {expected}"
+        )
+
+        now = time.time()
+        for r, req in zip(created, rollout_requests, strict=True):
+            rid = r.rollout_id
+            metadata = req.metadata
+            if not isinstance(metadata, dict):
+                metadata = metadata.model_dump() if metadata is not None else {}
+            did = str(metadata["data_id"])
+            self._task_id_to_original_sample[rid] = r.input if isinstance(r.input, dict) else {}
+            self._enqueue_order.append(rid)
+            self._rollout_start_time[rid] = now
+            self._rid_to_data_id[rid] = did
+            self._data_id_to_rids[did].add(rid)
+            self._step_new_rids.add(rid)
+        self._total_tasks_queued += len(created)
+        print(f"AglLiteRolloutBridge.async: enqueued {len(created)} new rollouts ({n_new_dids} new data_ids).")
+        return n_new_dids
+
+    def async_set_up_data_and_server(
+        self,
+        data: dict[str, Any],
+        server_addresses: list[str],
+        async_train_batch_size: int,
+    ) -> int:
+        """Sync wrapper around the async-path enqueue. Returns n_new_dids.
+
+        Unlike ``set_up_data_and_server()``, this does NOT clear bridge state —
+        carry-over rids (and their book-keeping in _rid_to_data_id /
+        _data_id_to_rids / _enqueue_order / _rollout_status / etc.) are
+        preserved across steps so the bridge can poll them again.
+        """
+        assert self._loop is not None
+        self.is_train = True
+        self._step_new_rids.clear()
+        self._selected_rids.clear()
+
+        # Snapshot "this step's rollouts to run" BEFORE we enqueue new rids:
+        # carry-over rids from the previous step that have not yet reached a
+        # terminal state (succeeded / failed / cancelled / timeout). These will
+        # still occupy the active pool and consume scheduling capacity this
+        # step. Already-terminal carry-overs are excluded — they sit in the
+        # pool only as ready-to-select results, not as work to run.
+        terminal_rids = set(self._rollout_status.keys()) | self._timeout_rids
+        prev_carry_over_unfinished = self._carry_over_rids - terminal_rids
+
+        async def _go() -> int:
+            async with AglLiteClient(
+                base_url=self._agl_base_url,
+                agl_key=self._agl_key,
+            ) as client:
+                return await self._async_register_and_enqueue_diff(
+                    client, data, server_addresses, async_train_batch_size
+                )
+
+        future = asyncio.run_coroutine_threadsafe(_go(), self._loop)
+        n_new_dids = future.result()
+        # n_new_rids = n_new_dids * rollout_n (set in _async_register_and_enqueue_diff).
+        self._async_n_rollouts_this_step = (
+            n_new_dids * self.train_rollout_n + len(prev_carry_over_unfinished)
+        )
+        return n_new_dids
+
+    async def _poll_status_for(self, client: AglLiteClient, rids: set[str]) -> None:
+        """Refresh status for the given rids, updating bridge bookkeeping.
+
+        Terminal rollouts are recorded in ``self._rollout_status`` and their
+        results (if SUCCEEDED) are fetched into ``self._completed_rollouts``.
+        Already-terminal rids are skipped — status is sticky across steps.
+        """
+        for rid in rids:
+            if rid in self._rollout_status or rid in self._timeout_rids:
+                continue
+            rollout = await client.get_rollout(rid)
+            status = rollout.status
+            if status not in TERMINAL_STATUSES:
+                continue
+            self._rollout_status[rid] = status
+            self._rollout_end_time[rid] = time.time()
+            if status == RolloutStatus.SUCCEEDED:
+                legacy = await self._async_fetch_rollout_result(rid)
+                self._completed_rollouts[rid] = legacy
+                self._num_succeeded += 1
+            elif status == RolloutStatus.TERMINAL_FAILED:
+                self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
+                self._num_failed += 1
+            elif status == RolloutStatus.CANCELLED:
+                self._rollout_error[rid] = getattr(rollout, "error_message", None) or "cancelled"
+                self._num_cancelled += 1
+
+    def _pick_first_n_by_finish_time(
+        self,
+        finished_dids: set[str],
+        n: int,
+    ) -> list[str]:
+        """Stable selection: by ``_group_finish_time`` ascending, then by
+        earliest rid index in ``_enqueue_order``, then by data_id string."""
+        order_index: dict[str, int] = {rid: i for i, rid in enumerate(self._enqueue_order)}
+
+        def earliest_enqueue_index(did: str) -> int:
+            return min(order_index.get(r, 10**9) for r in self._data_id_to_rids.get(did, set()))
+
+        sorted_dids = sorted(
+            finished_dids,
+            key=lambda did: (
+                self._group_finish_time.get(did, float("inf")),
+                earliest_enqueue_index(did),
+                did,
+            ),
+        )
+        return sorted_dids[:n]
+
+    async def _async_run_until_groups_finished(
+        self,
+        *,
+        target_groups: int,
+        rollout_n: int,
+        admin_client: AglLiteClient,
+        drain_timeout: float = 30.0,
+        timeout_seconds: float | None = None,
+        retry_after_seconds: int = 5,
+        step_label: str = "",
+        verbose: bool = True,
+    ) -> tuple[set[str], set[str], dict[str, Any]]:
+        """Poll the active pool until ``target_groups`` complete groups exist,
+        then pause+drain the gateway and return the selection.
+
+        Returns ``(selected_rids, carry_over_rids, async_metrics)``.
+
+        Notes:
+          - "Consumable" here means ``rid in self._rollout_status`` (i.e.
+            SUCCEEDED / TERMINAL_FAILED / CANCELLED) or ``rid in
+            self._timeout_rids``. Timeout rids follow the old sync placeholder
+            path when selected for training.
+          - From the moment ``len(finished_groups) >= target_groups`` is
+            observed to the computation of ``selected_dids``, no ``await``
+            happens; the first await is ``pause_gateway()``. This freezes
+            the snapshot per docs §8.1.
+          - Wall-clock timeout is a system-fault fallback. When it triggers,
+            all active unfinished rids are marked into ``_timeout_rids``;
+            this makes their groups consumable via placeholder rows while
+            keeping the selected group count at ``target_groups``.
+        """
+        if timeout_seconds is None:
+            timeout_seconds = self.timeout_seconds
+        deadline = time.time() + timeout_seconds
+        POLL_INTERVAL = 5.0
+        groups_finished_reached = 1
+        active_pool_size_at_start = len(self._active_rids())
+        inflight_at_pause = 0
+
+        async with AglLiteClient(
+            base_url=self._agl_base_url,
+            agl_key=self._agl_key,
+        ) as poll_client:
+            while True:
+                active_rids = self._active_rids()
+                await self._poll_status_for(poll_client, active_rids)
+
+                active_groups = self._active_groups()
+                finished_dids = self._finished_data_ids(active_groups)
+                for did in finished_dids:
+                    if did not in self._group_finish_time:
+                        self._group_finish_time[did] = time.time()
+
+                if verbose:
+                    print(
+                        f"AglLiteRolloutBridge.async{step_label}: "
+                        f"active_rids={len(active_rids)} active_groups={len(active_groups)} "
+                        f"finished_groups={len(finished_dids)}/{target_groups}"
+                    )
+
+                if len(finished_dids) >= target_groups:
+                    # Snapshot — no awaits between here and selected_dids
+                    # computation, per §8.1.
+                    finished_snapshot = set(finished_dids)
+                    selected_dids = self._pick_first_n_by_finish_time(finished_snapshot, target_groups)
+                    selected_rids: set[str] = set()
+                    for did in selected_dids:
+                        selected_rids.update(active_groups.get(did, set()))
+
+                    # First await — pause + drain.
+                    pause_state = await admin_client.pause_gateway(
+                        retry_after_seconds=retry_after_seconds,
+                        reason=f"async-rollout step {step_label or ''}".strip(),
+                    )
+                    inflight_at_pause = int(pause_state.get("inflight", 0))
+                    drain_start = time.time()
+                    residual = await admin_client.wait_until_inflight_drained(timeout=drain_timeout)
+                    drain_seconds = time.time() - drain_start
+                    drain_timed_out = 1 if residual > 0 else 0
+                    if residual > 0:
+                        print(
+                            f"AglLiteRolloutBridge.async{step_label}: drain timeout — "
+                            f"{residual} in-flight upstream requests remaining."
+                        )
+                    unselected = self._active_rids() - selected_rids
+                    metrics = {
+                        "training/async/groups_finished_reached": groups_finished_reached,
+                        "training/async/n_active_data_ids": len(active_groups),
+                        "training/async/n_active_rollouts": active_pool_size_at_start,
+                        "training/async/n_selected_groups": len(selected_dids),
+                        "training/async/drain_wait_seconds": float(drain_seconds),
+                        "training/async/drain_timeout": int(drain_timed_out),
+                        "training/async/inflight_at_pause": inflight_at_pause,
+                        "training/async/group_finish_skew_s": float(
+                            self._compute_group_finish_skew(selected_dids)
+                        ),
+                    }
+                    return selected_rids, unselected, metrics
+
+                # Not all items collected and timeout scenario: mark active unfinished as timeout and re-check
+                if time.time() >= deadline and len(finished_dids) < target_groups:
+                    groups_finished_reached = 0
+                    self._mark_active_unfinished_as_timeout(active_rids)
+                    active_groups = self._active_groups()
+                    finished_dids = self._finished_data_ids(active_groups)
+                    for did in finished_dids:
+                        if did not in self._group_finish_time:
+                            self._group_finish_time[did] = time.time()
+                    if len(finished_dids) < target_groups:
+                        raise RuntimeError(
+                            "async rollout timed out but active pool did not contain enough complete groups "
+                            f"after timeout placeholder marking: {len(finished_dids)}/{target_groups}"
+                        )
+                    finished_snapshot = set(finished_dids)
+                    selected_dids = self._pick_first_n_by_finish_time(finished_snapshot, target_groups)
+                    selected_rids = set()
+                    for did in selected_dids:
+                        selected_rids.update(active_groups.get(did, set()))
+
+                    pause_state = await admin_client.pause_gateway(
+                        retry_after_seconds=retry_after_seconds,
+                        reason=f"async-rollout step {step_label or ''} (timeout-placeholder)".strip(),
+                    )
+                    inflight_at_pause = int(pause_state.get("inflight", 0))
+                    drain_start = time.time()
+                    residual = await admin_client.wait_until_inflight_drained(timeout=drain_timeout)
+                    drain_seconds = time.time() - drain_start
+                    drain_timed_out = 1 if residual > 0 else 0
+                    unselected = self._active_rids() - selected_rids
+                    metrics = {
+                        "training/async/groups_finished_reached": groups_finished_reached,
+                        "training/async/n_active_data_ids": len(active_groups),
+                        "training/async/n_active_rollouts": active_pool_size_at_start,
+                        "training/async/n_selected_groups": len(selected_dids),
+                        "training/async/drain_wait_seconds": float(drain_seconds),
+                        "training/async/drain_timeout": int(drain_timed_out),
+                        "training/async/inflight_at_pause": inflight_at_pause,
+                        "training/async/group_finish_skew_s": float(
+                            self._compute_group_finish_skew(selected_dids)
+                        ),
+                    }
+                    return selected_rids, unselected, metrics
+
+                await asyncio.sleep(POLL_INTERVAL)
+
+    def _compute_group_finish_skew(self, selected_dids: list[str]) -> float:
+        """Median of (max - min) end-time within each selected group.
+        Used as the ``group_finish_skew_s`` metric to observe within-group
+        bucket effects (long-tail rollouts inside a group)."""
+        if not selected_dids:
+            return 0.0
+        per_group_spread: list[float] = []
+        for did in selected_dids:
+            rids = self._data_id_to_rids.get(did, set())
+            ends = [self._rollout_end_time[r] for r in rids if r in self._rollout_end_time]
+            if len(ends) >= 2:
+                per_group_spread.append(max(ends) - min(ends))
+        if not per_group_spread:
+            return 0.0
+        return float(np.median(per_group_spread))
+
+    def run_until_groups_finished(
+        self,
+        *,
+        target_groups: int,
+        rollout_n: int,
+        admin_base_url: str,
+        admin_key: str,
+        drain_timeout: float = 30.0,
+        timeout_seconds: float | None = None,
+        retry_after_seconds: int = 5,
+        step_label: str = "",
+        verbose: bool = True,
+    ) -> tuple[set[str], set[str], dict[str, Any]]:
+        """Sync wrapper for the async-path group-finish poll.
+
+        Builds a short-lived admin client (separate credential from
+        agent-facing key) and delegates to ``_async_run_until_groups_finished``.
+        """
+        assert self._loop is not None
+
+        async def _go() -> tuple[set[str], set[str], dict[str, Any]]:
+            async with AglLiteClient(
+                base_url=admin_base_url,
+                agl_admin_key=admin_key,
+            ) as admin_client:
+                return await self._async_run_until_groups_finished(
+                    target_groups=target_groups,
+                    rollout_n=rollout_n,
+                    admin_client=admin_client,
+                    drain_timeout=drain_timeout,
+                    timeout_seconds=timeout_seconds,
+                    retry_after_seconds=retry_after_seconds,
+                    step_label=step_label,
+                    verbose=verbose,
+                )
+
+        future = asyncio.run_coroutine_threadsafe(_go(), self._loop)
+        return future.result()
+
+    def commit_async_step_selection(
+        self,
+        selected_rids: set[str],
+        unselected_rids: set[str],
+        current_step: int,
+    ) -> dict[str, Any]:
+        """Record the selection produced by ``run_until_groups_finished``.
+
+        Updates ``_selected_rids`` (consumed by the next call to
+        ``async_get_train_data_batch``) and rewrites ``_carry_over_rids``
+        per the rule in docs §3.5(4):
+
+            carry_over_in  = previous _carry_over_rids
+            carry_over_out = (active_rids - selected_rids)
+
+        Returns the carry-over-related metrics for this step.
+        """
+        prev_carry_over = set(self._carry_over_rids)
+        n_carry_over_resumed = len(prev_carry_over & selected_rids)
+
+        self._selected_rids = set(selected_rids)
+        # carry_over_out = all active rids not selected this step
+        new_carry_over = set(unselected_rids)
+
+        # Birth-step bookkeeping for carry_over_age metric.
+        for rid in new_carry_over - prev_carry_over:
+            self._carry_over_birth_step.setdefault(rid, current_step)
+        for rid in selected_rids:
+            self._carry_over_birth_step.pop(rid, None)
+        self._carry_over_rids = new_carry_over
+
+        ages = [
+            max(0, current_step - self._carry_over_birth_step[r])
+            for r in self._carry_over_rids
+            if r in self._carry_over_birth_step
+        ]
+        return {
+            "training/async/n_carry_over_in": len(prev_carry_over),
+            "training/async/n_carry_over_out": len(self._carry_over_rids),
+            "training/async/n_carry_over_resumed": n_carry_over_resumed,
+            "training/async/carry_over_age_max_steps": max(ages) if ages else 0,
+        }
+
+    def async_get_train_data_batch(
+        self,
+        max_prompt_length: int,
+        max_response_length: int,
+        device: torch.device,
+        global_steps: int,
+    ):
+        """Assemble a training batch for the rids selected this step.
+
+        Mirrors ``get_train_data_batch`` exactly (same trace aggregator,
+        same placeholder semantics, same MRoPE handling) but iterates only
+        over the rids in ``self._selected_rids`` and *not* the full
+        ``_enqueue_order``. After the batch is built, the selected rids and
+        their per-rid bookkeeping are cleared from the bridge state so the
+        carry-over pool can keep growing past consumed rids.
+        """
+        assert self.is_train, "This method should only be called during training."
+        if not self._selected_rids:
+            raise RuntimeError("async_get_train_data_batch called with empty _selected_rids")
+
+        # Iterate selected rids in their original enqueue order so the
+        # batch layout is deterministic and (where possible) matches the
+        # sync path's behavior.
+        selected_order = [rid for rid in self._enqueue_order if rid in self._selected_rids]
+        # Defensive: any selected rid missing from _enqueue_order is appended
+        # in arbitrary (sorted) order at the end. This should not happen.
+        missing = self._selected_rids - set(selected_order)
+        selected_order.extend(sorted(missing))
+
+        prev_enqueue_order = self._enqueue_order
+        try:
+            # get_train_data_batch iterates self._enqueue_order — temporarily
+            # narrow it to the selected rids so we reuse the full assembly
+            # logic without copy-paste.
+            self._enqueue_order = selected_order
+            data_proto, metrics = self.get_train_data_batch(
+                max_prompt_length=max_prompt_length,
+                max_response_length=max_response_length,
+                device=device,
+                global_steps=global_steps,
+            )
+        finally:
+            self._enqueue_order = prev_enqueue_order
+
+        # Override `training/n_rollouts` with the async-path semantics: the
+        # number of rollouts this step actually had to run, i.e. new rids
+        # enqueued this step plus carry-over rids from the previous step that
+        # were still unfinished at step entry. The base sync semantics
+        # (_total_tasks_queued) is preserved only for the legacy `_rollout`
+        # path; in async mode it is a cumulative counter periodically reset
+        # by `_validate` -> `clear_data_and_server`, which is misleading here.
+        if self._async_n_rollouts_this_step is not None:
+            metrics["training/n_rollouts"] = self._async_n_rollouts_this_step
+            self._async_n_rollouts_this_step = None
+
+        # Selected rids are now consumed — drop their per-rid bookkeeping.
+        # Carry-over rids (which are NOT in selected_order) keep their state.
+        self._async_drop_consumed(set(selected_order))
+        return data_proto, metrics
+
+    def _async_drop_consumed(self, consumed_rids: set[str]) -> None:
+        """Remove per-rid bookkeeping for rids fully consumed by this step.
+
+        Mirrors the cleanup section of ``clear_data_and_server()`` but only
+        for the given rid set — carry-over state is preserved.
+        """
+        consumed_dids: set[str] = set()
+        for rid in consumed_rids:
+            did = self._rid_to_data_id.pop(rid, None)
+            if did is not None:
+                consumed_dids.add(did)
+                rids_in_group = self._data_id_to_rids.get(did)
+                if rids_in_group is not None:
+                    rids_in_group.discard(rid)
+                    if not rids_in_group:
+                        self._data_id_to_rids.pop(did, None)
+            self._completed_rollouts.pop(rid, None)
+            self._task_id_to_original_sample.pop(rid, None)
+            self._rollout_status.pop(rid, None)
+            self._rollout_error.pop(rid, None)
+            self._rollout_start_time.pop(rid, None)
+            self._rollout_end_time.pop(rid, None)
+            self._timeout_rids.discard(rid)
+            self._carry_over_birth_step.pop(rid, None)
+            self._selected_rids.discard(rid)
+            self._step_new_rids.discard(rid)
+        # Compact _enqueue_order to drop consumed rids — cheap with set lookup.
+        if consumed_rids:
+            self._enqueue_order = [r for r in self._enqueue_order if r not in consumed_rids]
+        # Drop group_finish_time only for fully-consumed groups (no remaining
+        # active rids). A group is "fully consumed" if no rid for that did is
+        # left in any tracked set.
+        for did in consumed_dids:
+            if did not in self._data_id_to_rids:
+                self._group_finish_time.pop(did, None)
+
+    async def _async_cleanup_consumed_jobs(self, consumed_rids: set[str]) -> None:
+        """Delete K8s Jobs for the given rids only (preserve carry-over pods)."""
+        if not self._cleanup_agent_jobs_enabled:
+            return
+        if not consumed_rids:
+            return
+        if not self._cleanup_namespace:
+            raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
+
+        k8s = self._get_cleanup_k8s_client()
+        jobs = await k8s.list_jobs(
+            namespace=self._cleanup_namespace,
+            label_selector=_AGL_LITE_MANAGED_BY_SELECTOR,
+        )
+        deleted = 0
+        for job in jobs:
+            metadata = job.get("metadata", {})
+            labels = metadata.get("labels", {})
+            if labels.get(_AGL_LITE_MANAGED_BY_LABEL) != _AGL_LITE_MANAGED_BY_VALUE:
+                continue
+            rollout_id = labels.get(_AGL_LITE_ROLLOUT_ID_LABEL)
+            job_name = metadata.get("name")
+            if rollout_id in consumed_rids and job_name:
+                await k8s.delete_job(job_name, self._cleanup_namespace)
+                deleted += 1
+        if deleted:
+            print(f"AglLiteRolloutBridge.async: deleted {deleted} consumed agent Jobs.")
+
+    def async_cleanup_consumed(self, consumed_rids: set[str]) -> None:
+        """Sync wrapper. Carry-over rids' Jobs are NEVER touched here."""
+        if not self._cleanup_agent_jobs_enabled:
+            return
+        if not consumed_rids:
+            return
+        assert self._loop is not None
+        future = asyncio.run_coroutine_threadsafe(
+            self._async_cleanup_consumed_jobs(set(consumed_rids)), self._loop
+        )
+        future.result()
+
+    def n_carry_over_data_ids(self) -> int:
+        """Distinct data_ids currently represented in the carry-over pool."""
+        return len({self._rid_to_data_id[r] for r in self._carry_over_rids if r in self._rid_to_data_id})
