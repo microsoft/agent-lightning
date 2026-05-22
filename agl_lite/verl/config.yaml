@@ -9,6 +9,7 @@ defaults:
 agentlightning:
   agl_base_url: ${oc.env:AGL_BASE_URL,http://localhost:8080}
   agl_key: ${oc.env:AGL_KEY,""}
+  agl_admin_key: ${oc.env:AGL_ADMIN_KEY,""}  # trainer-only admin credential for /admin/gateway/* — required when async_rollout.enabled=true
   model_endpoint: ${oc.env:AGL_MODEL_ENDPOINT,""}  # external model endpoint (if not using VERL's internal vLLM)
   timeout_seconds: 1800
   poll_timeout_seconds: null  # null → fall back to timeout_seconds
@@ -22,6 +23,23 @@ agentlightning:
     trajectory_max_response_length: 8192
     debug: False
     mismatch_log_dir: ./mismatch_cases
+  async_rollout:
+    # When enabled=false (default), entrypoint dispatches to trainer.fit() —
+    # sync RL behavior is byte-level equivalent to the pre-async version and
+    # none of the fields below are read.
+    enabled: false
+    # Total groups to enqueue per step. Must be >= data.train_batch_size; in
+    # practice should be strictly greater so group-finish early stopping
+    # can cut the long tail. allow_equal_batch_size_for_debug overrides the
+    # strict-greater check for debug-mode equivalence testing.
+    async_train_batch_size: null
+    allow_equal_batch_size_for_debug: false
+    # Gateway pause/drain control plane.
+    gateway_retry_after_seconds: 5
+    gateway_drain_timeout_seconds: 30
+    # Optional: warn (not fail) when any carry-over rid stays in the pool
+    # for more than N steps — diagnostic for stuck rollouts.
+    max_carry_over_age_steps: null
 
 data:
   filter_overlong_prompts: false

@@ -110,6 +110,9 @@ AGL_RATE_LIMIT_WINDOW_SECONDS=10
 # AGL_HOOKS=
 # AGL_ARTIFACT_DIR=
 
+# VERL/W&B: offline keeps W&B run files local; online syncs scalar metrics.
+# WANDB_MODE=offline
+
 AGL_WAIT_READY_TIMEOUT_SECONDS=120
 AGL_LOCAL_STATE_DIR=.local
 ```
@@ -135,6 +138,14 @@ Field summary:
 | `AGL_ARTIFACT_DIR` | — | optional artifact directory |
 | `AGL_WAIT_READY_TIMEOUT_SECONDS` | `120` | readiness wait timeout |
 | `AGL_LOCAL_STATE_DIR` | `.local` | location of generated env/pid/log files |
+
+VERL training sends scalar metrics through W&B via VERL `Tracking`. Set
+`WANDB_MODE=offline` to keep W&B run data local, `WANDB_MODE=online` to sync
+scalar summaries to W&B, or `WANDB_MODE=disabled` to keep W&B out of the trainer
+backend. Metric keys are grouped for W&B readability under prefixes such as
+`training/`, `val/`, `gateway/training/`, `gateway/val/`, `llm/training/`,
+`llm/val/`, `response_length/`, `timing_s/`, and `perf/`. Raw event and
+triplet payload artifact upload is not part of this flow.
 
 Validation rules:
 

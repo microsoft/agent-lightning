@@ -29,6 +29,27 @@ This guide walks through the setup and first run of agl-lite. It assumes you hav
 
 ---
 
+## W&B Scalar Metrics
+
+VERL training logs scalar metrics through VERL's `Tracking` integration. agl-lite
+adds `wandb` to the trainer backend unless `WANDB_MODE=disabled`, so training,
+validation, rollout, gateway, LLM token, timing, and throughput metrics
+are grouped in W&B by stable prefixes such as `training/`, `val/`,
+`gateway/training/`, `gateway/val/`, `llm/training/`, `llm/val/`,
+`response_length/`, `timing_s/`, `timing_per_token_ms/`, and `perf/`.
+
+For local debugging, set:
+
+```bash
+export WANDB_MODE=offline
+```
+
+`WANDB_MODE=offline` keeps W&B run data on disk. `WANDB_MODE=online` syncs scalar
+summaries to W&B. agl-lite does not upload raw events or triplet payloads as W&B
+artifacts in this flow.
+
+---
+
 ## Step 1: Ensure K8s Cluster
 
 For local development, use minikube:

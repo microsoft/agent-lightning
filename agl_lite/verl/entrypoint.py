@@ -60,7 +60,19 @@ def run_ppo(
         if not isinstance(env_vars, dict):
             env_vars = {}
             runtime_env["env_vars"] = env_vars
-        for var in ("AGL_KEY", "AGL_BASE_URL", "AGL_MODEL_ENDPOINT", "AGL_NAMESPACE", "WANDB_MODE"):
+        for var in (
+            "AGL_KEY",
+            "AGL_BASE_URL",
+            "AGL_MODEL_ENDPOINT",
+            "AGL_NAMESPACE",
+            "WANDB_API_KEY",
+            "WANDB_ENTITY",
+            "WANDB_PROJECT",
+            "WANDB_DIR",
+            "WANDB_MODE",
+            "WANDB_RUN_ID",
+            "WANDB_RESUME",
+        ):
             val = os.environ.get(var)
             if val:
                 env_vars[var] = val
@@ -85,6 +97,7 @@ class _AglTaskRunner:
 
     def __init__(self):
         from verl.trainer.main_ppo import TaskRunner
+
         self._delegate = TaskRunner()
 
     def run(self, config, train_dataset_ref, val_dataset_ref):
@@ -135,16 +148,26 @@ class _AglTaskRunner:
             train_dataset = train_dataset_ref
         else:
             from verl.trainer.main_ppo import create_rl_dataset
+
             train_dataset = create_rl_dataset(
-                config.data.train_files, config.data, tokenizer, processor, is_train=True,
+                config.data.train_files,
+                config.data,
+                tokenizer,
+                processor,
+                is_train=True,
             )
 
         if val_dataset_ref is not None:
             val_dataset = val_dataset_ref
         else:
             from verl.trainer.main_ppo import create_rl_dataset
+
             val_dataset = create_rl_dataset(
-                config.data.val_files, config.data, tokenizer, processor, is_train=False,
+                config.data.val_files,
+                config.data,
+                tokenizer,
+                processor,
+                is_train=False,
             )
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
@@ -162,4 +185,13 @@ class _AglTaskRunner:
             train_sampler=train_sampler,
         )
         trainer.init_workers()
-        trainer.fit()
+
+        # Entry dispatch: async-rollout path is a fully independent training
+        # loop. When async_rollout.enabled=false (default) the new code is
+        # never called and sync RL behavior is byte-level equivalent to the
+        # pre-async version.
+        async_cfg = config.agentlightning.get("async_rollout", None)
+        if async_cfg is not None and async_cfg.get("enabled", False):
+            trainer.async_fit()
+        else:
+            trainer.fit()

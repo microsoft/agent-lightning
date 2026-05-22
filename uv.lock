@@ -95,6 +95,7 @@ verl = [
     { name = "triton" },
     { name = "verl" },
     { name = "vllm" },
+    { name = "wandb" },
     { name = "xformers" },
 ]
 
@@ -145,6 +146,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.34.0" },
     { name = "verl", marker = "extra == 'verl'", specifier = "==0.7.1" },
     { name = "vllm", marker = "extra == 'verl'", specifier = "==0.10.2" },
+    { name = "wandb", marker = "extra == 'verl'", specifier = ">=0.18.0" },
     { name = "xformers", marker = "extra == 'verl'", specifier = "==0.0.32.post1" },
 ]
 provides-extras = ["controller", "dev", "verl"]

@@ -35,8 +35,12 @@ class ModelRequestData(BaseModel):
     request: dict[str, Any]  # original request body (messages, temperature, etc.)
     adjusted_params: dict[str, Any] | None = None  # only if param adjustment changed anything
     response: dict[str, Any]  # full response body
-    latency_ms: float
-    status: str = "ok"  # "ok", "client_disconnected", "stream_error"
+    latency_ms: float | None = None
+    http_status: int | None = None
+    status: str = "ok"  # "ok", "error", "client_disconnected", "stream_error"
+    retry_count: int = 0
+    usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
 
 
 class RewardData(BaseModel):
@@ -48,3 +52,5 @@ class RewardData(BaseModel):
 
     value: float  # scalar reward (required)
     message: str | None = None  # optional human-readable explanation
+    source: str | None = None  # e.g. "agent" for explicit evaluator output, "fallback" for system fill-in
+    reason: str | None = None  # optional machine-readable explanation
