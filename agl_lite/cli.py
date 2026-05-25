@@ -118,7 +118,9 @@ def controller(
 ) -> None:
     """Start the controller (reconcile loop)."""
     import asyncio
+    import contextlib
     import os
+    import signal
 
     from agl_lite.client import AglLiteClient
     from agl_lite.controller.config import ControllerSettings, RunnerType
@@ -162,6 +164,15 @@ def controller(
                     settings=settings,
                     base_env={**os.environ},
                 )
+            # SIGTERM/SIGINT triggers a graceful shutdown via reconciler.stop().
+            # The reconciler's own try/finally in run() then performs cleanup
+            # (kill in-flight subprocesses + mark CANCELLED for the local case).
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                # add_signal_handler is POSIX-only; skip on platforms (e.g. Windows)
+                # where the event loop doesn't support it.
+                with contextlib.suppress(NotImplementedError):
+                    loop.add_signal_handler(sig, reconciler.stop)
             await reconciler.run()
         finally:
             await api.close()

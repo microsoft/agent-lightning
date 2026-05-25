@@ -155,6 +155,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             image_base_dir=self.config.data.get("image_base_dir"),
             trace_aggregator=trace_aggregator,
             hooks=hooks,
+            cleanup_agent_jobs=al.get("cleanup_agent_jobs", False),
+            cleanup_namespace=al.get("cleanup_namespace", None),
+            cleanup_k8s_client=al.get("cleanup_k8s_client", None),
         )
         return self._rollout_bridge
 
@@ -668,6 +671,66 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
         return metrics
 
+    def _validate_preserving_async_carry_over(self) -> dict[str, Any]:
+        """Run legacy validation without corrupting async carry-over state.
+
+        Validation still uses the sync rollout path, whose bridge cleanup clears
+        shared per-rid bookkeeping. In async mode those same structures also
+        contain carry-over rollouts that must be polled or consumed again next
+        step, so snapshot the carry-over slice and put it back after validation
+        finishes.
+        """
+        bridge = self._ensure_rollout_bridge()
+        carry_over_rids = set(getattr(bridge, "_carry_over_rids", set()))
+        if not carry_over_rids:
+            return self._validate()
+
+        carry_over_dids = {
+            did for rid in carry_over_rids
+            if (did := getattr(bridge, "_rid_to_data_id", {}).get(rid)) is not None
+        }
+
+        def by_rid(name: str) -> dict[Any, Any]:
+            return {
+                rid: value for rid, value in getattr(bridge, name, {}).items()
+                if rid in carry_over_rids
+            }
+
+        def set_by_rid(name: str) -> set[Any]:
+            return set(getattr(bridge, name, set())) & carry_over_rids
+
+        enqueue_order = [rid for rid in getattr(bridge, "_enqueue_order", []) if rid in carry_over_rids]
+        snapshots = {
+            "_completed_rollouts": by_rid("_completed_rollouts"),
+            "_task_id_to_original_sample": by_rid("_task_id_to_original_sample"),
+            "_rollout_status": by_rid("_rollout_status"),
+            "_rollout_error": by_rid("_rollout_error"),
+            "_rollout_start_time": by_rid("_rollout_start_time"),
+            "_rollout_end_time": by_rid("_rollout_end_time"),
+            "_raw_events_by_rollout": by_rid("_raw_events_by_rollout"),
+            "_triplet_events_by_rollout": by_rid("_triplet_events_by_rollout"),
+            "_carry_over_birth_step": by_rid("_carry_over_birth_step"),
+        }
+        timeout_rids = set_by_rid("_timeout_rids")
+        step_new_rids = set_by_rid("_step_new_rids")
+        selected_rids = set_by_rid("_selected_rids")
+        group_finish_time = {
+            did: value for did, value in getattr(bridge, "_group_finish_time", {}).items()
+            if did in carry_over_dids
+        }
+
+        try:
+            return self._validate()
+        finally:
+            existing_order = [rid for rid in getattr(bridge, "_enqueue_order", []) if rid not in carry_over_rids]
+            bridge._enqueue_order = enqueue_order + existing_order
+            for name, values in snapshots.items():
+                getattr(bridge, name).update(values)
+            bridge._timeout_rids.update(timeout_rids)
+            bridge._step_new_rids.update(step_new_rids)
+            bridge._selected_rids.update(selected_rids)
+            bridge._group_finish_time.update(group_finish_time)
+
     def async_fit(self):
         """Async-rollout training loop — distinct from fit().
 
@@ -779,18 +842,21 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 # 1. Compute how many NEW data_ids this step needs.
                 assert self._rollout_bridge is not None
                 n_carry_over = self._rollout_bridge.n_carry_over_data_ids()
-                n_new = max(0, async_train_batch_size - n_carry_over)
+                n_new = async_train_batch_size - n_carry_over
+                if n_new <= 0:
+                    raise RuntimeError(
+                        "async rollout carry-over saturated: "
+                        f"async_train_batch_size={async_train_batch_size}, "
+                        f"n_carry_over_data_ids={n_carry_over}. "
+                        "Carry-over-only steps are not supported; increase async_train_batch_size "
+                        "or reduce long-tail carry-over before continuing."
+                    )
 
-                assert n_new !=0, (
-                    "n_carry_over_data all timeout! It's corner case!"
-                    f"Got async_train_batch_size={async_train_batch_size}, n_carry_over_data_ids={n_carry_over}."
-                )
                 # 2. Pull n_new samples from the dataloader. take(n) may cross
-                #    epoch boundaries to fill n; n may be 0 for carry-over-only steps.
+                #    epoch boundaries to fill n. n_new must be positive; carry-
+                #    over-only steps are rejected above.
                 new_samples_dict, cross_epoch = sample_iter.take(n_new)
-                # If we got 0 new samples and have carry-over, that's a legal
-                # carry-over-only step. If we have neither carry-over nor new
-                # samples, training is done.
+                # If we have neither carry-over nor new samples, training is done.
                 if not new_samples_dict and n_carry_over == 0:
                     log.info("async_fit: dataloader exhausted and no carry-over — ending training.")
                     progress_bar.close()
@@ -802,9 +868,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 _resume_gateway_sync()
 
                 # 4. Async training step.
-                #    NOTE: when new_samples_dict is empty (carry-over-only),
-                #    the bridge's async_set_up_data_and_server short-circuits
-                #    the enqueue (n_new_dids == 0) and we go straight to poll.
                 metrics = self._async_train_step(
                     new_samples_dict=new_samples_dict,
                     timing_raw=timing_raw,
@@ -841,7 +904,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                     # _validate uses the legacy _rollout path — first resume
                     # the gateway (rollout phase paused it).
                     _resume_gateway_sync()
-                    val_metrics = self._validate()
+                    val_metrics = self._validate_preserving_async_carry_over()
                     if is_last_step:
                         last_val_metrics = val_metrics
                 metrics.update(val_metrics)

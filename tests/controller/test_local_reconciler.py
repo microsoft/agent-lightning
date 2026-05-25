@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -58,8 +59,13 @@ class FakeProc:
 
     pid: int = 4242
     returncode: int | None = None
+    # If set, wait() pretends the process exited with this code (and sets
+    # returncode accordingly, matching real asyncio.subprocess semantics).
+    wait_returncode: int | None = None
 
     async def wait(self) -> int:
+        if self.returncode is None and self.wait_returncode is not None:
+            self.returncode = self.wait_returncode
         return self.returncode if self.returncode is not None else 0
 
 
@@ -421,6 +427,19 @@ class TestStartupCleanup:
         patch_arg = mock_api.patch_rollout.call_args[0][1]
         assert patch_arg.status == RolloutStatus.CANCELLED
 
+    async def test_startup_cleanup_patch_carries_local_job_name(
+        self, mock_api: AsyncMock, spawner: FakeSpawner
+    ) -> None:
+        """All LocalReconciler writes must carry job_name=local-<rid> (§5.2 invariant)."""
+        leftover = _rollout("r1", status=RolloutStatus.RUNNING, job_name="local-r1")
+        mock_api.query_rollouts = AsyncMock(return_value=[leftover])
+
+        rec = _make_reconciler(mock_api, spawner)
+        await rec._startup_cleanup()
+
+        patch_arg = mock_api.patch_rollout.call_args[0][1]
+        assert patch_arg.job_name == "local-r1"
+
 
 # ---------------------------------------------------------------------------
 # shutdown
@@ -434,8 +453,10 @@ class TestShutdown:
         rec = _make_reconciler(mock_api, spawner)
         await _run_tick(rec, spawner)
 
-        # During shutdown, wait() must return; flip rc so wait() exits quickly.
-        spawner.procs[0].returncode = -9
+        # The proc is still in-flight (returncode is None). wait() will return
+        # after _shutdown SIGKILLs it; simulate that by having wait() set the
+        # returncode to -9.
+        spawner.procs[0].wait_returncode = -9
 
         with patch("agl_lite.controller.local_reconciler.os.killpg"):
             await rec._shutdown()
@@ -447,6 +468,118 @@ class TestShutdown:
         ]
         assert len(cancelled) == 1
         assert rec._running == []
+
+    async def test_shutdown_preserves_succeeded_rc0(self, mock_api: AsyncMock, spawner: FakeSpawner) -> None:
+        """rc=0 proc already exited before _shutdown → SUCCEEDED, not CANCELLED (success-wins)."""
+        r = _rollout("r1")
+        mock_api.query_rollouts = AsyncMock(return_value=[r])
+        mock_api.get_rollout = AsyncMock(return_value=_rollout("r1", status=RolloutStatus.RUNNING))
+
+        rec = _make_reconciler(mock_api, spawner)
+        await _run_tick(rec, spawner)
+
+        # The worker finished cleanly between the last tick and shutdown.
+        spawner.finish(0, rc=0)
+
+        with patch("agl_lite.controller.local_reconciler.os.killpg"):
+            await rec._shutdown()
+
+        succeeded = [c for c in mock_api.patch_rollout.call_args_list if c[0][1].status == RolloutStatus.SUCCEEDED]
+        cancelled = [
+            c
+            for c in mock_api.patch_rollout.call_args_list
+            if c[0][1].status == RolloutStatus.CANCELLED and c[0][1].error_message == "local controller shutdown"
+        ]
+        assert len(succeeded) == 1, "rc=0 must win over shutdown CANCELLED"
+        assert len(cancelled) == 0
+        assert rec._running == []
+
+    async def test_shutdown_preserves_natural_terminal_failed(
+        self, mock_api: AsyncMock, spawner: FakeSpawner
+    ) -> None:
+        """rc!=0 proc already exited before _shutdown → TERMINAL_FAILED, not CANCELLED."""
+        r = _rollout("r1")
+        mock_api.query_rollouts = AsyncMock(return_value=[r])
+        mock_api.get_rollout = AsyncMock(return_value=_rollout("r1", status=RolloutStatus.RUNNING))
+
+        rec = _make_reconciler(mock_api, spawner)
+        await _run_tick(rec, spawner)
+
+        # Worker crashed naturally (rc=2, no cancel_requested) before shutdown.
+        spawner.finish(0, rc=2)
+
+        with patch("agl_lite.controller.local_reconciler.os.killpg"):
+            await rec._shutdown()
+
+        terminal = [
+            c for c in mock_api.patch_rollout.call_args_list if c[0][1].status == RolloutStatus.TERMINAL_FAILED
+        ]
+        cancelled_shutdown = [
+            c
+            for c in mock_api.patch_rollout.call_args_list
+            if c[0][1].status == RolloutStatus.CANCELLED and c[0][1].error_message == "local controller shutdown"
+        ]
+        assert len(terminal) == 1
+        assert "exited with code 2" in (terminal[0][0][1].error_message or "")
+        assert len(cancelled_shutdown) == 0
+        assert rec._running == []
+
+
+# ---------------------------------------------------------------------------
+# reconcile_loop stop semantics — must NOT skip final reap
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileLoopStop:
+    async def test_stop_during_sleep_then_shutdown_reaps_finished_proc(
+        self, mock_api: AsyncMock, spawner: FakeSpawner
+    ) -> None:
+        """If a proc finishes rc=0 during the sleep window and stop() fires,
+        the rollout must end up SUCCEEDED — not CANCELLED via shutdown's fallback.
+
+        This drives the full run() path (one reconcile tick, then stop, then
+        shutdown) to exercise the Bug 1 + Bug 2 interaction.
+        """
+        r = _rollout("r1")
+        mock_api.query_rollouts = AsyncMock(return_value=[r])
+        mock_api.get_rollout = AsyncMock(return_value=_rollout("r1", status=RolloutStatus.RUNNING))
+
+        rec = _make_reconciler(
+            mock_api,
+            spawner,
+            settings=_settings(local_tick_interval=10.0),  # long tick so stop() fires during sleep
+        )
+
+        async def drive() -> None:
+            with (
+                patch(
+                    "agl_lite.controller.local_reconciler.asyncio.create_subprocess_exec",
+                    new=spawner,
+                ),
+                patch("agl_lite.controller.local_reconciler.os.killpg"),
+            ):
+                await rec.run()
+
+        async def stopper() -> None:
+            # Wait until spawn has happened, then simulate worker finishing rc=0
+            # and request stop — mimics trainer.stop() between RL steps.
+            for _ in range(200):
+                if spawner.procs:
+                    break
+                await asyncio.sleep(0.01)
+            spawner.finish(0, rc=0)
+            rec.stop()
+
+        await asyncio.gather(drive(), stopper())
+
+        succeeded = [c for c in mock_api.patch_rollout.call_args_list if c[0][1].status == RolloutStatus.SUCCEEDED]
+        cancelled_shutdown = [
+            c
+            for c in mock_api.patch_rollout.call_args_list
+            if c[0][1].status == RolloutStatus.CANCELLED and c[0][1].error_message == "local controller shutdown"
+        ]
+        assert len(succeeded) == 1
+        assert len(cancelled_shutdown) == 0
 
 
 # ---------------------------------------------------------------------------

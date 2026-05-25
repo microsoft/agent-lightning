@@ -9,13 +9,13 @@ Async `async_fit()` cannot do that — each step needs only
 module provides the thin adapter:
 
     iterator = SampleIterator(dataloader)
-    samples_dict, cross_epoch = iterator.take(n)   # n=0 → empty dict, no advance
+    samples_dict, cross_epoch = iterator.take(n)   # async_fit passes n > 0
 
 The returned ``samples_dict`` has exactly the same schema as one
 ``batch_dict`` yielded by the dataloader, just shorter. The trainer then calls
 ``DataProto.from_single_dict(samples_dict)`` and passes the gen_batch slice to
-the bridge, identical to the sync path. Carry-over-only steps pass an empty
-dict and skip the enqueue phase.
+the bridge, identical to the sync path. Async rollout rejects carry-over-only
+steps before calling this iterator.
 
 ``cross_epoch`` is True when an epoch boundary was crossed during this
 ``take`` call (used by the trainer to bump an epoch counter for logging).
@@ -75,7 +75,8 @@ class SampleIterator:
 
         Edge cases:
           - ``n == 0``: returns ``({}, False)`` without touching the
-            dataloader. Used for carry-over-only steps.
+            dataloader. This is a general utility behavior; async_fit rejects
+            carry-over-only steps before it calls take().
           - Dataloader exhausted before or during the request: starts the next
             epoch transparently and continues filling. ``epoch`` is bumped and
             ``cross_epoch`` is set True. This keeps async steps able to top

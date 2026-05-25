@@ -18,6 +18,8 @@ from typing import Any
 import pytest
 
 from agl_lite.client import AglLiteClient
+from agl_lite.hooks import RolloutHooks
+from agl_lite.schemas.api import EnqueueRolloutRequest
 from agl_lite.schemas.rollout import RolloutStatus
 from agl_lite.verl.rollout_bridge import (
     AglLiteRolloutBridge,
@@ -41,6 +43,17 @@ class FakeCleanupK8sClient:
     async def delete_job(self, name: str, namespace: str) -> None:
         self.deleted.append((name, namespace))
         self.jobs.pop(name, None)
+
+
+class RecordingEnqueueHook(RolloutHooks):
+    def __init__(self) -> None:
+        self.requests: list[EnqueueRolloutRequest] = []
+
+    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+        self.requests.append(request)
+        metadata = dict(request.metadata or {})
+        metadata["hooked"] = True
+        return request.model_copy(update={"metadata": metadata})
 
 
 def _cleanup_job(name: str, rollout_id: str | None, managed: bool = True) -> dict[str, Any]:
@@ -302,6 +315,29 @@ class TestBridgeStoreInteraction:
         await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
 
         assert bridge._total_tasks_queued == 3
+
+    @pytest.mark.asyncio
+    async def test_async_diff_enqueue_applies_on_enqueue_hook(self, bridge: AglLiteRolloutBridge):
+        """Async top-up enqueue must use the same on_enqueue hook path as sync setup."""
+        hook = RecordingEnqueueHook()
+        bridge._hooks = hook
+        bridge.train_rollout_n = 2
+        data = {"prompt": ["hello"], "data_id": ["data-0"]}
+
+        n_new = await bridge._async_register_and_enqueue_diff(
+            bridge.client,
+            data,
+            ["localhost:8000"],
+            async_train_batch_size=1,
+        )
+
+        assert n_new == 1
+        assert len(hook.requests) == 2
+        assert bridge._total_tasks_queued == 2
+        for rid in bridge._enqueue_order:
+            rollout = await bridge.client.get_rollout(rid)
+            assert rollout.metadata.hooked is True
+            assert rollout.metadata.data_id == "data-0"
 
     @pytest.mark.asyncio
     async def test_fetch_rollout_result_extracts_triplets(self, bridge: AglLiteRolloutBridge):

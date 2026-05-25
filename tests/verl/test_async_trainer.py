@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
+import pytest
 import torch
 from omegaconf import OmegaConf
 from verl import DataProto
@@ -36,6 +41,125 @@ class _FakeBridge:
 
     def async_cleanup_consumed(self, **kwargs: Any) -> None:
         pass
+
+
+class _FakeLogger:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.logged: list[tuple[dict[str, Any], int]] = []
+
+    def log(self, *, data: dict[str, Any], step: int) -> None:
+        self.logged.append((data, step))
+
+
+class _FakeProgressBar:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.closed = False
+
+    def update(self, _: int) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeAdminClient:
+    resumes = 0
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    async def __aenter__(self) -> _FakeAdminClient:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    async def resume_gateway(self) -> dict[str, Any]:
+        type(self).resumes += 1
+        return {"paused": False, "retry_after_seconds": 5, "reason": None, "inflight": 0}
+
+
+class _CarryOverBridge:
+    """Small bridge double that preserves the async carry-over bookkeeping shape."""
+
+    def __init__(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._thread.start()
+        self._carry_over_rids: set[str] = set()
+        self._rid_to_data_id: dict[str, str] = {}
+        self._data_id_to_rids: dict[str, set[str]] = {}
+        self._enqueue_order: list[str] = []
+        self._completed_rollouts: dict[str, object] = {}
+        self._task_id_to_original_sample: dict[str, dict[str, str]] = {}
+        self._rollout_status: dict[str, str] = {}
+        self._rollout_error: dict[str, str] = {}
+        self._rollout_start_time: dict[str, float] = {}
+        self._rollout_end_time: dict[str, float] = {}
+        self._raw_events_by_rollout: dict[str, list[dict[str, str]]] = {}
+        self._triplet_events_by_rollout: dict[str, list[dict[str, str]]] = {}
+        self._timeout_rids: set[str] = set()
+        self._carry_over_birth_step: dict[str, int] = {}
+        self._step_new_rids: set[str] = set()
+        self._selected_rids: set[str] = set()
+        self._group_finish_time: dict[str, float] = {}
+        self.clear_calls = 0
+
+    def close(self) -> None:
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=1)
+        self._loop.close()
+
+    def n_carry_over_data_ids(self) -> int:
+        return len({self._rid_to_data_id[r] for r in self._carry_over_rids if r in self._rid_to_data_id})
+
+    def leave_one_carry_over(self) -> None:
+        rollout = object()
+        self._carry_over_rids = {"carry-r1"}
+        self._rid_to_data_id = {"carry-r1": "carry-d1"}
+        self._data_id_to_rids = {"carry-d1": {"carry-r1"}}
+        self._enqueue_order = ["carry-r1"]
+        self._completed_rollouts = {"carry-r1": rollout}
+        self._task_id_to_original_sample = {"carry-r1": {"data_id": "carry-d1"}}
+        self._rollout_status = {"carry-r1": "succeeded"}
+        self._rollout_error = {"carry-r1": "kept-error"}
+        self._rollout_start_time = {"carry-r1": 123.0}
+        self._rollout_end_time = {"carry-r1": 456.0}
+        self._raw_events_by_rollout = {"carry-r1": [{"event_type": "model_request"}]}
+        self._triplet_events_by_rollout = {"carry-r1": [{"event_type": "triplet"}]}
+        self._timeout_rids = {"carry-r1"}
+        self._carry_over_birth_step = {"carry-r1": 7}
+        self._step_new_rids = {"carry-r1"}
+        self._selected_rids = {"carry-r1"}
+        self._group_finish_time = {"carry-d1": 789.0}
+
+    def saturate_carry_over(self) -> None:
+        self._carry_over_rids = {"carry-r1", "carry-r2"}
+        self._rid_to_data_id = {"carry-r1": "carry-d1", "carry-r2": "carry-d2"}
+        self._data_id_to_rids = {"carry-d1": {"carry-r1"}, "carry-d2": {"carry-r2"}}
+
+    def clear_data_and_server(self) -> None:
+        # Mirrors the production bridge's legacy clear shape: it clears general
+        # rollout bookkeeping but is not carry-over aware.
+        self.clear_calls += 1
+        self._enqueue_order.clear()
+        self._completed_rollouts.clear()
+        self._task_id_to_original_sample.clear()
+        self._rollout_status.clear()
+        self._rollout_error.clear()
+        self._rollout_start_time.clear()
+        self._rollout_end_time.clear()
+        self._raw_events_by_rollout.clear()
+        self._triplet_events_by_rollout.clear()
+        self._timeout_rids.clear()
+        self._carry_over_birth_step.clear()
+        self._step_new_rids.clear()
+        self._selected_rids.clear()
+
+
+class _RestartableLoader:
+    def __iter__(self) -> Iterator[dict[str, list[str]]]:
+        yield {"prompt": ["p0", "p1"]}
 
 
 def test_async_rollout_waits_for_train_batch_size_groups_not_active_pool() -> None:
@@ -77,3 +201,151 @@ def test_async_rollout_waits_for_train_batch_size_groups_not_active_pool() -> No
     assert bridge.run_kwargs["rollout_n"] == 4
     assert bridge.run_kwargs["retry_after_seconds"] == 9
     assert bridge.run_kwargs["drain_timeout"] == 1.5
+
+
+def test_async_fit_validation_test_freq_preserves_carry_over_bridge_state(monkeypatch) -> None:
+    """Validation triggered by test_freq must not wipe async carry-over state.
+
+    This drives async_fit far enough to hit the real test_freq validation branch:
+    a training step leaves one rollout in carry-over, then validation runs. The
+    carry-over rid must remain fully tracked for the next async step.
+    """
+    import agl_lite.client as client_module
+    import agl_lite.verl.trainer as trainer_module
+
+    bridge = _CarryOverBridge()
+    trainer = object.__new__(AglLiteRayPPOTrainer)
+    trainer._rollout_bridge = cast(Any, bridge)
+    trainer.async_rollout_manager = SimpleNamespace(server_addresses=["http://vllm:8000/v1"])
+    trainer.checkpoint_manager = SimpleNamespace(update_weights=lambda step: None)
+    trainer.tokenizer = SimpleNamespace(eos_token_id=2, pad_token_id=0)
+    trainer.train_dataloader = _RestartableLoader()
+    trainer.val_dataloader = [{"prompt": np.array(["v0"], dtype=object)}]
+    trainer.total_training_steps = 1
+    trainer.config = OmegaConf.create(
+        {
+            "agentlightning": {
+                "agl_base_url": "http://agl",
+                "agl_admin_key": "admin-key",
+                "async_rollout": {
+                    "enabled": True,
+                    "async_train_batch_size": 2,
+                    "gateway_retry_after_seconds": 5,
+                    "gateway_drain_timeout_seconds": 1.0,
+                    "allow_equal_batch_size_for_debug": False,
+                },
+            },
+            "trainer": {
+                "project_name": "unit",
+                "experiment_name": "async-validation-carry-over",
+                "logger": ["console"],
+                "val_before_train": False,
+                "val_only": False,
+                "test_freq": 1,
+                "save_freq": -1,
+            },
+            "global_profiler": {"steps": None},
+            "data": {"train_batch_size": 1},
+            "actor_rollout_ref": {
+                "rollout": {"n": 1, "val_kwargs": {"n": 1, "do_sample": False}},
+            },
+        }
+    )
+
+    monkeypatch.setattr(trainer_module, "Tracking", _FakeLogger)
+    monkeypatch.setattr(trainer_module, "tqdm", _FakeProgressBar)
+    monkeypatch.setattr(client_module, "AglLiteClient", _FakeAdminClient)
+    monkeypatch.setattr(AglLiteRayPPOTrainer, "_ensure_rollout_bridge", lambda self: bridge)
+    monkeypatch.setattr(AglLiteRayPPOTrainer, "_load_checkpoint", lambda self: None)
+    monkeypatch.setattr(
+        AglLiteRayPPOTrainer,
+        "_async_train_step",
+        lambda self, **kwargs: (bridge.leave_one_carry_over() or {"training/async/n_carry_over_out": 1}),
+    )
+    monkeypatch.setattr(
+        AglLiteRayPPOTrainer,
+        "_get_gen_batch",
+        lambda self, batch: DataProto.from_single_dict({"prompt": np.array(["v0"], dtype=object)}),
+    )
+
+    def legacy_validation_rollout(self, gen_batch: DataProto, is_train: bool = False):
+        assert not is_train
+        bridge.clear_data_and_server()
+        return DataProto(batch=None), {"val/reward": 0.0}
+
+    monkeypatch.setattr(AglLiteRayPPOTrainer, "_rollout", legacy_validation_rollout)
+
+    try:
+        trainer.async_fit()
+    finally:
+        bridge.close()
+
+    assert bridge._carry_over_rids == {"carry-r1"}
+    assert bridge._rid_to_data_id == {"carry-r1": "carry-d1"}
+    assert bridge._data_id_to_rids == {"carry-d1": {"carry-r1"}}
+    assert bridge._enqueue_order == ["carry-r1"]
+    assert set(bridge._completed_rollouts) == {"carry-r1"}
+    assert bridge._task_id_to_original_sample == {"carry-r1": {"data_id": "carry-d1"}}
+    assert bridge._rollout_status == {"carry-r1": "succeeded"}
+    assert bridge._rollout_error == {"carry-r1": "kept-error"}
+    assert bridge._rollout_start_time == {"carry-r1": 123.0}
+    assert bridge._rollout_end_time == {"carry-r1": 456.0}
+    assert bridge._raw_events_by_rollout == {"carry-r1": [{"event_type": "model_request"}]}
+    assert bridge._triplet_events_by_rollout == {"carry-r1": [{"event_type": "triplet"}]}
+    assert bridge._timeout_rids == {"carry-r1"}
+    assert bridge._carry_over_birth_step == {"carry-r1": 7}
+    assert bridge._step_new_rids == {"carry-r1"}
+    assert bridge._selected_rids == {"carry-r1"}
+    assert bridge._group_finish_time == {"carry-d1": 789.0}
+
+
+def test_async_fit_rejects_carry_over_saturation_before_sampling(monkeypatch) -> None:
+    """Async rollout must fail fast instead of running a carry-over-only step."""
+    import agl_lite.verl.trainer as trainer_module
+
+    bridge = _CarryOverBridge()
+    bridge.saturate_carry_over()
+    trainer = object.__new__(AglLiteRayPPOTrainer)
+    trainer._rollout_bridge = cast(Any, bridge)
+    trainer.checkpoint_manager = SimpleNamespace(update_weights=lambda step: None)
+    trainer.train_dataloader = _RestartableLoader()
+    trainer.total_training_steps = 1
+    trainer.config = OmegaConf.create(
+        {
+            "agentlightning": {
+                "agl_base_url": "http://agl",
+                "agl_admin_key": "admin-key",
+                "async_rollout": {
+                    "enabled": True,
+                    "async_train_batch_size": 2,
+                    "allow_equal_batch_size_for_debug": False,
+                },
+            },
+            "trainer": {
+                "project_name": "unit",
+                "experiment_name": "async-carry-over-saturation",
+                "logger": ["console"],
+                "val_before_train": False,
+                "test_freq": -1,
+                "save_freq": -1,
+            },
+            "global_profiler": {"steps": None},
+            "data": {"train_batch_size": 1},
+        }
+    )
+
+    monkeypatch.setattr(trainer_module, "Tracking", _FakeLogger)
+    monkeypatch.setattr(trainer_module, "tqdm", _FakeProgressBar)
+    monkeypatch.setattr(AglLiteRayPPOTrainer, "_ensure_rollout_bridge", lambda self: bridge)
+    monkeypatch.setattr(AglLiteRayPPOTrainer, "_load_checkpoint", lambda self: None)
+    monkeypatch.setattr(
+        AglLiteRayPPOTrainer,
+        "_async_train_step",
+        lambda self, **kwargs: pytest.fail("carry-over saturation should fail before training step"),
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="carry-over saturated"):
+            trainer.async_fit()
+    finally:
+        bridge.close()

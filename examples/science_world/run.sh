@@ -123,6 +123,11 @@ fi
 echo "  controller running (PID $CONTROLLER_PID)"
 
 # --- Run training (foreground) ---
+# AGL_HOOKS tells the trainer's rollout bridge where to load hooks so the
+# on_succeeded hook can transform episode_result events into reward events.
+# Without this, bridge._hooks=None and reward events are never written, which
+# manifests as "Reward is None" warnings and final_reward=0.0 for every rollout.
+export AGL_HOOKS="$SCRIPT_DIR/hooks.py"
 TRAIN_LOG="$LOG_DIR/training.log"
 echo "=== Running VERL training (log: $TRAIN_LOG) ==="
 .venv/bin/python examples/science_world/train_sw_agent.py "$@" 2>&1 | tee "$TRAIN_LOG"

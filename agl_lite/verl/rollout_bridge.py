@@ -11,11 +11,12 @@ import os
 import re
 import threading
 import time
+import traceback
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
@@ -401,7 +402,13 @@ class AglLiteRolloutBridge:
         image_base_dir: str | None = None,
         trace_aggregator: dict[str, Any] | None = None,
         hooks: RolloutHooks | None = None,
+        cleanup_agent_jobs: bool = False,
+        cleanup_namespace: str | None = None,
+        cleanup_k8s_client: AgentJobK8sClient | None = None,
     ):
+        if cleanup_agent_jobs and not cleanup_namespace:
+            raise ValueError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
+
         # --- agl-lite connection (replaces store + proxy + adapter) ---
         # Connection params are kept so each rollout call opens a fresh
         # `async with AglLiteClient(...)` — VERL has long pauses between
@@ -422,6 +429,11 @@ class AglLiteRolloutBridge:
         self.image_base_dir = image_base_dir
         self.trace_aggregator = trace_aggregator or {"level": "transition"}
         self._hooks = hooks
+
+        # --- K8s Job cleanup (only used by remote runner; local runner sets False) ---
+        self._cleanup_agent_jobs_enabled = cleanup_agent_jobs
+        self._cleanup_namespace = cleanup_namespace
+        self._cleanup_k8s_client = cleanup_k8s_client
 
         # --- Multimodal ---
         self._use_mrope = self._is_mrope_model()
@@ -573,21 +585,47 @@ class AglLiteRolloutBridge:
         is_train: bool,
     ) -> None:
         """Shared setup implementation using the provided client."""
-        # 1. Register VERL's internal vLLM servers with agl-lite gateway
+        await self._async_register_model_servers(client, server_addresses)
+        rollouts_per_sample = self.train_rollout_n if is_train else 1
+        rollout_requests = self._build_enqueue_requests(
+            data,
+            rollouts_per_sample=rollouts_per_sample,
+            is_train=is_train,
+        )
+        created = await self._async_enqueue_requests(client, rollout_requests)
+
+        now = time.time()
+        for r in created:
+            rid = r.rollout_id
+            self._task_id_to_original_sample[rid] = r.input if isinstance(r.input, dict) else {}
+            self._enqueue_order.append(rid)
+            self._rollout_start_time[rid] = now
+        self._total_tasks_queued += len(created)
+
+        print(f"AglLiteRolloutBridge: enqueued {len(created)} rollouts.")
+
+    async def _async_register_model_servers(self, client: AglLiteClient, server_addresses: list[str]) -> None:
+        """Register VERL's current vLLM endpoints with the agl-lite gateway."""
         model_name = self.train_information.get("model", "default-model")
-        resources_id = self.train_information.get("resources_id")
         regs: list[RegisterModelRequest] = []
         for addr in server_addresses:
             endpoint = addr if addr.startswith("http") else f"http://{addr}/v1"
             regs.append(RegisterModelRequest(model=model_name, endpoint=endpoint))
         await client.register_models(regs)
 
-        # 2. Build rollout requests from batch.
-        # Training repetition follows Agent Lightning's agent-mode path: one
-        # data_id can have multiple rollout_ids.
+    def _build_enqueue_requests(
+        self,
+        data: dict[str, Any],
+        *,
+        rollouts_per_sample: int,
+        is_train: bool,
+    ) -> list[EnqueueRolloutRequest]:
+        """Build rollout requests and apply on_enqueue hooks in one place."""
+        resources_id = self.train_information.get("resources_id")
         keys = list(data.keys())
+        if not keys:
+            return []
         num_samples = len(data[keys[0]])
-        rollouts_per_sample = self.train_rollout_n if is_train else 1
 
         rollout_requests: list[EnqueueRolloutRequest] = []
         for i in range(num_samples):
@@ -610,23 +648,21 @@ class AglLiteRolloutBridge:
                 if self._hooks is not None:
                     request = self._hooks.on_enqueue(request)
                 rollout_requests.append(request)
+        return rollout_requests
 
-        # 3. Enqueue
+    async def _async_enqueue_requests(
+        self,
+        client: AglLiteClient,
+        rollout_requests: list[EnqueueRolloutRequest],
+    ) -> list[Rollout]:
+        """Enqueue built requests and validate the server returned all rollouts."""
+        if not rollout_requests:
+            return []
         created = await client.enqueue_rollouts(rollout_requests)
-        expected_rollouts = num_samples * rollouts_per_sample
-        assert len(created) == expected_rollouts, (
-            f"agl-lite returned {len(created)} rollouts, expected {expected_rollouts}"
+        assert len(created) == len(rollout_requests), (
+            f"agl-lite returned {len(created)} rollouts, expected {len(rollout_requests)}"
         )
-
-        now = time.time()
-        for r in created:
-            rid = r.rollout_id
-            self._task_id_to_original_sample[rid] = r.input if isinstance(r.input, dict) else {}
-            self._enqueue_order.append(rid)
-            self._rollout_start_time[rid] = now
-        self._total_tasks_queued += len(created)
-
-        print(f"AglLiteRolloutBridge: enqueued {len(created)} rollouts.")
+        return created
 
     def set_up_data_and_server(self, data: dict[str, Any], server_addresses: list[str], is_train: bool = True) -> None:
         """Sync wrapper — same signature as AgentModeDaemon."""
@@ -652,27 +688,29 @@ class AglLiteRolloutBridge:
             grouped[fallback_attempt_id] = []
         return dict(grouped)
 
-    async def _run_succeeded_hook(self, rollout: Rollout) -> None:
+    async def _run_succeeded_hook(self, client: AglLiteClient, rollout: Rollout) -> None:
         if self._hooks is None:
             return
         attempt_id = rollout.succeeded_attempt_id or "unknown"
         sink = _SyncTraceSink()
-        raw_events = await self.client.get_events(rollout.rollout_id)
+        raw_events = await client.get_events(rollout.rollout_id)
         events_by_attempt = self._events_by_attempt(raw_events, attempt_id)
         try:
             self._hooks.on_succeeded(rollout, events_by_attempt, sink)
-            await sink.flush(self.client)
+            await sink.flush(client)
         except Exception:
+            traceback.print_exc()
             print(f"AglLiteRolloutBridge: on_succeeded hook failed for rollout {rollout.rollout_id}")
 
-    async def _run_failed_hook(self, rollout: Rollout) -> None:
+    async def _run_failed_hook(self, client: AglLiteClient, rollout: Rollout) -> None:
         if self._hooks is None:
             return
         sink = _SyncTraceSink()
         try:
             self._hooks.on_failed(rollout, sink)
-            await sink.flush(self.client)
+            await sink.flush(client)
         except Exception:
+            traceback.print_exc()
             print(f"AglLiteRolloutBridge: on_failed hook failed for rollout {rollout.rollout_id}")
 
     async def _async_fetch_rollout_result(self, rollout_id: str) -> RolloutLegacy:
@@ -792,12 +830,12 @@ class AglLiteRolloutBridge:
                 self._rollout_status[rid] = status
                 self._rollout_end_time[rid] = time.time()
                 if status == RolloutStatus.SUCCEEDED:
-                    await self._run_succeeded_hook(rollout)
+                    await self._run_succeeded_hook(self.client, rollout)
                     legacy = await self._async_fetch_rollout_result(rid)
                     self._completed_rollouts[rid] = legacy
                     self._num_succeeded += 1
                 elif status == RolloutStatus.TERMINAL_FAILED:
-                    await self._run_failed_hook(rollout)
+                    await self._run_failed_hook(self.client, rollout)
                     await self._async_fetch_rollout_events(rid)
                     self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
                     self._num_failed += 1
@@ -1514,24 +1552,19 @@ class AglLiteRolloutBridge:
         """
         # Always (re-)register the current vLLM endpoints so weight-swap
         # between steps lands on the correct addresses.
-        model_name = self.train_information.get("model", "default-model")
-        resources_id = self.train_information.get("resources_id")
-        regs: list[RegisterModelRequest] = []
-        for addr in server_addresses:
-            endpoint = addr if addr.startswith("http") else f"http://{addr}/v1"
-            regs.append(RegisterModelRequest(model=model_name, endpoint=endpoint))
-        await client.register_models(regs)
+        await self._async_register_model_servers(client, server_addresses)
 
         # Compute how many new data_ids this step needs.
         carry_over_dids = {self._rid_to_data_id[r] for r in self._carry_over_rids if r in self._rid_to_data_id}
         n_carry_over_dids = len(carry_over_dids)
-        n_new_dids = max(0, async_train_batch_size - n_carry_over_dids)
-        if n_new_dids == 0:
-            print(
-                f"AglLiteRolloutBridge.async: carry-over saturated ({n_carry_over_dids} data_ids) — "
-                "no new samples this step."
+        n_new_dids = async_train_batch_size - n_carry_over_dids
+        if n_new_dids <= 0:
+            raise RuntimeError(
+                "async rollout carry-over saturated: "
+                f"async_train_batch_size={async_train_batch_size}, "
+                f"n_carry_over_data_ids={n_carry_over_dids}. "
+                "Carry-over-only enqueue/poll steps are not supported."
             )
-            return 0
 
         keys = list(data.keys())
         if not keys:
@@ -1545,33 +1578,12 @@ class AglLiteRolloutBridge:
                 f"async_train_batch_size - n_carry_over_dids = {n_new_dids}"
             )
 
-        rollouts_per_sample = self.train_rollout_n
-        rollout_requests: list[EnqueueRolloutRequest] = []
-        for i in range(num_samples):
-            original = {key: _to_native(data[key][i]) for key in keys}
-            data_id = str(original.get("data_id") or original.get("uid") or uuid.uuid4())
-            original["data_id"] = data_id
-            original["_sample_idx"] = i
-            for trial_idx in range(rollouts_per_sample):
-                rollout_requests.append(
-                    EnqueueRolloutRequest(
-                        input=_to_native(original),
-                        resources_id=resources_id,
-                        config=RolloutConfig(timeout=int(self.timeout_seconds)),
-                        metadata={
-                            "data_id": data_id,
-                            "is_train": True,
-                            "sample_idx_in_batch": i,
-                            "trial_idx_in_group": trial_idx,
-                        },
-                    )
-                )
-
-        created = await client.enqueue_rollouts(rollout_requests)
-        expected = num_samples * rollouts_per_sample
-        assert len(created) == expected, (
-            f"agl-lite returned {len(created)} rollouts, expected {expected}"
+        rollout_requests = self._build_enqueue_requests(
+            data,
+            rollouts_per_sample=self.train_rollout_n,
+            is_train=True,
         )
+        created = await self._async_enqueue_requests(client, rollout_requests)
 
         now = time.time()
         for r, req in zip(created, rollout_requests, strict=True):
@@ -1651,13 +1663,17 @@ class AglLiteRolloutBridge:
             self._rollout_status[rid] = status
             self._rollout_end_time[rid] = time.time()
             if status == RolloutStatus.SUCCEEDED:
+                await self._run_succeeded_hook(client, rollout)
                 legacy = await self._async_fetch_rollout_result(rid)
                 self._completed_rollouts[rid] = legacy
                 self._num_succeeded += 1
             elif status == RolloutStatus.TERMINAL_FAILED:
+                await self._run_failed_hook(client, rollout)
+                await self._async_fetch_rollout_events(rid)
                 self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
                 self._num_failed += 1
             elif status == RolloutStatus.CANCELLED:
+                await self._async_fetch_rollout_events(rid)
                 self._rollout_error[rid] = getattr(rollout, "error_message", None) or "cancelled"
                 self._num_cancelled += 1
 
@@ -2021,6 +2037,71 @@ class AglLiteRolloutBridge:
         for did in consumed_dids:
             if did not in self._data_id_to_rids:
                 self._group_finish_time.pop(did, None)
+
+    def _get_cleanup_k8s_client(self) -> AgentJobK8sClient:
+        """Return the K8s client used for optional agent Job cleanup."""
+        if self._cleanup_k8s_client is not None:
+            return self._cleanup_k8s_client
+        if not self._cleanup_namespace:
+            raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
+        try:
+            from agl_lite.controller.kr8s_adapter import Kr8sClient
+        except ImportError as exc:
+            raise RuntimeError(
+                "cleanup_agent_jobs requires the controller extra with kr8s installed"
+            ) from exc
+
+        self._cleanup_k8s_client = Kr8sClient(namespace=self._cleanup_namespace)
+        return self._cleanup_k8s_client
+
+    async def _async_cleanup_tracked_agent_jobs(self) -> None:
+        """Delete only agl-lite Jobs for rollout IDs tracked by this bridge batch.
+
+        Used by the sync path (`fit()` / validation) which clears the whole
+        ``_enqueue_order`` between steps. The async path uses
+        ``_async_cleanup_consumed_jobs`` instead so carry-over pods survive.
+        """
+        if not self._cleanup_agent_jobs_enabled:
+            return
+        if not self._enqueue_order:
+            return
+        if not self._cleanup_namespace:
+            raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
+
+        tracked_rollout_ids = set(self._enqueue_order)
+        k8s = self._get_cleanup_k8s_client()
+        jobs = await k8s.list_jobs(
+            namespace=self._cleanup_namespace,
+            label_selector=_AGL_LITE_MANAGED_BY_SELECTOR,
+        )
+
+        deleted_count = 0
+        for job in jobs:
+            metadata = job.get("metadata", {})
+            labels = metadata.get("labels", {})
+            if labels.get(_AGL_LITE_MANAGED_BY_LABEL) != _AGL_LITE_MANAGED_BY_VALUE:
+                continue
+            rollout_id = labels.get(_AGL_LITE_ROLLOUT_ID_LABEL)
+            job_name = metadata.get("name")
+            if rollout_id in tracked_rollout_ids and job_name:
+                await k8s.delete_job(job_name, self._cleanup_namespace)
+                deleted_count += 1
+
+        if deleted_count:
+            print(f"AglLiteRolloutBridge: deleted {deleted_count} tracked agent Jobs.")
+
+    def cleanup_agent_jobs(self) -> None:
+        """Synchronously clean up tracked agl-lite agent Jobs when enabled.
+
+        Sync-path public API; the async path uses ``async_cleanup_consumed``.
+        """
+        if not self._cleanup_agent_jobs_enabled:
+            return
+        assert self._loop is not None
+        future = asyncio.run_coroutine_threadsafe(
+            self._async_cleanup_tracked_agent_jobs(), self._loop
+        )
+        future.result()
 
     async def _async_cleanup_consumed_jobs(self, consumed_rids: set[str]) -> None:
         """Delete K8s Jobs for the given rids only (preserve carry-over pods)."""

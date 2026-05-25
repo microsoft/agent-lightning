@@ -70,6 +70,11 @@ class LocalReconciler:
         assert settings.local_agent_class is not None
         self._api = api
         self._settings = settings
+        # Narrow the optional fields once so the rest of the class can rely on
+        # `int` / `str` types instead of repeating `assert is not None` everywhere.
+        self._pool_size: int = settings.local_pool_size
+        self._agent_class: str = settings.local_agent_class
+        self._tick_interval: float = settings.local_tick_interval
         self._base_env = base_env
         self._running: list[RunningProc] = []
         self._stop = asyncio.Event()
@@ -77,8 +82,8 @@ class LocalReconciler:
     async def run(self) -> None:
         log.info(
             "LocalReconciler starting",
-            pool_size=self._settings.local_pool_size,
-            tick=self._settings.local_tick_interval,
+            pool_size=self._pool_size,
+            tick=self._tick_interval,
         )
         try:
             await self._startup_cleanup()
@@ -98,8 +103,8 @@ class LocalReconciler:
             except Exception:
                 log.exception("Local reconcile error")
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self._settings.local_tick_interval)
-                return
+                await asyncio.wait_for(self._stop.wait(), timeout=self._tick_interval)
+                break  # stop signalled — fall through to run()'s finally for shutdown
             except TimeoutError:
                 pass
 
@@ -227,13 +232,17 @@ class LocalReconciler:
     # -------- (3) admit new rollouts --------
 
     async def _admit_queuing(self) -> None:
-        assert self._settings.local_pool_size is not None
-        capacity_left = self._settings.local_pool_size - len(self._running)
+        if self._stop.is_set():
+            # Shutting down — don't spawn any more subprocesses this tick.
+            return
+        capacity_left = self._pool_size - len(self._running)
         if capacity_left <= 0:
             return
 
         queuing = await self._api.query_rollouts(status_in=[RolloutStatus.QUEUING], limit=500)
         for r in queuing:
+            if self._stop.is_set():
+                break
             if r.cancel_requested:
                 await self._patch(
                     r.rollout_id,
@@ -321,7 +330,6 @@ class LocalReconciler:
         (AGL_TASK_INPUT, AGL_LOCAL_AGENT_CLASS) replace what an on_enqueue hook
         would otherwise have written into the container's command line.
         """
-        assert self._settings.local_agent_class is not None
         task_input_json = json.dumps(rollout.input)
         rollout_id = rollout.rollout_id
         base = self._settings.base_url
@@ -341,7 +349,7 @@ class LocalReconciler:
             "AGL_LOG_DIR": log_dir,
             # ---- local-mode extras (K8s mode injects these via on_enqueue hook) ----
             "AGL_TASK_INPUT": task_input_json,
-            "AGL_LOCAL_AGENT_CLASS": self._settings.local_agent_class,
+            "AGL_LOCAL_AGENT_CLASS": self._agent_class,
         }
 
     def _attempt_id_for(self, rollout_id: str) -> str:
@@ -366,6 +374,7 @@ class LocalReconciler:
                     PatchRolloutRequest(
                         status=status,
                         error_message=("local controller restarted; previous subprocess was lost"),
+                        job_name=_local_job_name(r.rollout_id),
                     ),
                 )
 
@@ -373,10 +382,23 @@ class LocalReconciler:
         """Kill all live subprocesses and mark their rollouts CANCELLED.
 
         Called from ``run()``'s finally branch — the reconcile loop has exited,
-        so nobody else mutates ``self._running``. SIGKILL is uninterceptable;
-        ``proc.wait()`` just collects exit status and normally returns within
-        milliseconds. The 5s cap is a safety net against a stuck wait pipe.
+        so nobody else mutates ``self._running``. We first reap procs that have
+        already exited so they land on their natural terminal state (SUCCEEDED
+        for rc=0 — success-wins — or TERMINAL_FAILED for rc!=0); only the procs
+        we still have to kill end up CANCELLED with the shutdown error_message.
+        SIGKILL is uninterceptable; ``proc.wait()`` just collects exit status
+        and normally returns within milliseconds. The 5s cap is a safety net
+        against a stuck wait pipe.
         """
+        # 1) Reap procs that finished before/during shutdown. _reap_exited
+        #    removes them from self._running and patches the natural terminal
+        #    state (SUCCEEDED / TERMINAL_FAILED / CANCELLED if cancel_requested).
+        try:
+            await self._reap_exited()
+        except Exception:
+            log.exception("Final reap during shutdown failed")
+
+        # 2) The remainder are still in flight — SIGKILL the process group.
         for item in self._running:
             if item.proc.returncode is None:
                 self._kill_process_group(item)
@@ -389,6 +411,8 @@ class LocalReconciler:
                     rollout_id=item.rollout_id,
                     pid=item.proc.pid,
                 )
+        # 3) Mark the procs we just killed as CANCELLED with the shutdown
+        #    error_message. These really were in-flight when shutdown started.
         for item in self._running:
             try:
                 await self._patch(
