@@ -1,6 +1,6 @@
 """Calc-X agent — solves math problems using AutoGen + MCP calculator tool.
 
-Standalone container agent for agl-lite. No agl-lite imports.
+Standalone container/local agent for agl-lite. No agl-lite imports.
 
 Environment variables (set automatically by agl-lite controller):
   AGL_TASK_INPUT   — JSON object: {"question": "...", "id": "..."}
@@ -15,6 +15,10 @@ Optional:
 Usage (in container):
   python calc_agent.py
   python calc_agent.py --model Qwen/Qwen2.5-1.5B-Instruct
+
+Usage (local runner):
+  agl-lite controller --runner-type local \
+      --local-agent-class examples.async_calc_x.agents.calc_agent:CalcXAgent
 """
 
 # AutoGen is an optional runtime dependency for this example container.
@@ -75,6 +79,50 @@ def post_event(event_type: str, data: dict) -> None:
         resp.raise_for_status()
     except Exception as e:
         log.error("Failed to post %s event: %s", event_type, e)
+
+
+def _parse_task(task_input: object) -> tuple[str, str]:
+    if not isinstance(task_input, dict) or "question" not in task_input:
+        raise ValueError(f"AGL_TASK_INPUT must be a JSON object with 'question' field, got: {type(task_input)}")
+
+    question = task_input["question"]
+    if not isinstance(question, str):
+        raise ValueError("AGL_TASK_INPUT['question'] must be a string")
+
+    task_id = task_input.get("id", "unknown")
+    return question, str(task_id)
+
+
+class CalcXAgent:
+    """Local-runner adapter for the Calc-X agent.
+
+    The local worker instantiates this class with no arguments and calls
+    run(task_input). Keep the behavior aligned with the script entrypoint so
+    K8s and local modes exercise the same agent logic.
+    """
+
+    def __init__(self, model: str | None = None, temperature: float | None = None) -> None:
+        self._model = model
+        self._temperature = temperature
+
+    async def run(self, task_input: object) -> None:
+        _setup_logging()
+
+        question, task_id = _parse_task(task_input)
+        model = self._model or os.environ.get("AGL_MODEL_NAME", "Qwen/Qwen2.5-1.5B-Instruct")
+        temperature = self._temperature
+        if temperature is None:
+            temperature = float(os.environ.get("AGL_TEMPERATURE", "0.7"))
+
+        log.info("Task %s: %s", task_id, question[:100])
+        answer, raw_response = await solve(question, model, temperature)
+        log.info("Answer: %s", answer)
+
+        post_event("agent_output", {
+            "answer": answer,
+            "raw_response": raw_response,
+            "task_id": task_id,
+        })
 
 
 async def solve(question: str, model: str, temperature: float) -> tuple[str, str]:
@@ -164,25 +212,12 @@ def main() -> None:
         log.error("AGL_TASK_INPUT not set")
         sys.exit(1)
 
-    task = json.loads(raw)
-    if not isinstance(task, dict) or "question" not in task:
-        log.error("AGL_TASK_INPUT must be a JSON object with 'question' field, got: %s", type(task))
+    try:
+        task = json.loads(raw)
+        asyncio.run(CalcXAgent(model=args.model, temperature=args.temperature).run(task))
+    except Exception as e:
+        log.error("Agent failed: %s", e)
         sys.exit(1)
-
-    question = task["question"]
-    task_id = task.get("id", "unknown")
-    log.info("Task %s: %s", task_id, question[:100])
-
-    # --- Solve ---
-    answer, raw_response = asyncio.run(solve(question, args.model, args.temperature))
-    log.info("Answer: %s", answer)
-
-    # --- Report agent_output event ---
-    post_event("agent_output", {
-        "answer": answer,
-        "raw_response": raw_response,
-        "task_id": task_id,
-    })
 
 
 if __name__ == "__main__":

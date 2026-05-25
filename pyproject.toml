@@ -50,6 +50,7 @@ verl = [
     "autogen-agentchat",
     "autogen-ext[openai]",
     "mcp>=1.10.0",
+    "mcp-server-calculator",
     # NOTE: flash-attn is NOT listed here — it's source-only on PyPI and
     # requires torch at build time (circular). Install it via:
     #   scripts/setup_verl.sh (handles the two-phase install)

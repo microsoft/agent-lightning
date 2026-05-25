@@ -84,6 +84,7 @@ verl = [
     { name = "datasets" },
     { name = "hydra-core" },
     { name = "mcp" },
+    { name = "mcp-server-calculator" },
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "ray" },
@@ -122,6 +123,7 @@ requires-dist = [
     { name = "jinja2", marker = "extra == 'controller'", specifier = ">=3.1.6" },
     { name = "kr8s", marker = "extra == 'controller'", specifier = ">=0.18.0" },
     { name = "mcp", marker = "extra == 'verl'", specifier = ">=1.10.0" },
+    { name = "mcp-server-calculator", marker = "extra == 'verl'" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "numpy", marker = "extra == 'verl'", specifier = "==1.26.4" },
     { name = "omegaconf", marker = "extra == 'verl'", specifier = "==2.3.0" },
@@ -1897,6 +1899,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8b/eb/c0cfc62075dc6e1ec1c64d352ae09ac051d9334311ed226f1f425312848a/mcp-1.27.0.tar.gz", hash = "sha256:d3dc35a7eec0d458c1da4976a48f982097ddaab87e278c5511d5a4a56e852b83", size = 607509, upload-time = "2026-04-02T14:48:08.88Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/46/f6b4ad632c67ef35209a66127e4bddc95759649dd595f71f13fba11bdf9a/mcp-1.27.0-py3-none-any.whl", hash = "sha256:5ce1fa81614958e267b21fb2aa34e0aea8e2c6ede60d52aba45fd47246b4d741", size = 215967, upload-time = "2026-04-02T14:48:07.24Z" },
+]
+
+[[package]]
+name = "mcp-server-calculator"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/77/ffdd2e2de2c8f0e3c7faa75cffc756ed8a15ab8c2823786a5c58c0249914/mcp_server_calculator-0.2.0.tar.gz", hash = "sha256:cc51c324c92617324bc3991f5c450d25839b942c0adfc9d0d8f3c522179c5105", size = 15589, upload-time = "2025-05-10T02:26:58.749Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/09/1614e8b4bdecfff6c908be003265957bbce7838470b31dbccec9a02d92bd/mcp_server_calculator-0.2.0-py3-none-any.whl", hash = "sha256:33e2e95c320cf7c33fbc478a0a165aedd2f05f05fa7f39e1c64329d41fea1026", size = 4243, upload-time = "2025-05-10T02:26:57.182Z" },
 ]
 
 [[package]]

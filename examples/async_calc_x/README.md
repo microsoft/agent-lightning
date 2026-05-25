@@ -12,6 +12,8 @@ agl-lite gateway transparently captures every LLM exchange for RL training.
 ```bash
 # 1. CUDA / VERL stack (one-time, ~50 min for flash-attn source build)
 scripts/setup_verl.sh cu130          # match this to your driver: cu126/cu128/cu130/cpu
+# Refresh Python deps once if your env predates local mode.
+uv sync --extra verl
 
 # 2. minikube — MUST be large enough; default 8 GiB OOMs the val pass
 minikube start --memory=32768 --cpus=16 --driver=docker
@@ -23,6 +25,9 @@ unzip examples/async_calc_x/data/calc-x-data.zip -d examples/async_calc_x/data/
 export AGL_KEY=$(openssl rand -hex 32)
 wandb login                           # optional but recommended
 examples/async_calc_x/run.sh
+
+# Local runner smoke test, no minikube or Docker agent image required
+examples/async_calc_x/run.sh --local --ci-fast
 ```
 
 ## Architecture
@@ -51,6 +56,9 @@ run.sh ──► agl-lite deploy (agl-in-host) ──► train_calc_agent.py
 - **The controller runs in K8s as root** (deploy uses sudo) and creates
   agent Jobs in namespace `agl-async-calcx`.
 - **Agent pods talk to the host gateway via `host.minikube.internal:8080`**.
+- **Local mode** (`run.sh --local`) skips minikube/deploy/image build and
+  runs `agl-lite controller --runner-type local`, spawning one Python
+  subprocess per rollout on the host.
 
 ## Hardware
 
@@ -131,6 +139,7 @@ The variables that actually matter on first launch:
 | `AGL_NAMESPACE` | K8s namespace for controller + agent Jobs | `agl-async-calcx` |
 | `AGL_MODE` | Deploy topology (do not change) | `agl-in-host` |
 | `AGL_HOST_PORT` | Host port for `agl-lite serve` | `8080` |
+| `AGL_LOCAL_POOL_SIZE` | Max concurrent local subprocess rollouts for `--local` | `8` |
 | `AGL_MODEL_NAME` | HF model id served via gateway | `Qwen/Qwen2.5-1.5B-Instruct` |
 | `AGL_TRAIN_FILE` / `AGL_VAL_FILE` | Parquet paths | `data/{train,test}.parquet` |
 | `AGL_VLLM_*` | **Ignored in async path** — VERL manages vLLM | — |
@@ -184,6 +193,24 @@ examples/async_calc_x/run.sh --ci-fast
 disables checkpoint saving. Use it to validate the whole stack quickly
 before committing to a multi-hour run.
 
+### Local runner mode
+
+```bash
+export AGL_KEY=$(openssl rand -hex 32)
+export WANDB_MODE=disabled            # optional, useful for smoke tests
+examples/async_calc_x/run.sh --local --ci-fast
+```
+
+Local mode starts `agl-lite serve` and a local controller in the background,
+then runs the same async VERL training script in the foreground. It uses
+`examples.async_calc_x.agents.calc_agent:CalcXAgent` through the local worker,
+so AutoGen/MCP behavior is the same as the K8s agent script path, but rollout
+processes run directly on the host. `AGL_LOCAL_POOL_SIZE` controls local
+rollout concurrency. The local Python environment must include the agent
+runtime packages from the `verl` extra, including AutoGen and
+`mcp-server-calculator`; `run.sh --local` checks this before launching the
+controller.
+
 ### Standalone training (infra already up)
 
 ```bash
@@ -194,16 +221,18 @@ python examples/async_calc_x/train_calc_agent.py \
 
 ## What `run.sh` does, in order
 
-1. Creates `logs/<timestamp>/` and bind-mounts `agents/` into minikube via
-   `minikube mount`. Kills any stale mount from a previous run.
+1. Creates `logs/<timestamp>/`. In K8s mode, bind-mounts `agents/` into
+   minikube via `minikube mount` and kills any stale mount from a previous run.
 2. Sources `.env.example`, then `.local/agl-lite.env` (state file from
    previous `agl-lite deploy`, if present).
 3. Validates `AGL_KEY`; generates `AGL_ADMIN_KEY` if unset.
-4. Builds Docker images via `scripts/build_images.sh --include-example async_calc_x`
+4. K8s mode builds Docker images via `scripts/build_images.sh --include-example async_calc_x`
    (loads them straight into minikube's docker, no registry).
-5. If namespace already exists: `agl-lite deploy --cleanup` first.
-6. `agl-lite deploy --env-file .env.example` — creates the K8s controller
-   and starts `agl-lite serve` on the host as a systemd-style child.
+5. K8s mode cleans any previous namespace, then runs
+   `agl-lite deploy --env-file .env.example` to create the K8s controller and
+   start `agl-lite serve` on the host as a systemd-style child.
+6. Local mode starts `agl-lite serve` and `agl-lite controller --runner-type local`
+   as child processes instead.
 7. Polls `GET /healthz` up to 40 s for readiness.
 8. Cleans leftover Ray (`ray stop --force`).
 9. `exec` into `train_calc_agent.py`. VERL boots Ray, loads the model,
