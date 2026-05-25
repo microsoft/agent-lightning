@@ -108,24 +108,24 @@ def verl_default_config() -> dict[str, Any]:
             "use_kl_in_reward": False,
         },
         "data": {
-            "train_batch_size": 16,
+            "train_batch_size": 64,
             "max_prompt_length": 4096,
             "max_response_length": 1024,
         },
         "actor_rollout_ref": {
             "rollout": {
-                "tensor_model_parallel_size": 1,
+                "tensor_model_parallel_size": 2,
                 "n": 4,
-                "log_prob_micro_batch_size_per_gpu": 2,
+                "log_prob_micro_batch_size_per_gpu": 4,
                 "name": "vllm",
-                "gpu_memory_utilization": 0.55,
+                "gpu_memory_utilization": 0.75,
                 "checkpoint_engine": {
                     "update_weights_bucket_megabytes": 4096,
                 },
             },
             "actor": {
-                "ppo_mini_batch_size": 16,
-                "ppo_micro_batch_size_per_gpu": 2,
+                "ppo_mini_batch_size": 64,
+                "ppo_micro_batch_size_per_gpu": 4,
                 "optim": {"lr": 1e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0.0,
@@ -138,7 +138,7 @@ def verl_default_config() -> dict[str, Any]:
                 },
             },
             "ref": {
-                "log_prob_micro_batch_size_per_gpu": 4,
+                "log_prob_micro_batch_size_per_gpu": 8,
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
@@ -148,7 +148,7 @@ def verl_default_config() -> dict[str, Any]:
             },
         },
         "trainer": {
-            "n_gpus_per_node": int(os.environ.get("AGL_N_GPUS_PER_NODE", "1")),
+            "n_gpus_per_node": int(os.environ.get("AGL_N_GPUS_PER_NODE", "8")),
             "val_before_train": False,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
@@ -157,7 +157,7 @@ def verl_default_config() -> dict[str, Any]:
             "nnodes": 1,
             "save_freq": 64,
             "test_freq": 32,
-            "total_epochs": 2,
+            "total_epochs": 4,
         },
         "agentlightning": {
             "timeout_seconds": 1800,
@@ -166,7 +166,7 @@ def verl_default_config() -> dict[str, Any]:
             "cleanup_agent_jobs": False,
             "async_rollout": {
                 "enabled": True,
-                "async_train_batch_size": 24,
+                "async_train_batch_size": 96,
                 "gateway_retry_after_seconds": 5,
                 "gateway_drain_timeout_seconds": 30,
             },

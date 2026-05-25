@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MAX_STEPS = 30
 DEFAULT_ENV_STEP_LIMIT = 100
-MAX_VALID_ACTIONS_SHOWN = 50
-OBS_SNIPPET_CHARS = 240
+DEFAULT_MAX_VALID_ACTIONS_SHOWN = 50
+DEFAULT_OBS_SNIPPET_CHARS = 240
 ACTION_PATTERN = re.compile(r"###\s*ACTION:\s*(\d+)\s*###")
 
 PROMPT_TEMPLATE = """You are playing a text-based science game. Solve the task by issuing actions one at a time.
@@ -82,8 +82,8 @@ def _post_event(event_type: str, data: dict[str, Any]) -> None:
         log.error("Failed to post %s event: %s", event_type, e)
 
 
-def _format_action_list(valid: list[dict[str, Any]]) -> str:
-    shown = valid[:MAX_VALID_ACTIONS_SHOWN]
+def _format_action_list(valid: list[dict[str, Any]], max_shown: int) -> str:
+    shown = valid[:max_shown]
     return "\n".join(f"{i}. {a['action']}" for i, a in enumerate(shown))
 
 
@@ -117,6 +117,10 @@ class SWAgent:
         simplification = task.get("simplification", "easy")
         max_steps = int(os.environ.get("SW_MAX_STEPS", str(DEFAULT_MAX_STEPS)))
         env_step_limit = int(os.environ.get("SW_ENV_STEP_LIMIT", str(DEFAULT_ENV_STEP_LIMIT)))
+        max_valid_actions_shown = int(
+            os.environ.get("SW_MAX_VALID_ACTIONS_SHOWN", str(DEFAULT_MAX_VALID_ACTIONS_SHOWN))
+        )
+        obs_snippet_chars = int(os.environ.get("SW_OBS_SNIPPET_CHARS", str(DEFAULT_OBS_SNIPPET_CHARS)))
         stub_llm = os.environ.get("SW_STUB_LLM") == "1"
 
         log.info(
@@ -157,10 +161,10 @@ class SWAgent:
                     task_description=task_description,
                     observation=obs,
                     inventory=inventory,
-                    action_list=_format_action_list(valid),
+                    action_list=_format_action_list(valid, max_valid_actions_shown),
                 )
                 response_text = await _call_llm(llm_client, model, prompt)
-                action_idx = _parse_action_index(response_text, min(len(valid), MAX_VALID_ACTIONS_SHOWN))
+                action_idx = _parse_action_index(response_text, min(len(valid), max_valid_actions_shown))
 
             action_str = valid[action_idx]["action"]
             obs, step_reward, done, info = env.step(action_str)
@@ -174,7 +178,7 @@ class SWAgent:
                     "reward": float(step_reward),
                     "score": final_score,
                     "done": bool(done),
-                    "obs_snippet": (obs or "")[:OBS_SNIPPET_CHARS],
+                    "obs_snippet": (obs or "")[:obs_snippet_chars],
                 },
             )
 
@@ -212,7 +216,10 @@ def _build_llm_client() -> Any:
 
 
 async def _call_llm(client: Any, model: str, prompt: str) -> str:
-    temperature = float(os.environ.get("AGL_TEMPERATURE", "0.7"))
+    is_train = os.environ.get("AGL_IS_TRAIN", "1") == "1"
+    env_var = "AGL_TEMPERATURE_TRAIN" if is_train else "AGL_TEMPERATURE_VAL"
+    default = "1.0" if is_train else "0.0"
+    temperature = float(os.environ.get(env_var, default))
     max_tokens = int(os.environ.get("AGL_MAX_TOKENS", "256"))
     try:
         completion = await client.chat.completions.create(

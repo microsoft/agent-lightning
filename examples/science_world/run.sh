@@ -55,7 +55,25 @@ if [ "$AGL_ADMIN_KEY" = "$AGL_KEY" ]; then
 fi
 export AGL_KEY AGL_ADMIN_KEY AGL_MODEL_NAME AGL_HOST_PORT AGL_LOCAL_POOL_SIZE
 export AGL_TASK_NAMES AGL_VARIATIONS_PER_TASK AGL_SIMPLIFICATION
+export AGL_N_GPUS_PER_NODE
+export SW_MAX_STEPS SW_ENV_STEP_LIMIT SW_MAX_VALID_ACTIONS_SHOWN SW_OBS_SNIPPET_CHARS
+export AGL_TEMPERATURE_TRAIN AGL_TEMPERATURE_VAL AGL_MAX_TOKENS
 export AGL_BASE_URL="http://localhost:${AGL_HOST_PORT}"
+
+# --- NUMA topology ---
+# On the 8×A100 host the GPUs are split across 4 NUMA nodes:
+#   GPU0/1 → NUMA 1 (CPU 24-47), GPU2/3 → NUMA 0 (CPU 0-23),
+#   GPU4/5 → NUMA 3 (CPU 72-95), GPU6/7 → NUMA 2 (CPU 48-71).
+# Pin agl-lite serve to NUMA 2 so it stops bouncing across nodes; leave
+# the controller un-pinned so the 64 SWAgent JVM subprocesses spread over
+# all cores instead of crowding one node. Skip pinning entirely on hosts
+# with a single NUMA node (e.g. dev boxes).
+NUMA_NODES=$(numactl --hardware 2>/dev/null | awk '/^available:/ {print $2}')
+if [ "${NUMA_NODES:-1}" -ge 2 ]; then
+    SERVER_NUMA_PREFIX=(numactl --cpunodebind=2 --membind=2)
+else
+    SERVER_NUMA_PREFIX=()
+fi
 
 # --- Clean up any leftover Ray from prior runs ---
 .venv/bin/ray stop --force 2>/dev/null || true
@@ -63,7 +81,7 @@ export AGL_BASE_URL="http://localhost:${AGL_HOST_PORT}"
 # --- Start agl-lite serve ---
 SERVER_LOG="$LOG_DIR/server.log"
 echo "=== Starting agl-lite serve on :$AGL_HOST_PORT (log: $SERVER_LOG) ==="
-uv run agl-lite serve \
+"${SERVER_NUMA_PREFIX[@]}" uv run agl-lite serve \
     --host 0.0.0.0 \
     --port "$AGL_HOST_PORT" \
     --gateway-config "$SCRIPT_DIR/gateway-config.yaml" \

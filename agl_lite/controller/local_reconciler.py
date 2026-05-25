@@ -335,6 +335,7 @@ class LocalReconciler:
         base = self._settings.base_url
         key = self._settings.key or ""
         log_dir = f"/tmp/agl-lite/logs/{attempt_id}"
+        is_train = bool(getattr(rollout.metadata, "is_train", True))
         return {
             **self._base_env,
             # ---- matches K8s PodPatcher one-to-one ----
@@ -350,6 +351,8 @@ class LocalReconciler:
             # ---- local-mode extras (K8s mode injects these via on_enqueue hook) ----
             "AGL_TASK_INPUT": task_input_json,
             "AGL_LOCAL_AGENT_CLASS": self._agent_class,
+            # AGL_IS_TRAIN is *local-only* (no K8s equivalent yet). See process_pool.md §7.
+            "AGL_IS_TRAIN": "1" if is_train else "0",
         }
 
     def _attempt_id_for(self, rollout_id: str) -> str:
