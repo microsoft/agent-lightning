@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pytest
+import yaml
 
 pytest.importorskip("verl")
 
-from agl_lite.verl.trainer import AglLiteRayPPOTrainer, _suffix_metrics, _tracking_backends_with_wandb
+from agl_lite.verl.trainer import (
+    AglLiteRayPPOTrainer,
+    _suffix_metrics,
+    _tracking_backends_with_wandb,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_tracking_backends_adds_wandb_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,6 +40,12 @@ def test_suffix_metrics_keeps_group_prefixes() -> None:
     }
 
 
+def test_base_config_enables_verl_actor_entropy_metric() -> None:
+    config = yaml.safe_load((REPO_ROOT / "agl_lite/verl/config.yaml").read_text())
+
+    assert config["actor_rollout_ref"]["actor"]["calculate_entropy"] is True
+
+
 def test_drop_remainder_metric_stays_in_training_group() -> None:
     source = inspect.getsource(AglLiteRayPPOTrainer._train_step)
 
@@ -39,3 +53,11 @@ def test_drop_remainder_metric_stays_in_training_group() -> None:
     assert 'metrics["critic/n_transition_before_dropping"]' in source
     assert 'metrics["critic/n_transition_after_dropping"]' in source
     assert 'metrics["critic/n_triplets_dropped_remainder"]' not in source
+
+
+def test_old_log_prob_entropy_stays_out_of_training_batch_union() -> None:
+    sync_source = inspect.getsource(AglLiteRayPPOTrainer._train_step)
+    async_source = inspect.getsource(AglLiteRayPPOTrainer._async_train_step)
+
+    assert 'old_log_prob.batch.pop("entropys")' in sync_source
+    assert 'old_log_prob.batch.pop("entropys")' in async_source

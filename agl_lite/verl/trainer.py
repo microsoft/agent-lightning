@@ -94,8 +94,9 @@ def _n_gpus_for_metrics(trainer: Any) -> int:
     n_gpus_per_node = int(trainer_config.get("n_gpus_per_node", 1))
     nnodes = int(trainer_config.get("nnodes", 1))
     return max(1, n_gpus_per_node * nnodes)
-  
-  def _batch_dict_len(batch: dict[str, Any]) -> int:
+
+
+def _batch_dict_len(batch: dict[str, Any]) -> int:
     """Leading-dim length of a dataloader batch dict (0 if empty)."""
     if not batch:
         return 0

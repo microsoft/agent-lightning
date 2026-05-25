@@ -44,5 +44,7 @@ data:
   filter_overlong_prompts: false
 
 actor_rollout_ref:
+  actor:
+    calculate_entropy: true
   rollout:
     mode: async
