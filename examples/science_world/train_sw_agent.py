@@ -108,9 +108,9 @@ def verl_default_config() -> dict[str, Any]:
             "use_kl_in_reward": False,
         },
         "data": {
-            "train_batch_size": 64,
+            "train_batch_size": 32,
             "max_prompt_length": 4096,
-            "max_response_length": 1024,
+            "max_response_length": 10240,
         },
         "actor_rollout_ref": {
             "rollout": {
@@ -124,7 +124,7 @@ def verl_default_config() -> dict[str, Any]:
                 },
             },
             "actor": {
-                "ppo_mini_batch_size": 64,
+                "ppo_mini_batch_size": 16,
                 "ppo_micro_batch_size_per_gpu": 4,
                 "optim": {"lr": 1e-6},
                 "use_kl_loss": False,
@@ -155,7 +155,7 @@ def verl_default_config() -> dict[str, Any]:
             "project_name": "agl-lite",
             "experiment_name": "science_world_v1",
             "nnodes": 1,
-            "save_freq": 64,
+            "save_freq": 32,
             "test_freq": 32,
             "total_epochs": 4,
         },
@@ -166,9 +166,9 @@ def verl_default_config() -> dict[str, Any]:
             "cleanup_agent_jobs": False,
             "async_rollout": {
                 "enabled": True,
-                "async_train_batch_size": 96,
+                "async_train_batch_size": 48,
                 "gateway_retry_after_seconds": 5,
-                "gateway_drain_timeout_seconds": 30,
+                "gateway_drain_timeout_seconds": 45,
             },
         },
     }

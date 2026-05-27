@@ -473,6 +473,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         """
         rollout_bridge = self._ensure_rollout_bridge()
         server_addresses = list(self.async_rollout_manager.server_addresses)
+        self._resume_all_rollout_generation()
 
         # 1. Register + enqueue only the new samples for this step.
         rollout_bridge.async_set_up_data_and_server(
@@ -908,6 +909,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                     if is_last_step:
                         last_val_metrics = val_metrics
                 metrics.update(val_metrics)
+                metrics["training/async/val_to_train_engine_reset"] = 1
 
             if self.config.trainer.save_freq > 0 and (
                 is_last_step or self.global_steps % self.config.trainer.save_freq == 0

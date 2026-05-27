@@ -17,7 +17,7 @@ agentlightning:
   resources_id: null
   reward_fillna_value: 0.0
   trace_aggregator:
-    level: transition # transition | trajectory
+    level: trajectory # transition | trajectory
     trajectory_max_prompt_length: 2048
     trajectory_max_response_length: 8192
     debug: False
@@ -35,7 +35,7 @@ agentlightning:
     allow_equal_batch_size_for_debug: false
     # Gateway pause/drain control plane.
     gateway_retry_after_seconds: 5
-    gateway_drain_timeout_seconds: 30
+    gateway_drain_timeout_seconds: 60
     # Optional: warn (not fail) when any carry-over rid stays in the pool
     # for more than N steps — diagnostic for stuck rollouts.
     max_carry_over_age_steps: null
