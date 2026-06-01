@@ -1088,12 +1088,22 @@ class AgentModeDaemon:
             # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
             position_ids_list: list[torch.Tensor] = []
             for i in range(n_transition):
-                pos_ids = self._compute_mrope_position_ids(
-                    input_ids=batch_seq[i],
-                    attention_mask=attention_mask[i],
-                    image_grid_thw=image_grid_thw_list[i] if image_grid_thw_list else None,
-                )  # (4, seq_length)
-                position_ids_list.append(pos_ids)
+                if is_drop_list[i]:
+                    # Skip get_rope_index for dropped samples (e.g. truncated
+                    # image in the middle of the prompt) — it would crash.
+                    # is_drop_mask removes this sample in the trainer, so the
+                    # placeholder pos_ids are never used.
+                    seq_len = batch_seq[i].size(0)
+                    position_ids_list.append(
+                        torch.zeros(4, seq_len, dtype=torch.long, device=device)
+                    )
+                else:
+                    pos_ids = self._compute_mrope_position_ids(
+                        input_ids=batch_seq[i],
+                        attention_mask=attention_mask[i],
+                        image_grid_thw=image_grid_thw_list[i] if image_grid_thw_list else None,
+                    )  # (4, seq_length)
+                    position_ids_list.append(pos_ids)
             # Stack to (batch_size, 4, seq_length)
             position_ids = torch.stack(position_ids_list, dim=0)
         else:
