@@ -1,0 +1,15 @@
+# K8s Pod spec for llm-in-sandbox agent jobs.
+# The controller injects gateway env vars and /agl/logs via deploy/controller/job-template.yaml.j2.
+
+containers:
+  - name: agent
+    image: llm-in-sandbox-agent:dev
+    command: ["python", "/app/runner.py"]
+    imagePullPolicy: Never
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"

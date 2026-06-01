@@ -1,0 +1,37 @@
+# Agent image for the llm-in-sandbox example.
+# Build context: examples/llm-in-sandbox/
+#   minikube image build -t llm-in-sandbox-agent:dev -f Dockerfile.agent examples/llm-in-sandbox/
+
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+RUN apt-get update -y && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends git curl wget build-essential ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+RUN mkdir -p /testbed /app /data /root/.local/bin
+
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir numpy sympy scipy matplotlib mpmath ipython chardet
+
+COPY vendor/llm-in-sandbox /opt/llm-in-sandbox
+RUN pip install --no-cache-dir -e /opt/llm-in-sandbox \
+    && pip install --no-cache-dir math-verify rouge-score
+
+COPY data /data
+COPY agents/runner.py /app/runner.py
+
+WORKDIR /testbed
+
+RUN git init \
+    && python -m compileall -q /opt/llm-in-sandbox /app
+
+CMD ["python", "/app/runner.py"]

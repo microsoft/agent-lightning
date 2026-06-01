@@ -1,0 +1,32 @@
+[
+  {
+    "id": "demo_001",
+    "domain": "demo",
+    "problem_statement": "What is 2 + 3? Write only the number.",
+    "ground_truth": "5",
+    "input_files": {}
+  },
+  {
+    "id": "demo_002", 
+    "domain": "demo",
+    "problem_statement": "What is the capital of France? Write only the city name.",
+    "ground_truth": "Paris",
+    "input_files": {}
+  },
+  {
+    "id": "demo_003",
+    "domain": "demo",
+    "problem_statement": "Write a Python script that prints 'Hello World' and save it to /testbed/output/hello.py. Then write 'done' to answer.txt",
+    "ground_truth": "done",
+    "input_files": {}
+  },
+  {
+    "id": "demo_004",
+    "domain": "demo",
+    "problem_statement": "Read the file /testbed/input/numbers.txt which contains two numbers on separate lines. Calculate their sum and write only the result.",
+    "ground_truth": "42",
+    "input_files": {
+      "numbers.txt": "17\n25"
+    }
+  }
+]

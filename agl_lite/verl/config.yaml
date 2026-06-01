@@ -19,6 +19,7 @@ agentlightning:
   k8s:
     job_template_path: null
   reward_fillna_value: 0.0
+  is_shuffle: false
   trace_aggregator:
     level: trajectory # transition | trajectory
     trajectory_max_prompt_length: 2048

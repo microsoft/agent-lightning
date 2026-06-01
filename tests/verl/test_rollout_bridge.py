@@ -17,10 +17,10 @@ from typing import Any
 
 import pytest
 
-from agl_lite.client import AglLiteClient
+from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas import RolloutCreate
-from agl_lite.schemas import RolloutState
+from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
+from agl_lite.schemas.rollout import RolloutStatus
 from agl_lite.verl.rollout_bridge import (
     AglLiteRolloutBridge,
     RolloutLegacy,
@@ -47,9 +47,9 @@ class FakeCleanupK8sClient:
 
 class RecordingEnqueueHook(RolloutHooks):
     def __init__(self) -> None:
-        self.requests: list[RolloutCreate] = []
+        self.requests: list[EnqueueRolloutRequest] = []
 
-    def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
+    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
         self.requests.append(request)
         metadata = dict(request.metadata or {})
         metadata["hooked"] = True
@@ -176,6 +176,7 @@ class TestAgentJobCleanup:
         assert set(k8s.jobs) == {"job-r1"}
 
 
+
 class TestAsyncGroupFinishSelection:
     def _bridge(self) -> AglLiteRolloutBridge:
         return AglLiteRolloutBridge(
@@ -194,9 +195,9 @@ class TestAsyncGroupFinishSelection:
         bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
         bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
         bridge._rollout_status = {
-            "r1": RolloutState.SUCCEEDED,
-            "r3": RolloutState.SUCCEEDED,
-            "r4": RolloutState.FAILED,
+            "r1": RolloutStatus.SUCCEEDED,
+            "r3": RolloutStatus.SUCCEEDED,
+            "r4": RolloutStatus.TERMINAL_FAILED,
         }
         bridge._timeout_rids = {"r2"}
 
@@ -251,8 +252,9 @@ class TestBridgeStoreInteraction:
     @pytest.fixture()
     def app(self):
         from agl_lite.server.app import create_app
+        from agl_lite.server.config import ServerSettings
 
-        return create_app({"key": "test-key", "admin_key": "test-admin-key"})
+        return create_app(ServerSettings(key="test-key", admin_key="test-admin-key"))
 
     @pytest.fixture()
     def bridge(self, app):
@@ -284,10 +286,17 @@ class TestBridgeStoreInteraction:
             d.client = client
             yield d
 
-    async def _set_up(self, bridge: AglLiteRolloutBridge, data, server_addresses, is_train: bool = True) -> None:
+    async def _set_up(
+        self,
+        bridge: AglLiteRolloutBridge,
+        data,
+        server_addresses,
+        is_train: bool = True,
+        rollout_metadata: dict[str, Any] | None = None,
+    ) -> None:
         bridge.clear_data_and_server()
         bridge.is_train = is_train
-        await bridge._async_register_and_enqueue(bridge.client, data, server_addresses, is_train)
+        await bridge._async_register_and_enqueue(bridge.client, data, server_addresses, is_train, rollout_metadata)
 
     @pytest.mark.asyncio
     async def test_set_up_registers_model_and_enqueues(self, bridge: AglLiteRolloutBridge):
@@ -306,6 +315,61 @@ class TestBridgeStoreInteraction:
             assert rollout.status == "queuing"
 
     @pytest.mark.asyncio
+    async def test_set_up_replaces_existing_model_endpoints(self, bridge: AglLiteRolloutBridge):
+        await bridge.client.register_models(
+            [RegisterModelRequest(model="test-model", endpoint="http://old:8000/v1")]
+        )
+
+        await self._set_up(bridge, {"prompt": ["hello"]}, ["new:9000"], is_train=True)
+
+        models = await bridge.client.list_models()
+        assert [(model.model, model.endpoint) for model in models] == [("test-model", "http://new:9000/v1")]
+        assert bridge._total_tasks_queued == 1
+
+    @pytest.mark.asyncio
+    async def test_set_up_replaces_model_endpoints_on_each_step(self, bridge: AglLiteRolloutBridge):
+        await bridge.client.register_models(
+            [RegisterModelRequest(model="test-model", endpoint="http://stale:7000/v1")]
+        )
+
+        steps = [
+            (["step-0-a:8000", "http://step-0-b:8001/v1"], ["http://step-0-a:8000/v1", "http://step-0-b:8001/v1"]),
+            (["step-1:9000"], ["http://step-1:9000/v1"]),
+            (["http://step-2:9100/v1"], ["http://step-2:9100/v1"]),
+        ]
+
+        for step, (server_addresses, expected_endpoints) in enumerate(steps):
+            await self._set_up(bridge, {"prompt": [f"hello-{step}"]}, server_addresses, is_train=True)
+
+            models = await bridge.client.list_models()
+            assert sorted((model.model, model.endpoint) for model in models) == [
+                ("test-model", endpoint) for endpoint in expected_endpoints
+            ]
+            assert bridge._total_tasks_queued == 1
+
+    @pytest.mark.asyncio
+    async def test_set_up_ignores_missing_model_pool_before_registering(self, bridge: AglLiteRolloutBridge):
+        await self._set_up(bridge, {"prompt": ["hello"]}, ["new:9000"], is_train=True)
+
+        models = await bridge.client.list_models()
+        assert [(model.model, model.endpoint) for model in models] == [("test-model", "http://new:9000/v1")]
+        assert bridge._total_tasks_queued == 1
+
+    @pytest.mark.asyncio
+    async def test_set_up_delete_model_error_does_not_enqueue(self, bridge: AglLiteRolloutBridge, monkeypatch):
+        async def fail_delete_model(model: str, endpoints: list[str] | None = None) -> None:
+            raise AglLiteError(500, "boom")
+
+        monkeypatch.setattr(bridge.client, "delete_model", fail_delete_model)
+
+        with pytest.raises(AglLiteError, match="boom"):
+            await self._set_up(bridge, {"prompt": ["hello"]}, ["new:9000"], is_train=True)
+
+        assert bridge._total_tasks_queued == 0
+        rollouts = await bridge.client.query_rollouts()
+        assert rollouts == []
+
+    @pytest.mark.asyncio
     async def test_set_up_multiple_rollouts_per_sample(self, bridge: AglLiteRolloutBridge):
         """train_rollout_n > 1 creates multiple rollouts per sample."""
         bridge.train_rollout_n = 3
@@ -314,6 +378,27 @@ class TestBridgeStoreInteraction:
         await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
 
         assert bridge._total_tasks_queued == 3
+
+    @pytest.mark.asyncio
+    async def test_set_up_copies_rollout_metadata_to_rollouts(self, bridge: AglLiteRolloutBridge):
+        """Generation metadata such as temperature must be visible to hooks and rollout records."""
+        data = {"prompt": ["hello"], "data_id": ["data-0"]}
+
+        await self._set_up(
+            bridge,
+            data,
+            ["localhost:8000"],
+            is_train=False,
+            rollout_metadata={"temperature": 0.0, "do_sample": False, "validate": True},
+        )
+
+        rollout_id = next(iter(bridge._task_id_to_original_sample))
+        rollout = await bridge.client.get_rollout(rollout_id)
+        assert rollout.metadata.temperature == 0.0
+        assert rollout.metadata.do_sample is False
+        assert rollout.metadata.model_extra["validate"] is True
+        assert rollout.metadata.is_train is False
+        assert rollout.metadata.data_id == "data-0"
 
     @pytest.mark.asyncio
     async def test_async_diff_enqueue_applies_on_enqueue_hook(self, bridge: AglLiteRolloutBridge):
@@ -328,6 +413,7 @@ class TestBridgeStoreInteraction:
             data,
             ["localhost:8000"],
             async_train_batch_size=1,
+            rollout_metadata={"temperature": 1.0},
         )
 
         assert n_new == 1
@@ -336,12 +422,13 @@ class TestBridgeStoreInteraction:
         for rid in bridge._enqueue_order:
             rollout = await bridge.client.get_rollout(rid)
             assert rollout.metadata.hooked is True
+            assert rollout.metadata.temperature == 1.0
             assert rollout.metadata.data_id == "data-0"
 
     @pytest.mark.asyncio
     async def test_fetch_rollout_result_extracts_triplets(self, bridge: AglLiteRolloutBridge):
         """_async_fetch_rollout_result converts format=triplet events to RolloutLegacy."""
-        from agl_lite.schemas import EventCreate
+        from agl_lite.schemas.api import PostEventRequest
 
         data = {"prompt": ["test"]}
         await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
@@ -352,7 +439,7 @@ class TestBridgeStoreInteraction:
         await bridge.client.post_event(
             rid,
             "pod-1",
-            EventCreate(
+            PostEventRequest(
                 event_type="model_request",
                 data={
                     "request": {"model": "m", "messages": [], "return_token_ids": True},
@@ -370,7 +457,7 @@ class TestBridgeStoreInteraction:
         await bridge.client.post_event(
             rid,
             "pod-1",
-            EventCreate(
+            PostEventRequest(
                 event_type="reward",
                 data={"value": 0.85, "message": "correct", "source": "agent", "reason": "computed"},
             ),

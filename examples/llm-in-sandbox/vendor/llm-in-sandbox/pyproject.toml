@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-in-sandbox"
+version = "0.2.0"
+description = "Enabling LLMs to explore within a code sandbox (i.e., a virtual computer) to elicit general agentic intelligence."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Daixuan Cheng" },
+    { name = "Shaohan Huang" }
+]
+keywords = [
+    "llm",
+    "agent", 
+    "sandbox",
+    "code-sandbox",
+    "reinforcement-learning",
+    "agentic-ai",
+    "mathematics",
+    "science",
+    "long-context",
+    "instruction-following",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "openai>=1.0.0",
+    "docker>=6.0.0",
+    "pyyaml>=6.0",
+    "fire>=0.5.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "datasets>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/llm-in-sandbox/llm-in-sandbox"
+Repository = "https://github.com/llm-in-sandbox/llm-in-sandbox"
+Issues = "https://github.com/llm-in-sandbox/llm-in-sandbox/issues"
+
+[project.scripts]
+llm-in-sandbox = "llm_in_sandbox.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["llm_in_sandbox"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"docker/Dockerfile" = "share/llm-in-sandbox/docker/Dockerfile"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/llm_in_sandbox",
+    "/docker",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I"]

@@ -1,0 +1,9 @@
+# Gateway config for llm-in-sandbox VERL training.
+# vLLM token IDs are required by agl_lite.verl.rollout_bridge.
+
+routes:
+  - model_in: "*"
+    model_out: "*"
+    params:
+      add:
+        return_token_ids: true

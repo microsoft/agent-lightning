@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+import torch
 import yaml
 
 pytest.importorskip("verl")
 
 from agl_lite.verl.trainer import (
     AglLiteRayPPOTrainer,
+    _count_zero_advantage_triplets,
     _suffix_metrics,
     _tracking_backends_with_wandb,
 )
@@ -40,16 +44,49 @@ def test_suffix_metrics_keeps_group_prefixes() -> None:
     }
 
 
+def test_count_zero_advantage_triplets_ignores_padding() -> None:
+    batch = SimpleNamespace(
+        batch={
+            "advantages": torch.tensor(
+                [
+                    [0.0, 0.0, 7.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [5.0, 0.0, 0.0],
+                ]
+            ),
+            "response_mask": torch.tensor(
+                [
+                    [1, 1, 0],
+                    [1, 1, 0],
+                    [1, 0, 0],
+                    [0, 0, 0],
+                ],
+                dtype=torch.bool,
+            ),
+        }
+    )
+
+    assert _count_zero_advantage_triplets(cast(Any, batch)) == 2
+
+
 def test_base_config_enables_verl_actor_entropy_metric() -> None:
     config = yaml.safe_load((REPO_ROOT / "agl_lite/verl/config.yaml").read_text())
 
     assert config["actor_rollout_ref"]["actor"]["calculate_entropy"] is True
+    assert "is_shuffle" not in config["actor_rollout_ref"]["actor"]
+    assert config["agentlightning"]["is_shuffle"] is False
 
 
 def test_drop_remainder_metric_stays_in_training_group() -> None:
     source = inspect.getsource(AglLiteRayPPOTrainer._train_step)
+    async_source = inspect.getsource(AglLiteRayPPOTrainer._async_train_step)
 
     assert 'metrics["training/n_triplets_dropped_remainder"]' in source
+    assert 'metrics["training/n_advantage_zero"]' in source
+    assert 'metrics["training/n_advantage_zero"]' in async_source
+    assert 'if self.config.agentlightning.get("is_shuffle", True):' in source
+    assert "ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n" in source
     assert 'metrics["critic/n_transition_before_dropping"]' in source
     assert 'metrics["critic/n_transition_after_dropping"]' in source
     assert 'metrics["critic/n_triplets_dropped_remainder"]' not in source
