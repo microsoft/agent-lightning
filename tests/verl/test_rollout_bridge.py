@@ -2,8 +2,8 @@
 
 Tests the methods that replace AgentModeDaemon's store calls:
   - set_up_data_and_server (register model + enqueue)
-  - run_until_all_finished (poll)
-  - _async_fetch_rollout_result (fetch triplets)
+    - run_until_all_finished (poll)
+    - _fetch_rollout_result (fetch triplets)
   - cleanup_agent_jobs (optional scoped Kubernetes Job cleanup)
   - clear_data_and_server (reset)
 
@@ -17,13 +17,12 @@ from typing import Any
 
 import pytest
 
-from agl_lite.client import AglLiteClient, AglLiteError
 from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
-from agl_lite.schemas.rollout import RolloutStatus
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import RolloutState
 from agl_lite.verl.rollout_bridge import (
     AglLiteRolloutBridge,
-    RolloutLegacy,
+    CompletedRollout,
     _to_native,
     get_left_padded_ids_and_attention_mask,
     get_right_padded_ids_and_attention_mask,
@@ -47,9 +46,9 @@ class FakeCleanupK8sClient:
 
 class RecordingEnqueueHook(RolloutHooks):
     def __init__(self) -> None:
-        self.requests: list[EnqueueRolloutRequest] = []
+        self.requests: list[RolloutCreate] = []
 
-    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+    def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         self.requests.append(request)
         metadata = dict(request.metadata or {})
         metadata["hooked"] = True
@@ -176,7 +175,6 @@ class TestAgentJobCleanup:
         assert set(k8s.jobs) == {"job-r1"}
 
 
-
 class TestAsyncGroupFinishSelection:
     def _bridge(self) -> AglLiteRolloutBridge:
         return AglLiteRolloutBridge(
@@ -195,9 +193,9 @@ class TestAsyncGroupFinishSelection:
         bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
         bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
         bridge._rollout_status = {
-            "r1": RolloutStatus.SUCCEEDED,
-            "r3": RolloutStatus.SUCCEEDED,
-            "r4": RolloutStatus.TERMINAL_FAILED,
+            "r1": RolloutState.SUCCEEDED,
+            "r3": RolloutState.SUCCEEDED,
+            "r4": RolloutState.FAILED,
         }
         bridge._timeout_rids = {"r2"}
 
@@ -219,15 +217,16 @@ class TestAsyncGroupFinishSelection:
         bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
         bridge._enqueue_order = ["r1", "r2", "r3", "r4"]
 
-        async def no_status_updates(_: AglLiteClient, __: set[str]) -> None:
+        def no_status_updates(_: set[str]) -> None:
             return None
 
         bridge._poll_status_for = no_status_updates  # type: ignore[method-assign]
+        bridge._pause_gateway = lambda **_: {"inflight": 0}  # type: ignore[method-assign]
+        bridge._wait_until_inflight_drained = lambda **_: 0  # type: ignore[method-assign]
 
-        selected_rids, carry_over_rids, metrics = await bridge._async_run_until_groups_finished(
+        selected_rids, carry_over_rids, metrics = bridge._run_until_groups_finished(
             target_groups=2,
             rollout_n=2,
-            admin_client=FakeAdminClient(),  # type: ignore[arg-type]
             timeout_seconds=0,
             drain_timeout=0.01,
             verbose=False,
@@ -244,7 +243,7 @@ class TestAsyncGroupFinishSelection:
 
 
 class TestBridgeStoreInteraction:
-    """Test the NEW code in AglLiteRolloutBridge (store interaction via AglLiteClient).
+    """Test the NEW code in AglLiteRolloutBridge (store interaction via sync HTTP client).
 
     Uses the real agl-lite server (via ASGI transport) to verify HTTP calls.
     """
@@ -252,28 +251,17 @@ class TestBridgeStoreInteraction:
     @pytest.fixture()
     def app(self):
         from agl_lite.server.app import create_app
-        from agl_lite.server.config import ServerSettings
 
-        return create_app(ServerSettings(key="test-key", admin_key="test-admin-key"))
+        return create_app({"key": "test-key", "admin_key": "test-admin-key"})
 
     @pytest.fixture()
     def bridge(self, app):
-        """Create a bridge with an AglLiteClient backed by ASGI transport."""
-        import httpx
+        """Create a bridge with a TestClient-backed sync HTTP client."""
         from starlette.testclient import TestClient
 
         # Use TestClient to trigger lifespan (initializes store)
-        with TestClient(app) as _tc:
-            transport = httpx.ASGITransport(app=app)
-            async_client = httpx.AsyncClient(
-                base_url="http://test",
-                headers={"Authorization": "Bearer test-key"},
-                transport=transport,
-            )
-
-            client = AglLiteClient(base_url="http://test", agl_key="test-key")
-            client._client = async_client
-
+        with TestClient(app) as client:
+            client.headers.update({"Authorization": "Bearer test-key"})
             d = AglLiteRolloutBridge(
                 agl_base_url="http://test",
                 agl_key="test-key",
@@ -286,24 +274,17 @@ class TestBridgeStoreInteraction:
             d.client = client
             yield d
 
-    async def _set_up(
-        self,
-        bridge: AglLiteRolloutBridge,
-        data,
-        server_addresses,
-        is_train: bool = True,
-        rollout_metadata: dict[str, Any] | None = None,
-    ) -> None:
+    def _set_up(self, bridge: AglLiteRolloutBridge, data, server_addresses, is_train: bool = True) -> None:
         bridge.clear_data_and_server()
         bridge.is_train = is_train
-        await bridge._async_register_and_enqueue(bridge.client, data, server_addresses, is_train, rollout_metadata)
+        bridge._register_and_enqueue(data, server_addresses, is_train)
 
     @pytest.mark.asyncio
     async def test_set_up_registers_model_and_enqueues(self, bridge: AglLiteRolloutBridge):
         """set_up_data_and_server registers model and creates rollouts."""
         data = {"prompt": ["What is 2+2?", "What is 3+3?"]}
 
-        await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
+        self._set_up(bridge, data, ["localhost:8000"], is_train=True)
 
         # Should have queued 2 rollouts (1 per sample, train_rollout_n=1)
         assert bridge._total_tasks_queued == 2
@@ -311,63 +292,8 @@ class TestBridgeStoreInteraction:
 
         # Verify rollouts exist in the store via client
         for rid in bridge._task_id_to_original_sample:
-            rollout = await bridge.client.get_rollout(rid)
-            assert rollout.status == "queuing"
-
-    @pytest.mark.asyncio
-    async def test_set_up_replaces_existing_model_endpoints(self, bridge: AglLiteRolloutBridge):
-        await bridge.client.register_models(
-            [RegisterModelRequest(model="test-model", endpoint="http://old:8000/v1")]
-        )
-
-        await self._set_up(bridge, {"prompt": ["hello"]}, ["new:9000"], is_train=True)
-
-        models = await bridge.client.list_models()
-        assert [(model.model, model.endpoint) for model in models] == [("test-model", "http://new:9000/v1")]
-        assert bridge._total_tasks_queued == 1
-
-    @pytest.mark.asyncio
-    async def test_set_up_replaces_model_endpoints_on_each_step(self, bridge: AglLiteRolloutBridge):
-        await bridge.client.register_models(
-            [RegisterModelRequest(model="test-model", endpoint="http://stale:7000/v1")]
-        )
-
-        steps = [
-            (["step-0-a:8000", "http://step-0-b:8001/v1"], ["http://step-0-a:8000/v1", "http://step-0-b:8001/v1"]),
-            (["step-1:9000"], ["http://step-1:9000/v1"]),
-            (["http://step-2:9100/v1"], ["http://step-2:9100/v1"]),
-        ]
-
-        for step, (server_addresses, expected_endpoints) in enumerate(steps):
-            await self._set_up(bridge, {"prompt": [f"hello-{step}"]}, server_addresses, is_train=True)
-
-            models = await bridge.client.list_models()
-            assert sorted((model.model, model.endpoint) for model in models) == [
-                ("test-model", endpoint) for endpoint in expected_endpoints
-            ]
-            assert bridge._total_tasks_queued == 1
-
-    @pytest.mark.asyncio
-    async def test_set_up_ignores_missing_model_pool_before_registering(self, bridge: AglLiteRolloutBridge):
-        await self._set_up(bridge, {"prompt": ["hello"]}, ["new:9000"], is_train=True)
-
-        models = await bridge.client.list_models()
-        assert [(model.model, model.endpoint) for model in models] == [("test-model", "http://new:9000/v1")]
-        assert bridge._total_tasks_queued == 1
-
-    @pytest.mark.asyncio
-    async def test_set_up_delete_model_error_does_not_enqueue(self, bridge: AglLiteRolloutBridge, monkeypatch):
-        async def fail_delete_model(model: str, endpoints: list[str] | None = None) -> None:
-            raise AglLiteError(500, "boom")
-
-        monkeypatch.setattr(bridge.client, "delete_model", fail_delete_model)
-
-        with pytest.raises(AglLiteError, match="boom"):
-            await self._set_up(bridge, {"prompt": ["hello"]}, ["new:9000"], is_train=True)
-
-        assert bridge._total_tasks_queued == 0
-        rollouts = await bridge.client.query_rollouts()
-        assert rollouts == []
+            rollout = bridge._get_rollout(rid)
+            assert rollout.status.state == RolloutState.QUEUING
 
     @pytest.mark.asyncio
     async def test_set_up_multiple_rollouts_per_sample(self, bridge: AglLiteRolloutBridge):
@@ -375,30 +301,9 @@ class TestBridgeStoreInteraction:
         bridge.train_rollout_n = 3
         data = {"prompt": ["hello"]}
 
-        await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
+        self._set_up(bridge, data, ["localhost:8000"], is_train=True)
 
         assert bridge._total_tasks_queued == 3
-
-    @pytest.mark.asyncio
-    async def test_set_up_copies_rollout_metadata_to_rollouts(self, bridge: AglLiteRolloutBridge):
-        """Generation metadata such as temperature must be visible to hooks and rollout records."""
-        data = {"prompt": ["hello"], "data_id": ["data-0"]}
-
-        await self._set_up(
-            bridge,
-            data,
-            ["localhost:8000"],
-            is_train=False,
-            rollout_metadata={"temperature": 0.0, "do_sample": False, "validate": True},
-        )
-
-        rollout_id = next(iter(bridge._task_id_to_original_sample))
-        rollout = await bridge.client.get_rollout(rollout_id)
-        assert rollout.metadata.temperature == 0.0
-        assert rollout.metadata.do_sample is False
-        assert rollout.metadata.model_extra["validate"] is True
-        assert rollout.metadata.is_train is False
-        assert rollout.metadata.data_id == "data-0"
 
     @pytest.mark.asyncio
     async def test_async_diff_enqueue_applies_on_enqueue_hook(self, bridge: AglLiteRolloutBridge):
@@ -408,38 +313,35 @@ class TestBridgeStoreInteraction:
         bridge.train_rollout_n = 2
         data = {"prompt": ["hello"], "data_id": ["data-0"]}
 
-        n_new = await bridge._async_register_and_enqueue_diff(
-            bridge.client,
+        n_new = bridge._register_and_enqueue_diff(
             data,
             ["localhost:8000"],
             async_train_batch_size=1,
-            rollout_metadata={"temperature": 1.0},
         )
 
         assert n_new == 1
         assert len(hook.requests) == 2
         assert bridge._total_tasks_queued == 2
         for rid in bridge._enqueue_order:
-            rollout = await bridge.client.get_rollout(rid)
+            rollout = bridge._get_rollout(rid)
             assert rollout.metadata.hooked is True
-            assert rollout.metadata.temperature == 1.0
-            assert rollout.metadata.data_id == "data-0"
+            assert rollout.input["data_id"] == "data-0"
 
     @pytest.mark.asyncio
     async def test_fetch_rollout_result_extracts_triplets(self, bridge: AglLiteRolloutBridge):
-        """_async_fetch_rollout_result converts format=triplet events to RolloutLegacy."""
-        from agl_lite.schemas.api import PostEventRequest
+        """_fetch_rollout_result converts format=triplet events to CompletedRollout."""
+        from agl_lite.schemas import EventCreate
 
         data = {"prompt": ["test"]}
-        await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
+        self._set_up(bridge, data, ["localhost:8000"], is_train=True)
 
         rid = next(iter(bridge._task_id_to_original_sample))
 
         # Simulate what the gateway + agent would produce: model_request + reward
-        await bridge.client.post_event(
+        bridge._post_event(
             rid,
             "pod-1",
-            PostEventRequest(
+            EventCreate(
                 event_type="model_request",
                 data={
                     "request": {"model": "m", "messages": [], "return_token_ids": True},
@@ -454,18 +356,18 @@ class TestBridgeStoreInteraction:
                 },
             ),
         )
-        await bridge.client.post_event(
+        bridge._post_event(
             rid,
             "pod-1",
-            PostEventRequest(
+            EventCreate(
                 event_type="reward",
                 data={"value": 0.85, "message": "correct", "source": "agent", "reason": "computed"},
             ),
         )
 
-        legacy = await bridge._async_fetch_rollout_result(rid)
+        legacy = bridge._fetch_rollout_result(rid)
 
-        assert isinstance(legacy, RolloutLegacy)
+        assert isinstance(legacy, CompletedRollout)
         assert legacy.rollout_id == rid
         assert legacy.final_reward == 0.85
         assert legacy.reward_source == "agent"
@@ -485,7 +387,7 @@ class TestBridgeStoreInteraction:
     @pytest.mark.asyncio
     async def test_clear_resets_state(self, bridge: AglLiteRolloutBridge):
         data = {"prompt": ["test"]}
-        await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
+        self._set_up(bridge, data, ["localhost:8000"], is_train=True)
         assert bridge._total_tasks_queued == 1
 
         bridge.clear_data_and_server()

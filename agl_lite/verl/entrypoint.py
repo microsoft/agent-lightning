@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import socket
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any, cast
 
 import hydra
@@ -27,35 +27,6 @@ __all__ = [
     "main",
     "run_ppo",
 ]
-
-
-_RAY_WORKER_ENV_VARS = (
-    "AGL_KEY",
-    "AGL_BASE_URL",
-    "AGL_MODEL_ENDPOINT",
-    "AGL_NAMESPACE",
-    "AGL_HOOKS",
-    "AGL_POD_SPEC_TEMPLATE",
-    "AGL_MODEL_NAME",
-    "AGL_OPENAI_MODEL_PREFIX",
-    "AGL_LLM_TEMPERATURE",
-    "OPENAI_TIMEOUT",
-    "MAX_TOKENS_PER_CALL",
-    "WANDB_API_KEY",
-    "WANDB_ENTITY",
-    "WANDB_PROJECT",
-    "WANDB_DIR",
-    "WANDB_MODE",
-    "WANDB_RUN_ID",
-    "WANDB_RESUME",
-)
-
-
-def _copy_worker_env(source: Mapping[str, str], target: dict[str, Any]) -> None:
-    for var in _RAY_WORKER_ENV_VARS:
-        val = source.get(var)
-        if val:
-            target[var] = val
 
 
 @hydra.main(config_path="pkg://agl_lite/verl", config_name="config", version_base=None)
@@ -89,7 +60,23 @@ def run_ppo(
         if not isinstance(env_vars, dict):
             env_vars = {}
             runtime_env["env_vars"] = env_vars
-        _copy_worker_env(os.environ, env_vars)
+        for var in (
+            "AGL_KEY",
+            "AGL_BASE_URL",
+            "AGL_MODEL_ENDPOINT",
+            "AGL_NAMESPACE",
+            "LD_LIBRARY_PATH",
+            "WANDB_API_KEY",
+            "WANDB_ENTITY",
+            "WANDB_PROJECT",
+            "WANDB_DIR",
+            "WANDB_MODE",
+            "WANDB_RUN_ID",
+            "WANDB_RESUME",
+        ):
+            val = os.environ.get(var)
+            if val:
+                env_vars[var] = val
         _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
             runtime_env=runtime_env,
