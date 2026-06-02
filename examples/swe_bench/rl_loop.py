@@ -34,8 +34,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import yaml
 
 from agl_lite.client import AglLiteClient
-from agl_lite.schemas.api import EnqueueRolloutRequest, RegisterModelRequest
-from agl_lite.schemas.rollout import RolloutStatus
+from agl_lite.schemas import Model
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import RolloutState
 
 # --- Config (from env) ---
 
@@ -68,7 +69,7 @@ async def wait_for_rollouts(
     rollout_ids: list[str],
     max_time: float = MAX_POLL_TIME,
 ) -> list:
-    terminal = {RolloutStatus.SUCCEEDED, RolloutStatus.TERMINAL_FAILED, RolloutStatus.CANCELLED}
+    terminal = {RolloutState.SUCCEEDED, RolloutState.FAILED}
     start = time.time()
     poll_count = 0
     while time.time() - start < max_time:
@@ -117,7 +118,7 @@ async def run_iteration(
 
     # Enqueue rollouts — algorithm only sets input, resources_id, metadata
     requests = [
-        EnqueueRolloutRequest(
+        RolloutCreate(
             resources_id=resources_id,
             input=item,  # full JSONL row — hooks handle image, eval_script, etc.
             metadata={"batch_idx": iteration, "sample_idx_in_batch": i},
@@ -131,8 +132,8 @@ async def run_iteration(
     # Wait for completion
     log(f"  Polling for completion...")
     completed = await wait_for_rollouts(client, rollout_ids)
-    succeeded = [r for r in completed if r.status == RolloutStatus.SUCCEEDED]
-    failed = [r for r in completed if r.status == RolloutStatus.TERMINAL_FAILED]
+    succeeded = [r for r in completed if r.status == RolloutState.SUCCEEDED]
+    failed = [r for r in completed if r.status == RolloutState.FAILED]
 
     log(f"  Completed: {len(succeeded)} succeeded, {len(failed)} failed")
     for r in failed:
@@ -210,7 +211,7 @@ async def main() -> None:
             log(f"")
             log(f"--- Register model server ---")
             await client.register_models([
-                RegisterModelRequest(model=MODEL_NAME, endpoint=MODEL_ENDPOINT, version=1),
+                Model(model=MODEL_NAME, endpoint=MODEL_ENDPOINT, version=1),
             ])
             log(f"  {MODEL_NAME} -> {MODEL_ENDPOINT} (version=1)")
 

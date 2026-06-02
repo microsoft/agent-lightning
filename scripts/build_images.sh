@@ -2,8 +2,7 @@
 # Build Docker images into minikube.
 #
 # Usage:
-#   scripts/build_images.sh                                    # core only
-#   scripts/build_images.sh --include-example math-poc         # core + math-poc
+#   scripts/build_images.sh --include-example math-poc
 #   scripts/build_images.sh --include-example math-poc --include-example calc_x
 #
 # Convention for examples:
@@ -48,10 +47,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# --- Core image (always built) ---
-echo "=== Building agl-lite:dev ==="
-minikube image build -t agl-lite:dev -f deploy/agl-lite/Dockerfile "$REPO_ROOT"
 
 # --- Example images (convention-driven) ---
 for example in "${EXAMPLES[@]}"; do

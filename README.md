@@ -22,7 +22,7 @@ Three groups connected only by HTTP:
 
 1. **Self-owned LLM gateway** — a purpose-built reverse proxy replaces litellm, capturing all request-response data transparently as it flows through
 2. **Gateway-level data capture** — instead of instrumenting agents with OpenTelemetry, the gateway records request-response pairs during transfer — the proxy *is* the instrumentation
-3. **K8s-native agent runner** — K8s Jobs as the execution unit, pod UIDs as attempt IDs, Job lifecycle as the retry mechanism — the store focuses purely on data, not execution control
+3. **K8s-native agent runner** — K8s Jobs as the execution unit, rollout-scoped attempt IDs for trace grouping, Job lifecycle as the retry mechanism — the store focuses purely on data, not execution control
 
 ## Quick Start
 
@@ -36,7 +36,6 @@ git clone https://github.com/<org>/agl-lite && cd agl-lite
 scripts/start_vllm.sh
 
 # Configure and run
-cp examples/math-poc/.env.vllm.example deploy/.env
 export AGL_KEY=$(openssl rand -hex 32)
 examples/math-poc/run.sh
 ```
@@ -77,7 +76,6 @@ The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPEN
 | [Architecture](docs/design/0_architecture.md) | Full system design — data models, API spec, components |
 | [K8s Controller](docs/design/1_k8s_controller.md) | Controller design and implementation details |
 | [Dev Guidelines](docs/dev_guidelines.md) | Code conventions, tooling, concurrency model |
-| [Deployment](deploy/README.md) | Docker builds, K8s manifests, configuration |
 
 ## Project Status
 
@@ -85,7 +83,7 @@ The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPEN
 - Gateway with route config, streaming proxy, and automatic event capture
 - In-memory store (rollouts, events, models, resources)
 - K8s controller with Job lifecycle management
-- Python client library (`AglLiteClient`) and CLI (`agl-client`)
+- Python client library (`AglLiteClient`)
 - VERL integration (`AglLiteRolloutBridge`) with triplet format
 - Math PoC end-to-end (mock + real vLLM)
 - SWE-bench example with Claude Code

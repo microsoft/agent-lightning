@@ -40,8 +40,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from agl_lite.client import AglLiteClient
-from agl_lite.schemas.api import EnqueueRolloutRequest
-from agl_lite.schemas.rollout import RolloutStatus
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import RolloutState
 from agl_lite.verl.entrypoint import run_ppo
 
 
@@ -67,8 +67,8 @@ def split_dataset(items: list[dict[str, Any]], val_size: int) -> tuple[list[dict
     return train, val
 
 
-async def wait_rollout(client: AglLiteClient, rollout_id: str, timeout_s: int = 300) -> RolloutStatus:
-    terminal = {RolloutStatus.SUCCEEDED, RolloutStatus.TERMINAL_FAILED, RolloutStatus.CANCELLED}
+async def wait_rollout(client: AglLiteClient, rollout_id: str, timeout_s: int = 300) -> RolloutState:
+    terminal = {RolloutState.SUCCEEDED, RolloutState.FAILED}
     start = time.time()
     while time.time() - start < timeout_s:
         r = await client.get_rollout(rollout_id)
@@ -107,11 +107,11 @@ async def preflight_and_prepare_resources(
             dataset = load_dataset(REPO_ROOT / "examples" / "math-poc" / "data" / "gsm8k_sample.jsonl")
             one = dataset[0]
             created = await client.enqueue_rollouts([
-                EnqueueRolloutRequest(resources_id=resources_id, input=one),
+                RolloutCreate(resources_id=resources_id, input=one),
             ])
             rid = created[0].rollout_id
             status = await wait_rollout(client, rid)
-            if status != RolloutStatus.SUCCEEDED:
+            if status != RolloutState.SUCCEEDED:
                 raise RuntimeError(f"Smoke rollout failed: {rid} status={status}")
 
             triplets = await client.get_events(rid, format="triplet")

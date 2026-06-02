@@ -57,7 +57,7 @@ run.sh ──► agl-lite deploy (agl-in-host) ──► train_calc_agent.py
   agent Jobs in namespace `agl-async-calcx`.
 - **Agent pods talk to the host gateway via `host.minikube.internal:8080`**.
 - **Local mode** (`run.sh --local`) skips minikube/deploy/image build and
-  runs `agl-lite controller --runner-type local`, spawning one Python
+  runs `agl-lite-controller runner_type=local`, spawning one Python
   subprocess per rollout on the host.
 
 ## Hardware
@@ -156,7 +156,7 @@ Two keys are required by the async path:
 | Key | Used by | Source |
 |-----|---------|--------|
 | `AGL_KEY` | Agent pods, gateway clients | You export it, or `.local/agl-lite.env` from a previous `agl-lite deploy` |
-| `AGL_ADMIN_KEY` | Trainer-only, gates `/admin/gateway/{pause,resume,state}` | `run.sh` auto-generates one if unset |
+| `AGL_ADMIN_KEY` | Trainer-only, gates `/proxy/{pause,resume,state}` | `run.sh` auto-generates one if unset |
 
 Rules `run.sh` enforces:
 - `AGL_KEY` must be set (it errors out otherwise).
@@ -231,7 +231,7 @@ python examples/async_calc_x/train_calc_agent.py \
 5. K8s mode cleans any previous namespace, then runs
    `agl-lite deploy --env-file .env.example` to create the K8s controller and
    start `agl-lite serve` on the host as a systemd-style child.
-6. Local mode starts `agl-lite serve` and `agl-lite controller --runner-type local`
+6. Local mode starts `agl-lite-server` and `agl-lite-controller runner_type=local`
    as child processes instead.
 7. Polls `GET /healthz` up to 40 s for readiness.
 8. Cleans leftover Ray (`ray stop --force`).
@@ -550,8 +550,8 @@ ldd .venv/lib/python3.12/site-packages/flash_attn_2_cuda*.so | grep cudart
 These are **non-fatal**. vLLM 0.12.0's Hermes parser occasionally fails to
 split concurrent `<tool_call>` blocks. The parser falls back to plain text
 (`tools_called=False`), the rollout still finishes, and the trainer counts
-it as a normal Completed sample. Look for `failed=0 cancelled=0 timeout=0`
-in the progress line — if those are all zero, the spam is cosmetic.
+it as a normal Completed sample. Look for `failed=0 timeout=0` in the
+progress line — if those are both zero, the spam is cosmetic.
 
 ### Trainer prints config then exits without launching Ray
 

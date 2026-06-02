@@ -1,40 +1,11 @@
-"""Training script for Calc-X agent with VERL on agl-lite.
-
-Loads the Calc-X dataset, builds a VERL config, and calls run_ppo().
-Assumes agl-lite serve + controller + vLLM are already running
-(started by run.sh or manually).
-
-Usage:
-  # Full E2E (via run.sh):
-  examples/calc_x/run.sh
-
-  # Standalone (infra already up):
-  python examples/calc_x/train_calc_agent.py \\
-      --train-file examples/calc_x/data/train.parquet \\
-      --val-file examples/calc_x/data/test.parquet
-
-  # CI smoke test:
-  python examples/calc_x/train_calc_agent.py --ci-fast \\
-      --train-file examples/calc_x/data/train.parquet \\
-      --val-file examples/calc_x/data/test_mini.parquet
-
-Environment variables:
-  AGL_BASE_URL   — agl-lite server URL (default: http://localhost:8080)
-  AGL_KEY        — auth key for agl-lite
-"""
-
-from __future__ import annotations
-
 import argparse
-import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
 from datasets import Dataset as HuggingFaceDataset
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
-
 
 def verl_default_config() -> dict[str, Any]:
     """VERL config overrides for Calc-X training.
@@ -42,6 +13,7 @@ def verl_default_config() -> dict[str, Any]:
     These are merged on top of agl-lite's base config
     (agl_lite/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
     """
+    example_dir = Path(__file__).resolve().parent
     return {
         "algorithm": {
             "adv_estimator": "grpo",
@@ -86,22 +58,37 @@ def verl_default_config() -> dict[str, Any]:
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
-                "path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "path": "Qwen/Qwen2.5-0.5B-Instruct",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
         },
         "trainer": {
-            "n_gpus_per_node": 4,
-            "val_before_train": True,
+            "n_gpus_per_node": 1,
+            "val_before_train": False,
             "critic_warmup": 0,
             "logger": ["console"],
             "project_name": "agl-lite",
-            "experiment_name": "calc_x_v1",
+            "experiment_name": "calc_x",
             "nnodes": 1,
             "save_freq": 64,
             "test_freq": 32,
             "total_epochs": 2,
+        },
+        "agentlightning": {
+            "agl_base_url": "http://localhost:8080",
+            "agl_key": "calcx-dev-key",
+            "timeout_seconds": 300,
+            "local": {
+                "agent_class": "examples.calc_x.calc_agent.Agent",
+                "env_map": {
+                    "QUESTION": "input.question",
+                    "RESULT": "input.result",
+                },
+            },
+            "k8s": {
+                "job_template_path": str(example_dir / "job-template.yaml"),
+            },
         },
     }
 
@@ -109,8 +96,11 @@ def verl_default_config() -> dict[str, Any]:
 def build_config(
     *,
     model: str | None = None,
+    agl_base_url: str | None = None,
+    agl_key: str | None = None,
+    run_name: str | None = None,
+    config_overrides: Sequence[str] = (),
     ci: bool = False,
-    ci_fast: bool = False,
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides.
 
@@ -130,28 +120,36 @@ def build_config(
 
     if model:
         overrides["actor_rollout_ref"]["model"]["path"] = model
+    if agl_base_url:
+        overrides["agentlightning"]["agl_base_url"] = agl_base_url
+    if agl_key is not None:
+        overrides["agentlightning"]["agl_key"] = agl_key
+    if run_name:
+        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
 
-    if ci or ci_fast:
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        random_suffix = uuid.uuid4().hex[:8]
-
+    if ci:
         overrides["trainer"]["project_name"] = "agl-lite-CI"
-        overrides["trainer"]["experiment_name"] = f"calc_x_{timestamp}_{random_suffix}"
+        overrides["trainer"]["experiment_name"] = "calc_x_ci"
+        if run_name:
+            overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
         overrides["trainer"]["total_epochs"] = 1
-        overrides["trainer"]["total_training_steps"] = 20
-        overrides["trainer"]["test_freq"] = 20
+        overrides["trainer"]["total_training_steps"] = 5
+        overrides["trainer"]["test_freq"] = -1
         overrides["trainer"].pop("save_freq", None)
-        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
-
-        if ci_fast:
-            overrides["trainer"]["total_training_steps"] = 1
-            overrides["trainer"]["test_freq"] = 1
-            overrides["trainer"]["n_gpus_per_node"] = 1
-            overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+        overrides["data"]["train_batch_size"] = 2
+        overrides["data"]["max_prompt_length"] = 2048
+        overrides["data"]["max_response_length"] = 512
+        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
+        overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
+        overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
+        overrides["actor_rollout_ref"]["rollout"]["n"] = 2
+        overrides["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 1
+        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
 
     override_conf = OmegaConf.create(overrides)
+    cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
     OmegaConf.set_struct(base_cfg, False)
-    config = OmegaConf.merge(base_cfg, override_conf)
+    config = OmegaConf.merge(base_cfg, override_conf, cli_override_conf)
     return config
 
 
@@ -160,8 +158,11 @@ def train(
     train_file: str,
     val_file: str,
     model: str | None = None,
+    agl_base_url: str | None = None,
+    agl_key: str | None = None,
+    run_name: str | None = None,
+    config_overrides: Sequence[str] = (),
     ci: bool = False,
-    ci_fast: bool = False,
 ) -> None:
     """Load datasets, build config, and launch VERL training via agl-lite."""
     from agl_lite.verl.entrypoint import run_ppo
@@ -179,7 +180,14 @@ def train(
     print(f"Train dataset: {len(train_dataset)} samples")
     print(f"Val dataset:   {len(val_dataset)} samples")
 
-    config = build_config(model=model, ci=ci, ci_fast=ci_fast)
+    config = build_config(
+        model=model,
+        agl_base_url=agl_base_url,
+        agl_key=agl_key,
+        run_name=run_name,
+        config_overrides=config_overrides,
+        ci=ci,
+    )
 
     from pprint import pprint
 
@@ -209,29 +217,42 @@ def main() -> None:
         "--model",
         type=str,
         default=None,
-        help="HF model id or path (overrides default Qwen2.5-1.5B-Instruct)",
+        help="HF model id or path (default: Qwen/Qwen2.5-0.5B-Instruct)",
+    )
+    parser.add_argument(
+        "--agl-base-url",
+        type=str,
+        default="http://localhost:8080",
+        help="agl-lite server URL for the trainer",
+    )
+    parser.add_argument(
+        "--agl-key",
+        type=str,
+        default="calcx-dev-key",
+        help="agl-lite API key for the trainer",
+    )
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=None,
+        help="Suffix appended to trainer.experiment_name",
     )
     parser.add_argument(
         "--ci",
         action="store_true",
-        help="Run a minimal CI-style training loop",
+        help="Run a 5-step CI-style training loop",
     )
-    parser.add_argument(
-        "--ci-fast",
-        action="store_true",
-        help="Single PPO step (implies --ci)",
-    )
-    args = parser.parse_args()
-
-    if args.ci_fast:
-        args.ci = True
+    args, config_overrides = parser.parse_known_args()
 
     train(
         train_file=args.train_file,
         val_file=args.val_file,
         model=args.model,
+        agl_base_url=args.agl_base_url,
+        agl_key=args.agl_key,
+        run_name=args.run_name,
+        config_overrides=config_overrides,
         ci=args.ci,
-        ci_fast=args.ci_fast,
     )
 
 

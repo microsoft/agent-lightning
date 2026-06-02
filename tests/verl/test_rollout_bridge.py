@@ -19,8 +19,8 @@ import pytest
 
 from agl_lite.client import AglLiteClient
 from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas.api import EnqueueRolloutRequest
-from agl_lite.schemas.rollout import RolloutStatus
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import RolloutState
 from agl_lite.verl.rollout_bridge import (
     AglLiteRolloutBridge,
     RolloutLegacy,
@@ -47,9 +47,9 @@ class FakeCleanupK8sClient:
 
 class RecordingEnqueueHook(RolloutHooks):
     def __init__(self) -> None:
-        self.requests: list[EnqueueRolloutRequest] = []
+        self.requests: list[RolloutCreate] = []
 
-    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+    def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         self.requests.append(request)
         metadata = dict(request.metadata or {})
         metadata["hooked"] = True
@@ -194,9 +194,9 @@ class TestAsyncGroupFinishSelection:
         bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
         bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
         bridge._rollout_status = {
-            "r1": RolloutStatus.SUCCEEDED,
-            "r3": RolloutStatus.SUCCEEDED,
-            "r4": RolloutStatus.TERMINAL_FAILED,
+            "r1": RolloutState.SUCCEEDED,
+            "r3": RolloutState.SUCCEEDED,
+            "r4": RolloutState.FAILED,
         }
         bridge._timeout_rids = {"r2"}
 
@@ -251,9 +251,8 @@ class TestBridgeStoreInteraction:
     @pytest.fixture()
     def app(self):
         from agl_lite.server.app import create_app
-        from agl_lite.server.config import ServerSettings
 
-        return create_app(ServerSettings(key="test-key", admin_key="test-admin-key"))
+        return create_app({"key": "test-key", "admin_key": "test-admin-key"})
 
     @pytest.fixture()
     def bridge(self, app):
@@ -342,7 +341,7 @@ class TestBridgeStoreInteraction:
     @pytest.mark.asyncio
     async def test_fetch_rollout_result_extracts_triplets(self, bridge: AglLiteRolloutBridge):
         """_async_fetch_rollout_result converts format=triplet events to RolloutLegacy."""
-        from agl_lite.schemas.api import PostEventRequest
+        from agl_lite.schemas import EventCreate
 
         data = {"prompt": ["test"]}
         await self._set_up(bridge, data, ["localhost:8000"], is_train=True)
@@ -353,7 +352,7 @@ class TestBridgeStoreInteraction:
         await bridge.client.post_event(
             rid,
             "pod-1",
-            PostEventRequest(
+            EventCreate(
                 event_type="model_request",
                 data={
                     "request": {"model": "m", "messages": [], "return_token_ids": True},
@@ -371,7 +370,7 @@ class TestBridgeStoreInteraction:
         await bridge.client.post_event(
             rid,
             "pod-1",
-            PostEventRequest(
+            EventCreate(
                 event_type="reward",
                 data={"value": 0.85, "message": "correct", "source": "agent", "reason": "computed"},
             ),

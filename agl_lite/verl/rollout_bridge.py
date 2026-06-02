@@ -9,13 +9,13 @@ import importlib
 # LLMProxy, and Adapter directly.
 import os
 import re
-import threading
 import time
 import traceback
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
@@ -28,14 +28,13 @@ from pydantic import BaseModel, Field
 from tensordict import TensorDict
 from verl import DataProto
 
-from agl_lite.client import AglLiteClient
-from agl_lite.schemas.api import EnqueueRolloutRequest, PostEventRequest, RegisterModelRequest
-from agl_lite.schemas.rollout import TERMINAL_STATUSES, RolloutConfig, RolloutStatus
+from agl_lite.client import AglLiteSyncClient
+from agl_lite.schemas import Event, EventCreate
+from agl_lite.schemas import Model, RolloutK8sConfig, RolloutLocalConfig
+from agl_lite.schemas import TERMINAL_STATES, Rollout, RolloutConfig, RolloutCreate, RolloutState
 
 if TYPE_CHECKING:
     from agl_lite.hooks import RolloutHooks
-    from agl_lite.schemas.event import Event
-    from agl_lite.schemas.rollout import Rollout
 
 
 class Triplet(BaseModel):
@@ -48,16 +47,15 @@ class Triplet(BaseModel):
 
 
 class Task(BaseModel):
-    """Task echoed back in RolloutLegacy."""
+    """Task echoed back in CompletedRollout."""
 
     rollout_id: str
     input: Any = None
     mode: str | None = None
-    resources_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class RolloutLegacy(BaseModel):
+class CompletedRollout(BaseModel):
     """Completed rollout with triplets, used by get_train_data_batch()."""
 
     rollout_id: str
@@ -98,7 +96,7 @@ class _TraceEvent:
 
 
 class _SyncTraceSink:
-    """Minimal synchronous sink for hooks; bridge flushes queued events asynchronously."""
+    """Minimal synchronous sink for hooks; bridge flushes queued events over HTTP."""
 
     def __init__(self) -> None:
         self._queued: list[_TraceEvent] = []
@@ -106,12 +104,12 @@ class _SyncTraceSink:
     def add_event(self, rollout_id: str, attempt_id: str, event_type: str, data: dict[str, Any]) -> None:
         self._queued.append(_TraceEvent(rollout_id=rollout_id, attempt_id=attempt_id, event_type=event_type, data=data))
 
-    async def flush(self, client: AglLiteClient) -> None:
+    def flush(self, bridge: "AglLiteRolloutBridge") -> None:
         for event in self._queued:
-            await client.post_event(
+            bridge._post_event(
                 event.rollout_id,
                 event.attempt_id,
-                PostEventRequest(event_type=event.event_type, data=event.data),
+                EventCreate(event_type=event.event_type, data=event.data),
             )
 
 
@@ -383,8 +381,7 @@ class AglLiteRolloutBridge:
       3. get_train_data_batch() / get_test_metrics()  — assemble trainer outputs
             4. clear_data_and_server()  — reset local state only
 
-        The bridge uses a fresh AglLiteClient per call (async context manager)
-    to avoid stale TCP connections — VERL has long pauses between calls for FSDP weight sync.
+        The bridge uses explicit synchronous HTTP calls through AglLiteSyncClient.
     """
 
     def __init__(
@@ -402,6 +399,9 @@ class AglLiteRolloutBridge:
         image_base_dir: str | None = None,
         trace_aggregator: dict[str, Any] | None = None,
         hooks: RolloutHooks | None = None,
+        local_agent_class: str | None = None,
+        local_env_map: dict[str, str] | None = None,
+        k8s_job_template_path: str | None = None,
         cleanup_agent_jobs: bool = False,
         cleanup_namespace: str | None = None,
         cleanup_k8s_client: AgentJobK8sClient | None = None,
@@ -410,12 +410,9 @@ class AglLiteRolloutBridge:
             raise ValueError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
 
         # --- agl-lite connection (replaces store + proxy + adapter) ---
-        # Connection params are kept so each rollout call opens a fresh
-        # `async with AglLiteClient(...)` — VERL has long pauses between
-        # calls for FSDP weight sync, which can stale long-lived TCP conns.
         self._agl_base_url = agl_base_url
         self._agl_key = agl_key
-        self.client = AglLiteClient(base_url=agl_base_url, agl_key=agl_key)
+        self.client = AglLiteSyncClient(base_url=agl_base_url, key=agl_key, timeout=120.0)
         self.timeout_seconds = timeout_seconds
 
         # --- Training config ---
@@ -430,6 +427,10 @@ class AglLiteRolloutBridge:
         self.trace_aggregator = trace_aggregator or {"level": "transition"}
         self._hooks = hooks
 
+        self.local_agent_class = local_agent_class
+        self.local_env_map = local_env_map or {}
+        self._k8s_job_template = Path(k8s_job_template_path).read_text() if k8s_job_template_path else None
+
         # --- K8s Job cleanup (only used by remote runner; local runner sets False) ---
         self._cleanup_agent_jobs_enabled = cleanup_agent_jobs
         self._cleanup_namespace = cleanup_namespace
@@ -440,10 +441,10 @@ class AglLiteRolloutBridge:
 
         # --- Internal state ---
         self._total_tasks_queued = 0
-        self._completed_rollouts: dict[str, RolloutLegacy] = {}
+        self._completed_rollouts: dict[str, CompletedRollout] = {}
         self._task_id_to_original_sample: dict[str, dict[str, Any]] = {}
         self._enqueue_order: list[str] = []
-        self._rollout_status: dict[str, RolloutStatus] = {}
+        self._rollout_status: dict[str, RolloutState] = {}
         self._rollout_error: dict[str, str] = {}
         self._rollout_start_time: dict[str, float] = {}
         self._rollout_end_time: dict[str, float] = {}
@@ -452,7 +453,6 @@ class AglLiteRolloutBridge:
         self._timeout_rids: set[str] = set()
         self._num_succeeded = 0
         self._num_failed = 0
-        self._num_cancelled = 0
         self._num_timeout = 0
         self.is_train = True
 
@@ -462,7 +462,7 @@ class AglLiteRolloutBridge:
         # data_id -> set of rids enqueued for that group (across all steps)
         self._data_id_to_rids: dict[str, set[str]] = defaultdict(set)
         # data_id -> wall-clock time when the group first reached "all rids
-        # in TERMINAL_STATUSES". Tie-breaker is enqueue order, then data_id.
+        # in TERMINAL_STATES". Tie-breaker is enqueue order, then data_id.
         self._group_finish_time: dict[str, float] = {}
         # Rids enqueued this step (cleared at the start of each async step).
         self._step_new_rids: set[str] = set()
@@ -480,15 +480,57 @@ class AglLiteRolloutBridge:
         # and read by async_get_train_data_batch. None outside async steps.
         self._async_n_rollouts_this_step: int | None = None
 
-        # --- Async event loop for _async methods ---
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._loop_thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._loop_thread.start()
+    def _register_models(self, models: list[Model]) -> list[Model]:
+        response = self.client.post(
+            "/api/models",
+            json=[model.model_dump(mode="json") for model in models],
+        )
+        response.raise_for_status()
+        return [Model.model_validate(item) for item in response.json()]
 
-    def _run_loop(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
+    def _get_rollout(self, rollout_id: str) -> Rollout:
+        response = self.client.get(f"/api/rollouts/{rollout_id}")
+        response.raise_for_status()
+        payload = response.json()
+        return Rollout.model_validate(payload["rollout"] if isinstance(payload, dict) and "rollout" in payload else payload)
+
+    def _get_events(self, rollout_id: str, *, event_type: str | None = None, format: str | None = None) -> list[Event]:
+        params = {key: value for key, value in {"event_type": event_type, "format": format}.items() if value is not None}
+        response = self.client.get(f"/api/rollouts/{rollout_id}/events", params=params)
+        response.raise_for_status()
+        return [Event.model_validate(item) for item in response.json()]
+
+    def _post_event(self, rollout_id: str, attempt_id: str, event: EventCreate) -> Event:
+        response = self.client.post(
+            f"/api/rollouts/{rollout_id}/attempt/{attempt_id}/events",
+            json=event.model_dump(mode="json"),
+        )
+        response.raise_for_status()
+        return Event.model_validate(response.json())
+
+    def _pause_gateway(self, *, retry_after_seconds: int, reason: str | None) -> dict[str, Any]:
+        response = self.client.post(
+            "/proxy/pause",
+            json={"retry_after_seconds": retry_after_seconds, "reason": reason},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def resume_gateway(self) -> dict[str, Any]:
+        response = self.client.post("/proxy/resume")
+        response.raise_for_status()
+        return response.json()
+
+    def _wait_until_inflight_drained(self, *, timeout: float) -> int:
+        deadline = time.time() + timeout
+        residual = 0
+        while True:
+            response = self.client.get("/proxy/state")
+            response.raise_for_status()
+            residual = int(response.json().get("inflight", 0))
+            if residual <= 0 or time.time() >= deadline:
+                return residual
+            time.sleep(0.25)
 
     # Multimodal utilities for M-RoPE position embeddings
 
@@ -561,38 +603,30 @@ class AglLiteRolloutBridge:
 
         return torch.cat([text_pos, vision_pos], dim=0)
 
-    async def _async_run_agl_lite_rollout(
-        self, data: dict[str, Any], server_addresses: list[str], is_train: bool = True
-    ) -> None:
+    def _run_agl_lite_rollout(self, data: dict[str, Any], server_addresses: list[str], is_train: bool = True) -> None:
         """Register model servers and enqueue agl-lite rollouts.
-
-        Mirrors AglLiteAgentLoopManager.generate_sequences() in agent_loop.py.
-        Uses a fresh AglLiteClient per call (async context manager) to avoid
-        stale TCP connections — VERL has long pauses between calls for FSDP
-        weight sync.
         """
         self.clear_data_and_server()
         self.is_train = is_train
+        self._register_and_enqueue(data, server_addresses, is_train)
 
-        async with AglLiteClient(base_url=self._agl_base_url, agl_key=self._agl_key) as client:
-            await self._async_register_and_enqueue(client, data, server_addresses, is_train)
+    def finish_sync_rollout_batch(self) -> None:
+        """Clean up external rollout resources, then reset local sync state."""
+        try:
+            self.cleanup_agent_jobs()
+        finally:
+            self.clear_data_and_server()
 
-    async def _async_register_and_enqueue(
-        self,
-        client: AglLiteClient,
-        data: dict[str, Any],
-        server_addresses: list[str],
-        is_train: bool,
-    ) -> None:
-        """Shared setup implementation using the provided client."""
-        await self._async_register_model_servers(client, server_addresses)
+    def _register_and_enqueue(self, data: dict[str, Any], server_addresses: list[str], is_train: bool) -> None:
+        """Shared setup implementation."""
+        self._register_model_servers(server_addresses)
         rollouts_per_sample = self.train_rollout_n if is_train else 1
-        rollout_requests = self._build_enqueue_requests(
+        created_with_requests = self._enqueue_rollouts(
             data,
             rollouts_per_sample=rollouts_per_sample,
             is_train=is_train,
         )
-        created = await self._async_enqueue_requests(client, rollout_requests)
+        created = [rollout for rollout, _request in created_with_requests]
 
         now = time.time()
         for r in created:
@@ -604,77 +638,82 @@ class AglLiteRolloutBridge:
 
         print(f"AglLiteRolloutBridge: enqueued {len(created)} rollouts.")
 
-    async def _async_register_model_servers(self, client: AglLiteClient, server_addresses: list[str]) -> None:
+    def _register_model_servers(self, server_addresses: list[str]) -> None:
         """Register VERL's current vLLM endpoints with the agl-lite gateway."""
         model_name = self.train_information.get("model", "default-model")
-        regs: list[RegisterModelRequest] = []
+        regs: list[Model] = []
         for addr in server_addresses:
             endpoint = addr if addr.startswith("http") else f"http://{addr}/v1"
-            regs.append(RegisterModelRequest(model=model_name, endpoint=endpoint))
-        await client.register_models(regs)
+            regs.append(Model(model=model_name, endpoint=endpoint))
+        self._register_models(regs)
 
-    def _build_enqueue_requests(
+    def _rollout_config(self) -> RolloutConfig:
+        config = RolloutConfig(timeout_seconds=int(self.timeout_seconds))
+        has_local = bool(self.local_agent_class)
+        has_k8s = bool(self._k8s_job_template)
+        if not has_local and not has_k8s:
+            return config
+        update = {}
+        if has_local:
+            update["local"] = RolloutLocalConfig(
+                agent_class=self.local_agent_class,
+                env_map=self.local_env_map,
+            )
+        if has_k8s:
+            update["k8s"] = RolloutK8sConfig(job_template=self._k8s_job_template)
+        return config.model_copy(update=update)
+
+    def _enqueue_rollouts(
         self,
         data: dict[str, Any],
         *,
         rollouts_per_sample: int,
         is_train: bool,
-    ) -> list[EnqueueRolloutRequest]:
-        """Build rollout requests and apply on_enqueue hooks in one place."""
-        resources_id = self.train_information.get("resources_id")
+    ) -> list[tuple[Rollout, RolloutCreate]]:
+        """Build rollout requests, POST them, and return created rollouts with their requests."""
         keys = list(data.keys())
         if not keys:
             return []
         num_samples = len(data[keys[0]])
+        rollout_config = self._rollout_config()
 
-        rollout_requests: list[EnqueueRolloutRequest] = []
+        rollout_requests: list[RolloutCreate] = []
         for i in range(num_samples):
             original = {key: _to_native(data[key][i]) for key in keys}
             data_id = str(original.get("data_id") or original.get("uid") or uuid.uuid4())
             original["data_id"] = data_id
             original["_sample_idx"] = i
             for trial_idx in range(rollouts_per_sample):
-                request = EnqueueRolloutRequest(
+                request = RolloutCreate(
                     input=_to_native(original),
-                    resources_id=resources_id,
-                    config=RolloutConfig(timeout=int(self.timeout_seconds)),
-                    metadata={
-                        "data_id": data_id,
-                        "is_train": is_train,
-                        "sample_idx_in_batch": i,
-                        "trial_idx_in_group": trial_idx,
-                    },
+                    is_train=is_train,
+                    config=rollout_config,
+                    metadata={"sample_idx_in_batch": i},
                 )
                 if self._hooks is not None:
                     request = self._hooks.on_enqueue(request)
                 rollout_requests.append(request)
-        return rollout_requests
 
-    async def _async_enqueue_requests(
-        self,
-        client: AglLiteClient,
-        rollout_requests: list[EnqueueRolloutRequest],
-    ) -> list[Rollout]:
-        """Enqueue built requests and validate the server returned all rollouts."""
         if not rollout_requests:
             return []
-        created = await client.enqueue_rollouts(rollout_requests)
+        response = self.client.post(
+            "/api/rollouts",
+            json=[request.model_dump(mode="json", exclude_none=True) for request in rollout_requests],
+        )
+        response.raise_for_status()
+        created = [Rollout.model_validate(item) for item in response.json()]
         assert len(created) == len(rollout_requests), (
             f"agl-lite returned {len(created)} rollouts, expected {len(rollout_requests)}"
         )
-        return created
+        return list(zip(created, rollout_requests, strict=True))
 
     def set_up_data_and_server(self, data: dict[str, Any], server_addresses: list[str], is_train: bool = True) -> None:
         """Sync wrapper — same signature as AgentModeDaemon."""
-        assert self._loop is not None
-        future = asyncio.run_coroutine_threadsafe(
-            self._async_run_agl_lite_rollout(data, server_addresses, is_train), self._loop
-        )
-        future.result()
+        self._run_agl_lite_rollout(data, server_addresses, is_train)
 
-    async def _async_fetch_rollout_events(self, rollout_id: str) -> tuple[list[Any], list[Any]]:
-        raw_events = await self.client.get_events(rollout_id)
-        triplet_events = await self.client.get_events(rollout_id, format="triplet")
+    def _fetch_rollout_events(self, rollout_id: str) -> tuple[list[Event], list[Event]]:
+        raw_events = self._get_events(rollout_id)
+        triplet_events = self._get_events(rollout_id, format="triplet")
         self._raw_events_by_rollout[rollout_id] = [event.model_dump() for event in raw_events]
         self._triplet_events_by_rollout[rollout_id] = [event.model_dump() for event in triplet_events]
         return raw_events, triplet_events
@@ -688,40 +727,40 @@ class AglLiteRolloutBridge:
             grouped[fallback_attempt_id] = []
         return dict(grouped)
 
-    async def _run_succeeded_hook(self, client: AglLiteClient, rollout: Rollout) -> None:
+    def _run_succeeded_hook(self, rollout: Rollout) -> None:
         if self._hooks is None:
             return
-        attempt_id = rollout.succeeded_attempt_id or "unknown"
+        attempt_id = rollout.status.last_attempt_id or "unknown"
         sink = _SyncTraceSink()
-        raw_events = await client.get_events(rollout.rollout_id)
+        raw_events = self._get_events(rollout.rollout_id)
         events_by_attempt = self._events_by_attempt(raw_events, attempt_id)
         try:
             self._hooks.on_succeeded(rollout, events_by_attempt, sink)
-            await sink.flush(client)
+            sink.flush(self)
         except Exception:
             traceback.print_exc()
             print(f"AglLiteRolloutBridge: on_succeeded hook failed for rollout {rollout.rollout_id}")
 
-    async def _run_failed_hook(self, client: AglLiteClient, rollout: Rollout) -> None:
+    def _run_failed_hook(self, rollout: Rollout) -> None:
         if self._hooks is None:
             return
         sink = _SyncTraceSink()
         try:
             self._hooks.on_failed(rollout, sink)
-            await sink.flush(client)
+            sink.flush(self)
         except Exception:
             traceback.print_exc()
             print(f"AglLiteRolloutBridge: on_failed hook failed for rollout {rollout.rollout_id}")
 
-    async def _async_fetch_rollout_result(self, rollout_id: str) -> RolloutLegacy:
-        """Fetch triplets for a completed rollout via AglLiteClient.
+    def _fetch_rollout_result(self, rollout_id: str) -> CompletedRollout:
+        """Fetch triplets for a completed rollout via agl-lite HTTP.
 
         Replaces AgentModeDaemon._validate_data_v1() which calls:
           store.query_spans() → adapter.adapt(spans) → List[Triplet]
 
         In agl-lite, the server does event→triplet conversion via format=triplet.
         """
-        raw_events, events = await self._async_fetch_rollout_events(rollout_id)
+        raw_events, events = self._fetch_rollout_events(rollout_id)
 
         # Convert trimmed events to Triplet objects
         triplets: list[Triplet] = []
@@ -753,7 +792,7 @@ class AglLiteRolloutBridge:
             triplets[-1] = triplets[-1].model_copy(update={"reward": final_reward})
 
         original = self._task_id_to_original_sample.get(rollout_id, {})
-        result = RolloutLegacy(
+        result = CompletedRollout(
             rollout_id=rollout_id,
             task=Task(
                 rollout_id=rollout_id,
@@ -784,26 +823,25 @@ class AglLiteRolloutBridge:
             print(f"Warning: Rollout {result.rollout_id} contains empty prompt: {result.triplets}")
         return result
 
-    async def _async_run_until_finished(
+    def _run_until_finished(
         self,
         verbose: bool = True,
         timeout_seconds: float | None = None,
     ) -> None:
-        """Poll agl-lite until all rollouts reach a terminal state OR wall-clock timeout.
+        """Poll agl-lite until all rollouts reach a terminal state.
 
-        Terminal states (succeeded / terminal_failed / cancelled) are recorded
+        Terminal states (succeeded / failed) are recorded
         in self._rollout_status. Non-succeeded rollouts are NOT added to
         self._completed_rollouts — get_train_data_batch / get_test_metrics
         emit EOS-placeholder rows for those rids by iterating self._enqueue_order.
 
-        Wall-clock timeout: any rollout that has not reached a terminal state
-        by the deadline is recorded in self._timeout_rids. The polling loop
-        exits without raising — the trainer still gets a row-aligned DataProto
-        with placeholders for the timed-out rollouts.
+        If timeout_seconds is explicitly provided, any rollout that has not
+        reached a terminal state by the deadline is recorded in
+        self._timeout_rids. The polling loop exits without raising — the
+        trainer still gets a row-aligned DataProto with placeholders for the
+        timed-out rollouts. The default timeout_seconds=None waits forever.
         """
-        if timeout_seconds is None:
-            timeout_seconds = self.timeout_seconds
-        deadline = time.time() + timeout_seconds
+        deadline = None if timeout_seconds is None else time.time() + timeout_seconds
         POLL_INTERVAL = 5.0
 
         while True:
@@ -812,7 +850,7 @@ class AglLiteRolloutBridge:
             ]
             if not unfinished:
                 break
-            if time.time() >= deadline:
+            if deadline is not None and time.time() >= deadline:
                 now = time.time()
                 for rid in unfinished:
                     self._timeout_rids.add(rid)
@@ -823,36 +861,30 @@ class AglLiteRolloutBridge:
                 break
 
             for rid in unfinished:
-                rollout = await self.client.get_rollout(rid)
-                status = rollout.status
-                if status not in TERMINAL_STATUSES:
+                rollout = self._get_rollout(rid)
+                status = rollout.status.state
+                if status not in TERMINAL_STATES:
                     continue
                 self._rollout_status[rid] = status
                 self._rollout_end_time[rid] = time.time()
-                if status == RolloutStatus.SUCCEEDED:
-                    await self._run_succeeded_hook(self.client, rollout)
-                    legacy = await self._async_fetch_rollout_result(rid)
+                if status == RolloutState.SUCCEEDED:
+                    self._run_succeeded_hook(rollout)
+                    legacy = self._fetch_rollout_result(rid)
                     self._completed_rollouts[rid] = legacy
                     self._num_succeeded += 1
-                elif status == RolloutStatus.TERMINAL_FAILED:
-                    await self._run_failed_hook(self.client, rollout)
-                    await self._async_fetch_rollout_events(rid)
-                    self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
+                elif status == RolloutState.FAILED:
+                    self._run_failed_hook(rollout)
+                    self._fetch_rollout_events(rid)
+                    self._rollout_error[rid] = rollout.status.error_message or "failed"
                     self._num_failed += 1
-                elif status == RolloutStatus.CANCELLED:
-                    await self._async_fetch_rollout_events(rid)
-                    self._rollout_error[rid] = getattr(rollout, "error_message", None) or "cancelled"
-                    self._num_cancelled += 1
-
             if verbose:
                 n_done = len(self._rollout_status) + len(self._timeout_rids)
                 print(
                     f"Completed {self._num_succeeded}/{self._total_tasks_queued} "
-                    f"(failed={self._num_failed}, cancelled={self._num_cancelled}, "
-                    f"timeout={self._num_timeout}, "
+                    f"(failed={self._num_failed}, timeout={self._num_timeout}, "
                     f"unfinished={self._total_tasks_queued - n_done})"
                 )
-            await asyncio.sleep(POLL_INTERVAL)
+            time.sleep(POLL_INTERVAL)
 
         print("All tasks reached terminal state.")
 
@@ -861,20 +893,18 @@ class AglLiteRolloutBridge:
         verbose: bool = True,
         timeout_seconds: float | None = None,
     ) -> None:
-        """Sync wrapper — accepts optional per-call wall-clock timeout."""
+        """Sync wrapper — waits forever unless per-call wall-clock timeout is set."""
         if self._total_tasks_queued == 0:
             print("Warning: No tasks were queued.")
             return
 
-        assert self._loop is not None
-        future = asyncio.run_coroutine_threadsafe(self._async_run_until_finished(verbose, timeout_seconds), self._loop)
-        future.result()
+        self._run_until_finished(verbose, timeout_seconds)
 
     def get_test_metrics(self):
         """Calculates and returns metrics for a validation run.
 
         Iterates self._enqueue_order so non-succeeded rollouts (failed /
-        cancelled / timeout) count as fillna-reward samples. Polling metrics
+        timeout) count as fillna-reward samples. Polling metrics
         (num_succeeded / num_failed / num_timeout / avg_rollout_latency /
         rollout_completion_rate) are merged into the returned dict.
         """
@@ -888,7 +918,7 @@ class AglLiteRolloutBridge:
         for rollout_id in self._enqueue_order:
             rollout = self._completed_rollouts.get(rollout_id)
             if rollout is None:
-                # failed / cancelled / timeout — fillna-reward, no triplets.
+                # failed / timeout — fillna-reward, no triplets.
                 sample_stat_list.append(
                     {
                         "reward": self.reward_fillna_value,
@@ -913,7 +943,7 @@ class AglLiteRolloutBridge:
                     }
                 )
                 continue
-            response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
+            response_length_list = [len(triplet.response.get("token_ids") or []) for triplet in rollout.triplets]
 
             if "data_source" in self._task_id_to_original_sample[rollout_id]:
                 # When a test sample includes a 'data_source' field, record per-source statistics for test results.
@@ -1440,7 +1470,6 @@ class AglLiteRolloutBridge:
         return {
             f"{gateway_prefix}/num_succeeded_rollouts": self._num_succeeded,
             f"{gateway_prefix}/num_failed_rollouts": self._num_failed,
-            f"{gateway_prefix}/num_cancelled_rollouts": self._num_cancelled,
             f"{gateway_prefix}/num_timeout_rollouts": self._num_timeout,
             f"{gateway_prefix}/avg_rollout_latency": float(np.mean(latencies)) if latencies else 0.0,
             f"{gateway_prefix}/rollout_completion_rate": (self._num_succeeded / total if total else 0.0),
@@ -1461,26 +1490,25 @@ class AglLiteRolloutBridge:
         self._timeout_rids.clear()
         self._num_succeeded = 0
         self._num_failed = 0
-        self._num_cancelled = 0
         self._num_timeout = 0
         self.is_train = True
         self._async_n_rollouts_this_step = None
 
-    def _fillna_reward(self, rollout: RolloutLegacy) -> float:
+    def _fillna_reward(self, rollout: CompletedRollout) -> float:
         """Return final_reward or the fill value."""
         if rollout.final_reward is not None:
             return rollout.final_reward
         return self.reward_fillna_value
 
     @staticmethod
-    def _has_fallback_reward(rollout: RolloutLegacy) -> bool:
+    def _has_fallback_reward(rollout: CompletedRollout) -> bool:
         if rollout.final_reward is None:
             return False
         if rollout.reward_source == "fallback":
             return True
         return rollout.reward_reason in _FALLBACK_REWARD_REASONS
 
-    def _has_agent_reward(self, rollout: RolloutLegacy) -> bool:
+    def _has_agent_reward(self, rollout: CompletedRollout) -> bool:
         return rollout.final_reward is not None and not self._has_fallback_reward(rollout)
 
     # =========================================================================
@@ -1513,7 +1541,7 @@ class AglLiteRolloutBridge:
 
         Store/controller terminal states live in ``_rollout_status``. Trainer-
         side wall-clock timeouts live in ``_timeout_rids`` and are consumable
-        via the same placeholder path as failed/cancelled rollouts.
+        via the same placeholder path as failed rollouts.
         """
         return {
             did for did, rids in active_groups.items()
@@ -1536,9 +1564,8 @@ class AglLiteRolloutBridge:
             self._rollout_end_time[rid] = now
             self._num_timeout += 1
 
-    async def _async_register_and_enqueue_diff(
+    def _register_and_enqueue_diff(
         self,
-        client: AglLiteClient,
         data: dict[str, Any],
         server_addresses: list[str],
         async_train_batch_size: int,
@@ -1552,7 +1579,7 @@ class AglLiteRolloutBridge:
         """
         # Always (re-)register the current vLLM endpoints so weight-swap
         # between steps lands on the correct addresses.
-        await self._async_register_model_servers(client, server_addresses)
+        self._register_model_servers(server_addresses)
 
         # Compute how many new data_ids this step needs.
         carry_over_dids = {self._rid_to_data_id[r] for r in self._carry_over_rids if r in self._rid_to_data_id}
@@ -1578,20 +1605,17 @@ class AglLiteRolloutBridge:
                 f"async_train_batch_size - n_carry_over_dids = {n_new_dids}"
             )
 
-        rollout_requests = self._build_enqueue_requests(
+        created = self._enqueue_rollouts(
             data,
             rollouts_per_sample=self.train_rollout_n,
             is_train=True,
         )
-        created = await self._async_enqueue_requests(client, rollout_requests)
 
         now = time.time()
-        for r, req in zip(created, rollout_requests, strict=True):
+        for r, req in created:
             rid = r.rollout_id
-            metadata = req.metadata
-            if not isinstance(metadata, dict):
-                metadata = metadata.model_dump() if metadata is not None else {}
-            did = str(metadata["data_id"])
+            original = r.input if isinstance(r.input, dict) else {}
+            did = str(original.get("data_id") or original.get("uid") or rid)
             self._task_id_to_original_sample[rid] = r.input if isinstance(r.input, dict) else {}
             self._enqueue_order.append(rid)
             self._rollout_start_time[rid] = now
@@ -1615,38 +1639,27 @@ class AglLiteRolloutBridge:
         _data_id_to_rids / _enqueue_order / _rollout_status / etc.) are
         preserved across steps so the bridge can poll them again.
         """
-        assert self._loop is not None
         self.is_train = True
         self._step_new_rids.clear()
         self._selected_rids.clear()
 
         # Snapshot "this step's rollouts to run" BEFORE we enqueue new rids:
         # carry-over rids from the previous step that have not yet reached a
-        # terminal state (succeeded / failed / cancelled / timeout). These will
+        # terminal state (succeeded / failed / timeout). These will
         # still occupy the active pool and consume scheduling capacity this
         # step. Already-terminal carry-overs are excluded — they sit in the
         # pool only as ready-to-select results, not as work to run.
         terminal_rids = set(self._rollout_status.keys()) | self._timeout_rids
         prev_carry_over_unfinished = self._carry_over_rids - terminal_rids
 
-        async def _go() -> int:
-            async with AglLiteClient(
-                base_url=self._agl_base_url,
-                agl_key=self._agl_key,
-            ) as client:
-                return await self._async_register_and_enqueue_diff(
-                    client, data, server_addresses, async_train_batch_size
-                )
-
-        future = asyncio.run_coroutine_threadsafe(_go(), self._loop)
-        n_new_dids = future.result()
-        # n_new_rids = n_new_dids * rollout_n (set in _async_register_and_enqueue_diff).
+        n_new_dids = self._register_and_enqueue_diff(data, server_addresses, async_train_batch_size)
+        # n_new_rids = n_new_dids * rollout_n (set in _register_and_enqueue_diff).
         self._async_n_rollouts_this_step = (
             n_new_dids * self.train_rollout_n + len(prev_carry_over_unfinished)
         )
         return n_new_dids
 
-    async def _poll_status_for(self, client: AglLiteClient, rids: set[str]) -> None:
+    def _poll_status_for(self, rids: set[str]) -> None:
         """Refresh status for the given rids, updating bridge bookkeeping.
 
         Terminal rollouts are recorded in ``self._rollout_status`` and their
@@ -1656,26 +1669,22 @@ class AglLiteRolloutBridge:
         for rid in rids:
             if rid in self._rollout_status or rid in self._timeout_rids:
                 continue
-            rollout = await client.get_rollout(rid)
-            status = rollout.status
-            if status not in TERMINAL_STATUSES:
+            rollout = self._get_rollout(rid)
+            status = rollout.status.state
+            if status not in TERMINAL_STATES:
                 continue
             self._rollout_status[rid] = status
             self._rollout_end_time[rid] = time.time()
-            if status == RolloutStatus.SUCCEEDED:
-                await self._run_succeeded_hook(client, rollout)
-                legacy = await self._async_fetch_rollout_result(rid)
+            if status == RolloutState.SUCCEEDED:
+                self._run_succeeded_hook(rollout)
+                legacy = self._fetch_rollout_result(rid)
                 self._completed_rollouts[rid] = legacy
                 self._num_succeeded += 1
-            elif status == RolloutStatus.TERMINAL_FAILED:
-                await self._run_failed_hook(client, rollout)
-                await self._async_fetch_rollout_events(rid)
-                self._rollout_error[rid] = getattr(rollout, "error_message", None) or "failed"
+            elif status == RolloutState.FAILED:
+                self._run_failed_hook(rollout)
+                self._fetch_rollout_events(rid)
+                self._rollout_error[rid] = rollout.status.error_message or "failed"
                 self._num_failed += 1
-            elif status == RolloutStatus.CANCELLED:
-                await self._async_fetch_rollout_events(rid)
-                self._rollout_error[rid] = getattr(rollout, "error_message", None) or "cancelled"
-                self._num_cancelled += 1
 
     def _pick_first_n_by_finish_time(
         self,
@@ -1699,12 +1708,11 @@ class AglLiteRolloutBridge:
         )
         return sorted_dids[:n]
 
-    async def _async_run_until_groups_finished(
+    def _run_until_groups_finished(
         self,
         *,
         target_groups: int,
         rollout_n: int,
-        admin_client: AglLiteClient,
         drain_timeout: float = 30.0,
         timeout_seconds: float | None = None,
         retry_after_seconds: int = 5,
@@ -1718,131 +1726,119 @@ class AglLiteRolloutBridge:
 
         Notes:
           - "Consumable" here means ``rid in self._rollout_status`` (i.e.
-            SUCCEEDED / TERMINAL_FAILED / CANCELLED) or ``rid in
+            SUCCEEDED / FAILED) or ``rid in
             self._timeout_rids``. Timeout rids follow the old sync placeholder
             path when selected for training.
           - From the moment ``len(finished_groups) >= target_groups`` is
             observed to the computation of ``selected_dids``, no ``await``
             happens; the first await is ``pause_gateway()``. This freezes
             the snapshot per docs §8.1.
-          - Wall-clock timeout is a system-fault fallback. When it triggers,
-            all active unfinished rids are marked into ``_timeout_rids``;
-            this makes their groups consumable via placeholder rows while
-            keeping the selected group count at ``target_groups``.
+          - If timeout_seconds is explicitly set, wall-clock timeout is a
+            system-fault fallback. When it triggers, all active unfinished rids
+            are marked into ``_timeout_rids``; this makes their groups
+            consumable via placeholder rows while keeping the selected group
+            count at ``target_groups``. The default timeout_seconds=None waits
+            forever.
         """
-        if timeout_seconds is None:
-            timeout_seconds = self.timeout_seconds
-        deadline = time.time() + timeout_seconds
+        deadline = None if timeout_seconds is None else time.time() + timeout_seconds
         POLL_INTERVAL = 5.0
         groups_finished_reached = 1
         active_pool_size_at_start = len(self._active_rids())
         inflight_at_pause = 0
 
-        async with AglLiteClient(
-            base_url=self._agl_base_url,
-            agl_key=self._agl_key,
-        ) as poll_client:
-            while True:
-                active_rids = self._active_rids()
-                await self._poll_status_for(poll_client, active_rids)
+        while True:
+            active_rids = self._active_rids()
+            self._poll_status_for(active_rids)
 
+            active_groups = self._active_groups()
+            finished_dids = self._finished_data_ids(active_groups)
+            for did in finished_dids:
+                if did not in self._group_finish_time:
+                    self._group_finish_time[did] = time.time()
+
+            if verbose:
+                print(
+                    f"AglLiteRolloutBridge.async{step_label}: "
+                    f"active_rids={len(active_rids)} active_groups={len(active_groups)} "
+                    f"finished_groups={len(finished_dids)}/{target_groups}"
+                )
+
+            if len(finished_dids) >= target_groups:
+                finished_snapshot = set(finished_dids)
+                selected_dids = self._pick_first_n_by_finish_time(finished_snapshot, target_groups)
+                selected_rids: set[str] = set()
+                for did in selected_dids:
+                    selected_rids.update(active_groups.get(did, set()))
+
+                pause_state = self._pause_gateway(
+                    retry_after_seconds=retry_after_seconds,
+                    reason=f"async-rollout step {step_label or ''}".strip(),
+                )
+                inflight_at_pause = int(pause_state.get("inflight", 0))
+                drain_start = time.time()
+                residual = self._wait_until_inflight_drained(timeout=drain_timeout)
+                drain_seconds = time.time() - drain_start
+                drain_timed_out = 1 if residual > 0 else 0
+                if residual > 0:
+                    print(
+                        f"AglLiteRolloutBridge.async{step_label}: drain timeout — "
+                        f"{residual} in-flight upstream requests remaining."
+                    )
+                unselected = self._active_rids() - selected_rids
+                metrics = {
+                    "training/async/groups_finished_reached": groups_finished_reached,
+                    "training/async/n_active_data_ids": len(active_groups),
+                    "training/async/n_active_rollouts": active_pool_size_at_start,
+                    "training/async/n_selected_groups": len(selected_dids),
+                    "training/async/drain_wait_seconds": float(drain_seconds),
+                    "training/async/drain_timeout": int(drain_timed_out),
+                    "training/async/inflight_at_pause": inflight_at_pause,
+                    "training/async/group_finish_skew_s": float(self._compute_group_finish_skew(selected_dids)),
+                }
+                return selected_rids, unselected, metrics
+
+            if deadline is not None and time.time() >= deadline and len(finished_dids) < target_groups:
+                groups_finished_reached = 0
+                self._mark_active_unfinished_as_timeout(active_rids)
                 active_groups = self._active_groups()
                 finished_dids = self._finished_data_ids(active_groups)
                 for did in finished_dids:
                     if did not in self._group_finish_time:
                         self._group_finish_time[did] = time.time()
-
-                if verbose:
-                    print(
-                        f"AglLiteRolloutBridge.async{step_label}: "
-                        f"active_rids={len(active_rids)} active_groups={len(active_groups)} "
-                        f"finished_groups={len(finished_dids)}/{target_groups}"
+                if len(finished_dids) < target_groups:
+                    raise RuntimeError(
+                        "async rollout timed out but active pool did not contain enough complete groups "
+                        f"after timeout placeholder marking: {len(finished_dids)}/{target_groups}"
                     )
+                finished_snapshot = set(finished_dids)
+                selected_dids = self._pick_first_n_by_finish_time(finished_snapshot, target_groups)
+                selected_rids = set()
+                for did in selected_dids:
+                    selected_rids.update(active_groups.get(did, set()))
 
-                if len(finished_dids) >= target_groups:
-                    # Snapshot — no awaits between here and selected_dids
-                    # computation, per §8.1.
-                    finished_snapshot = set(finished_dids)
-                    selected_dids = self._pick_first_n_by_finish_time(finished_snapshot, target_groups)
-                    selected_rids: set[str] = set()
-                    for did in selected_dids:
-                        selected_rids.update(active_groups.get(did, set()))
+                pause_state = self._pause_gateway(
+                    retry_after_seconds=retry_after_seconds,
+                    reason=f"async-rollout step {step_label or ''} (timeout-placeholder)".strip(),
+                )
+                inflight_at_pause = int(pause_state.get("inflight", 0))
+                drain_start = time.time()
+                residual = self._wait_until_inflight_drained(timeout=drain_timeout)
+                drain_seconds = time.time() - drain_start
+                drain_timed_out = 1 if residual > 0 else 0
+                unselected = self._active_rids() - selected_rids
+                metrics = {
+                    "training/async/groups_finished_reached": groups_finished_reached,
+                    "training/async/n_active_data_ids": len(active_groups),
+                    "training/async/n_active_rollouts": active_pool_size_at_start,
+                    "training/async/n_selected_groups": len(selected_dids),
+                    "training/async/drain_wait_seconds": float(drain_seconds),
+                    "training/async/drain_timeout": int(drain_timed_out),
+                    "training/async/inflight_at_pause": inflight_at_pause,
+                    "training/async/group_finish_skew_s": float(self._compute_group_finish_skew(selected_dids)),
+                }
+                return selected_rids, unselected, metrics
 
-                    # First await — pause + drain.
-                    pause_state = await admin_client.pause_gateway(
-                        retry_after_seconds=retry_after_seconds,
-                        reason=f"async-rollout step {step_label or ''}".strip(),
-                    )
-                    inflight_at_pause = int(pause_state.get("inflight", 0))
-                    drain_start = time.time()
-                    residual = await admin_client.wait_until_inflight_drained(timeout=drain_timeout)
-                    drain_seconds = time.time() - drain_start
-                    drain_timed_out = 1 if residual > 0 else 0
-                    if residual > 0:
-                        print(
-                            f"AglLiteRolloutBridge.async{step_label}: drain timeout — "
-                            f"{residual} in-flight upstream requests remaining."
-                        )
-                    unselected = self._active_rids() - selected_rids
-                    metrics = {
-                        "training/async/groups_finished_reached": groups_finished_reached,
-                        "training/async/n_active_data_ids": len(active_groups),
-                        "training/async/n_active_rollouts": active_pool_size_at_start,
-                        "training/async/n_selected_groups": len(selected_dids),
-                        "training/async/drain_wait_seconds": float(drain_seconds),
-                        "training/async/drain_timeout": int(drain_timed_out),
-                        "training/async/inflight_at_pause": inflight_at_pause,
-                        "training/async/group_finish_skew_s": float(
-                            self._compute_group_finish_skew(selected_dids)
-                        ),
-                    }
-                    return selected_rids, unselected, metrics
-
-                # Not all items collected and timeout scenario: mark active unfinished as timeout and re-check
-                if time.time() >= deadline and len(finished_dids) < target_groups:
-                    groups_finished_reached = 0
-                    self._mark_active_unfinished_as_timeout(active_rids)
-                    active_groups = self._active_groups()
-                    finished_dids = self._finished_data_ids(active_groups)
-                    for did in finished_dids:
-                        if did not in self._group_finish_time:
-                            self._group_finish_time[did] = time.time()
-                    if len(finished_dids) < target_groups:
-                        raise RuntimeError(
-                            "async rollout timed out but active pool did not contain enough complete groups "
-                            f"after timeout placeholder marking: {len(finished_dids)}/{target_groups}"
-                        )
-                    finished_snapshot = set(finished_dids)
-                    selected_dids = self._pick_first_n_by_finish_time(finished_snapshot, target_groups)
-                    selected_rids = set()
-                    for did in selected_dids:
-                        selected_rids.update(active_groups.get(did, set()))
-
-                    pause_state = await admin_client.pause_gateway(
-                        retry_after_seconds=retry_after_seconds,
-                        reason=f"async-rollout step {step_label or ''} (timeout-placeholder)".strip(),
-                    )
-                    inflight_at_pause = int(pause_state.get("inflight", 0))
-                    drain_start = time.time()
-                    residual = await admin_client.wait_until_inflight_drained(timeout=drain_timeout)
-                    drain_seconds = time.time() - drain_start
-                    drain_timed_out = 1 if residual > 0 else 0
-                    unselected = self._active_rids() - selected_rids
-                    metrics = {
-                        "training/async/groups_finished_reached": groups_finished_reached,
-                        "training/async/n_active_data_ids": len(active_groups),
-                        "training/async/n_active_rollouts": active_pool_size_at_start,
-                        "training/async/n_selected_groups": len(selected_dids),
-                        "training/async/drain_wait_seconds": float(drain_seconds),
-                        "training/async/drain_timeout": int(drain_timed_out),
-                        "training/async/inflight_at_pause": inflight_at_pause,
-                        "training/async/group_finish_skew_s": float(
-                            self._compute_group_finish_skew(selected_dids)
-                        ),
-                    }
-                    return selected_rids, unselected, metrics
-
-                await asyncio.sleep(POLL_INTERVAL)
+            time.sleep(POLL_INTERVAL)
 
     def _compute_group_finish_skew(self, selected_dids: list[str]) -> float:
         """Median of (max - min) end-time within each selected group.
@@ -1865,8 +1861,6 @@ class AglLiteRolloutBridge:
         *,
         target_groups: int,
         rollout_n: int,
-        admin_base_url: str,
-        admin_key: str,
         drain_timeout: float = 30.0,
         timeout_seconds: float | None = None,
         retry_after_seconds: int = 5,
@@ -1875,29 +1869,17 @@ class AglLiteRolloutBridge:
     ) -> tuple[set[str], set[str], dict[str, Any]]:
         """Sync wrapper for the async-path group-finish poll.
 
-        Builds a short-lived admin client (separate credential from
-        agent-facing key) and delegates to ``_async_run_until_groups_finished``.
+        Uses direct synchronous HTTP calls for polling and pause/drain.
         """
-        assert self._loop is not None
-
-        async def _go() -> tuple[set[str], set[str], dict[str, Any]]:
-            async with AglLiteClient(
-                base_url=admin_base_url,
-                agl_admin_key=admin_key,
-            ) as admin_client:
-                return await self._async_run_until_groups_finished(
-                    target_groups=target_groups,
-                    rollout_n=rollout_n,
-                    admin_client=admin_client,
-                    drain_timeout=drain_timeout,
-                    timeout_seconds=timeout_seconds,
-                    retry_after_seconds=retry_after_seconds,
-                    step_label=step_label,
-                    verbose=verbose,
-                )
-
-        future = asyncio.run_coroutine_threadsafe(_go(), self._loop)
-        return future.result()
+        return self._run_until_groups_finished(
+            target_groups=target_groups,
+            rollout_n=rollout_n,
+            drain_timeout=drain_timeout,
+            timeout_seconds=timeout_seconds,
+            retry_after_seconds=retry_after_seconds,
+            step_label=step_label,
+            verbose=verbose,
+        )
 
     def commit_async_step_selection(
         self,
@@ -2042,17 +2024,7 @@ class AglLiteRolloutBridge:
         """Return the K8s client used for optional agent Job cleanup."""
         if self._cleanup_k8s_client is not None:
             return self._cleanup_k8s_client
-        if not self._cleanup_namespace:
-            raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
-        try:
-            from agl_lite.controller.kr8s_adapter import Kr8sClient
-        except ImportError as exc:
-            raise RuntimeError(
-                "cleanup_agent_jobs requires the controller extra with kr8s installed"
-            ) from exc
-
-        self._cleanup_k8s_client = Kr8sClient(namespace=self._cleanup_namespace)
-        return self._cleanup_k8s_client
+        raise RuntimeError("cleanup_agent_jobs requires cleanup_k8s_client to be provided")
 
     async def _async_cleanup_tracked_agent_jobs(self) -> None:
         """Delete only agl-lite Jobs for rollout IDs tracked by this bridge batch.
@@ -2097,11 +2069,7 @@ class AglLiteRolloutBridge:
         """
         if not self._cleanup_agent_jobs_enabled:
             return
-        assert self._loop is not None
-        future = asyncio.run_coroutine_threadsafe(
-            self._async_cleanup_tracked_agent_jobs(), self._loop
-        )
-        future.result()
+        asyncio.run(self._async_cleanup_tracked_agent_jobs())
 
     async def _async_cleanup_consumed_jobs(self, consumed_rids: set[str]) -> None:
         """Delete K8s Jobs for the given rids only (preserve carry-over pods)."""
@@ -2137,11 +2105,7 @@ class AglLiteRolloutBridge:
             return
         if not consumed_rids:
             return
-        assert self._loop is not None
-        future = asyncio.run_coroutine_threadsafe(
-            self._async_cleanup_consumed_jobs(set(consumed_rids)), self._loop
-        )
-        future.result()
+        asyncio.run(self._async_cleanup_consumed_jobs(set(consumed_rids)))
 
     def n_carry_over_data_ids(self) -> int:
         """Distinct data_ids currently represented in the carry-over pool."""

@@ -89,15 +89,11 @@ python examples/calc_x/train_calc_agent.py \
 
 | File | Description |
 |------|-------------|
-| `agents/calc_agent.py` | Standalone agent container — AutoGen + MCP calculator, no agl-lite imports |
-| `eval_utils.py` | Evaluation utilities — sympy-based numeric comparison |
+| `calc_agent.py` | Standalone agent container — AutoGen + MCP calculator, no agl-lite imports |
 | `train_calc_agent.py` | Training script — loads dataset, builds VERL config, calls `run_ppo()` |
 | `run.sh` | E2E entrypoint — verify vLLM, build images, deploy, run training |
-| `Dockerfile.agent` | Agent container image |
-| `job-template.yaml` | K8s pod spec for agent jobs |
-| `hooks.py` | CalcXHooks — enqueue (inject task), on_succeeded (compute reward) |
-| `gateway-config.yaml` | Gateway config — inject `return_token_ids` for vLLM |
-| `.env.example` | Deploy + experiment configuration |
+| `Dockerfile` | Agent container image |
+| `job-template.yaml` | Complete K8s Job template for agent jobs |
 | `data/` | Dataset directory (parquet files, gitignored except sample.jsonl) |
 
 ### Logs

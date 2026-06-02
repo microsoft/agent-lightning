@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from agl_lite.schemas.api import EnqueueRolloutRequest, PatchRolloutRequest
-from agl_lite.schemas.rollout import RolloutStatus
-from agl_lite.store.memory import InMemoryStore
+from agl_lite.schemas import RolloutCreate, RolloutPatch
+from agl_lite.schemas import RolloutState
+from agl_lite.server.store import InMemoryStore
 
 # Minimal pod spec matching examples/math-poc/job-template.yaml
 _POD_SPEC = {
@@ -43,7 +43,7 @@ class TestMathMockHooks:
         return h
 
     def test_on_enqueue_even_correct(self, hooks) -> None:
-        req = EnqueueRolloutRequest(
+        req = RolloutCreate(
             input={"question": "What is 2+2?", "answer": "4"},
             metadata={"sample_idx_in_batch": 0},
         )
@@ -53,7 +53,7 @@ class TestMathMockHooks:
         assert result.input == {"question": "What is 2+2?", "answer": "4"}
 
     def test_on_enqueue_odd_wrong(self, hooks) -> None:
-        req = EnqueueRolloutRequest(
+        req = RolloutCreate(
             input={"question": "What is 2+2?", "answer": "4"},
             metadata={"sample_idx_in_batch": 1},
         )
@@ -64,16 +64,16 @@ class TestMathMockHooks:
     def test_on_succeeded_correct(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
         [rollout] = store.enqueue_rollouts([
-            EnqueueRolloutRequest(
+            RolloutCreate(
                 input={"question": "What is 2+2?", "answer": "4"},
                 metadata={"sample_idx_in_batch": 0},
             )
         ])
         rid = rollout.rollout_id
         store.add_event(rid, "a1", "agent_output", {"answer": "4"})
-        store.update_rollout(rid, PatchRolloutRequest(status=RolloutStatus.RUNNING))
-        store.update_rollout(rid, PatchRolloutRequest(
-            status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
+        store.update_rollout(rid, RolloutPatch(status=RolloutState.RUNNING))
+        store.update_rollout(rid, RolloutPatch(
+            status=RolloutState.SUCCEEDED, last_attempt_id="a1"
         ))
         rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert len(rewards) == 1
@@ -82,16 +82,16 @@ class TestMathMockHooks:
     def test_on_succeeded_wrong(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
         [rollout] = store.enqueue_rollouts([
-            EnqueueRolloutRequest(
+            RolloutCreate(
                 input={"question": "What is 2+2?", "answer": "4"},
                 metadata={"sample_idx_in_batch": 0},
             )
         ])
         rid = rollout.rollout_id
         store.add_event(rid, "a1", "agent_output", {"answer": "5"})
-        store.update_rollout(rid, PatchRolloutRequest(status=RolloutStatus.RUNNING))
-        store.update_rollout(rid, PatchRolloutRequest(
-            status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
+        store.update_rollout(rid, RolloutPatch(status=RolloutState.RUNNING))
+        store.update_rollout(rid, RolloutPatch(
+            status=RolloutState.SUCCEEDED, last_attempt_id="a1"
         ))
         rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert len(rewards) == 1
@@ -110,7 +110,7 @@ class TestMathVllmHooks:
         return h
 
     def test_on_enqueue_plain_question(self, hooks) -> None:
-        req = EnqueueRolloutRequest(
+        req = RolloutCreate(
             input={"question": "What is 2+2?", "answer": "4"},
             metadata={"sample_idx_in_batch": 0},
         )
@@ -123,13 +123,13 @@ class TestMathVllmHooks:
     def test_on_succeeded_numeric_correct(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
         [rollout] = store.enqueue_rollouts([
-            EnqueueRolloutRequest(input={"question": "What is 2+2?", "answer": "4"})
+            RolloutCreate(input={"question": "What is 2+2?", "answer": "4"})
         ])
         rid = rollout.rollout_id
         store.add_event(rid, "a1", "agent_output", {"answer": "4.0"})
-        store.update_rollout(rid, PatchRolloutRequest(status=RolloutStatus.RUNNING))
-        store.update_rollout(rid, PatchRolloutRequest(
-            status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
+        store.update_rollout(rid, RolloutPatch(status=RolloutState.RUNNING))
+        store.update_rollout(rid, RolloutPatch(
+            status=RolloutState.SUCCEEDED, last_attempt_id="a1"
         ))
         rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert len(rewards) == 1
@@ -139,13 +139,13 @@ class TestMathVllmHooks:
     def test_on_succeeded_numeric_wrong(self, hooks) -> None:
         store = InMemoryStore(hooks=hooks)
         [rollout] = store.enqueue_rollouts([
-            EnqueueRolloutRequest(input={"question": "What is 2+2?", "answer": "4"})
+            RolloutCreate(input={"question": "What is 2+2?", "answer": "4"})
         ])
         rid = rollout.rollout_id
         store.add_event(rid, "a1", "agent_output", {"answer": "5"})
-        store.update_rollout(rid, PatchRolloutRequest(status=RolloutStatus.RUNNING))
-        store.update_rollout(rid, PatchRolloutRequest(
-            status=RolloutStatus.SUCCEEDED, succeeded_attempt_id="a1"
+        store.update_rollout(rid, RolloutPatch(status=RolloutState.RUNNING))
+        store.update_rollout(rid, RolloutPatch(
+            status=RolloutState.SUCCEEDED, last_attempt_id="a1"
         ))
         rewards = [e for e in store.query_events(rid) if e.event_type == "reward"]
         assert rewards[0].data["value"] == 0.0

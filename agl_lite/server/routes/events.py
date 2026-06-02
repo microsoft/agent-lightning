@@ -1,43 +1,73 @@
-"""Event API routes (read-only).
-
-Events are written through two paths, neither on /api:
-  1. Agents post rewards/custom events via POST /rollout/{rid}/attempt/{aid}/events (gateway router)
-  2. Gateway auto-captures model_request events internally during LLM proxying
-
-This router provides read access for the algorithm to query collected events.
-"""
+"""Event API routes."""
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 
-from agl_lite.schemas.errors import NotFoundError
-from agl_lite.schemas.event import Event
-from agl_lite.store.memory import InMemoryStore
+from agl_lite.schemas import DEFAULT_ATTEMPT_ID, Event, EventCreate
+from agl_lite.server.store import _events, _rollouts
 
 router = APIRouter(tags=["events"])
 
 
-def _get_store(request: Request) -> InMemoryStore:
-    return request.app.state.store
+def _not_found(rollout_id: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"Rollout not found: {rollout_id}")
+
+
+def record_event(rollout_id: str, attempt_id: str, event_type: str, data: dict[str, Any]) -> Event:
+    """Append a single event for an existing rollout."""
+    if rollout_id not in _rollouts:
+        raise _not_found(rollout_id)
+
+    event = Event(
+        event_type=event_type,
+        rollout_id=rollout_id,
+        attempt_id=attempt_id,
+        timestamp=time.time(),
+        data=data,
+    )
+
+    rid_events = _events[rollout_id]
+    if attempt_id not in rid_events:
+        rid_events[attempt_id] = []
+    rid_events[attempt_id].append(event)
+    return event
+
+
+def _query_events(
+    rollout_id: str,
+    *,
+    event_type: str | None = None,
+) -> list[Event]:
+    if rollout_id not in _rollouts:
+        raise _not_found(rollout_id)
+
+    rollout = _rollouts[rollout_id]
+    attempt_id = rollout.status.last_attempt_id or DEFAULT_ATTEMPT_ID
+    rid_events = _events.get(rollout_id, {})
+    events = rid_events.get(attempt_id, [])
+    if event_type is not None:
+        events = [event for event in events if event.event_type == event_type]
+
+    return events
 
 
 def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     """Extract prompt_token_ids and response_token_ids from a model_request event.
 
-    After gateway assembly, both streaming and non-streaming responses share the
-    same dict shape with prompt_token_ids at top level and token_ids per choice.
-    Legacy raw-chunk format (list) is also supported for backward compatibility.
+    Non-streaming gateway responses use a dict shape with prompt_token_ids at
+    top level and token_ids per choice. Legacy raw-chunk format (list) is also
+    supported for backward compatibility.
     """
     resp = data.get("response")
     prompt_token_ids: list[int] = []
     response_token_ids: list[int] = []
 
     if isinstance(resp, dict):
-        # Assembled dict (streaming or non-streaming) — unified shape.
         prompt_token_ids = resp.get("prompt_token_ids", [])
         choices = resp.get("choices", [])
         if choices:
@@ -86,28 +116,23 @@ def _to_triplet_format(event: Event) -> Event:
     return event
 
 
-@router.get("/events", response_model=list[Event])
+@router.post("/rollouts/{rollout_id}/attempt/{attempt_id}/events", response_model=Event)
+async def post_event(rollout_id: str, body: EventCreate, attempt_id: str) -> Event:
+    """Post an event for one rollout attempt."""
+    return record_event(rollout_id, attempt_id, body.event_type, body.data)
+
+
+@router.get("/rollouts/{rollout_id}/events", response_model=list[Event])
 async def query_events(
-    request: Request,
     rollout_id: str,
-    attempt_id: str | None = None,
     event_type: str | None = None,
-    limit: int = 1000,
-    offset: int = 0,
     format: str | None = Query(None, description="Set to 'triplet' to trim events for RL training"),
 ) -> list[Event]:
-    """Query events for a rollout. Smart attempt_id resolution if not specified."""
-    store = _get_store(request)
-    try:
-        events = store.query_events(
-            rollout_id=rollout_id,
-            attempt_id=attempt_id,
-            event_type=event_type,
-            limit=limit,
-            offset=offset,
-        )
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from None
+    """Query events for the default rollout attempt."""
+    events = _query_events(
+        rollout_id=rollout_id,
+        event_type=event_type,
+    )
     if format == "triplet":
         events = [_to_triplet_format(e) for e in events]
     return events

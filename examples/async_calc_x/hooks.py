@@ -21,15 +21,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from eval_utils import scalar_are_results_same
 
-from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas.api import EnqueueRolloutRequest
-from agl_lite.schemas.rollout import RolloutConfig
-from agl_lite.store.memory import InMemoryStore
+from agl_lite.hooks import RolloutHooks, TraceWriter
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import RolloutConfig
 
 
 class CalcXHooks(RolloutHooks):
 
-    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+    def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         raw = request.input if isinstance(request.input, dict) else {}
         question = raw.get("question", "")
         task_id = raw.get("id", "")
@@ -52,7 +51,7 @@ class CalcXHooks(RolloutHooks):
         request.config.pod_spec = pod_spec
         return request
 
-    def on_succeeded(self, rollout: "Rollout", events: dict[str, list[Any]], store: InMemoryStore) -> None:
+    def on_succeeded(self, rollout: "Rollout", events: dict[str, list[Any]], store: TraceWriter) -> None:
         gt = ""
         if isinstance(rollout.input, dict):
             gt = rollout.input.get("result", "")
@@ -60,7 +59,7 @@ class CalcXHooks(RolloutHooks):
         answer = self._extract_answer(events)
         reward, reason = self._compute_reward(answer, str(gt))
 
-        attempt_id = rollout.succeeded_attempt_id or "unknown"
+        attempt_id = rollout.last_attempt_id or "unknown"
         store.add_event(rollout.rollout_id, attempt_id, "reward", {
             "value": reward,
             "ground_truth": gt,

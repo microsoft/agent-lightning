@@ -1,76 +1,71 @@
-"""FastAPI application — lifespan, mount routes, wire store + gateway."""
+"""FastAPI application — lifespan, mount routes, wire proxy."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 import structlog
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import HTTPException
+from omegaconf import DictConfig, OmegaConf
 
-from agl_lite.gateway.config import GatewayConfig, load_config
-from agl_lite.gateway.proxy import GatewayPauseState
-from agl_lite.gateway.router import GatewayRouter
-from agl_lite.hooks import RolloutHooks, load_hooks
-from agl_lite.server.auth import (
-    build_admin_auth_dependency,
-    build_auth_dependency,
-    validate_admin_key_combo,
-)
-from agl_lite.server.config import ServerSettings
-from agl_lite.server.routes import archive, events, gateway, models, resources, rollouts
-from agl_lite.store.memory import InMemoryStore
+from agl_lite.server.proxy import ProxyPauseState, ProxyRouter
+from agl_lite.server.routes import events, models, proxy, rollouts
 
 log = structlog.get_logger()
 
 
-def create_app(settings: ServerSettings | None = None) -> FastAPI:
-    """Create and configure the FastAPI application."""
-    if settings is None:
-        settings = ServerSettings()
+def _server_config(config: Mapping[str, Any] | DictConfig | None) -> dict[str, Any]:
+    if config is None:
+        raise ValueError("server config is required")
+    elif OmegaConf.is_config(config):
+        raw = dict(OmegaConf.to_container(config, resolve=True))
+    else:
+        raw = dict(config)
 
-    if not settings.key:
+    return raw
+
+
+def _build_auth_dependency(key: str):
+    """Return a dependency that validates the optional API key."""
+
+    async def verify_key(request: Request) -> None:
+        if not key:
+            return
+
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer ") and auth_header[7:] == key:
+            return
+
+        if request.headers.get("x-api-key", "") == key:
+            return
+
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    return verify_key
+
+
+def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
+    """Create and configure the FastAPI application."""
+    server_config = _server_config(config)
+    key = str(server_config["key"] or "")
+
+    if not key:
         log.warning("AGL_KEY not set — authentication disabled. Do not use in production.")
 
-    # Fail loudly on inconsistent (key, admin_key) combinations. See
-    # agl_lite/server/auth.py:validate_admin_key_combo for the matrix.
-    validate_admin_key_combo(settings.key, settings.admin_key)
+    verify_key = _build_auth_dependency(key)
 
-    # Load rollout lifecycle hooks (optional).
-    hooks: RolloutHooks | None = None
-    if settings.hooks:
-        hooks = load_hooks(settings.hooks)
-        log.info("Rollout hooks loaded", hooks_class=type(hooks).__name__, path=settings.hooks)
-
-    store = InMemoryStore(log_dir=settings.log_dir)
-
-    # Call on_startup after store is ready — hook may need store reference.
-    if hooks:
-        hooks.on_startup(store)
-        log.info("Hook on_startup complete", hooks_class=type(hooks).__name__)
-    verify_key = build_auth_dependency(settings.key)
-    verify_admin_key = build_admin_auth_dependency(settings.admin_key, settings.key)
-
-    # Load gateway config.
-    if settings.gateway_config:
-        gateway_config = load_config(settings.gateway_config)
-        log.info("Gateway config loaded", num_routes=len(gateway_config.routes))
-    else:
-        gateway_config = GatewayConfig()
-        log.warning("No gateway config — all model names pass through without routing or parameter adjustment.")
+    default_proxy = server_config["default_proxy"]
+    log.info("Proxy config loaded", model_name=default_proxy["model_name"])
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.store = store
-        app.state.settings = settings
+        app.state.proxy_pause_state = ProxyPauseState()
 
-        # Gateway pause/drain state — initialized lazily inside the event
-        # loop because GatewayPauseState owns asyncio primitives.
-        app.state.gateway_pause_state = GatewayPauseState()
-
-        # Gateway router + shared httpx client (connection pooling).
-        app.state.gateway_router = GatewayRouter(gateway_config, store)
+        app.state.proxy_router = ProxyRouter(default_proxy)
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=300.0)) as client:
             app.state.http_client = client
             yield
@@ -86,14 +81,11 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     app.include_router(rollouts.router, prefix="/api", dependencies=[Depends(verify_key)])
     app.include_router(events.router, prefix="/api", dependencies=[Depends(verify_key)])
     app.include_router(models.router, prefix="/api", dependencies=[Depends(verify_key)])
-    app.include_router(resources.router, prefix="/api", dependencies=[Depends(verify_key)])
-    app.include_router(archive.router, prefix="/api", dependencies=[Depends(verify_key)])
 
-    # Gateway routes (LLM proxy + event ingestion) — require agent-facing auth.
-    app.include_router(gateway.router, dependencies=[Depends(verify_key)])
+    # Proxy routes (LLM proxy + event ingestion) — require agent-facing auth.
+    app.include_router(proxy.router, dependencies=[Depends(verify_key)])
 
-    # Admin gateway routes (pause/resume/state) — require admin-only auth so
-    # agent pods carrying the agent-facing key cannot flip pause flags.
-    app.include_router(gateway.admin_router, dependencies=[Depends(verify_admin_key)])
+    # Admin proxy routes use the same server key as the rest of the API.
+    app.include_router(proxy.admin_router, dependencies=[Depends(verify_key)])
 
     return app

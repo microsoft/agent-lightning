@@ -13,11 +13,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agl_lite.hooks import RolloutHooks
+from agl_lite.hooks import RolloutHooks, TraceWriter
 
 if TYPE_CHECKING:
-    from agl_lite.schemas.rollout import Rollout
-    from agl_lite.store.memory import InMemoryStore
+    from agl_lite.schemas import Rollout
 
 
 class SWHooks(RolloutHooks):
@@ -25,7 +24,7 @@ class SWHooks(RolloutHooks):
         self,
         rollout: Rollout,
         events: dict[str, list[Any]],
-        store: InMemoryStore,
+        store: TraceWriter,
     ) -> None:
         episode = self._latest_episode_result(events)
         if episode is None:
@@ -36,7 +35,7 @@ class SWHooks(RolloutHooks):
             value = max(0.0, min(1.0, final_score / 100.0))
             reason = "episode_completed" if episode.get("completed") else "max_steps_or_no_progress"
 
-        attempt_id = rollout.succeeded_attempt_id or "unknown"
+        attempt_id = rollout.last_attempt_id or "unknown"
         store.add_event(
             rollout.rollout_id,
             attempt_id,

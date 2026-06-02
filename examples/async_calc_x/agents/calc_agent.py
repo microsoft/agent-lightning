@@ -17,8 +17,8 @@ Usage (in container):
   python calc_agent.py --model Qwen/Qwen2.5-1.5B-Instruct
 
 Usage (local runner):
-  agl-lite controller --runner-type local \
-      --local-agent-class examples.async_calc_x.agents.calc_agent:CalcXAgent
+    agl-lite-controller runner_type=local \
+            local_agent_class=examples.async_calc_x.agents.calc_agent:CalcXAgent
 """
 
 # AutoGen is an optional runtime dependency for this example container.

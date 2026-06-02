@@ -1,6 +1,6 @@
 """ScienceWorld agent — solves a text-based science task via a constrained-action LLM loop.
 
-Loaded by ``agl_lite.controller.local_worker`` as
+Loaded by ``agl_lite.controller.local_reconciler`` as
 ``examples.science_world.agents.sw_agent:SWAgent`` when the controller runs
 in ``runner_type=local`` mode.
 
@@ -13,7 +13,7 @@ The class exposes one method, ``run(task)``, which:
   3. Steps the env, POSTs a ``step`` event per turn, and a final
      ``episode_result`` event before returning.
 
-Process exit code is the only terminal signal: non-zero → TERMINAL_FAILED.
+Process exit code is the only terminal signal: non-zero -> FAILED.
 """
 
 from __future__ import annotations
@@ -237,7 +237,7 @@ async def _call_llm(client: Any, model: str, prompt: str) -> str:
 def _entrypoint_for_local_smoke() -> None:
     """Allow running this module directly for ad-hoc debugging.
 
-    Reads AGL_TASK_INPUT exactly like local_worker would, useful for
+    Reads AGL_TASK_INPUT exactly like the local reconciler worker would, useful for
     iterating on the agent without spinning up the controller.
     """
     import asyncio

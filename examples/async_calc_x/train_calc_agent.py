@@ -21,7 +21,7 @@ Usage:
 Environment variables:
   AGL_BASE_URL   — agl-lite server URL (default: http://localhost:8080)
   AGL_KEY        — auth key for agl-lite
-  AGL_ADMIN_KEY  — trainer-only admin key for /admin/gateway/* (required by async)
+    AGL_ADMIN_KEY  — trainer-only admin key for /proxy/{pause,resume,state} (required by async)
 """
 
 from __future__ import annotations

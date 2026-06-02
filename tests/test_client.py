@@ -6,15 +6,10 @@ import httpx
 import pytest
 
 from agl_lite.client import AglLiteClient, AglLiteError
-from agl_lite.schemas.api import (
-    EnqueueRolloutRequest,
-    PatchRolloutRequest,
-    PostEventRequest,
-    RegisterModelRequest,
-)
-from agl_lite.schemas.rollout import RolloutStatus
+from agl_lite.schemas import EventCreate
+from agl_lite.schemas import Model
+from agl_lite.schemas import RolloutCreate, RolloutPatch, RolloutState
 from agl_lite.server.app import create_app
-from agl_lite.server.config import ServerSettings
 
 AGL_KEY = "test-key"
 ADMIN_KEY = "test-admin-key"
@@ -22,7 +17,7 @@ ADMIN_KEY = "test-admin-key"
 
 @pytest.fixture
 def app():
-    return create_app(ServerSettings(key=AGL_KEY, admin_key=ADMIN_KEY))
+    return create_app({"key": AGL_KEY, "admin_key": ADMIN_KEY})
 
 
 @pytest.fixture
@@ -45,12 +40,12 @@ class TestRollouts:
     async def test_enqueue_and_query(self, client: AglLiteClient):
         rollouts = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={"task": "a"}, config={}),
-                EnqueueRolloutRequest(input={"task": "b"}, config={}),
+                RolloutCreate(input={"task": "a"}, config={}),
+                RolloutCreate(input={"task": "b"}, config={}),
             ]
         )
         assert len(rollouts) == 2
-        assert rollouts[0].status == RolloutStatus.QUEUING
+        assert rollouts[0].status == RolloutState.QUEUING
 
         # Query all
         result = await client.query_rollouts()
@@ -61,15 +56,15 @@ class TestRollouts:
         assert len(result) == 1
 
         # Query by status
-        result = await client.query_rollouts(status_in=[RolloutStatus.QUEUING])
+        result = await client.query_rollouts(status_in=[RolloutState.QUEUING])
         assert len(result) == 2
-        result = await client.query_rollouts(status_in=[RolloutStatus.RUNNING])
+        result = await client.query_rollouts(status_in=[RolloutState.RUNNING])
         assert len(result) == 0
 
     async def test_get_rollout(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={"task": "x"}, config={}),
+                RolloutCreate(input={"task": "x"}, config={}),
             ]
         )
         fetched = await client.get_rollout(rollout.rollout_id)
@@ -82,67 +77,40 @@ class TestRollouts:
     async def test_patch_rollout(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={}),
+                RolloutCreate(input={}, config={}),
             ]
         )
         updated = await client.patch_rollout(
             rollout.rollout_id,
-            PatchRolloutRequest(status=RolloutStatus.RUNNING, job_name="agl-rollout-123"),
+            RolloutPatch(status=RolloutState.RUNNING, job_name="agl-rollout-123"),
         )
-        assert updated.status == RolloutStatus.RUNNING
+        assert updated.status == RolloutState.RUNNING
         assert updated.job_name == "agl-rollout-123"
 
     async def test_patch_invalid_transition(self, client: AglLiteClient):
         [rollout] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={}),
+                RolloutCreate(input={}, config={}),
             ]
         )
         # queuing → succeeded is not valid
         with pytest.raises(AglLiteError, match="409"):
             await client.patch_rollout(
                 rollout.rollout_id,
-                PatchRolloutRequest(status=RolloutStatus.SUCCEEDED),
+                RolloutPatch(status=RolloutState.SUCCEEDED),
             )
-
-    async def test_cancel_rollout(self, client: AglLiteClient):
-        [rollout] = await client.enqueue_rollouts(
-            [
-                EnqueueRolloutRequest(input={}, config={}),
-            ]
-        )
-        cancelled = await client.cancel_rollout(rollout.rollout_id)
-        assert cancelled.cancel_requested is True
-
-    async def test_archive_rollouts(self, client: AglLiteClient, tmp_path):
-        [r] = await client.enqueue_rollouts(
-            [
-                EnqueueRolloutRequest(input={}, config={}),
-            ]
-        )
-        # Move to terminal state first
-        await client.patch_rollout(r.rollout_id, PatchRolloutRequest(status=RolloutStatus.RUNNING))
-        await client.patch_rollout(r.rollout_id, PatchRolloutRequest(status=RolloutStatus.SUCCEEDED))
-
-        from agl_lite.schemas.api import ArchiveBackend
-
-        path = str(tmp_path / "archive.jsonl")
-        result = await client.archive_rollouts([r.rollout_id], backend=ArchiveBackend(path=path))
-        assert result.archived == 1
-        assert result.purged == 1
-
 
 class TestEvents:
     async def test_post_and_get_events(self, client: AglLiteClient):
         [r] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={}),
+                RolloutCreate(input={}, config={}),
             ]
         )
         event = await client.post_event(
             r.rollout_id,
             "pod-uid-1",
-            PostEventRequest(event_type="reward", data={"value": 0.9}),
+            EventCreate(event_type="reward", data={"value": 0.9}),
         )
         assert event.event_type == "reward"
 
@@ -153,11 +121,11 @@ class TestEvents:
     async def test_get_events_with_filters(self, client: AglLiteClient):
         [r] = await client.enqueue_rollouts(
             [
-                EnqueueRolloutRequest(input={}, config={}),
+                RolloutCreate(input={}, config={}),
             ]
         )
-        await client.post_event(r.rollout_id, "pod-1", PostEventRequest(event_type="reward", data={"v": 1}))
-        await client.post_event(r.rollout_id, "pod-1", PostEventRequest(event_type="custom", data={"v": 2}))
+        await client.post_event(r.rollout_id, "pod-1", EventCreate(event_type="reward", data={"v": 1}))
+        await client.post_event(r.rollout_id, "pod-1", EventCreate(event_type="custom", data={"v": 2}))
 
         events = await client.get_events(r.rollout_id, attempt_id="pod-1", event_type="reward")
         assert len(events) == 1
@@ -168,8 +136,8 @@ class TestModels:
     async def test_register_and_list(self, client: AglLiteClient):
         servers = await client.register_models(
             [
-                RegisterModelRequest(model="qwen-7b", endpoint="http://vllm-0:8000/v1", version=1),
-                RegisterModelRequest(model="qwen-7b", endpoint="http://vllm-1:8000/v1", version=1),
+                Model(model="qwen-7b", endpoint="http://vllm-0:8000/v1", version=1),
+                Model(model="qwen-7b", endpoint="http://vllm-1:8000/v1", version=1),
             ]
         )
         assert len(servers) == 2
@@ -180,8 +148,8 @@ class TestModels:
     async def test_delete_model(self, client: AglLiteClient):
         await client.register_models(
             [
-                RegisterModelRequest(model="qwen-7b", endpoint="http://vllm-0:8000/v1", version=1),
-                RegisterModelRequest(model="qwen-7b", endpoint="http://vllm-1:8000/v1", version=1),
+                Model(model="qwen-7b", endpoint="http://vllm-0:8000/v1", version=1),
+                Model(model="qwen-7b", endpoint="http://vllm-1:8000/v1", version=1),
             ]
         )
         # Delete one endpoint
@@ -197,8 +165,8 @@ class TestModels:
     async def test_delete_all_models(self, client: AglLiteClient):
         await client.register_models(
             [
-                RegisterModelRequest(model="qwen-7b", endpoint="http://a:8000/v1", version=1),
-                RegisterModelRequest(model="llama-70b", endpoint="http://b:8000/v1", version=1),
+                Model(model="qwen-7b", endpoint="http://a:8000/v1", version=1),
+                Model(model="llama-70b", endpoint="http://b:8000/v1", version=1),
             ]
         )
         await client.delete_all_models()

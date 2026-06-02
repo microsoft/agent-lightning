@@ -65,6 +65,7 @@ def run_ppo(
             "AGL_BASE_URL",
             "AGL_MODEL_ENDPOINT",
             "AGL_NAMESPACE",
+            "LD_LIBRARY_PATH",
             "WANDB_API_KEY",
             "WANDB_ENTITY",
             "WANDB_PROJECT",

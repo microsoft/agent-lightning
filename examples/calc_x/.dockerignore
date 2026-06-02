@@ -1,5 +1,5 @@
 # Keep the calc_x agent image context small.
-# Dockerfile.agent currently only copies agents/calc_agent.py.
+# Dockerfile currently only copies calc_agent.py and eval_utils.py.
 
 # Data, logs, and generated outputs
 data

@@ -20,7 +20,7 @@ Environment variables (read by VERL / the bridge):
 
   AGL_BASE_URL   agl-lite server URL (default http://localhost:8080)
   AGL_KEY        shared API key
-  AGL_ADMIN_KEY  admin key for /admin/gateway/* (required by async-rollout)
+    AGL_ADMIN_KEY  admin key for /proxy/{pause,resume,state} (required by async-rollout)
 """
 
 from __future__ import annotations

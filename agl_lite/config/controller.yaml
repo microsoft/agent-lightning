@@ -1,0 +1,15 @@
+runner_type: k8s # k8s | local
+
+agl_server:
+  url: http://localhost:8080
+  key: ""
+
+k8s_runner:
+  namespace: default
+  ttl_after_finished: 1200
+  max_jobs_per_minute: 100
+  poll_interval: 10
+
+local_runner:
+  maximum_size: 50
+  poll_interval: 10

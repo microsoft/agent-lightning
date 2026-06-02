@@ -3,7 +3,7 @@
 #
 # Topology (all on this host — no K8s, no Docker):
 #   - agl-lite serve (HTTP + gateway + store)            background pid 1
-#   - agl-lite controller --runner-type=local            background pid 2
+#   - agl-lite-controller runner_type=local              background pid 2
 #       └ spawns one Python subprocess per rollout, each runs SWAgent
 #   - train_sw_agent.py                                   foreground
 #       └ VERL boots Ray + vLLM internally and drives the loop
@@ -81,12 +81,13 @@ fi
 # --- Start agl-lite serve ---
 SERVER_LOG="$LOG_DIR/server.log"
 echo "=== Starting agl-lite serve on :$AGL_HOST_PORT (log: $SERVER_LOG) ==="
-"${SERVER_NUMA_PREFIX[@]}" uv run agl-lite serve \
-    --host 0.0.0.0 \
-    --port "$AGL_HOST_PORT" \
-    --gateway-config "$SCRIPT_DIR/gateway-config.yaml" \
-    --hooks "$SCRIPT_DIR/hooks.py" \
-    --log-dir "$LOG_DIR" \
+AGL_GATEWAY_CONFIG="$SCRIPT_DIR/gateway-config.yaml" \
+AGL_HOOKS="$SCRIPT_DIR/hooks.py" \
+AGL_LOG_DIR="$LOG_DIR" \
+"${SERVER_NUMA_PREFIX[@]}" uv run agl-lite-server \
+    host=0.0.0.0 \
+    port="$AGL_HOST_PORT" \
+    key="${AGL_KEY:-}" \
     > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
@@ -125,12 +126,12 @@ echo "  agl-lite ready"
 # --- Start the local-runner controller ---
 CONTROLLER_LOG="$LOG_DIR/controller.log"
 echo "=== Starting agl-lite controller (local runner, pool=$AGL_LOCAL_POOL_SIZE, log: $CONTROLLER_LOG) ==="
-uv run agl-lite controller \
-    --base-url "$AGL_BASE_URL" \
-    --namespace "${AGL_NAMESPACE:-local}" \
-    --runner-type local \
-    --local-pool-size "$AGL_LOCAL_POOL_SIZE" \
-    --local-agent-class examples.science_world.agents.sw_agent:SWAgent \
+uv run agl-lite-controller \
+    base_url="$AGL_BASE_URL" \
+    namespace="${AGL_NAMESPACE:-local}" \
+    runner_type=local \
+    local_pool_size="$AGL_LOCAL_POOL_SIZE" \
+    local_agent_class=examples.science_world.agents.sw_agent:SWAgent \
     > "$CONTROLLER_LOG" 2>&1 &
 CONTROLLER_PID=$!
 sleep 1

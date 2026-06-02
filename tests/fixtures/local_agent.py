@@ -1,4 +1,4 @@
-"""Fake agent classes used by local_worker tests."""
+"""Fake agent classes used by local reconciler worker tests."""
 
 from __future__ import annotations
 

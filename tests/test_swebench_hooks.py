@@ -10,10 +10,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas.api import EnqueueRolloutRequest
-from agl_lite.schemas.event import Event
-from agl_lite.schemas.rollout import Rollout, RolloutConfig, RolloutMetadata, RolloutStatus
-from agl_lite.store.memory import InMemoryStore
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import Event
+from agl_lite.schemas import Rollout, RolloutConfig, RolloutMetadata, RolloutState
+from agl_lite.server.store import InMemoryStore
 
 # Minimal pod spec that on_startup would normally load from disk.
 _MINIMAL_POD_SPEC = {
@@ -90,7 +90,7 @@ class TestOnStartup:
 
         h = hooks.SWEBenchHooks()
         with patch.dict(os.environ, {"AGL_POD_SPEC_TEMPLATE": str(template_file)}):
-            from agl_lite.store.memory import InMemoryStore
+            from agl_lite.server.store import InMemoryStore
             h.on_startup(InMemoryStore())
 
         assert h._pod_spec is not None
@@ -107,13 +107,13 @@ class TestOnStartup:
 
 class TestOnEnqueue:
     def test_sets_per_instance_image_in_pod_spec(self, hook, swe_instance) -> None:
-        req = EnqueueRolloutRequest(input=swe_instance)
+        req = RolloutCreate(input=swe_instance)
         result = hook.on_enqueue(req)
         agent = RolloutHooks.get_container(result.config.pod_spec, "agent")
         assert agent["image"] == "swebench/sweb.eval.x86_64.astropy_1776_astropy-12907:latest"
 
     def test_env_vars_injected_into_agent_container(self, hook, swe_instance) -> None:
-        req = EnqueueRolloutRequest(input=swe_instance)
+        req = RolloutCreate(input=swe_instance)
         result = hook.on_enqueue(req)
         agent = RolloutHooks.get_container(result.config.pod_spec, "agent")
         env = {e["name"]: e["value"] for e in agent.get("env", [])}
@@ -122,7 +122,7 @@ class TestOnEnqueue:
         assert "AGL_EVAL_META" in env
 
     def test_eval_meta_contains_test_lists(self, hook, swe_instance) -> None:
-        req = EnqueueRolloutRequest(input=swe_instance)
+        req = RolloutCreate(input=swe_instance)
         result = hook.on_enqueue(req)
         agent = RolloutHooks.get_container(result.config.pod_spec, "agent")
         env = {e["name"]: e["value"] for e in agent.get("env", [])}
@@ -135,40 +135,40 @@ class TestOnEnqueue:
 
     def test_timeout_hoisted_to_config(self, hook, swe_instance) -> None:
         """activeDeadlineSeconds from pod spec root is moved to config.timeout."""
-        req = EnqueueRolloutRequest(input=swe_instance)
+        req = RolloutCreate(input=swe_instance)
         result = hook.on_enqueue(req)
         assert result.config.timeout == 5400
         assert "activeDeadlineSeconds" not in result.config.pod_spec
 
     def test_coding_agent_from_env(self, hook, swe_instance) -> None:
         with patch.dict(os.environ, {"AGL_CODING_AGENT": "claude_code"}):
-            req = EnqueueRolloutRequest(input=swe_instance)
+            req = RolloutCreate(input=swe_instance)
             result = hook.on_enqueue(req)
         agent = RolloutHooks.get_container(result.config.pod_spec, "agent")
         env = {e["name"]: e["value"] for e in agent.get("env", [])}
         assert env["AGL_CODING_AGENT"] == "claude_code"
 
     def test_creates_config_if_none(self, hook, swe_instance) -> None:
-        req = EnqueueRolloutRequest(input=swe_instance, config=None)
+        req = RolloutCreate(input=swe_instance, config=None)
         result = hook.on_enqueue(req)
         assert result.config is not None
         assert result.config.pod_spec is not None
 
     def test_rejects_missing_instance_id(self, hook) -> None:
-        req = EnqueueRolloutRequest(input={"problem_statement": "no id"})
+        req = RolloutCreate(input={"problem_statement": "no id"})
         with pytest.raises(ValueError, match="instance_id"):
             hook.on_enqueue(req)
 
     def test_original_pod_spec_not_mutated(self, hook, swe_instance) -> None:
         """Each on_enqueue call gets a fresh deep copy — no cross-request mutation."""
         original_image = hook._pod_spec["containers"][0]["image"]
-        req = EnqueueRolloutRequest(input=swe_instance)
+        req = RolloutCreate(input=swe_instance)
         hook.on_enqueue(req)
         assert hook._pod_spec["containers"][0]["image"] == original_image
 
 
 def _make_rollout(instance: dict, rollout_id: str = "test-123",
-                  status: RolloutStatus = RolloutStatus.SUCCEEDED) -> Rollout:
+                  status: RolloutState = RolloutState.SUCCEEDED) -> Rollout:
     import time
     now = time.time()
     return Rollout(
@@ -177,7 +177,7 @@ def _make_rollout(instance: dict, rollout_id: str = "test-123",
         input=instance,
         config=RolloutConfig(),
         metadata=RolloutMetadata(),
-        succeeded_attempt_id="attempt-1" if status == RolloutStatus.SUCCEEDED else None,
+        last_attempt_id="attempt-1" if status == RolloutState.SUCCEEDED else None,
         created_at=now,
         updated_at=now,
     )
@@ -213,8 +213,7 @@ class TestOnSucceeded:
 
 class TestOnFailed:
     def test_posts_zero_reward(self, hook, swe_instance) -> None:
-        rollout = _make_rollout(swe_instance, rollout_id="test-456",
-                                status=RolloutStatus.TERMINAL_FAILED)
+        rollout = _make_rollout(swe_instance, rollout_id="test-456", status=RolloutState.FAILED)
         store = InMemoryStore()
         store._rollouts["test-456"] = rollout
         store._events["test-456"] = {}

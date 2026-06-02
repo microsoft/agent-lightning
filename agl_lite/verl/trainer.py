@@ -55,7 +55,6 @@ from verl.utils.ray_utils import auto_await
 from verl.utils.tracking import Tracking
 
 from agl_lite.hooks import RolloutHooks, load_hooks
-from agl_lite.store.memory import InMemoryStore
 
 from .rollout_bridge import AglLiteRolloutBridge
 from .sample_iterator import SampleIterator
@@ -125,8 +124,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         if not hooks_path:
             return None
         self._hooks = load_hooks(hooks_path)
-        # Keep the existing hook contract where on_startup receives a store-like object.
-        self._hooks.on_startup(InMemoryStore())
+        self._hooks.on_startup()
         return self._hooks
 
     def _ensure_rollout_bridge(self) -> AglLiteRolloutBridge:
@@ -144,7 +142,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             train_rollout_n=self.config.actor_rollout_ref.rollout.n,
             train_information={
                 "model": self.config.actor_rollout_ref.model.path,
-                "resources_id": al.get("resources_id"),
             },
             tokenizer=self.tokenizer,
             mini_batch_size=self.config.actor_rollout_ref.actor.ppo_mini_batch_size,
@@ -155,6 +152,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             image_base_dir=self.config.data.get("image_base_dir"),
             trace_aggregator=trace_aggregator,
             hooks=hooks,
+            local_agent_class=al.get("local", {}).get("agent_class", None),
+            local_env_map=OmegaConf.to_container(al.get("local", {}).get("env_map", {}), resolve=True),
+            k8s_job_template_path=al.get("k8s", {}).get("job_template_path", None),
             cleanup_agent_jobs=al.get("cleanup_agent_jobs", False),
             cleanup_namespace=al.get("cleanup_namespace", None),
             cleanup_k8s_client=al.get("cleanup_k8s_client", None),
@@ -209,14 +209,14 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
             self._abort_all_rollout_requests()
             print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
-            rollout_bridge.clear_data_and_server()
+            rollout_bridge.finish_sync_rollout_batch()
             return out, metrics
         # validation: caller will pull metrics via rollout_bridge.get_test_metrics()
         metrics = rollout_bridge.get_test_metrics()
         print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
         self._abort_all_rollout_requests()
         print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
-        rollout_bridge.clear_data_and_server()
+        rollout_bridge.finish_sync_rollout_batch()
         return DataProto(batch=None), metrics
 
     def _train_step(
@@ -451,8 +451,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self,
         new_samples_dict: dict[str, Any],
         async_train_batch_size: int,
-        admin_base_url: str,
-        admin_key: str,
         gateway_retry_after_seconds: int,
         gateway_drain_timeout_seconds: float,
         rollout_n: int,
@@ -488,8 +486,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         selected_rids, unselected_rids, async_poll_metrics = rollout_bridge.run_until_groups_finished(
             target_groups=self.config.data.train_batch_size,
             rollout_n=rollout_n,
-            admin_base_url=admin_base_url,
-            admin_key=admin_key,
             drain_timeout=gateway_drain_timeout_seconds,
             timeout_seconds=poll_timeout,
             retry_after_seconds=gateway_retry_after_seconds,
@@ -541,8 +537,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         timing_raw: dict[str, float],
         curr_step_profile: bool,
         async_train_batch_size: int,
-        admin_base_url: str,
-        admin_key: str,
         gateway_retry_after_seconds: int,
         gateway_drain_timeout_seconds: float,
     ) -> dict[str, Any]:
@@ -563,8 +557,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             gen_batch_output, agent_metrics = self._async_rollout(
                 new_samples_dict=new_samples_dict,
                 async_train_batch_size=async_train_batch_size,
-                admin_base_url=admin_base_url,
-                admin_key=admin_key,
                 gateway_retry_after_seconds=gateway_retry_after_seconds,
                 gateway_drain_timeout_seconds=gateway_drain_timeout_seconds,
                 rollout_n=rollout_n,
@@ -748,7 +740,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         Carry-over rids stay alive in the bridge across steps so stateful
         agent pods (Claude Code/Codex/Cursor) preserve their working tree.
         """
-        from agl_lite.client import AglLiteClient
+        from agl_lite.client import AglLiteSyncClient
 
         self._ensure_rollout_bridge()
 
@@ -779,15 +771,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 "async_rollout.allow_equal_batch_size_for_debug=true to override (debug only)."
             )
 
-        # Admin credential — required for pause/drain.
-        admin_base_url = self.config.agentlightning.agl_base_url
-        admin_key = self.config.agentlightning.get("agl_admin_key", "")
-        if not admin_key:
-            raise ValueError(
-                "agentlightning.agl_admin_key is required for async_rollout (trainer-side "
-                "admin credential, distinct from the agent-facing agl_key)."
-            )
-
         logger = Tracking(
             project_name=self.config.trainer.project_name,
             experiment_name=self.config.trainer.experiment_name,
@@ -813,21 +796,17 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self.global_steps += 1
         last_val_metrics = None
 
-        # Short-lived sync admin client for resume_gateway between steps.
+        # Short-lived sync client for resume_gateway between steps.
         # Built per call (cheap) inside _resume_gateway_sync to keep async_fit
         # itself free of asyncio plumbing.
         def _resume_gateway_sync() -> None:
-            import asyncio as _asyncio
-            assert self._rollout_bridge is not None
-            loop = self._rollout_bridge._loop  # bridge owns the event loop
-            assert loop is not None
-
-            async def _go() -> None:
-                async with AglLiteClient(base_url=admin_base_url, agl_admin_key=admin_key) as c:
-                    await c.resume_gateway()
-
-            future = _asyncio.run_coroutine_threadsafe(_go(), loop)
-            future.result()
+            with AglLiteSyncClient(
+                base_url=self.config.agentlightning.agl_base_url,
+                key=self.config.agentlightning.get("agl_key", ""),
+                timeout=30.0,
+            ) as client:
+                response = client.post("/proxy/resume")
+                response.raise_for_status()
 
         while self.global_steps <= self.total_training_steps:
             timing_raw: dict[str, float] = {}
@@ -874,8 +853,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                     timing_raw=timing_raw,
                     curr_step_profile=curr_step_profile,
                     async_train_batch_size=async_train_batch_size,
-                    admin_base_url=admin_base_url,
-                    admin_key=admin_key,
                     gateway_retry_after_seconds=gateway_retry_after_seconds,
                     gateway_drain_timeout_seconds=gateway_drain_timeout_seconds,
                 )

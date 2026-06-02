@@ -123,7 +123,7 @@ if [ -z "${AGL_KEY:-}" ]; then
 fi
 
 # --- Validate AGL_ADMIN_KEY (required for async-rollout) ---
-# AGL_ADMIN_KEY gates the /admin/gateway/* surface used by the trainer to
+# AGL_ADMIN_KEY gates the /proxy/{pause,resume,state} surface used by the trainer to
 # pause/resume the gateway during async rollouts. Must differ from AGL_KEY:
 # agent pods carry AGL_KEY and must NOT be able to reach the admin surface.
 if [ -z "${AGL_ADMIN_KEY:-}" ] && [ -f "$STATE_ENV" ]; then
@@ -170,12 +170,13 @@ else
     SERVER_LOG="$LOG_DIR/server.log"
     echo ""
     echo "=== Starting agl-lite serve on :${AGL_HOST_PORT:-8080} (log: $SERVER_LOG) ==="
-    uv run agl-lite serve \
-        --host "${AGL_HOST_IP_BIND:-0.0.0.0}" \
-        --port "${AGL_HOST_PORT:-8080}" \
-        --gateway-config "${AGL_GATEWAY_CONFIG:-examples/async_calc_x/gateway-config.yaml}" \
-        --hooks "${AGL_HOOKS:-examples/async_calc_x/hooks.py}" \
-        --log-dir "$LOG_DIR" \
+    AGL_GATEWAY_CONFIG="${AGL_GATEWAY_CONFIG:-examples/async_calc_x/gateway-config.yaml}" \
+    AGL_HOOKS="${AGL_HOOKS:-examples/async_calc_x/hooks.py}" \
+    AGL_LOG_DIR="$LOG_DIR" \
+    uv run agl-lite-server \
+        host="${AGL_HOST_IP_BIND:-0.0.0.0}" \
+        port="${AGL_HOST_PORT:-8080}" \
+        key="${AGL_KEY:-}" \
         > "$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
 
@@ -249,12 +250,12 @@ PY
 
     CONTROLLER_LOG="$LOG_DIR/controller.log"
     echo "=== Starting agl-lite controller (local runner, pool=${AGL_LOCAL_POOL_SIZE:-8}, log: $CONTROLLER_LOG) ==="
-    uv run agl-lite controller \
-        --base-url "$AGL_BASE_URL" \
-        --namespace "${AGL_NAMESPACE:-local}" \
-        --runner-type local \
-        --local-pool-size "${AGL_LOCAL_POOL_SIZE:-8}" \
-        --local-agent-class examples.async_calc_x.agents.calc_agent:CalcXAgent \
+    uv run agl-lite-controller \
+        base_url="$AGL_BASE_URL" \
+        namespace="${AGL_NAMESPACE:-local}" \
+        runner_type=local \
+        local_pool_size="${AGL_LOCAL_POOL_SIZE:-8}" \
+        local_agent_class=examples.async_calc_x.agents.calc_agent:CalcXAgent \
         > "$CONTROLLER_LOG" 2>&1 &
     CONTROLLER_PID=$!
     sleep 1

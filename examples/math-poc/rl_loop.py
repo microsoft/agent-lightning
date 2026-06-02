@@ -23,8 +23,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agl_lite.client import AglLiteClient, AglLiteError
-from agl_lite.schemas.api import ArchiveBackend, EnqueueRolloutRequest, RegisterModelRequest
-from agl_lite.schemas.rollout import RolloutStatus
+from agl_lite.schemas import Model
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import RolloutState
 
 # --- Config (from env, set by run.sh) ---
 MODEL_NAME = os.environ.get("AGL_MODEL_NAME", "mock-llm")
@@ -67,7 +68,7 @@ async def wait_for_rollouts(
     rollout_ids: list[str],
     max_time: float = MAX_POLL_TIME,
 ) -> list:
-    terminal = {RolloutStatus.SUCCEEDED, RolloutStatus.TERMINAL_FAILED, RolloutStatus.CANCELLED}
+    terminal = {RolloutState.SUCCEEDED, RolloutState.FAILED}
     start = time.time()
     poll_count = 0
     while time.time() - start < max_time:
@@ -87,23 +88,6 @@ async def wait_for_rollouts(
         await asyncio.sleep(POLL_INTERVAL)
 
     raise TimeoutError(f"Rollouts did not complete within {max_time}s")
-
-
-async def archive_rollouts(client: AglLiteClient, rollout_ids: list[str]) -> None:
-    # If AGL_LOG_DIR is set the server defaults to $AGL_LOG_DIR/archive.jsonl.
-    # Otherwise fall back to a local file.
-    if LOG_DIR:
-        backend = None  # server uses AGL_LOG_DIR/archive.jsonl
-        dest = str(Path(LOG_DIR) / "archive.jsonl")
-    else:
-        dest = "archive_rollouts.jsonl"
-        backend = ArchiveBackend(type="jsonl", path=dest)
-    log(f"  Archiving {len(rollout_ids)} rollouts to {dest}...")
-    try:
-        res = await client.archive_rollouts(rollout_ids=rollout_ids, backend=backend)
-        log(f"  Archived {res.archived} rollouts, purged {res.purged}.")
-    except Exception as e:
-        log(f"  [Error] Archive failed: {e}")
 
 
 async def run_iteration(
@@ -133,7 +117,7 @@ async def run_iteration(
     # Enqueue rollouts — algorithm sets input and metadata only.
     # on_enqueue hook assembles the pod spec and injects per-sample env vars.
     requests = [
-        EnqueueRolloutRequest(
+        RolloutCreate(
             input=item,
             metadata={"batch_idx": iteration, "sample_idx_in_batch": i},
         )
@@ -146,8 +130,8 @@ async def run_iteration(
     # Wait for completion
     log(f"  Polling for completion...")
     completed = await wait_for_rollouts(client, rollout_ids)
-    succeeded = [r for r in completed if r.status == RolloutStatus.SUCCEEDED]
-    failed = [r for r in completed if r.status == RolloutStatus.TERMINAL_FAILED]
+    succeeded = [r for r in completed if r.status == RolloutState.SUCCEEDED]
+    failed = [r for r in completed if r.status == RolloutState.FAILED]
 
     log(f"  Completed: {len(succeeded)} succeeded, {len(failed)} failed")
     for r in failed:
@@ -188,8 +172,6 @@ async def run_iteration(
     log(f"  Events: {model_request_count} model_request, {reward_count} reward")
     log(f"  Average reward: {avg_reward:.2f} ({int(total_reward)}/{len(succeeded)} correct)")
 
-    await archive_rollouts(client, rollout_ids)
-
     return {
         "iteration": iteration,
         "succeeded": len(succeeded),
@@ -229,7 +211,7 @@ async def main() -> None:
             log(f"")
             log(f"--- Register model server ---")
             await client.register_models([
-                RegisterModelRequest(model=MODEL_NAME, endpoint=MODEL_ENDPOINT, version=1),
+                Model(model=MODEL_NAME, endpoint=MODEL_ENDPOINT, version=1),
             ])
             log(f"  {MODEL_NAME} -> {MODEL_ENDPOINT} (version=1)")
 

@@ -17,15 +17,14 @@ from typing import Any, cast
 
 from swebench.harness.test_spec.test_spec import make_test_spec
 
-from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas.api import EnqueueRolloutRequest
-from agl_lite.schemas.rollout import Rollout, RolloutConfig
-from agl_lite.store.memory import InMemoryStore
+from agl_lite.hooks import RolloutHooks, TraceWriter
+from agl_lite.schemas import RolloutCreate
+from agl_lite.schemas import Rollout, RolloutConfig
 
 
 class SWEBenchHooks(RolloutHooks):
 
-    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+    def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         instance = request.input
         if not isinstance(instance, dict) or "instance_id" not in instance:
             raise ValueError("SWE-bench input must be a dict with 'instance_id'")
@@ -70,14 +69,14 @@ class SWEBenchHooks(RolloutHooks):
 
         return request
 
-    def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: InMemoryStore) -> None:
+    def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: TraceWriter) -> None:
         """Post fallback reward if container didn't post one."""
         if self._has_reward_event(events):
             return
-        attempt_id = rollout.succeeded_attempt_id or next(iter(events), "unknown")
+        attempt_id = rollout.last_attempt_id or next(iter(events), "unknown")
         store.add_event(rollout.rollout_id, attempt_id, "reward", {"value": 0.0, "reason": "no_reward_posted"})
 
-    def on_failed(self, rollout: Rollout, store: InMemoryStore) -> None:
+    def on_failed(self, rollout: Rollout, store: TraceWriter) -> None:
         """Post zero reward on failure."""
         store.add_event(rollout.rollout_id, "failed", "reward", {"value": 0.0, "reason": "terminal_failed"})
 

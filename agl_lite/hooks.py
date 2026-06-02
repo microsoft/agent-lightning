@@ -10,16 +10,10 @@ loads the module at startup via ``--hooks path/to/hooks.py``.
 Typical pattern::
 
     class MyHooks(RolloutHooks):
-        # on_startup is optional — if AGL_POD_SPEC_TEMPLATE is set in the
-        # environment the base implementation loads the pod spec automatically.
-        # Override only when you need extra setup beyond file loading.
-
-        def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
-            pod_spec = self.copy_pod_spec()  # deep copy of the loaded template
-            agent = self.get_container(pod_spec, "agent")
-            agent["image"] = f"my-image:{request.input['version']}"
-            request.config.pod_spec = pod_spec
-            return request
+        # on_startup is optional — if AGL_JOB_TEMPLATE is set in the environment
+        # the base implementation loads it and stores the raw Jinja2 string in
+        # request.config.k8s.job_template during on_enqueue().
+        pass
 """
 
 from __future__ import annotations
@@ -29,13 +23,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-import yaml
-
-from agl_lite.schemas.api import EnqueueRolloutRequest
+from agl_lite.schemas import RolloutConfig, RolloutCreate, RolloutK8sConfig
 
 if TYPE_CHECKING:
-    from agl_lite.schemas.rollout import Rollout
-    from agl_lite.store.memory import InMemoryStore
+    from agl_lite.schemas import Rollout
 
 
 class TraceWriter(Protocol):
@@ -48,43 +39,37 @@ class RolloutHooks:
     All methods have default no-op implementations so subclasses only need
     to override what they care about.
 
-    Constraints:
-      - Hooks must be **fast and synchronous** (no ``await``, no blocking I/O).
-      - Volume reads (local disk, ~μs) and CPU-bound parsing (~ms) are fine.
-      - Network calls to external APIs will block the event loop — avoid them.
+        Constraints:
+            - Hooks must be **fast and synchronous** (no ``await``, no blocking I/O).
+            - Volume reads (local disk, ~μs) and CPU-bound parsing (~ms) are fine.
+            - Network calls to external APIs will block the event loop — avoid them.
 
-    Pod spec template convention:
-      Set ``self._pod_spec`` in ``on_startup()`` and use ``copy_pod_spec()``
-      in ``on_enqueue()`` to get a per-request mutable copy.
+        Job template convention:
+            Set ``AGL_JOB_TEMPLATE`` to a complete K8s Job Jinja2 template file. The
+            base hook stores the raw template string in ``request.config.k8s.job_template``.
     """
 
     _pod_spec: dict[str, Any] | None = None
+    _job_template: str | None = None
 
-    def on_startup(self, store: InMemoryStore) -> None:
+    def on_startup(self, store: Any | None = None) -> None:
         """Called once by the server after startup and store initialisation.
 
-        The base implementation reads ``AGL_POD_SPEC_TEMPLATE`` from the
-        environment and, if set, loads that YAML file into ``self._pod_spec``.
-        This covers the common case where all instances use the same container
-        image base and only differ in per-sample env vars.
-
-        ``AGL_POD_SPEC_TEMPLATE`` — path to a plain YAML file that describes the
-        pod spec fragment: ``containers``, optional ``volumes``, ``nodeSelector``,
-        ``tolerations``, ``activeDeadlineSeconds``, etc.  Typically
-        ``examples/<project>/job-template.yaml``.
+        The base implementation reads ``AGL_JOB_TEMPLATE`` from the environment
+        and, if set, loads that file as a raw complete K8s Job Jinja2 template.
 
         Override only when you need setup beyond file loading, e.g. loading a
         dataset index or connecting to an external registry.  When overriding,
-        call ``super().on_startup(store)`` first so the base pod spec load still
+        call ``super().on_startup(store)`` first so the base template load still
         happens::
 
-            def on_startup(self, store: InMemoryStore) -> None:
-                super().on_startup(store)      # loads AGL_POD_SPEC_TEMPLATE
+            def on_startup(self, store: Any | None = None) -> None:
+                super().on_startup(store)      # loads AGL_JOB_TEMPLATE
                 self._index = load_index(os.environ["MY_INDEX"])
         """
-        template_path = os.environ.get("AGL_POD_SPEC_TEMPLATE")
-        if template_path:
-            self._pod_spec = yaml.safe_load(Path(template_path).read_text())
+        job_template_path = os.environ.get("AGL_JOB_TEMPLATE")
+        if job_template_path:
+            self._job_template = Path(job_template_path).read_text()
 
     def copy_pod_spec(self) -> dict[str, Any]:
         """Return a deep copy of the stored pod spec template.
@@ -107,19 +92,22 @@ class RolloutHooks:
                 return c
         raise KeyError(f"container {name!r} not found in pod spec")
 
-    def on_enqueue(self, request: EnqueueRolloutRequest) -> EnqueueRolloutRequest:
+    def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         """Pre-processor: transform a rollout request before it enters the store.
 
         Called for each request in ``enqueue_rollouts()``, **before** the rollout
         is persisted. If this raises, the rollout is never created and the API
         returns an error to the caller.
 
-        Typical uses:
-          - Deep copy ``self._pod_spec``, apply per-sample modifications
-            (image, env vars, command), assign to ``request.config.pod_spec``
+                Typical uses:
+                    - Set or mutate ``request.config.k8s.job_template``
           - Move raw dataset fields from ``input`` into ``metadata``
           - Set ``config.timeout`` / ``config.max_retries``
         """
+        if self._job_template is not None:
+            request.config = request.config or RolloutConfig()
+            request.config.k8s = request.config.k8s or RolloutK8sConfig()
+            request.config.k8s.job_template = self._job_template
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: TraceWriter) -> None:
@@ -133,7 +121,7 @@ class RolloutHooks:
         """
 
     def on_failed(self, rollout: Rollout, store: TraceWriter) -> None:
-        """Post-transition hook: called when a rollout transitions to TERMINAL_FAILED.
+        """Post-transition hook: called when a rollout transitions to FAILED.
 
         Typical uses:
           - Post a zero reward event

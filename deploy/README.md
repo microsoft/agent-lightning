@@ -9,7 +9,6 @@ deploy/
 │   ├── k8s.yaml           # Deployment + Service
 │   └── README.md
 ├── controller/            # K8s reconciler (reuses agl-lite image)
-│   ├── job-template.yaml.j2   # Default Jinja2 job manifest template
 │   ├── k8s.yaml               # Deployment
 │   ├── rbac.yaml              # ServiceAccount + Role + RoleBinding
 │   └── README.md
