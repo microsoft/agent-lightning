@@ -22,7 +22,6 @@ import numpy as np
 
 # --- Optional heavy imports (only needed when actually training) ---
 import torch
-from httpx_retries import Retry, RetryTransport
 
 # --- Local types (replace agentlightning.types) ---
 from pydantic import BaseModel, Field
@@ -426,7 +425,6 @@ class AglLiteRolloutBridge:
             base_url=agl_base_url,
             key=agl_key,
             timeout=120.0,
-            transport=RetryTransport(retry=Retry(total=5, allowed_methods=["GET"])),
         )
         self.timeout_seconds = timeout_seconds
 
@@ -450,6 +448,7 @@ class AglLiteRolloutBridge:
         self._cleanup_agent_jobs_enabled = cleanup_agent_jobs
         self._cleanup_namespace = cleanup_namespace
         self._cleanup_k8s_client = cleanup_k8s_client
+        self._cleanup_missing_client_warned = False
 
         # --- Multimodal ---
         self._use_mrope = self._is_mrope_model()
@@ -2035,11 +2034,18 @@ class AglLiteRolloutBridge:
             if did not in self._data_id_to_rids:
                 self._group_finish_time.pop(did, None)
 
-    def _get_cleanup_k8s_client(self) -> AgentJobK8sClient:
-        """Return the K8s client used for optional agent Job cleanup."""
+    def _get_cleanup_k8s_client(self) -> AgentJobK8sClient | None:
+        """Return the K8s client used for optional agent Job cleanup.
+
+        Cleanup is best-effort. If cleanup is enabled but no client is wired,
+        skip cleanup work instead of failing rollout/training.
+        """
         if self._cleanup_k8s_client is not None:
             return self._cleanup_k8s_client
-        raise RuntimeError("cleanup_agent_jobs requires cleanup_k8s_client to be provided")
+        if self._cleanup_agent_jobs_enabled and not self._cleanup_missing_client_warned:
+            print("AglLiteRolloutBridge: cleanup_agent_jobs enabled but cleanup_k8s_client is missing; skipping cleanup.")
+            self._cleanup_missing_client_warned = True
+        return None
 
     async def _async_cleanup_tracked_agent_jobs(self) -> None:
         """Delete only agl-lite Jobs for rollout IDs tracked by this bridge batch.
@@ -2057,6 +2063,8 @@ class AglLiteRolloutBridge:
 
         tracked_rollout_ids = set(self._enqueue_order)
         k8s = self._get_cleanup_k8s_client()
+        if k8s is None:
+            return
         jobs = await k8s.list_jobs(
             namespace=self._cleanup_namespace,
             label_selector=_AGL_LITE_MANAGED_BY_SELECTOR,
@@ -2096,6 +2104,8 @@ class AglLiteRolloutBridge:
             raise RuntimeError("cleanup_namespace is required when cleanup_agent_jobs is enabled")
 
         k8s = self._get_cleanup_k8s_client()
+        if k8s is None:
+            return
         jobs = await k8s.list_jobs(
             namespace=self._cleanup_namespace,
             label_selector=_AGL_LITE_MANAGED_BY_SELECTOR,

@@ -153,7 +153,13 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             trace_aggregator=trace_aggregator,
             hooks=hooks,
             local_agent_class=al.get("local", {}).get("agent_class", None),
-            local_env_map=OmegaConf.to_container(al.get("local", {}).get("env_map", {}), resolve=True),
+            local_env_map=(
+                OmegaConf.to_container(
+                    al.get("local", {}).get("env_map", {}), resolve=True
+                )
+                if OmegaConf.is_config(al.get("local", {}).get("env_map", {}))
+                else al.get("local", {}).get("env_map", {})
+            ),
             k8s_job_template_path=al.get("k8s", {}).get("job_template_path", None),
             cleanup_agent_jobs=al.get("cleanup_agent_jobs", False),
             cleanup_namespace=al.get("cleanup_namespace", None),

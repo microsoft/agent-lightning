@@ -2,6 +2,10 @@ runner_type: k8s # k8s | local
 
 agl_server:
   url: http://localhost:8080
+  # Optional external URL for agent pods. If unset, falls back to agl_server.url.
+  # Example for minikube docker driver:
+  # agent_url: http://host.minikube.internal:8080
+  agent_url: null
   key: ""
 
 k8s_runner:

@@ -74,8 +74,12 @@ def build_job_spec(rollout: Rollout, controller_config: DictConfig) -> dict[str,
     pod_spec["restartPolicy"] = "Never"
 
     mode = "train" if rollout.is_train else "val"
+    agent_base_url = str(
+        controller_config.agl_server.get("agent_url", None)
+        or controller_config.agl_server.url
+    ).rstrip("/")
     agl_openai_base_url = (
-        f"{controller_config.agl_server.url}/proxy/rollout/{rollout.rollout_id}"
+        f"{agent_base_url}/proxy/rollout/{rollout.rollout_id}"
         f"/attempt/{DEFAULT_ATTEMPT_ID}/mode/{mode}/openai/v1"
     )
     for container in pod_spec.get("containers", []):
@@ -83,7 +87,7 @@ def build_job_spec(rollout: Rollout, controller_config: DictConfig) -> dict[str,
         for name, value in {
             "AGL_OPENAI_BASE_URL": agl_openai_base_url,
             "AGL_EVENT_URL": (
-                f"{controller_config.agl_server.url}/api/rollouts/{rollout.rollout_id}"
+                f"{agent_base_url}/api/rollouts/{rollout.rollout_id}"
                 f"/attempt/{DEFAULT_ATTEMPT_ID}/events"
             ),
             "AGL_KEY": str(controller_config.agl_server.key or ""),
