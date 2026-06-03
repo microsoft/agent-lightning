@@ -41,5 +41,5 @@ agl-lite-controller \
 python examples/calc_x/train_calc_agent.py \
     --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
     --agl-key "$AGL_KEY" \
-    --run-name minkube \
+    --run-name minikube \
     "$@"
