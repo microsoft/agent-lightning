@@ -174,6 +174,24 @@ class TestAgentJobCleanup:
         assert k8s.deleted == []
         assert set(k8s.jobs) == {"job-r1"}
 
+    def test_cleanup_without_client_is_noop(self) -> None:
+        bridge = AglLiteRolloutBridge(
+            agl_base_url="http://test",
+            agl_key="test-key",
+            train_rollout_n=1,
+            train_information={"model": "test-model"},
+            tokenizer=None,
+            mini_batch_size=2,
+            pad_token_id=0,
+            cleanup_agent_jobs=True,
+            cleanup_namespace="agent-ns",
+            cleanup_k8s_client=None,
+        )
+        bridge._enqueue_order = ["r1"]
+
+        # Missing cleanup client should not fail training teardown.
+        bridge.cleanup_agent_jobs()
+
 
 class TestAsyncGroupFinishSelection:
     def _bridge(self) -> AglLiteRolloutBridge:

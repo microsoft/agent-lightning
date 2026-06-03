@@ -7,14 +7,11 @@ Run the llm-in-sandbox training flow on agl-lite with local Kubernetes or miniku
 | Path | Purpose |
 |------|---------|
 | `README.md` | This guide |
-| `.env.example` | Deploy, model, data, and training defaults |
 | `Dockerfile.agent` | Agent image with llm-in-sandbox and data baked in |
-| `job-template.yaml` | Pod spec fragment for rollout Jobs |
-| `gateway-config.yaml` | Gateway route config that injects `return_token_ids` |
-| `hooks.py` | agl-lite rollout hook that injects per-sample env vars |
+| `job-template.yaml` | Complete K8s Job template for rollout Jobs |
 | `agents/runner.py` | Container adapter that runs `llm-in-sandbox run_in_container` and posts events |
 | `train_llm_in_sandbox.py` | Host-side VERL training entrypoint |
-| `run.sh` | Build images, deploy agl-lite/controller, and run training |
+| `run.sh` | Build images, start agl-lite server/controller, and run training |
 | `data/` | Required train and test datasets |
 | `vendor/llm-in-sandbox/` | Vendored llm-in-sandbox package from the reference zip |
 
@@ -40,22 +37,15 @@ You also need:
 
 ## Data
 
-The example uses these datasets copied from `llm-in-sandbox.zip`. The test data
-path is generic and defaults to math in `.env.example`; point it at another
-compatible `test_verl.json` directory to test a different split.
+The example uses these datasets copied from `llm-in-sandbox.zip`. The default
+train and validation splits are the sampled mini datasets listed below.
 
 | Split | Path |
 |-------|------|
-| train | `data/llm_sandbox_instruct_pretrain/train_verl.json` |
-| test default | `data/llm_sandbox_math_mini/test_verl.json` |
-| test optional | `data/llm_sandbox_chem_mini/test_verl.json` |
+| train default | `data/llm_sandbox_sampled_pretrain_mini/train_verl.json` |
+| val default | `data/llm_sandbox_sampled_vali_mini/test_verl.json` |
+| other compatible val split | any `test_verl.json` directory under `data/` |
 
-The same paths are explicit in `.env.example`:
-
-```bash
-AGL_TRAIN_DATA_DIR=examples/llm-in-sandbox/data/llm_sandbox_instruct_pretrain
-AGL_TEST_DATA_DIR=examples/llm-in-sandbox/data/llm_sandbox_math_mini
-```
 
 ## Local K8s / Minikube
 
@@ -66,28 +56,29 @@ export AGL_KEY=$(openssl rand -hex 32)
 examples/llm-in-sandbox/run.sh
 ```
 
+The launcher now starts `agl-lite-server` and `agl-lite-controller` directly, then runs `train_llm_in_sandbox.py`. Extra VERL settings can be passed as dotlist overrides after the script arguments, for example:
+
+```bash
+examples/llm-in-sandbox/run.sh --ci trainer.total_epochs=2 actor_rollout_ref.rollout.n=2
+```
+
 ## How The Flow Works
 
 ```text
 run.sh
-  -> scripts/build_images.sh --include-example llm-in-sandbox
-  -> uv run agl-lite deploy --env-file examples/llm-in-sandbox/.env.example
+  -> minikube start + minikube image build
+  -> agl-lite-server
+  -> agl-lite-controller
   -> train_llm_in_sandbox.py
        -> agl_lite.verl.entrypoint.run_ppo(...)
        -> agl-lite enqueue rollout
-       -> controller creates K8s Job
+       -> controller creates K8s Job from job-template.yaml
        -> agent pod runs /app/runner.py
        -> runner calls llm-in-sandbox run_in_container
-       -> LLM calls go through OPENAI_BASE_URL to agl-lite gateway
+       -> LLM calls go through AGL_OPENAI_BASE_URL / OPENAI_BASE_URL to agl-lite gateway
        -> runner posts agent_output and reward events
 ```
 
 ## Logs And Cleanup
 
-Logs are written under `examples/llm-in-sandbox/logs/<timestamp>/`.
-
-Clean up the local deployment with:
-
-```bash
-uv run agl-lite deploy --env-file examples/llm-in-sandbox/.env.example --cleanup
-```
+The launcher uses the local terminal output for logs. Clean up with `Ctrl+C`; the script stops the server, controller, and ray on exit.
