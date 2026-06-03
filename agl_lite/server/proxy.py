@@ -40,6 +40,7 @@ class ProxyRouter:
         self._model_name = str(default_proxy["model_name"])
         self._train_temperature = float(default_proxy["train"]["temperature"])
         self._val_temperature = float(default_proxy["val"]["temperature"])
+        self._include_log_probs = bool(default_proxy.get("include_log_probs", True))
         self._rr_index: dict[str, int] = {}
 
     @property
@@ -56,12 +57,15 @@ class ProxyRouter:
 
     def prepare_body(self, body: dict[str, Any], mode: str) -> dict[str, Any]:
         if mode == "train":
-            return {
+            prepared = {
                 **body,
                 "model": self._model_name,
                 "temperature": self._train_temperature,
                 "return_token_ids": True,
             }
+            if self._include_log_probs:
+                prepared["logprobs"] = True
+            return prepared
         if mode == "val":
             prepared = {
                 **body,

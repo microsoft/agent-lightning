@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -56,6 +57,44 @@ def _query_events(
     return events
 
 
+def _extract_choice_log_probs(choice: dict[str, Any]) -> list[float] | None:
+    """Extract chosen-token logprobs from a single choice.
+
+    Returns the per-token logprobs, or None when they are missing or unusable
+    (no logprobs field, unrecognized schema, or any non-finite/non-float value).
+    Never raises: a malformed response yields None so the triplet query stays a
+    successful HTTP response and the training bridge drops the sample.
+    """
+    lp = choice.get("logprobs")
+    if not isinstance(lp, dict):
+        return None
+
+    raw: list[Any]
+    if isinstance(lp.get("content"), list):
+        # OpenAI chat schema: logprobs.content -> [{"logprob": float, ...}, ...]
+        raw = []
+        for item in lp["content"]:
+            if not isinstance(item, dict) or "logprob" not in item:
+                return None
+            raw.append(item["logprob"])
+    elif isinstance(lp.get("token_logprobs"), list):
+        # Completions schema: logprobs.token_logprobs -> [float, ...]
+        raw = list(lp["token_logprobs"])
+    else:
+        return None
+
+    out: list[float] = []
+    for v in raw:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(f):
+            return None
+        out.append(f)
+    return out
+
+
 def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     """Extract prompt_token_ids and response_token_ids from a model_request event.
 
@@ -66,12 +105,14 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     resp = data.get("response")
     prompt_token_ids: list[int] = []
     response_token_ids: list[int] = []
+    response_log_probs: list[float] = []
 
     if isinstance(resp, dict):
         prompt_token_ids = resp.get("prompt_token_ids", [])
         choices = resp.get("choices", [])
         if choices:
             response_token_ids = choices[0].get("token_ids", [])
+            response_log_probs = _extract_choice_log_probs(choices[0]) or []
     elif isinstance(resp, list):
         # Legacy: raw SSE chunks (pre-assembly format, backward compat).
         for chunk in resp:
@@ -87,6 +128,7 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "prompt_token_ids": prompt_token_ids,
         "response_token_ids": response_token_ids,
+        "response_log_probs": response_log_probs,
         "server": {"model": srv.get("model"), "version": srv.get("version")},
     }
 

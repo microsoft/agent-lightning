@@ -7,6 +7,7 @@ import importlib
 
 # AglLiteRolloutBridge talks to agl-lite over HTTP instead of using LightningStore,
 # LLMProxy, and Adapter directly.
+import math
 import os
 import re
 import time
@@ -784,7 +785,10 @@ class AglLiteRolloutBridge:
                 triplets.append(
                     Triplet(
                         prompt={"token_ids": d.get("prompt_token_ids", [])},
-                        response={"token_ids": d.get("response_token_ids", [])},
+                        response={
+                            "token_ids": d.get("response_token_ids", []),
+                            "log_probs": d.get("response_log_probs", []),
+                        },
                         reward=None,
                         metadata={"server": d.get("server", {})},
                     )
@@ -1091,6 +1095,7 @@ class AglLiteRolloutBridge:
                 {
                     "prompt_ids": list(t.prompt.get("token_ids", [])),
                     "response_ids": list(t.response.get("token_ids", [])),
+                    "response_log_probs": list(t.response.get("log_probs", [])),
                     "image_urls": list(t.prompt.get("image_urls", [])),
                 }
                 for t in rollout.triplets
@@ -1113,6 +1118,8 @@ class AglLiteRolloutBridge:
         turn_index_list: list[int] = []
         is_drop_list: list[bool] = []
         image_grid_thw_list: list[torch.Tensor | None] = []
+        response_log_probs_list: list[list[float]] = []
+        row_has_real_lp_list: list[bool] = []
         n_trunc_sample_because_of_response = 0
         unmerged_count = 0
         template_mismatch_count = 0
@@ -1121,6 +1128,23 @@ class AglLiteRolloutBridge:
         response_per_turn_list: list[int] = []
 
         eos_id = (self.tokenizer.eos_token_id if self.tokenizer is not None else None) or self.pad_token_id
+
+        def validate_trace_logprobs(trace: dict[str, Any]) -> list[float] | None:
+            """Return per-token logprobs for one trace, or None when unusable."""
+            lps = trace.get("response_log_probs") or []
+            rids = trace.get("response_ids") or []
+            if not lps or len(lps) != len(rids):
+                return None
+            out: list[float] = []
+            for v in lps:
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    return None
+                if not math.isfinite(f):
+                    return None
+                out.append(f)
+            return out
 
         def append_training_row(
             *,
@@ -1132,6 +1156,7 @@ class AglLiteRolloutBridge:
             reward: float,
             response_mask: list[int] | None = None,
             image_urls: list[str] | None = None,
+            response_log_probs: list[float] | None = None,
         ) -> None:
             nonlocal n_trunc_sample_because_of_response
             if len(prompt_ids) > max_prompt_length:
@@ -1144,7 +1169,14 @@ class AglLiteRolloutBridge:
                 response_ids = response_ids[:max_response_length]
                 if response_mask is not None:
                     response_mask = response_mask[:max_response_length]
+                if response_log_probs is not None:
+                    response_log_probs = response_log_probs[:max_response_length]
                 n_trunc_sample_because_of_response += 1
+
+            # Validate logprob alignment defensively: a row only carries real
+            # rollout logprobs when every response token has a finite value.
+            if response_log_probs is not None and len(response_log_probs) != len(response_ids):
+                response_log_probs = None
 
             one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
                 prompt_ids, max_prompt_length, self.pad_token_id
@@ -1159,6 +1191,15 @@ class AglLiteRolloutBridge:
             if response_mask is not None:
                 one_response_mask, _ = get_right_padded_ids_and_attention_mask(response_mask, max_response_length, 0)
                 response_mask_list.append(one_response_mask)
+            # Always emit a finite logprob row (0.0 filler) so the assembled tensor
+            # never contains NaN/inf; rows without real logprobs are dropped later.
+            if response_log_probs is None:
+                row_has_real_lp_list.append(False)
+                response_log_probs_list.append([0.0] * max_response_length)
+            else:
+                row_has_real_lp_list.append(True)
+                padded_lp = response_log_probs + [0.0] * (max_response_length - len(response_log_probs))
+                response_log_probs_list.append(padded_lp[:max_response_length])
             reward_list.append(reward)
             data_id_list.append(data_id)
             rollout_id_list.append(rid)
@@ -1170,6 +1211,8 @@ class AglLiteRolloutBridge:
         def append_placeholder(rid: str) -> None:
             original_sample = self._task_id_to_original_sample.get(rid, {})
             data_id = str(original_sample.get("data_id") or original_sample.get("uid") or rid)
+            # Placeholder rows have no real rollout logprobs: leave response_log_probs
+            # as None so the row is dropped when bypass mode is active.
             append_training_row(
                 rid=rid,
                 data_id=data_id,
@@ -1178,6 +1221,7 @@ class AglLiteRolloutBridge:
                 response_ids=[eos_id],
                 reward=finished_id_to_final_reward.get(rid, self.reward_fillna_value),
                 response_mask=[1] if level == "trajectory" else None,
+                response_log_probs=None,
             )
 
         if level == "transition":
@@ -1187,6 +1231,7 @@ class AglLiteRolloutBridge:
                     append_placeholder(rid)
                     continue
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
+                    trace_lp = validate_trace_logprobs(trace)
                     append_training_row(
                         rid=rid,
                         data_id=sample_info["data_id"],
@@ -1195,6 +1240,7 @@ class AglLiteRolloutBridge:
                         response_ids=trace["response_ids"],
                         reward=sample_info["reward"],
                         image_urls=trace.get("image_urls", []),
+                        response_log_probs=trace_lp,
                     )
         else:
             for rid in self._enqueue_order:
@@ -1249,18 +1295,35 @@ class AglLiteRolloutBridge:
                     prompt_ids = list(first_trace["prompt_ids"])
                     response_ids: list[int]
                     response_mask: list[int]
+                    # Build response_log_probs in lockstep with response_mask:
+                    # 0.0 at masked (observation / prompt-overflow) positions, real
+                    # logprobs at assistant tokens. A row only keeps its logprobs
+                    # when every assistant segment in the group is valid.
+                    group_lp_ok = True
+                    response_log_probs: list[float]
                     if current_group[0] > 0 and len(prompt_ids) > max_prompt_length:
                         response_ids = prompt_ids[max_prompt_length:]
                         prompt_ids = prompt_ids[:max_prompt_length]
                         response_mask = [1] * len(response_ids)
+                        # Prompt-overflow tokens are mask==1 but have no rollout
+                        # logprobs, so the row cannot carry valid logprobs.
+                        response_log_probs = [0.0] * len(response_ids)
+                        group_lp_ok = False
                     else:
                         response_ids = []
                         response_mask = []
+                        response_log_probs = []
 
                     prompt_length = len(prompt_ids)
                     first_response_ids = list(first_trace["response_ids"])
                     response_ids += first_response_ids
                     response_mask += [1] * len(first_response_ids)
+                    first_lp = validate_trace_logprobs(first_trace)
+                    if first_lp is None:
+                        group_lp_ok = False
+                        response_log_probs += [0.0] * len(first_response_ids)
+                    else:
+                        response_log_probs += first_lp
 
                     for turn_index in current_group[1:]:
                         trace = sample_info["trace_list"][turn_index]
@@ -1269,8 +1332,15 @@ class AglLiteRolloutBridge:
                             observation_ids = trace["prompt_ids"][-new_prompt_length:]
                             response_ids += observation_ids
                             response_mask += [0] * len(observation_ids)
+                            response_log_probs += [0.0] * len(observation_ids)
                         response_ids += trace["response_ids"]
                         response_mask += [1] * len(trace["response_ids"])
+                        turn_lp = validate_trace_logprobs(trace)
+                        if turn_lp is None:
+                            group_lp_ok = False
+                            response_log_probs += [0.0] * len(trace["response_ids"])
+                        else:
+                            response_log_probs += turn_lp
 
                     append_training_row(
                         rid=rid,
@@ -1280,6 +1350,7 @@ class AglLiteRolloutBridge:
                         response_ids=response_ids,
                         reward=sample_info["reward"],
                         response_mask=response_mask,
+                        response_log_probs=response_log_probs if group_lp_ok else None,
                     )
 
         n_transition = len(input_ids_list)
@@ -1307,6 +1378,19 @@ class AglLiteRolloutBridge:
         else:
             position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
 
+        # Rollout-logprob gating: only emit rollout_log_probs once at least one
+        # row carries real logprobs (i.e. bypass-mode data is present). Rows
+        # without valid logprobs are dropped and counted; their filler is finite
+        # 0.0 so they never poison full-tensor diffs before being masked out.
+        emit_rollout_log_probs = any(row_has_real_lp_list)
+        n_dropped_no_log_probs = 0
+        if emit_rollout_log_probs:
+            for i, has_lp in enumerate(row_has_real_lp_list):
+                if has_lp:
+                    continue
+                is_drop_list[i] = True
+                n_dropped_no_log_probs += 1
+
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
         scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
 
@@ -1329,6 +1413,10 @@ class AglLiteRolloutBridge:
         if level == "trajectory":
             assert batch_response_mask is not None
             batch_dict["response_mask"] = batch_response_mask
+        if emit_rollout_log_probs:
+            batch_dict["rollout_log_probs"] = torch.tensor(
+                response_log_probs_list, dtype=torch.float32
+            ).to(device)
 
         batch = TensorDict(batch_dict, batch_size=n_transition)  # type: ignore[arg-type]
         data_proto = DataProto(batch=batch)
@@ -1350,6 +1438,7 @@ class AglLiteRolloutBridge:
             "training/n_rollouts_w_fallback_reward": sample_with_fallback_reward_count,
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
+            "training/n_dropped_no_log_probs": n_dropped_no_log_probs,
             **(
                 {
                     "training/n_unmerged_rollouts": unmerged_count,

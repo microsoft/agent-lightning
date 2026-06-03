@@ -54,6 +54,11 @@ from verl.utils.profiler.performance import marked_timer
 from verl.utils.ray_utils import auto_await
 from verl.utils.tracking import Tracking
 
+try:
+    from verl.trainer.ppo.rollout_corr_helper import apply_bypass_mode
+except ImportError:  # pragma: no cover - older VERL without rollout correction
+    apply_bypass_mode = None
+
 from agl_lite.hooks import RolloutHooks, load_hooks
 
 from .rollout_bridge import AglLiteRolloutBridge
@@ -595,11 +600,28 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         divisor = self.actor_rollout_wg.world_size
         batch_padded, pad_size = pad_dataproto_to_divisor(batch, divisor)
 
-        with marked_timer("old_log_prob", timing_raw, color="blue"):
-            old_log_prob, _old_log_prob_mfu = self._compute_old_log_prob(batch_padded)
-            if "entropys" in old_log_prob.batch:
-                old_log_prob.batch.pop("entropys")
-            batch_padded = batch_padded.union(old_log_prob)
+        rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
+        bypass_mode = bool(rollout_corr_config and rollout_corr_config.get("bypass_mode", False))
+
+        if bypass_mode:
+            if apply_bypass_mode is None:
+                raise RuntimeError("bypass_mode requires verl.trainer.ppo.rollout_corr_helper.apply_bypass_mode")
+            if "rollout_log_probs" not in batch_padded.batch:
+                raise RuntimeError("bypass_mode requires rollout_log_probs in batch")
+            if not torch.isfinite(batch_padded.batch["rollout_log_probs"]).all():
+                raise RuntimeError("bypass_mode requires finite rollout_log_probs everywhere")
+            with marked_timer("old_log_prob", timing_raw, color="blue"):
+                apply_bypass_mode(
+                    batch_padded,
+                    rollout_corr_config,
+                    self.config.actor_rollout_ref.actor.policy_loss,
+                )
+        else:
+            with marked_timer("old_log_prob", timing_raw, color="blue"):
+                old_log_prob, _old_log_prob_mfu = self._compute_old_log_prob(batch_padded)
+                if "entropys" in old_log_prob.batch:
+                    old_log_prob.batch.pop("entropys")
+                batch_padded = batch_padded.union(old_log_prob)
 
         if self.use_reference_policy:
             with marked_timer("ref", timing_raw, color="olive"):
@@ -624,6 +646,23 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 metrics.update(kl_metrics)
             else:
                 batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+
+            # Decoupled mode: compute IS weights, rejection sampling, and metrics
+            # once per batch using the stable recomputed old_log_probs vs rollout_log_probs.
+            # Skipped in bypass mode, where the actor computes metrics from evolving π_θ.
+            if (
+                rollout_corr_config is not None
+                and not bypass_mode
+                and "rollout_log_probs" in batch.batch
+            ):
+                from verl.trainer.ppo.rollout_corr_helper import (
+                    compute_rollout_correction_and_add_to_batch,
+                )
+
+                batch, is_metrics = compute_rollout_correction_and_add_to_batch(
+                    batch, rollout_corr_config
+                )
+                metrics.update(is_metrics)
 
             batch = compute_advantage(
                 batch,

@@ -4,26 +4,32 @@ Loaded by ``agl_lite.controller.local_reconciler`` as
 ``examples.science_world.agents.sw_agent:SWAgent`` when the controller runs
 in ``runner_type=local`` mode.
 
-The class exposes one method, ``run(task)``, which:
+The class exposes one method, ``run()`` (no arguments). The local reconciler
+injects the rollout input as environment variables (see ``local.env_map`` in
+``train_sw_agent.py``) and provides ``AGL_OPENAI_BASE_URL`` / ``AGL_EVENT_URL``
+/ ``AGL_KEY``. ``run()``:
 
   1. Boots a ScienceWorldEnv and loads the task / variation.
-  2. Loops up to ``max_steps``; each turn shows the LLM the current
-     observation + a numbered list of valid actions and asks it to pick one
-     by index (``### ACTION: <n> ###``).
-  3. Steps the env, POSTs a ``step`` event per turn, and a final
-     ``episode_result`` event before returning.
+  2. Builds the initial user prompt once (task + first obs + first inventory
+     + first action list) and keeps appending to a growing ``messages`` list:
+     assistant turns are the model's raw replies, user turns are the next
+     observation + inventory + valid-action list. This makes each turn's
+     prompt a token-level prefix of the previous turn's ``prompt + response``,
+     which is what ``rollout_bridge`` needs to merge multi-turn traces into a
+     single trajectory row.
+  3. Steps the env, then POSTs a single ``reward`` event = ``final_score / 100``
+     for the VERL bridge to consume.
 
 Process exit code is the only terminal signal: non-zero -> FAILED.
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
 import re
 import sys
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -36,7 +42,7 @@ DEFAULT_MAX_VALID_ACTIONS_SHOWN = 50
 DEFAULT_OBS_SNIPPET_CHARS = 240
 ACTION_PATTERN = re.compile(r"###\s*ACTION:\s*(\d+)\s*###")
 
-PROMPT_TEMPLATE = """You are playing a text-based science game. Solve the task by issuing actions one at a time.
+INITIAL_PROMPT_TEMPLATE = """You are playing a text-based science game. Solve the task by issuing actions one at a time.
 
 TASK: {task_description}
 
@@ -49,37 +55,27 @@ INVENTORY:
 Choose ONE of the following actions by its number:
 {action_list}
 
-Respond with the action number in the format:
-### ACTION: <number> ###"""
+Respond with EXACTLY the following, nothing else:
+### ACTION: <number> ###
+Do not include any reasoning, explanation, or other text.
+"""
+
+OBSERVATION_TEMPLATE = """OBSERVATION:
+{observation}
+
+INVENTORY:
+{inventory}
+
+Choose ONE of the following actions by its number:
+{action_list}"""
 
 
 def _setup_logging() -> None:
-    log_dir = os.environ.get("AGL_LOG_DIR")
-    fmt = "%(asctime)s %(levelname)s %(message)s"
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if log_dir:
-        log_path = Path(log_dir) / "agent.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_path))
-    logging.basicConfig(level=logging.INFO, format=fmt, handlers=handlers)
-
-
-def _post_event(event_type: str, data: dict[str, Any]) -> None:
-    event_url = os.environ.get("AGL_EVENT_URL")
-    if not event_url:
-        log.warning("AGL_EVENT_URL not set — skipping %s event", event_type)
-        return
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    try:
-        resp = httpx.post(
-            event_url,
-            json={"event_type": event_type, "data": data},
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-    except Exception as e:
-        log.error("Failed to post %s event: %s", event_type, e)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
 
 
 def _format_action_list(valid: list[dict[str, Any]], max_shown: int) -> str:
@@ -88,7 +84,7 @@ def _format_action_list(valid: list[dict[str, Any]], max_shown: int) -> str:
 
 
 def _parse_action_index(text: str, num_actions: int) -> int:
-    m = ACTION_PATTERN.search(text or "")
+    m = ACTION_PATTERN.fullmatch((text or "").strip())
     if not m:
         return 0
     idx = int(m.group(1))
@@ -97,158 +93,136 @@ def _parse_action_index(text: str, num_actions: int) -> int:
     return 0
 
 
-def _stub_pick(_text_obs: str, _valid: list[dict[str, Any]]) -> int:
-    """Stub policy: always action 0. Used when SW_STUB_LLM=1 for smoke tests."""
-    return 0
-
-
 class SWAgent:
-    """ScienceWorld agent for agl-lite local runner mode.
+    """ScienceWorld agent for agl-lite local runner mode."""
 
-    ``run()`` accepts the task dict that the controller injected from
-    ``rollout.input`` and is expected to either complete normally or raise
-    (which becomes a non-zero exit code).
-    """
-
-    async def run(self, task: dict[str, Any]) -> None:
+    async def run(self) -> None:
         _setup_logging()
-        task_name = task["task_name"]
-        variation_idx = int(task["variation_idx"])
-        simplification = task.get("simplification", "easy")
+
+        task_name = os.environ["TASK_NAME"]
+        variation_idx = int(os.environ["VARIATION_IDX"])
+        simplification = os.environ.get("SIMPLIFICATION", "easy")
+
+        agl_key = os.environ["AGL_KEY"]
+        event_url = os.environ["AGL_EVENT_URL"]
+        openai_base_url = os.environ["AGL_OPENAI_BASE_URL"]
+
         max_steps = int(os.environ.get("SW_MAX_STEPS", str(DEFAULT_MAX_STEPS)))
         env_step_limit = int(os.environ.get("SW_ENV_STEP_LIMIT", str(DEFAULT_ENV_STEP_LIMIT)))
         max_valid_actions_shown = int(
             os.environ.get("SW_MAX_VALID_ACTIONS_SHOWN", str(DEFAULT_MAX_VALID_ACTIONS_SHOWN))
         )
         obs_snippet_chars = int(os.environ.get("SW_OBS_SNIPPET_CHARS", str(DEFAULT_OBS_SNIPPET_CHARS)))
-        stub_llm = os.environ.get("SW_STUB_LLM") == "1"
+        max_tokens = int(os.environ.get("AGL_MAX_TOKENS", "256"))
 
         log.info(
-            "ScienceWorld task=%s variation=%d simplification=%s max_steps=%d stub=%s",
+            "ScienceWorld task=%s variation=%d simplification=%s max_steps=%d",
             task_name,
             variation_idx,
             simplification,
             max_steps,
-            stub_llm,
         )
 
+        from openai import AsyncOpenAI
         from scienceworld import ScienceWorldEnv
+
+        client = AsyncOpenAI(base_url=openai_base_url, api_key=agl_key, max_retries=6)
 
         env = ScienceWorldEnv("", envStepLimit=env_step_limit)
         env.load(task_name, variation_idx, simplification)
         task_description = env.get_task_description()
         obs, info = env.reset()
-
-        llm_client = None if stub_llm else _build_llm_client()
-        model = os.environ.get("AGL_MODEL_NAME", "")
+        inventory = env.inventory()
+        valid = env.get_valid_action_object_combinations_with_templates()
 
         final_score = float(info.get("score", 0.0))
         completed = False
         turn = 0
 
+        messages: list[dict[str, str]] = []
+        if valid:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": INITIAL_PROMPT_TEMPLATE.format(
+                        task_description=task_description,
+                        observation=obs,
+                        inventory=inventory,
+                        action_list=_format_action_list(valid, max_valid_actions_shown),
+                    ),
+                }
+            )
+
         for turn in range(max_steps):
-            valid = env.get_valid_action_object_combinations_with_templates()
             if not valid:
                 log.warning("No valid actions at turn %d — aborting episode", turn)
                 break
 
-            if stub_llm:
-                action_idx = _stub_pick(obs, valid)
-            else:
-                assert llm_client is not None
-                inventory = env.inventory()
-                prompt = PROMPT_TEMPLATE.format(
-                    task_description=task_description,
-                    observation=obs,
-                    inventory=inventory,
-                    action_list=_format_action_list(valid, max_valid_actions_shown),
-                )
-                response_text = await _call_llm(llm_client, model, prompt)
-                action_idx = _parse_action_index(response_text, min(len(valid), max_valid_actions_shown))
-
+            response_text = await self._call_llm(client, messages, max_tokens)
+            action_idx = _parse_action_index(response_text, min(len(valid), max_valid_actions_shown))
             action_str = valid[action_idx]["action"]
-            obs, step_reward, done, info = env.step(action_str)
+            messages.append({"role": "assistant", "content": response_text})
+
+            obs, _step_reward, done, info = env.step(action_str)
             final_score = float(info.get("score", final_score))
 
-            _post_event(
-                "step",
-                {
-                    "turn": turn,
-                    "action": action_str,
-                    "reward": float(step_reward),
-                    "score": final_score,
-                    "done": bool(done),
-                    "obs_snippet": (obs or "")[:obs_snippet_chars],
-                },
+            log.info(
+                "turn=%d action=%r score=%.2f done=%s obs=%r",
+                turn,
+                action_str,
+                final_score,
+                done,
+                (obs or "")[:obs_snippet_chars],
             )
 
             if done:
                 completed = True
                 break
 
-        _post_event(
-            "episode_result",
-            {
-                "final_score": final_score,
-                "num_turns": turn + 1,
-                "completed": completed,
-                "task_name": task_name,
-                "variation_idx": variation_idx,
-            },
-        )
+            inventory = env.inventory()
+            valid = env.get_valid_action_object_combinations_with_templates()
+            if valid and turn + 1 < max_steps:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": OBSERVATION_TEMPLATE.format(
+                            observation=obs,
+                            inventory=inventory,
+                            action_list=_format_action_list(valid, max_valid_actions_shown),
+                        ),
+                    }
+                )
+
+        reward = max(0.0, min(1.0, final_score / 100.0))
         log.info(
-            "Episode done: score=%.2f turns=%d completed=%s",
+            "Episode done: score=%.2f turns=%d completed=%s reward=%.3f",
             final_score,
             turn + 1,
             completed,
+            reward,
         )
 
+        httpx.post(
+            event_url,
+            json={"event_type": "reward", "data": {"value": reward}},
+            headers={"Authorization": f"Bearer {agl_key}"},
+            timeout=10.0,
+        ).raise_for_status()
 
-def _build_llm_client() -> Any:
-    base_url = os.environ.get("OPENAI_BASE_URL")
-    if not base_url:
-        raise RuntimeError("OPENAI_BASE_URL is required (set by local controller)")
-    api_key = os.environ.get("OPENAI_API_KEY", "token-abc123")
-
-    from openai import AsyncOpenAI
-
-    return AsyncOpenAI(base_url=base_url, api_key=api_key)
-
-
-async def _call_llm(client: Any, model: str, prompt: str) -> str:
-    is_train = os.environ.get("AGL_IS_TRAIN", "1") == "1"
-    env_var = "AGL_TEMPERATURE_TRAIN" if is_train else "AGL_TEMPERATURE_VAL"
-    default = "1.0" if is_train else "0.0"
-    temperature = float(os.environ.get(env_var, default))
-    max_tokens = int(os.environ.get("AGL_MAX_TOKENS", "256"))
-    try:
-        completion = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return completion.choices[0].message.content or ""
-    except Exception as e:
-        log.error("LLM call failed: %s", e)
-        return ""
-
-
-def _entrypoint_for_local_smoke() -> None:
-    """Allow running this module directly for ad-hoc debugging.
-
-    Reads AGL_TASK_INPUT exactly like the local reconciler worker would, useful for
-    iterating on the agent without spinning up the controller.
-    """
-    import asyncio
-
-    raw = os.environ.get("AGL_TASK_INPUT")
-    if not raw:
-        print("AGL_TASK_INPUT not set", file=sys.stderr)
-        sys.exit(2)
-    task = json.loads(raw)
-    asyncio.run(SWAgent().run(task))
+    @staticmethod
+    async def _call_llm(client: Any, messages: list[dict[str, str]], max_tokens: int) -> str:
+        try:
+            completion = await client.chat.completions.create(
+                model="auto",
+                messages=messages,
+                max_tokens=max_tokens,
+                stop=["###\n", "###\n\n"],
+            )
+            return completion.choices[0].message.content or ""
+        except Exception as e:
+            log.error("LLM call failed: %s", e)
+            return ""
 
 
 if __name__ == "__main__":
-    _entrypoint_for_local_smoke()
+    asyncio.run(SWAgent().run())

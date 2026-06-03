@@ -1,34 +1,26 @@
 """Train a ScienceWorld agent with VERL on agl-lite (local runner mode).
 
 Generates a dataset on-the-fly from a list of task names crossed with
-variation indices, then drives VERL's async-rollout PPO/GRPO trainer.
+variation indices, then drives VERL's PPO/GRPO trainer. Each rollout is run
+by the local controller as a short-lived ``SWAgent`` subprocess.
 
-Assumes ``agl-lite serve`` and ``agl-lite controller`` are already running
-on this host (started by ``run.sh``).
+Assumes ``agl-lite-server`` and ``agl-lite-controller runner_type=local`` are
+already running on this host (started by ``run_local.sh``).
 
 Usage::
 
-    examples/science_world/run.sh                  # full training
-    examples/science_world/run.sh --ci-fast        # 1 PPO step smoke test
+    examples/science_world/run_local.sh                  # full training
+    examples/science_world/run_local.sh --ci             # short CI loop
 
     # Standalone (infra already up):
     python examples/science_world/train_sw_agent.py \\
         --task-names find-non-living-thing,find-living-thing \\
         --variations-per-task 50
-
-Environment variables (read by VERL / the bridge):
-
-  AGL_BASE_URL   agl-lite server URL (default http://localhost:8080)
-  AGL_KEY        shared API key
-    AGL_ADMIN_KEY  admin key for /proxy/{pause,resume,state} (required by async-rollout)
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import uuid
-from datetime import datetime
 from typing import Any
 
 from datasets import Dataset as HuggingFaceDataset
@@ -36,6 +28,28 @@ from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 DATA_SOURCE = "science_world"
+
+
+def resolve_task_names(arg: str) -> list[str]:
+    """Resolve the --task-names argument.
+
+    ``"all"`` (case-insensitive) expands to every ScienceWorld task name
+    via ``env.get_task_names()``. Otherwise parses as a comma-separated list.
+    """
+    if arg.strip().lower() == "all":
+        from scienceworld import ScienceWorldEnv
+
+        return ScienceWorldEnv().get_task_names()
+    return [t.strip() for t in arg.split(",") if t.strip()]
+
+
+def _row(task_name: str, variation_idx: int, simplification: str) -> dict[str, Any]:
+    return {
+        "task_name": task_name,
+        "variation_idx": variation_idx,
+        "simplification": simplification,
+        "data_source": DATA_SOURCE,
+    }
 
 
 def build_dataset(
@@ -48,11 +62,9 @@ def build_dataset(
 
     For each task, the per-task variation budget is
     ``min(variations_per_task, env.get_max_variations(task_name))`` — some
-    ScienceWorld tasks (e.g. ``identify-life-stages-2``) only define 10
-    variations, so an unconditional cap of 50 would crash inside
-    ``env.load``. The budget is then deterministically split: the last
-    ``val_fraction`` of indices go to val so the split is reproducible
-    without an RNG seed.
+    ScienceWorld tasks only define a handful of variations, so an
+    unconditional cap would crash inside ``env.load``. The budget is then
+    deterministically split: the last ``val_fraction`` of indices go to val.
     """
     if variations_per_task <= 0:
         raise ValueError("variations_per_task must be positive")
@@ -78,60 +90,69 @@ def build_dataset(
     return train, val
 
 
-def resolve_task_names(arg: str) -> list[str]:
-    """Resolve the --task-names argument.
-
-    ``"all"`` (case-insensitive) expands to every ScienceWorld task name
-    via ``env.get_task_names()``. Otherwise parses as a comma-separated
-    list.
-    """
-    if arg.strip().lower() == "all":
-        from scienceworld import ScienceWorldEnv
-
-        return ScienceWorldEnv().get_task_names()
-    return [t.strip() for t in arg.split(",") if t.strip()]
-
-
-def _row(task_name: str, variation_idx: int, simplification: str) -> dict[str, Any]:
-    return {
-        "task_name": task_name,
-        "variation_idx": variation_idx,
-        "simplification": simplification,
-        "data_source": DATA_SOURCE,
-    }
-
-
 def verl_default_config() -> dict[str, Any]:
+    """VERL config overrides for ScienceWorld training (local runner).
+
+    Merged on top of agl-lite's base config
+    (agl_lite/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
+    """
     return {
         "algorithm": {
             "adv_estimator": "grpo",
             "use_kl_in_reward": False,
+            "rollout_correction": {
+                "bypass_mode": True,
+                "loss_type": "ppo_clip",
+                "rollout_is": None,
+                "rollout_rs": None,
+                "rollout_rs_threshold": None,
+            },
         },
         "data": {
             "train_batch_size": 32,
             "max_prompt_length": 4096,
-            "max_response_length": 10240,
+            # Trajectory level merges all turns into one sequence, so the
+            # response tensor must be large enough to hold the merged turns;
+            # keep this == trace_aggregator.trajectory_max_response_length.
+            "max_response_length": 1024,
         },
         "actor_rollout_ref": {
             "rollout": {
+                # Hardware: 8 GPUs, full NVLink mesh (NV12), 4 NUMA nodes of 2
+                # GPUs each (GPU0/1, GPU2/3, GPU4/5, GPU6/7). TP=2 maps every
+                # vLLM replica onto one NVLink + NUMA-local GPU pair → 8/2 = 4
+                # async rollout replicas, with intra-replica all-reduce staying
+                # on NVLink (no cross-NUMA / PCIe traffic).
                 "tensor_model_parallel_size": 2,
                 "n": 4,
                 "log_prob_micro_batch_size_per_gpu": 4,
                 "name": "vllm",
-                "gpu_memory_utilization": 0.75,
-                "checkpoint_engine": {
-                    "update_weights_bucket_megabytes": 4096,
-                },
+                "gpu_memory_utilization": 0.5,
+                # 7B embed_tokens (152064 x 3584 x fp32 ~= 2181 MB) exceeds the
+                # default 2048 MB bucket; bump so weight sync fits.
+                "checkpoint_engine": {"update_weights_bucket_megabytes": 4096},
             },
             "actor": {
                 "ppo_mini_batch_size": 16,
                 "ppo_micro_batch_size_per_gpu": 4,
+                # Ulysses sequence parallelism: trajectory level merges all turns
+                # into one ~12k-token sequence (prompt 4096 + response 8192), so
+                # shard the sequence/activation dim across 2 GPUs. The all-to-all
+                # rides the NVLink mesh, so this cuts long-context activation
+                # memory almost for free. ref follows this value automatically.
+                "ulysses_sequence_parallel_size": 2,
                 "optim": {"lr": 1e-6},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0.0,
                 "entropy_coeff": 0,
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.3,
+                # Offload actor params + optimizer to CPU between steps. With
+                # vLLM holding 0.5 of each 40 GB GPU and the weight-sync needing a
+                # ~4 GB on-GPU transfer buffer, keeping the 7B fp32 params +
+                # optimizer resident OOMs the vLLM receiver during weight sync
+                # (ZMQ deadlock). Offload frees that headroom; the PCIe<->host
+                # cost is hidden behind rollout. Matches the proven step-128 run.
                 "fsdp_config": {
                     "param_offload": True,
                     "optimizer_offload": True,
@@ -139,42 +160,64 @@ def verl_default_config() -> dict[str, Any]:
             },
             "ref": {
                 "log_prob_micro_batch_size_per_gpu": 8,
-                "fsdp_config": {"param_offload": True},
+                "fsdp_config": {"param_offload": False},
             },
             "model": {
-                "path": os.environ.get("AGL_MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct"),
+                "path": "Qwen/Qwen2.5-7B-Instruct",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
         },
         "trainer": {
-            "n_gpus_per_node": int(os.environ.get("AGL_N_GPUS_PER_NODE", "8")),
+            "n_gpus_per_node": 8,
             "val_before_train": False,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
             "project_name": "agl-lite",
-            "experiment_name": "science_world_v1",
+            "experiment_name": "science_world",
             "nnodes": 1,
             "save_freq": 32,
-            "test_freq": 32,
-            "total_epochs": 4,
+            "test_freq": 16,
+            "total_epochs": 1,
         },
         "agentlightning": {
+            "agl_base_url": "http://localhost:8080",
+            "agl_key": "",
             "timeout_seconds": 1800,
-            # Local runner has no K8s Jobs to garbage-collect — the controller
-            # tears down each rollout subprocess on its own.
-            "cleanup_agent_jobs": False,
+            "trace_aggregator": {
+                # Merge all turns of a rollout into one trajectory sequence
+                # (multi-turn credit assignment) instead of per-transition rows.
+                "level": "trajectory",
+                "trajectory_max_prompt_length": 4096,
+                "trajectory_max_response_length": 1024,
+            },
             "async_rollout": {
                 "enabled": True,
+                # Over-sample beyond train_batch_size (32) so group-finish early
+                # stopping can cut the long tail; must be strictly greater.
                 "async_train_batch_size": 48,
-                "gateway_retry_after_seconds": 5,
-                "gateway_drain_timeout_seconds": 45,
+            },
+            "local": {
+                "agent_class": "examples.science_world.agents.sw_agent:SWAgent",
+                "env_map": {
+                    "TASK_NAME": "input.task_name",
+                    "VARIATION_IDX": "input.variation_idx",
+                    "SIMPLIFICATION": "input.simplification",
+                },
             },
         },
     }
 
 
-def build_config(*, model: str | None = None, ci: bool = False, ci_fast: bool = False) -> Any:
+def build_config(
+    *,
+    model: str | None = None,
+    agl_base_url: str | None = None,
+    agl_key: str | None = None,
+    run_name: str | None = None,
+    ci: bool = False,
+) -> Any:
+    """Build the full OmegaConf config by merging base + overrides."""
     import importlib.resources
 
     verl_pkg = importlib.resources.files("agl_lite.verl")
@@ -184,28 +227,42 @@ def build_config(*, model: str | None = None, ci: bool = False, ci_fast: bool = 
         base_cfg = compose(config_name="config")
 
     overrides = verl_default_config()
+
     if model:
         overrides["actor_rollout_ref"]["model"]["path"] = model
+    if agl_base_url:
+        overrides["agentlightning"]["agl_base_url"] = agl_base_url
+    if agl_key is not None:
+        overrides["agentlightning"]["agl_key"] = agl_key
+    if run_name:
+        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
 
-    if ci or ci_fast:
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        suffix = uuid.uuid4().hex[:8]
+    if ci:
         overrides["trainer"]["project_name"] = "agl-lite-CI"
-        overrides["trainer"]["experiment_name"] = f"science_world_{timestamp}_{suffix}"
+        overrides["trainer"]["experiment_name"] = "science_world_ci"
+        if run_name:
+            overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
         overrides["trainer"]["total_epochs"] = 1
-        overrides["trainer"]["total_training_steps"] = 20
-        overrides["trainer"]["test_freq"] = 20
+        overrides["trainer"]["total_training_steps"] = 5
+        overrides["trainer"]["test_freq"] = -1
         overrides["trainer"].pop("save_freq", None)
-        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
-
-        if ci_fast:
-            overrides["trainer"]["total_training_steps"] = 1
-            overrides["trainer"]["test_freq"] = 1
-            overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-            overrides["data"]["train_batch_size"] = 4
-            overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 4
-            overrides["actor_rollout_ref"]["rollout"]["n"] = 2
-            overrides["agentlightning"]["async_rollout"]["async_train_batch_size"] = 6
+        overrides["data"]["train_batch_size"] = 2
+        overrides["data"]["max_prompt_length"] = 2048
+        overrides["data"]["max_response_length"] = 2048
+        # Keep trajectory tensor lengths aligned with the reduced CI dims.
+        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] = 2048
+        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_response_length"] = 2048
+        overrides["agentlightning"]["async_rollout"]["async_train_batch_size"] = 4
+        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
+        overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
+        # Single-GPU CI: no sequence parallelism (SP group can't exceed world size).
+        overrides["actor_rollout_ref"]["actor"]["ulysses_sequence_parallel_size"] = 1
+        overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
+        overrides["actor_rollout_ref"]["rollout"]["n"] = 2
+        overrides["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 1
+        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+        overrides["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
+        overrides["trainer"]["n_gpus_per_node"] = 1
 
     override_conf = OmegaConf.create(overrides)
     OmegaConf.set_struct(base_cfg, False)
@@ -217,9 +274,11 @@ def train(
     task_names: list[str],
     variations_per_task: int,
     simplification: str,
-    model: str | None,
-    ci: bool,
-    ci_fast: bool,
+    model: str | None = None,
+    agl_base_url: str | None = None,
+    agl_key: str | None = None,
+    run_name: str | None = None,
+    ci: bool = False,
 ) -> None:
     from agl_lite.verl.entrypoint import run_ppo
 
@@ -227,11 +286,17 @@ def train(
     print(f"Train rows: {len(train_rows)} | Val rows: {len(val_rows)}")
     print(f"Tasks: {task_names}  variations/task: {variations_per_task}  simplification: {simplification}")
 
-    # VERL's bridge expects something it can index by column (HuggingFaceDataset semantics).
+    # VERL's bridge expects HuggingFaceDataset.to_list() semantics.
     train_dataset = HuggingFaceDataset.from_list(train_rows).to_list()
     val_dataset = HuggingFaceDataset.from_list(val_rows).to_list()
 
-    config = build_config(model=model, ci=ci, ci_fast=ci_fast)
+    config = build_config(
+        model=model,
+        agl_base_url=agl_base_url,
+        agl_key=agl_key,
+        run_name=run_name,
+        ci=ci,
+    )
 
     from pprint import pprint
 
@@ -246,28 +311,47 @@ def main() -> None:
     parser.add_argument(
         "--task-names",
         type=str,
-        default=os.environ.get("AGL_TASK_NAMES", "all"),
+        default="all",
         help="Comma-separated ScienceWorld task names, or 'all' for every task",
     )
     parser.add_argument(
         "--variations-per-task",
         type=int,
-        default=int(os.environ.get("AGL_VARIATIONS_PER_TASK", "50")),
+        default=50,
         help="Max variation indices per task (auto-capped at env.get_max_variations)",
     )
     parser.add_argument(
         "--simplification",
         type=str,
-        default=os.environ.get("AGL_SIMPLIFICATION", "easy"),
+        default="easy",
         help="ScienceWorld simplification preset (easy / medium / hard)",
     )
-    parser.add_argument("--model", type=str, default=None, help="HF model id (overrides AGL_MODEL_NAME)")
-    parser.add_argument("--ci", action="store_true", help="Minimal CI-style loop (20 steps)")
-    parser.add_argument("--ci-fast", action="store_true", help="Single PPO step (implies --ci)")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="HF model id or path (default: Qwen/Qwen2.5-7B-Instruct)",
+    )
+    parser.add_argument(
+        "--agl-base-url",
+        type=str,
+        default="http://localhost:8080",
+        help="agl-lite server URL for the trainer",
+    )
+    parser.add_argument(
+        "--agl-key",
+        type=str,
+        default="",
+        help="agl-lite API key for the trainer",
+    )
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=None,
+        help="Suffix appended to trainer.experiment_name",
+    )
+    parser.add_argument("--ci", action="store_true", help="Run a short CI-style training loop")
     args = parser.parse_args()
-
-    if args.ci_fast:
-        args.ci = True
 
     task_names = resolve_task_names(args.task_names)
     if not task_names:
@@ -278,8 +362,10 @@ def main() -> None:
         variations_per_task=args.variations_per_task,
         simplification=args.simplification,
         model=args.model,
+        agl_base_url=args.agl_base_url,
+        agl_key=args.agl_key,
+        run_name=args.run_name,
         ci=args.ci,
-        ci_fast=args.ci_fast,
     )
 
 
