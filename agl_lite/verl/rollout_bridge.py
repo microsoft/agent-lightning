@@ -382,6 +382,10 @@ def _to_native(obj: Any) -> Any:
     return obj
 
 
+def _metadata_or_empty(metadata: Any) -> Any:
+    return {} if metadata is None else metadata
+
+
 class AglLiteRolloutBridge:
     """Bridge between agl-lite HTTP API and VERL trainer.
 
@@ -810,18 +814,19 @@ class AglLiteRolloutBridge:
             triplets[-1] = triplets[-1].model_copy(update={"reward": final_reward})
 
         original = self._task_id_to_original_sample.get(rollout_id, {})
+        metadata = _metadata_or_empty(original.get("metadata"))
         result = CompletedRollout(
             rollout_id=rollout_id,
             task=Task(
                 rollout_id=rollout_id,
                 input=original,
-                metadata=original.get("metadata", {}),
+                metadata=metadata,
             ),
             final_reward=final_reward,
             reward_source=reward_source,
             reward_reason=reward_reason,
             triplets=triplets,
-            metadata=original.get("metadata", {}),
+            metadata=metadata,
             events=[event.model_dump() for event in raw_events],
             triplet_events=[event.model_dump() for event in events],
         )

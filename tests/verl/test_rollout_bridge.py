@@ -18,8 +18,7 @@ from typing import Any
 import pytest
 
 from agl_lite.hooks import RolloutHooks
-from agl_lite.schemas import RolloutCreate
-from agl_lite.schemas import RolloutState
+from agl_lite.schemas import RolloutCreate, RolloutState
 from agl_lite.verl.rollout_bridge import (
     AglLiteRolloutBridge,
     CompletedRollout,
@@ -270,7 +269,17 @@ class TestBridgeStoreInteraction:
     def app(self):
         from agl_lite.server.app import create_app
 
-        return create_app({"key": "test-key", "admin_key": "test-admin-key"})
+        return create_app(
+            {
+                "key": "test-key",
+                "admin_key": "test-admin-key",
+                "default_proxy": {
+                    "model_name": "test-model",
+                    "train": {"temperature": 1},
+                    "val": {"temperature": 0},
+                },
+            }
+        )
 
     @pytest.fixture()
     def bridge(self, app):
@@ -296,6 +305,18 @@ class TestBridgeStoreInteraction:
         bridge.clear_data_and_server()
         bridge.is_train = is_train
         bridge._register_and_enqueue(data, server_addresses, is_train)
+
+    def _mark_succeeded(self, bridge: AglLiteRolloutBridge, rollout_id: str, attempt_id: str = "pod-1") -> None:
+        running = bridge.client.patch(
+            f"/api/rollouts/{rollout_id}",
+            json={"status": {"state": "running", "last_attempt_id": attempt_id}},
+        )
+        running.raise_for_status()
+        succeeded = bridge.client.patch(
+            f"/api/rollouts/{rollout_id}",
+            json={"status": {"state": "succeeded", "last_attempt_id": attempt_id}},
+        )
+        succeeded.raise_for_status()
 
     @pytest.mark.asyncio
     async def test_set_up_registers_model_and_enqueues(self, bridge: AglLiteRolloutBridge):
@@ -382,6 +403,7 @@ class TestBridgeStoreInteraction:
                 data={"value": 0.85, "message": "correct", "source": "agent", "reason": "computed"},
             ),
         )
+        self._mark_succeeded(bridge, rid)
 
         legacy = bridge._fetch_rollout_result(rid)
 
@@ -401,6 +423,43 @@ class TestBridgeStoreInteraction:
         assert t.prompt["token_ids"] == [1, 2, 3]
         assert t.response["token_ids"] == [10, 20, 30]
         assert t.reward == 0.85  # assigned to last triplet
+
+    @pytest.mark.asyncio
+    async def test_fetch_rollout_result_treats_none_metadata_as_empty_dict(self, bridge: AglLiteRolloutBridge):
+        """Parquet datasets may include a metadata column with null values."""
+        from agl_lite.schemas import EventCreate
+
+        data = {"prompt": ["test"], "metadata": [None]}
+        self._set_up(bridge, data, ["localhost:8000"], is_train=True)
+
+        rid = next(iter(bridge._task_id_to_original_sample))
+        bridge._post_event(
+            rid,
+            "pod-1",
+            EventCreate(
+                event_type="model_request",
+                data={
+                    "response": [
+                        {
+                            "choices": [{"delta": {"content": "hi"}, "token_ids": [10]}],
+                            "prompt_token_ids": [1],
+                        }
+                    ],
+                },
+            ),
+        )
+        bridge._post_event(
+            rid,
+            "pod-1",
+            EventCreate(event_type="reward", data={"value": 1.0}),
+        )
+        self._mark_succeeded(bridge, rid)
+
+        legacy = bridge._fetch_rollout_result(rid)
+
+        assert legacy.metadata == {}
+        assert legacy.task is not None
+        assert legacy.task.metadata == {}
 
     @pytest.mark.asyncio
     async def test_clear_resets_state(self, bridge: AglLiteRolloutBridge):
