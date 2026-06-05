@@ -10,7 +10,7 @@ from datasets import Dataset as HuggingFaceDataset
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+DEFAULT_MODEL = "meta-llama/Llama-3.2-3B-Instruct"
 
 
 def verl_default_config() -> dict[str, Any]:
@@ -33,22 +33,23 @@ def verl_default_config() -> dict[str, Any]:
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 5,
+                "n": 4,
                 "log_prob_micro_batch_size_per_gpu": 4,
-                "multi_turn": {"format": "hermes"},
+                "multi_turn": {"format": "llama3_json"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.5,
+                "max_model_len": 32768,
                 "engine_kwargs": {
                     "vllm": {
                         "enable_auto_tool_choice": True,
-                        "tool_call_parser": "hermes",
+                        "tool_call_parser": "llama3_json",
                     }
                 },
             },
             "actor": {
                 "ppo_mini_batch_size": 256,
                 "ppo_micro_batch_size_per_gpu": 4,
-                "optim": {"lr": 1e-6, "lr_warmup_steps_ratio": 0.95},
+                "optim": {"lr": 1e-6, "lr_warmup_steps_ratio": 0},
                 "use_kl_loss": True,
                 "kl_loss_type": "low_var_kl",
                 "kl_loss_coef": 0.001,
@@ -90,8 +91,8 @@ def verl_default_config() -> dict[str, Any]:
             "timeout_seconds": 1800,
             "trace_aggregator": {
                 "level": "trajectory",
-                "trajectory_max_prompt_length": 6000,
-                "trajectory_max_response_length": 4096,
+                "trajectory_max_prompt_length": 4096,
+                "trajectory_max_response_length": 34384,
             },
             "local": {
                 "agent_class": "examples.search_r1.agents.search_r1_agent:SearchR1Agent",
@@ -156,7 +157,7 @@ def build_config(
         overrides["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 1
         overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
         overrides["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
-        overrides["actor_rollout_ref"]["model"]["path"] = model or "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+        overrides["actor_rollout_ref"]["model"]["path"] = model or DEFAULT_MODEL
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))

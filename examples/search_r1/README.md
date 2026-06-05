@@ -174,19 +174,19 @@ To use a different model while keeping the server proxy and trainer model in
 sync:
 
 ```bash
-SEARCH_R1_MODEL=Qwen/Qwen2.5-Coder-0.5B-Instruct examples/search_r1/run.sh --ci
+SEARCH_R1_MODEL=meta-llama/Llama-3.2-3B-Instruct examples/search_r1/run.sh --ci
 ```
 
 Default full-training model:
 
 ```text
-Qwen/Qwen2.5-Coder-1.5B-Instruct
+meta-llama/Llama-3.2-3B-Instruct
 ```
 
 `--ci` defaults to:
 
 ```text
-Qwen/Qwen2.5-Coder-0.5B-Instruct
+meta-llama/Llama-3.2-3B-Instruct
 ```
 
 unless `--model` or `SEARCH_R1_MODEL` is provided.

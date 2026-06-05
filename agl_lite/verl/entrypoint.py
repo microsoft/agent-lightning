@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import socket
-from collections.abc import Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from typing import Any, cast
 
 import hydra
@@ -27,6 +27,37 @@ __all__ = [
     "main",
     "run_ppo",
 ]
+
+
+_WORKER_ENV_VARS = (
+    "AGL_KEY",
+    "AGL_BASE_URL",
+    "AGL_MODEL_ENDPOINT",
+    "AGL_NAMESPACE",
+    "AGL_HOOKS",
+    "AGL_POD_SPEC_TEMPLATE",
+    "AGL_MODEL_NAME",
+    "AGL_OPENAI_MODEL_PREFIX",
+    "AGL_LLM_TEMPERATURE",
+    "OPENAI_TIMEOUT",
+    "MAX_TOKENS_PER_CALL",
+    "LD_LIBRARY_PATH",
+    "HF_TOKEN",
+    "WANDB_API_KEY",
+    "WANDB_ENTITY",
+    "WANDB_PROJECT",
+    "WANDB_DIR",
+    "WANDB_MODE",
+    "WANDB_RUN_ID",
+    "WANDB_RESUME",
+)
+
+
+def _copy_worker_env(source: Mapping[str, str], target: MutableMapping[str, str]) -> None:
+    for var in _WORKER_ENV_VARS:
+        val = source.get(var)
+        if val:
+            target[var] = val
 
 
 @hydra.main(config_path="pkg://agl_lite/verl", config_name="config", version_base=None)
@@ -55,28 +86,12 @@ def run_ppo(
         runtime_env_config = ray_init_kwargs.pop("runtime_env", {})
         runtime_env_kwargs = dict(runtime_env_config) if isinstance(runtime_env_config, dict) else {}
         runtime_env = {**default_runtime_env, **runtime_env_kwargs}
-        # Pass agl-lite env vars to Ray workers.
+        # Pass runtime env vars required by Ray workers.
         env_vars = runtime_env.setdefault("env_vars", {})
         if not isinstance(env_vars, dict):
             env_vars = {}
             runtime_env["env_vars"] = env_vars
-        for var in (
-            "AGL_KEY",
-            "AGL_BASE_URL",
-            "AGL_MODEL_ENDPOINT",
-            "AGL_NAMESPACE",
-            "LD_LIBRARY_PATH",
-            "WANDB_API_KEY",
-            "WANDB_ENTITY",
-            "WANDB_PROJECT",
-            "WANDB_DIR",
-            "WANDB_MODE",
-            "WANDB_RUN_ID",
-            "WANDB_RESUME",
-        ):
-            val = os.environ.get(var)
-            if val:
-                env_vars[var] = val
+        _copy_worker_env(os.environ, env_vars)
         _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
             runtime_env=runtime_env,

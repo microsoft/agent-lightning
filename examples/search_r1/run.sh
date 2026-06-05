@@ -4,7 +4,7 @@ set -euo pipefail
 
 AGL_SERVER_PORT="${AGL_SERVER_PORT:-8080}"
 AGL_KEY="${AGL_KEY:-dummy}"
-SEARCH_R1_MODEL="${SEARCH_R1_MODEL:-Qwen/Qwen2.5-Coder-1.5B-Instruct}"
+SEARCH_R1_MODEL="${SEARCH_R1_MODEL:-meta-llama/Llama-3.2-3B-Instruct}"
 
 cleanup() {
     pkill -f agl-lite-server 2>/dev/null || true
@@ -38,4 +38,3 @@ python examples/search_r1/train_search_r1_agent.py \
     --agl-key "$AGL_KEY" \
     --run-name local \
     "$@"
-
