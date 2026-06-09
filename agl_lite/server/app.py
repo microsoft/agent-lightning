@@ -85,7 +85,7 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
     # Proxy routes (LLM proxy + event ingestion) — require agent-facing auth.
     app.include_router(proxy.router, dependencies=[Depends(verify_key)])
 
-    # Admin proxy routes use the same server key as the rest of the API.
-    app.include_router(proxy.admin_router, dependencies=[Depends(verify_key)])
+    # Proxy management routes use the same server key as the rest of the API.
+    app.include_router(proxy.management_router, dependencies=[Depends(verify_key)])
 
     return app

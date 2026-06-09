@@ -71,8 +71,8 @@ class ProxyRouter:
                 **body,
                 "model": self._model_name,
                 "temperature": self._val_temperature,
+                "return_token_ids": True,
             }
-            prepared.pop("return_token_ids", None)
             return prepared
         raise ValueError(f"Unsupported proxy mode: {mode}")
 

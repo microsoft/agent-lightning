@@ -1,12 +1,4 @@
-"""Proxy routes.
-
-Handles paths under /proxy/rollout/{rid}/attempt/{aid}/...
-- /proxy/.../mode/{train|val}/openai/v1/chat/completions → LLM proxy
-
-Also exposes /proxy/{pause,resume,state} for trainer-side pause/drain
-control of the async-rollout feature. These are exported via ``admin_router``
-and mounted by ``server/app.py`` under a separate admin-only auth dependency.
-"""
+"""Proxy forwarding and pause/drain management routes."""
 
 from __future__ import annotations
 
@@ -23,7 +15,7 @@ from agl_lite.server.store import _rollouts
 log = structlog.get_logger()
 
 router = APIRouter(tags=["gateway"])
-admin_router = APIRouter(tags=["gateway-admin"], prefix="/proxy")
+management_router = APIRouter(tags=["gateway-management"], prefix="/proxy")
 
 
 def _get_pause_state(request: Request) -> ProxyPauseState:
@@ -81,7 +73,7 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, request: Reques
     )
 
 
-# --- Admin routes -----------------------------------------------------------
+# --- Management routes ------------------------------------------------------
 
 
 class PauseRequest(BaseModel):
@@ -96,15 +88,9 @@ class PauseStateResponse(BaseModel):
     inflight: int
 
 
-@admin_router.post("/pause", response_model=PauseStateResponse)
-async def admin_pause(body: PauseRequest, request: Request) -> PauseStateResponse:
-    """Flip the gateway into the paused state.
-
-    All subsequent /v1/* forwarding requests will return 429 with a
-    Retry-After header. Requests already in-flight at the moment of the flip
-    are NOT interrupted — they continue to upstream and are counted in
-    ``inflight`` for the bridge's drain wait (§7.4).
-    """
+@management_router.post("/pause", response_model=PauseStateResponse)
+async def pause_proxy(body: PauseRequest, request: Request) -> PauseStateResponse:
+    """Pause new proxy forwarding requests while existing in-flight requests drain."""
     state = _get_pause_state(request)
     async with state.lock:
         state.paused = True
@@ -118,13 +104,9 @@ async def admin_pause(body: PauseRequest, request: Request) -> PauseStateRespons
         )
 
 
-@admin_router.post("/resume", response_model=PauseStateResponse)
-async def admin_resume(request: Request) -> PauseStateResponse:
-    """Flip the gateway back to running state.
-
-    Subsequent /v1/* forwarding resumes normally. Agent pods that received
-    429 will reach this state on their next backoff poll.
-    """
+@management_router.post("/resume", response_model=PauseStateResponse)
+async def resume_proxy(request: Request) -> PauseStateResponse:
+    """Resume proxy forwarding after a pause."""
     state = _get_pause_state(request)
     async with state.lock:
         state.paused = False
@@ -137,13 +119,9 @@ async def admin_resume(request: Request) -> PauseStateResponse:
         )
 
 
-@admin_router.get("/state", response_model=PauseStateResponse)
-async def admin_state(request: Request) -> PauseStateResponse:
-    """Snapshot of the gateway's pause state.
-
-    Bridge polls this endpoint after ``pause`` and waits until
-    ``inflight == 0`` before calling ``sleep_replicas()``.
-    """
+@management_router.get("/state", response_model=PauseStateResponse)
+async def proxy_state(request: Request) -> PauseStateResponse:
+    """Return the proxy pause state and in-flight request count."""
     state = _get_pause_state(request)
     async with state.lock:
         return PauseStateResponse(

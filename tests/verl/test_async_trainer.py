@@ -26,7 +26,7 @@ class _FakeBridge:
 
     def run_until_groups_finished(self, **kwargs: Any):
         self.run_kwargs = kwargs
-        return {"r1"}, set(), {"training/async/groups_finished_reached": 1}
+        return {"r1"}, set(), {"training/async/n_selected_groups": 1}
 
     def commit_async_step_selection(self, **kwargs: Any) -> dict[str, Any]:
         return {"training/async/n_carry_over_out": 0}
@@ -38,10 +38,6 @@ class _FakeBridge:
         batch.batch["token_level_scores"] = torch.zeros((1, 1), dtype=torch.float32)
         batch.non_tensor_batch["data_id_list"] = ["d1"]
         return batch, {"training/n_placeholder_rows": 0}
-
-    def async_cleanup_consumed(self, **kwargs: Any) -> None:
-        pass
-
 
 class _RecordingBridge(_FakeBridge):
     def __init__(self, events: list[str]) -> None:
@@ -107,7 +103,6 @@ class _CarryOverBridge:
         self._rollout_end_time: dict[str, float] = {}
         self._raw_events_by_rollout: dict[str, list[dict[str, str]]] = {}
         self._triplet_events_by_rollout: dict[str, list[dict[str, str]]] = {}
-        self._timeout_rids: set[str] = set()
         self._carry_over_birth_step: dict[str, int] = {}
         self._step_new_rids: set[str] = set()
         self._selected_rids: set[str] = set()
@@ -136,7 +131,6 @@ class _CarryOverBridge:
         self._rollout_end_time = {"carry-r1": 456.0}
         self._raw_events_by_rollout = {"carry-r1": [{"event_type": "model_request"}]}
         self._triplet_events_by_rollout = {"carry-r1": [{"event_type": "triplet"}]}
-        self._timeout_rids = {"carry-r1"}
         self._carry_over_birth_step = {"carry-r1": 7}
         self._step_new_rids = {"carry-r1"}
         self._selected_rids = {"carry-r1"}
@@ -160,7 +154,6 @@ class _CarryOverBridge:
         self._rollout_end_time.clear()
         self._raw_events_by_rollout.clear()
         self._triplet_events_by_rollout.clear()
-        self._timeout_rids.clear()
         self._carry_over_birth_step.clear()
         self._step_new_rids.clear()
         self._selected_rids.clear()
@@ -181,7 +174,6 @@ def test_async_rollout_waits_for_train_batch_size_groups_not_active_pool() -> No
     trainer.config = OmegaConf.create(
         {
             "agentlightning": {
-                "poll_timeout_seconds": None,
                 "trace_aggregator": {"level": "transition"},
             },
             "data": {
@@ -223,7 +215,6 @@ def test_async_rollout_resumes_generation_before_enqueueing() -> None:
     trainer.config = OmegaConf.create(
         {
             "agentlightning": {
-                "poll_timeout_seconds": None,
                 "trace_aggregator": {"level": "transition"},
             },
             "data": {
@@ -291,7 +282,7 @@ def test_async_fit_validation_test_freq_preserves_carry_over_bridge_state(monkey
             "trainer": {
                 "project_name": "unit",
                 "experiment_name": "async-validation-carry-over",
-                "logger": ["console"],
+                "logger": ["console", "wandb"],
                 "val_before_train": False,
                 "val_only": False,
                 "test_freq": 1,
@@ -345,7 +336,6 @@ def test_async_fit_validation_test_freq_preserves_carry_over_bridge_state(monkey
     assert bridge._rollout_end_time == {"carry-r1": 456.0}
     assert bridge._raw_events_by_rollout == {"carry-r1": [{"event_type": "model_request"}]}
     assert bridge._triplet_events_by_rollout == {"carry-r1": [{"event_type": "triplet"}]}
-    assert bridge._timeout_rids == {"carry-r1"}
     assert bridge._carry_over_birth_step == {"carry-r1": 7}
     assert bridge._step_new_rids == {"carry-r1"}
     assert bridge._selected_rids == {"carry-r1"}
@@ -401,7 +391,7 @@ def test_async_fit_validation_does_not_force_weight_sync(monkeypatch) -> None:
             "trainer": {
                 "project_name": "unit",
                 "experiment_name": "async-val-to-train-engine-reset",
-                "logger": ["console"],
+                "logger": ["console", "wandb"],
                 "val_before_train": False,
                 "val_only": False,
                 "test_freq": 1,
@@ -509,7 +499,7 @@ def test_async_fit_skips_engine_reset_when_validation_not_triggered(monkeypatch)
             "trainer": {
                 "project_name": "unit",
                 "experiment_name": "async-no-val-no-reset",
-                "logger": ["console"],
+                "logger": ["console", "wandb"],
                 "val_before_train": False,
                 "val_only": False,
                 # test_freq disabled: no validation, no engine reset
@@ -591,7 +581,7 @@ def test_async_fit_rejects_carry_over_saturation_before_sampling(monkeypatch) ->
             "trainer": {
                 "project_name": "unit",
                 "experiment_name": "async-carry-over-saturation",
-                "logger": ["console"],
+                "logger": ["console", "wandb"],
                 "val_before_train": False,
                 "test_freq": -1,
                 "save_freq": -1,

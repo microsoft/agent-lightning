@@ -3,7 +3,7 @@
 #
 # Default stack:
 #   torch==2.9.0, torchvision==0.24.0, torchaudio==2.9.0,
-#   vllm==0.12.0, verl==0.7.1, transformers==4.57.1,
+#   vllm, verl, transformers,
 #   ray==2.49.2, numpy==1.26.4, flash-attn==2.8.3,
 #   xformers==0.0.33.post1, triton==3.5.0.
 #

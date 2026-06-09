@@ -1,8 +1,7 @@
 """Math-poc hooks for mockai (echo) mode.
 
 Mockai echoes the last user message, so we embed \\boxed{answer} in the question.
-The agent's parser extracts it as the "model response". Alternating pattern:
-even index → correct answer, odd index → wrong answer (deterministic rewards).
+The agent's parser extracts it as the "model response".
 
 Required env vars:
   AGL_POD_SPEC_TEMPLATE  path to examples/math-poc/job-template.yaml
@@ -14,30 +13,16 @@ import json
 from typing import Any
 
 from agl_lite.hooks import RolloutHooks, TraceWriter
-from agl_lite.schemas import RolloutCreate
-from agl_lite.schemas import Rollout, RolloutConfig
-
-WRONG_ANSWER = "WRONG"
+from agl_lite.schemas import Rollout, RolloutConfig, RolloutCreate
 
 
 class MathMockHooks(RolloutHooks):
-
     def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         raw = request.input if isinstance(request.input, dict) else {}
         question = raw.get("question", "")
         ground_truth = raw.get("answer", "")
 
-        # Read sample index from metadata for alternating pattern.
-        meta = request.metadata
-        idx = 0
-        if isinstance(meta, dict):
-            idx = meta.get("sample_idx_in_batch", 0) or 0
-        elif meta is not None:
-            idx = getattr(meta, "sample_idx_in_batch", 0) or 0
-
-        # Alternating: even=correct, odd=wrong (deterministic mock rewards).
-        boxed_value = ground_truth if idx % 2 == 0 else WRONG_ANSWER
-        augmented = question + f"\n\\boxed{{{boxed_value}}}"
+        augmented = question + f"\n\\boxed{{{ground_truth}}}"
 
         # Build pod spec and inject per-sample env var.
         pod_spec = self.copy_pod_spec()
@@ -59,11 +44,16 @@ class MathMockHooks(RolloutHooks):
         reward = 1.0 if answer and answer.strip() == str(gt).strip() else 0.0
 
         attempt_id = rollout.last_attempt_id or "unknown"
-        store.add_event(rollout.rollout_id, attempt_id, "reward", {
-            "value": reward,
-            "ground_truth": gt,
-            "agent_answer": answer,
-        })
+        store.add_event(
+            rollout.rollout_id,
+            attempt_id,
+            "reward",
+            {
+                "value": reward,
+                "ground_truth": gt,
+                "agent_answer": answer,
+            },
+        )
 
     def _extract_answer(self, events: dict[str, list[Any]]) -> str | None:
         for attempt_events in events.values():

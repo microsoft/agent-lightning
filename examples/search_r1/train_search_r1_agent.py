@@ -88,7 +88,7 @@ def verl_default_config() -> dict[str, Any]:
         "agentlightning": {
             "agl_base_url": "http://localhost:8080",
             "agl_key": "search-r1-dev-key",
-            "timeout_seconds": 1800,
+            "rollout_timeout_seconds": 1800,
             "trace_aggregator": {
                 "level": "trajectory",
                 "trajectory_max_prompt_length": 4096,
@@ -143,7 +143,7 @@ def build_config(
         overrides["trainer"]["total_training_steps"] = 1
         overrides["trainer"]["test_freq"] = -1
         overrides["trainer"].pop("save_freq", None)
-        overrides["trainer"]["logger"] = ["console"]
+        overrides["trainer"]["logger"] = ["console", "wandb"]
         overrides["trainer"]["n_gpus_per_node"] = 1
         overrides["data"]["train_batch_size"] = 2
         overrides["data"]["max_prompt_length"] = 2048

@@ -17,7 +17,7 @@ def test_build_config_ci_sets_local_agent_and_small_batches() -> None:
     assert config.agentlightning.agl_key == "secret"
     assert config.trainer.experiment_name == "search_r1_ci_unit"
     assert config.trainer.n_gpus_per_node == 1
-    assert config.trainer.logger == ["console"]
+    assert config.trainer.logger == ["console", "wandb"]
     assert config.trainer.total_training_steps == 1
     assert config.data.train_batch_size == 2
     assert config.actor_rollout_ref.rollout.n == 2

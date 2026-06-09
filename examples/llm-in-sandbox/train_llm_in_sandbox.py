@@ -31,13 +31,6 @@ def env_int(name: str, default: int) -> int:
     return default if value in (None, "") else int(value)
 
 
-def env_bool(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value in (None, ""):
-        return default
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
 def resolve_path(path: str) -> Path:
     candidate = Path(path)
     return candidate if candidate.is_absolute() else REPO_ROOT / candidate
@@ -155,18 +148,12 @@ def verl_default_config() -> dict[str, Any]:
         "agentlightning": {
             "agl_base_url": "http://localhost:8080",
             "agl_key": "",
-            "is_shuffle": False,
-            "timeout_seconds": 1500,
-            "poll_timeout_seconds": 1500,
+            "rollout_timeout_seconds": 1500,
             "reward_fillna_value": 0.0,
-            "cleanup_agent_jobs": env_bool("AGL_CLEANUP_AGENT_JOBS", False),
-            "cleanup_namespace": os.environ.get("AGL_NAMESPACE", "default"),
             "trace_aggregator": {
                 "level": "trajectory",
                 "trajectory_max_prompt_length": 8000,
                 "trajectory_max_response_length": 12000,
-                "debug": False,
-                "mismatch_log_dir": str(example_dir / "mismatch_cases"),
             },
             "k8s": {
                 "job_template_path": str(example_dir / "job-template.yaml"),
@@ -210,7 +197,7 @@ def build_config(
         overrides["trainer"]["test_freq"] = -1
         overrides["trainer"].pop("save_freq", None)
         overrides["trainer"]["n_gpus_per_node"] = 1
-        overrides["trainer"]["logger"] = ["console"]
+        overrides["trainer"]["logger"] = ["console", "wandb"]
         overrides["data"]["train_batch_size"] = 1
         overrides["data"]["max_prompt_length"] = 2048
         overrides["data"]["max_response_length"] = 2048
@@ -219,8 +206,7 @@ def build_config(
         overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 1
         overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
         overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["agentlightning"]["timeout_seconds"] = 300
-        overrides["agentlightning"]["poll_timeout_seconds"] = 300
+        overrides["agentlightning"]["rollout_timeout_seconds"] = 300
         overrides["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] = 1024
         overrides["agentlightning"]["trace_aggregator"]["trajectory_max_response_length"] = 1024
 

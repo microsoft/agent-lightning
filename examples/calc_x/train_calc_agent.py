@@ -58,7 +58,7 @@ def verl_default_config() -> dict[str, Any]:
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
-                "path": "Qwen/Qwen2.5-0.5B-Instruct",
+                "path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
@@ -67,18 +67,22 @@ def verl_default_config() -> dict[str, Any]:
             "n_gpus_per_node": 1,
             "val_before_train": False,
             "critic_warmup": 0,
-            "logger": ["console"],
+            "logger": ["console", "wandb"],
             "project_name": "agl-lite",
             "experiment_name": "calc_x",
             "nnodes": 1,
             "save_freq": 64,
-            "test_freq": 32,
+            "test_freq": 10,
             "total_epochs": 2,
         },
         "agentlightning": {
             "agl_base_url": "http://localhost:8080",
             "agl_key": "calcx-dev-key",
-            "timeout_seconds": 300,
+            "rollout_timeout_seconds": 300,
+            "async_rollout": {
+                "enabled": False,
+                "async_train_batch_size": 64,
+            },
             "local": {
                 "agent_class": "examples.calc_x.calc_agent.Agent",
                 "env_map": {
@@ -99,8 +103,8 @@ def build_config(
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
+    async_mode: bool = False,
     config_overrides: Sequence[str] = (),
-    ci: bool = False,
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides.
 
@@ -124,27 +128,16 @@ def build_config(
         overrides["agentlightning"]["agl_base_url"] = agl_base_url
     if agl_key is not None:
         overrides["agentlightning"]["agl_key"] = agl_key
+    name_parts = [overrides["trainer"]["experiment_name"]]
+    if async_mode:
+        overrides["agentlightning"]["async_rollout"]["enabled"] = True
+        overrides["agentlightning"]["async_rollout"]["async_train_batch_size"] = (
+            overrides["data"]["train_batch_size"] * 2
+        )
+        name_parts.append("async")
     if run_name:
-        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
-
-    if ci:
-        overrides["trainer"]["project_name"] = "agl-lite-CI"
-        overrides["trainer"]["experiment_name"] = "calc_x_ci"
-        if run_name:
-            overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
-        overrides["trainer"]["total_epochs"] = 1
-        overrides["trainer"]["total_training_steps"] = 5
-        overrides["trainer"]["test_freq"] = -1
-        overrides["trainer"].pop("save_freq", None)
-        overrides["data"]["train_batch_size"] = 2
-        overrides["data"]["max_prompt_length"] = 2048
-        overrides["data"]["max_response_length"] = 512
-        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
-        overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["n"] = 2
-        overrides["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+        name_parts.append(run_name)
+    overrides["trainer"]["experiment_name"] = "_".join(name_parts)
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
@@ -161,8 +154,8 @@ def train(
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
+    async_mode: bool = False,
     config_overrides: Sequence[str] = (),
-    ci: bool = False,
 ) -> None:
     """Load datasets, build config, and launch VERL training via agl-lite."""
     from agl_lite.verl.entrypoint import run_ppo
@@ -185,8 +178,8 @@ def train(
         agl_base_url=agl_base_url,
         agl_key=agl_key,
         run_name=run_name,
+        async_mode=async_mode,
         config_overrides=config_overrides,
-        ci=ci,
     )
 
     from pprint import pprint
@@ -217,7 +210,7 @@ def main() -> None:
         "--model",
         type=str,
         default=None,
-        help="HF model id or path (default: Qwen/Qwen2.5-0.5B-Instruct)",
+        help="HF model id or path (default: Qwen/Qwen2.5-1.5B-Instruct)",
     )
     parser.add_argument(
         "--agl-base-url",
@@ -238,9 +231,10 @@ def main() -> None:
         help="Suffix appended to trainer.experiment_name",
     )
     parser.add_argument(
-        "--ci",
+        "--async",
+        dest="async_mode",
         action="store_true",
-        help="Run a 5-step CI-style training loop",
+        help="Enable async rollout with async batch size set to 2x train_batch_size",
     )
     args, config_overrides = parser.parse_known_args()
 
@@ -251,8 +245,8 @@ def main() -> None:
         agl_base_url=args.agl_base_url,
         agl_key=args.agl_key,
         run_name=args.run_name,
+        async_mode=args.async_mode,
         config_overrides=config_overrides,
-        ci=args.ci,
     )
 
 

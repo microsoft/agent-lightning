@@ -62,7 +62,7 @@ def _args(**overrides: Any) -> argparse.Namespace:
         "tensor_model_parallel_size": 2,
         "loss_agg_mode": "token-mean",
         "model": "arg-model",
-        "logger": "console",
+        "logger": ["console", "wandb"],
         "project_name": "arg-project",
         "test_freq": 8,
         "total_epochs": 9,
@@ -88,12 +88,10 @@ def test_build_verl_config_training_config_overrides_args(monkeypatch) -> None:
     monkeypatch.setitem(module.RL_TRAINING_CONFIG["actor_rollout_ref"]["actor"], "ppo_mini_batch_size", 99)
     monkeypatch.setitem(module.RL_TRAINING_CONFIG["actor_rollout_ref"]["actor"], "loss_agg_mode", "config-loss")
     monkeypatch.setitem(module.RL_TRAINING_CONFIG["actor_rollout_ref"]["model"], "path", "config-model")
-    monkeypatch.setitem(module.RL_TRAINING_CONFIG["agentlightning"], "is_shuffle", False)
     monkeypatch.setitem(module.RL_TRAINING_CONFIG["trainer"], "experiment_name", "config-exp")
     monkeypatch.setitem(module.RL_TRAINING_CONFIG["trainer"], "n_gpus_per_node", 99)
     monkeypatch.setitem(module.RL_TRAINING_CONFIG["trainer"], "test_freq", 99)
-    monkeypatch.setitem(module.RL_TRAINING_CONFIG["agentlightning"], "timeout_seconds", 999)
-    monkeypatch.setitem(module.RL_TRAINING_CONFIG["agentlightning"], "poll_timeout_seconds", 998)
+    monkeypatch.setitem(module.RL_TRAINING_CONFIG["agentlightning"], "rollout_timeout_seconds", 999)
     monkeypatch.setitem(
         module.RL_TRAINING_CONFIG["agentlightning"],
         "trace_aggregator",
@@ -103,9 +101,6 @@ def test_build_verl_config_training_config_overrides_args(monkeypatch) -> None:
             "trajectory_max_response_length": 9994,
         },
     )
-    monkeypatch.setenv("AGL_CLEANUP_AGENT_JOBS", "false")
-    monkeypatch.setenv("AGL_NAMESPACE", "arg-namespace")
-
     config = module.build_verl_config(
         _args(),
         resources_id="arg-resources",
@@ -123,20 +118,13 @@ def test_build_verl_config_training_config_overrides_args(monkeypatch) -> None:
     assert config.actor_rollout_ref.actor.ppo_mini_batch_size == 99
     assert config.actor_rollout_ref.actor.loss_agg_mode == "config-loss"
     assert config.actor_rollout_ref.model.path == "config-model"
-    assert "is_shuffle" not in config.actor_rollout_ref.actor
-    assert config.agentlightning.is_shuffle is False
     assert config.trainer.experiment_name == "config-exp"
     assert config.trainer.n_gpus_per_node == 99
     assert config.trainer.test_freq == 99
     assert config.agentlightning.agl_base_url == "http://arg-base"
     assert config.agentlightning.agl_key == "arg-key"
     assert config.agentlightning.resources_id == "arg-resources"
-    assert config.agentlightning.timeout_seconds == 999
-    assert config.agentlightning.poll_timeout_seconds == 998
-    assert config.agentlightning.cleanup_agent_jobs is False
-    assert config.agentlightning.cleanup_namespace == "arg-namespace"
+    assert config.agentlightning.rollout_timeout_seconds == 999
     assert config.agentlightning.trace_aggregator.level == "trajectory"
     assert config.agentlightning.trace_aggregator.trajectory_max_prompt_length == 9993
     assert config.agentlightning.trace_aggregator.trajectory_max_response_length == 9994
-    assert config.agentlightning.trace_aggregator.debug is False
-    assert config.agentlightning.trace_aggregator.mismatch_log_dir == str(module.EXAMPLE_DIR / "mismatch_cases")

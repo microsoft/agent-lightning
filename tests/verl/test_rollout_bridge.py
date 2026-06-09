@@ -4,7 +4,6 @@ Tests the methods that replace AgentModeDaemon's store calls:
   - set_up_data_and_server (register model + enqueue)
     - run_until_all_finished (poll)
     - _fetch_rollout_result (fetch triplets)
-  - cleanup_agent_jobs (optional scoped Kubernetes Job cleanup)
   - clear_data_and_server (reset)
 
 The tensor construction (get_train_data_batch) is covered separately in
@@ -28,21 +27,6 @@ from agl_lite.verl.rollout_bridge import (
 )
 
 
-class FakeCleanupK8sClient:
-    def __init__(self, jobs: list[dict[str, Any]]) -> None:
-        self.jobs = {job["metadata"]["name"]: job for job in jobs}
-        self.list_calls: list[tuple[str, str]] = []
-        self.deleted: list[tuple[str, str]] = []
-
-    async def list_jobs(self, namespace: str, label_selector: str) -> list[dict[str, Any]]:
-        self.list_calls.append((namespace, label_selector))
-        return list(self.jobs.values())
-
-    async def delete_job(self, name: str, namespace: str) -> None:
-        self.deleted.append((name, namespace))
-        self.jobs.pop(name, None)
-
-
 class RecordingEnqueueHook(RolloutHooks):
     def __init__(self) -> None:
         self.requests: list[RolloutCreate] = []
@@ -52,15 +36,6 @@ class RecordingEnqueueHook(RolloutHooks):
         metadata = dict(request.metadata or {})
         metadata["hooked"] = True
         return request.model_copy(update={"metadata": metadata})
-
-
-def _cleanup_job(name: str, rollout_id: str | None, managed: bool = True) -> dict[str, Any]:
-    labels: dict[str, str] = {}
-    if managed:
-        labels["app.kubernetes.io/managed-by"] = "agl-lite"
-    if rollout_id is not None:
-        labels["agl-lite/rollout-id"] = rollout_id
-    return {"metadata": {"name": name, "labels": labels}}
 
 
 # ---- Utility tests (copied code, sanity check) ----
@@ -95,165 +70,32 @@ class TestUtilities:
         assert isinstance(result["a"], int)
 
 
-class TestAgentJobCleanup:
-    def _bridge(
-        self,
-        k8s: FakeCleanupK8sClient,
-        *,
-        cleanup_agent_jobs: bool = True,
-        cleanup_namespace: str | None = "agent-ns",
-    ) -> AglLiteRolloutBridge:
-        return AglLiteRolloutBridge(
-            agl_base_url="http://test",
-            agl_key="test-key",
-            train_rollout_n=1,
-            train_information={"model": "test-model"},
-            tokenizer=None,
-            mini_batch_size=2,
-            pad_token_id=0,
-            cleanup_agent_jobs=cleanup_agent_jobs,
-            cleanup_namespace=cleanup_namespace,
-            cleanup_k8s_client=k8s,
-        )
-
-    def test_cleanup_requires_namespace_when_enabled(self) -> None:
-        with pytest.raises(ValueError, match="cleanup_namespace"):
-            AglLiteRolloutBridge(
-                agl_base_url="http://test",
-                agl_key="test-key",
-                train_rollout_n=1,
-                train_information={"model": "test-model"},
-                tokenizer=None,
-                mini_batch_size=2,
-                pad_token_id=0,
-                cleanup_agent_jobs=True,
-            )
-
-    @pytest.mark.asyncio
-    async def test_cleanup_deletes_only_tracked_managed_jobs(self) -> None:
-        k8s = FakeCleanupK8sClient(
-            [
-                _cleanup_job("job-r1", "r1"),
-                _cleanup_job("job-r2", "r2"),
-                _cleanup_job("job-r3", "r3"),
-                _cleanup_job("foreign-r1", "r1", managed=False),
-                _cleanup_job("missing-rollout-label", None),
-            ]
-        )
-        bridge = self._bridge(k8s)
-        bridge._enqueue_order = ["r1", "r2"]
-
-        await bridge._async_cleanup_tracked_agent_jobs()
-
-        assert k8s.list_calls == [("agent-ns", "app.kubernetes.io/managed-by=agl-lite")]
-        assert set(k8s.deleted) == {("job-r1", "agent-ns"), ("job-r2", "agent-ns")}
-        assert set(k8s.jobs) == {"job-r3", "foreign-r1", "missing-rollout-label"}
-
-    @pytest.mark.asyncio
-    async def test_cleanup_disabled_does_not_touch_k8s(self) -> None:
-        k8s = FakeCleanupK8sClient([_cleanup_job("job-r1", "r1")])
-        bridge = self._bridge(k8s, cleanup_agent_jobs=False, cleanup_namespace=None)
-        bridge._enqueue_order = ["r1"]
-
-        await bridge._async_cleanup_tracked_agent_jobs()
-
-        assert k8s.list_calls == []
-        assert k8s.deleted == []
-        assert set(k8s.jobs) == {"job-r1"}
-
-    def test_clear_does_not_cleanup_k8s_jobs(self) -> None:
-        k8s = FakeCleanupK8sClient([_cleanup_job("job-r1", "r1")])
-        bridge = self._bridge(k8s)
-        bridge._enqueue_order = ["r1"]
-        bridge._total_tasks_queued = 1
-
-        bridge.clear_data_and_server()
-
-        assert k8s.list_calls == []
-        assert k8s.deleted == []
-        assert set(k8s.jobs) == {"job-r1"}
-
-    def test_cleanup_without_client_is_noop(self) -> None:
-        bridge = AglLiteRolloutBridge(
-            agl_base_url="http://test",
-            agl_key="test-key",
-            train_rollout_n=1,
-            train_information={"model": "test-model"},
-            tokenizer=None,
-            mini_batch_size=2,
-            pad_token_id=0,
-            cleanup_agent_jobs=True,
-            cleanup_namespace="agent-ns",
-            cleanup_k8s_client=None,
-        )
-        bridge._enqueue_order = ["r1"]
-
-        # Missing cleanup client should not fail training teardown.
-        bridge.cleanup_agent_jobs()
-
-
 class TestAsyncGroupFinishSelection:
     def _bridge(self) -> AglLiteRolloutBridge:
         return AglLiteRolloutBridge(
             agl_base_url="http://test",
             agl_key="test-key",
             train_rollout_n=2,
-            train_information={"model": "test-model"},
+            model="test-model",
             tokenizer=None,
             mini_batch_size=2,
             pad_token_id=0,
         )
 
-    def test_timeout_rids_make_group_consumable_via_placeholder(self) -> None:
+    def test_failed_rids_make_group_consumable_via_placeholder(self) -> None:
         bridge = self._bridge()
         bridge._rid_to_data_id = {"r1": "d1", "r2": "d1", "r3": "d2", "r4": "d2"}
         bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
         bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
         bridge._rollout_status = {
             "r1": RolloutState.SUCCEEDED,
+            "r2": RolloutState.FAILED,
             "r3": RolloutState.SUCCEEDED,
             "r4": RolloutState.FAILED,
         }
-        bridge._timeout_rids = {"r2"}
 
         assert bridge._finished_data_ids(bridge._active_groups()) == {"d1", "d2"}
         assert "r2" not in bridge._completed_rollouts
-
-    @pytest.mark.asyncio
-    async def test_timeout_path_marks_groups_finished_reached_zero(self) -> None:
-        class FakeAdminClient:
-            async def pause_gateway(self, **_: Any) -> dict[str, Any]:
-                return {"inflight": 0}
-
-            async def wait_until_inflight_drained(self, **_: Any) -> int:
-                return 0
-
-        bridge = self._bridge()
-        bridge._rid_to_data_id = {"r1": "d1", "r2": "d1", "r3": "d2", "r4": "d2"}
-        bridge._data_id_to_rids = {"d1": {"r1", "r2"}, "d2": {"r3", "r4"}}
-        bridge._step_new_rids = {"r1", "r2", "r3", "r4"}
-        bridge._enqueue_order = ["r1", "r2", "r3", "r4"]
-
-        def no_status_updates(_: set[str]) -> None:
-            return None
-
-        bridge._poll_status_for = no_status_updates  # type: ignore[method-assign]
-        bridge._pause_gateway = lambda **_: {"inflight": 0}  # type: ignore[method-assign]
-        bridge._wait_until_inflight_drained = lambda **_: 0  # type: ignore[method-assign]
-
-        selected_rids, carry_over_rids, metrics = bridge._run_until_groups_finished(
-            target_groups=2,
-            rollout_n=2,
-            timeout_seconds=0,
-            drain_timeout=0.01,
-            verbose=False,
-        )
-
-        assert metrics["training/async/groups_finished_reached"] == 0
-        assert metrics["training/async/n_selected_groups"] == 2
-        assert selected_rids == {"r1", "r2", "r3", "r4"}
-        assert carry_over_rids == set()
-        assert bridge._timeout_rids == {"r1", "r2", "r3", "r4"}
 
 
 # ---- Bridge store-interaction tests ----
@@ -293,7 +135,7 @@ class TestBridgeStoreInteraction:
                 agl_base_url="http://test",
                 agl_key="test-key",
                 train_rollout_n=1,
-                train_information={"model": "test-model"},
+                model="test-model",
                 tokenizer=None,
                 mini_batch_size=2,
                 pad_token_id=0,

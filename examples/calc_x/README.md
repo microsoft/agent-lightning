@@ -1,113 +1,66 @@
-# Calc-X Example — VERL Training on agl-lite
+# Calc-X
 
-Train a mathematical reasoning agent using VERL (PPO/GRPO) on agl-lite.
-The agent uses AutoGen + MCP calculator tools to solve math problems,
-with the agl-lite gateway transparently capturing all LLM interactions
-for RL training.
+Calc-X trains a mathematical reasoning agent on the Calc-X dataset with VERL and agl-lite.
+The agent uses AutoGen + MCP calculator tools to solve math problems.
 
-## Architecture
+The agent can run in two modes:
 
-```
-run.sh → agl-lite deploy (agl-in-host) → train_calc_agent.py
-              │                                    │
-              ├── K8s: controller                  ├── load Calc-X dataset
-              └── Host: agl-lite serve             └── run_ppo() → VERL trainer
-                    │                                        │
-                    │                               AglLiteRolloutBridge (HTTP)
-                    │                                        │
-                    ├── enqueue rollouts ←───────────────────┘
-                    ├── controller creates K8s Jobs
-                    │     └── agent pod: AutoGen + MCP calculator
-                    │           └── LLM calls → gateway → vLLM
-                    ├── gateway captures token IDs
-                    └── triplets → padded tensors → PPO update
-```
+- Minikube mode: agent rollouts run as Kubernetes Jobs in minikube.
+- Local mode: agent rollouts run as local multi-process workers.
 
-## Requirements
+This example only needs one GPU.
 
-- Single node with at least one 40GB GPU
-- minikube running with nvidia-container-toolkit
-- `uv` installed
-- Python 3.12+
+## Data Preparation
 
-## Python / Conda Environment
-
-Use Python 3.12. The run script expects the repo-local `.venv`, so a fresh
-conda environment only needs to provide Python and `uv`; `setup_verl.sh` creates
-and installs the project `.venv` used by the script.
-
-```bash
-conda create -n agl-lite python=3.12 -y
-conda activate agl-lite
-python -m pip install -U pip uv
-
-# Pick the CUDA wheel index that matches the machine: cu126, cu128, cu130, or cpu.
-scripts/setup_verl.sh cu128
-```
-
-## Dataset
-
-Download the Calc-X dataset from [Google Drive](https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view?usp=sharing)
-and extract to the `data/` folder:
+Download the Calc-X dataset from [Google Drive](https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view?usp=sharing), then extract it into `examples/calc_x/data/`:
 
 ```bash
 cd examples/calc_x
-# Download calc-x-data.zip from the link above, then:
 unzip data/calc-x-data.zip -d data/
 ```
 
-The dataset contains:
-- `train.parquet` — 8192 math problems for training
-- `test.parquet` — 500 problems for validation
-- `test_mini.parquet` — 20 problems for quick testing
-- `sample.jsonl` — 10 rows for smoke testing (checked into git)
+The expected dataset files are:
 
-## Quick Start
+- `data/train.parquet`
+- `data/test.parquet`
+- `data/test_mini.parquet`
+- `data/sample.jsonl`
 
-```bash
-# Prerequisites
-export AGL_KEY=$(openssl rand -hex 32)
+## Minikube Mode
 
-# Full training
-examples/calc_x/run.sh
-
-# CI smoke test (single PPO step)
-examples/calc_x/run.sh --ci-fast
-```
-
-## Standalone Training
-
-If agl-lite and vLLM are already running:
+Make sure you have installed `docker` and `minikube`, then start training by:
 
 ```bash
-python examples/calc_x/train_calc_agent.py \
-    --train-file examples/calc_x/data/train.parquet \
-    --val-file examples/calc_x/data/test.parquet
+cd examples/calc_x
+bash run_minikube.sh
 ```
 
-## Files
+`run_minikube.sh` starts agl-lite-server and agl-lite-controller, and writes their logs under `/tmp/`. The script also starts a new local minikube single-node K8S cluster, and the agent runs in this cluster as Kubernetes jobs.
+When `run_minikube.sh` exits, it automatically cleans up the server, controller, and minikube it started.
+minikube needs at least 64 GB of memory; otherwise, it may be killed due to insufficient memory.
 
-| File | Description |
-|------|-------------|
-| `calc_agent.py` | Standalone agent container — AutoGen + MCP calculator, no agl-lite imports |
-| `train_calc_agent.py` | Training script — loads dataset, builds VERL config, calls `run_ppo()` |
-| `run.sh` | E2E entrypoint — verify vLLM, build images, deploy, run training |
-| `Dockerfile` | Agent container image |
-| `job-template.yaml` | Complete K8s Job template for agent jobs |
-| `data/` | Dataset directory (parquet files, gitignored except sample.jsonl) |
+## Local Mode
 
-### Logs
+Make sure you have installed the following package in Python:
 
-Each run creates a timestamped log directory under `logs/`:
-
-```
-logs/20260410-002043/
-  server.log       # agl-lite server (JSON, structlog)
-  training.log     # VERL training output (Ray workers, metrics, progress)
-  agents/          # Per-agent logs (mounted from minikube via hostPath)
-    <attempt-id>/
-      agent.log    # Agent stdout + structured logs
+```python
+pip install \
+    openai \
+    httpx \
+    sympy \
+    "autogen-agentchat" \
+    "autogen-ext[openai]" \
+    "mcp>=1.10.0" \
+    mcp-server-calculator
 ```
 
-`run.sh` sets up `minikube mount` so agent pod logs (written to hostPath
-`/tmp/agl-lite/logs/` inside the VM) appear on the host filesystem.
+Then start training:
+
+```bash
+cd examples/calc_x
+bash run_local.sh
+```
+
+`run_local.sh` starts agl-lite-server and agl-lite-controller, and writes their logs under `/tmp/`. The script starts the agent in multi-process mode.
+When `run_local.sh` exits, it automatically cleans up the server, controller, and agent it started.
+

@@ -3,11 +3,11 @@
 Customizations:
   1. Use AglLiteRayPPOTrainer (subclass of RayPPOTrainer) that drives rollouts
      through the agl-lite HTTP API instead of stock VERL agent loop workers.
-  2. Support pre-loaded in-memory datasets (verl's TaskRunner loads from files).
+    2. Support pre-loaded in-memory datasets.
 """
 
 # VERL's PPO entrypoint helpers are imported from its runtime module because
-# they are not exposed as a stable public API in verl 0.7.1.
+# they are not exposed as a stable public API.
 # pyright: reportPrivateImportUsage=false
 
 from __future__ import annotations
@@ -17,65 +17,30 @@ import socket
 from collections.abc import Mapping, MutableMapping, Sequence
 from typing import Any, cast
 
-import hydra
 import ray
 from omegaconf import OmegaConf
 
 from .dataset import LoadedDataset
 
 __all__ = [
-    "main",
     "run_ppo",
 ]
 
 
-_WORKER_ENV_VARS = (
-    "AGL_KEY",
-    "AGL_BASE_URL",
-    "AGL_MODEL_ENDPOINT",
-    "AGL_NAMESPACE",
-    "AGL_HOOKS",
-    "AGL_POD_SPEC_TEMPLATE",
-    "AGL_MODEL_NAME",
-    "AGL_OPENAI_MODEL_PREFIX",
-    "AGL_LLM_TEMPERATURE",
-    "OPENAI_TIMEOUT",
-    "MAX_TOKENS_PER_CALL",
-    "LD_LIBRARY_PATH",
-    "HF_TOKEN",
-    "WANDB_API_KEY",
-    "WANDB_ENTITY",
-    "WANDB_PROJECT",
-    "WANDB_DIR",
-    "WANDB_MODE",
-    "WANDB_RUN_ID",
-    "WANDB_RESUME",
-)
-
-
-def _copy_worker_env(source: Mapping[str, str], target: MutableMapping[str, str]) -> None:
-    for var in _WORKER_ENV_VARS:
-        val = source.get(var)
-        if val:
-            target[var] = val
-
-
-@hydra.main(config_path="pkg://agl_lite/verl", config_name="config", version_base=None)
-def main(config: Any):
-    run_ppo(config, train_dataset=None, val_dataset=None)
-
 
 def run_ppo(
     config: Any,
-    train_dataset: Sequence[Any] | None,
-    val_dataset: Sequence[Any] | None,
+    train_dataset: Sequence[Any],
+    val_dataset: Sequence[Any],
 ) -> None:
     """Launch VERL PPO training with agl-lite agent orchestration.
 
-    Datasets can be passed as in-memory sequences or loaded from files
-    (via ``config.data.train_files``).
+    Datasets must be passed as non-empty in-memory sequences.
     """
     from verl.trainer.main_ppo import get_ppo_ray_runtime_env
+
+    assert train_dataset is not None and len(train_dataset) > 0, "train_dataset must be non-empty"
+    assert val_dataset is not None and len(val_dataset) > 0, "val_dataset must be non-empty"
 
     if not ray.is_initialized():
         default_runtime_env = cast(dict[str, Any], get_ppo_ray_runtime_env())
@@ -86,12 +51,6 @@ def run_ppo(
         runtime_env_config = ray_init_kwargs.pop("runtime_env", {})
         runtime_env_kwargs = dict(runtime_env_config) if isinstance(runtime_env_config, dict) else {}
         runtime_env = {**default_runtime_env, **runtime_env_kwargs}
-        # Pass runtime env vars required by Ray workers.
-        env_vars = runtime_env.setdefault("env_vars", {})
-        if not isinstance(env_vars, dict):
-            env_vars = {}
-            runtime_env["env_vars"] = env_vars
-        _copy_worker_env(os.environ, env_vars)
         _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
             runtime_env=runtime_env,
@@ -99,9 +58,8 @@ def run_ppo(
             **ray_init_kwargs,
         )
 
-    # Wrap in-memory datasets.
-    train_ds = LoadedDataset(train_dataset) if train_dataset is not None else None
-    val_ds = LoadedDataset(val_dataset) if val_dataset is not None else None
+    train_ds = LoadedDataset(train_dataset)
+    val_ds = LoadedDataset(val_dataset)
 
     runner = cast(Any, _AglTaskRunner).remote()
     ray.get(runner.run.remote(config, train_ds, val_ds))
@@ -116,7 +74,7 @@ class _AglTaskRunner:
 
         self._delegate = TaskRunner()
 
-    def run(self, config, train_dataset_ref, val_dataset_ref):
+    def run(self, config, train_dataset, val_dataset):
         from pprint import pprint
 
         from omegaconf import OmegaConf
@@ -159,32 +117,8 @@ class _AglTaskRunner:
 
         resource_pool_manager = d.init_resource_pool_mgr(config)
 
-        # Datasets — use pre-loaded if available, else load from files
-        if train_dataset_ref is not None:
-            train_dataset = train_dataset_ref
-        else:
-            from verl.trainer.main_ppo import create_rl_dataset
-
-            train_dataset = create_rl_dataset(
-                config.data.train_files,
-                config.data,
-                tokenizer,
-                processor,
-                is_train=True,
-            )
-
-        if val_dataset_ref is not None:
-            val_dataset = val_dataset_ref
-        else:
-            from verl.trainer.main_ppo import create_rl_dataset
-
-            val_dataset = create_rl_dataset(
-                config.data.val_files,
-                config.data,
-                tokenizer,
-                processor,
-                is_train=False,
-            )
+        assert train_dataset is not None and len(train_dataset) > 0, "train_dataset must be non-empty"
+        assert val_dataset is not None and len(val_dataset) > 0, "val_dataset must be non-empty"
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
 
@@ -202,12 +136,4 @@ class _AglTaskRunner:
         )
         trainer.init_workers()
 
-        # Entry dispatch: async-rollout path is a fully independent training
-        # loop. When async_rollout.enabled=false (default) the new code is
-        # never called and sync RL behavior is byte-level equivalent to the
-        # pre-async version.
-        async_cfg = config.agentlightning.get("async_rollout", None)
-        if async_cfg is not None and async_cfg.get("enabled", False):
-            trainer.async_fit()
-        else:
-            trainer.fit()
+        trainer.fit()

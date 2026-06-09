@@ -74,8 +74,6 @@ def test_base_config_enables_verl_actor_entropy_metric() -> None:
     config = yaml.safe_load((REPO_ROOT / "agl_lite/verl/config.yaml").read_text())
 
     assert config["actor_rollout_ref"]["actor"]["calculate_entropy"] is True
-    assert "is_shuffle" not in config["actor_rollout_ref"]["actor"]
-    assert config["agentlightning"]["is_shuffle"] is False
 
 
 def test_drop_remainder_metric_stays_in_training_group() -> None:
@@ -85,7 +83,6 @@ def test_drop_remainder_metric_stays_in_training_group() -> None:
     assert 'metrics["training/n_triplets_dropped_remainder"]' in source
     assert 'metrics["training/n_advantage_zero"]' in source
     assert 'metrics["training/n_advantage_zero"]' in async_source
-    assert 'if self.config.agentlightning.get("is_shuffle", True):' in source
     assert "ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n" in source
     assert 'metrics["critic/n_transition_before_dropping"]' in source
     assert 'metrics["critic/n_transition_after_dropping"]' in source

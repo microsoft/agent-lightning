@@ -26,7 +26,7 @@ def _bridge(level: str, reward_fillna_value: float = 0.0) -> AglLiteRolloutBridg
         agl_base_url="http://test",
         agl_key="test-key",
         train_rollout_n=1,
-        train_information={"model": "test-model"},
+        model="test-model",
         tokenizer=FakeTokenizer(),
         mini_batch_size=2,
         pad_token_id=0,
@@ -35,7 +35,6 @@ def _bridge(level: str, reward_fillna_value: float = 0.0) -> AglLiteRolloutBridg
             "level": level,
             "trajectory_max_prompt_length": 4,
             "trajectory_max_response_length": 8,
-            "debug": False,
         },
     )
 

@@ -105,14 +105,14 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     resp = data.get("response")
     prompt_token_ids: list[int] = []
     response_token_ids: list[int] = []
-    response_log_probs: list[float] = []
+    response_log_probs: list[float] | None = None
 
     if isinstance(resp, dict):
         prompt_token_ids = resp.get("prompt_token_ids", [])
         choices = resp.get("choices", [])
         if choices:
             response_token_ids = choices[0].get("token_ids", [])
-            response_log_probs = _extract_choice_log_probs(choices[0]) or []
+            response_log_probs = _extract_choice_log_probs(choices[0])
     elif isinstance(resp, list):
         # Legacy: raw SSE chunks (pre-assembly format, backward compat).
         for chunk in resp:

@@ -183,7 +183,7 @@ def verl_default_config() -> dict[str, Any]:
         "agentlightning": {
             "agl_base_url": "http://localhost:8080",
             "agl_key": "",
-            "timeout_seconds": 1800,
+            "rollout_timeout_seconds": 1800,
             "trace_aggregator": {
                 # Merge all turns of a rollout into one trajectory sequence
                 # (multi-turn credit assignment) instead of per-transition rows.

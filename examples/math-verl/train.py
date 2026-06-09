@@ -183,7 +183,7 @@ def build_verl_config(
             "n_gpus_per_node": 1,
             "val_before_train": True,
             "critic_warmup": 0,
-            "logger": ["console"],
+            "logger": ["console", "wandb"],
             "project_name": "agl-lite",
             "experiment_name": experiment_name,
             "nnodes": 1,
@@ -200,8 +200,6 @@ def build_verl_config(
                 "level": "trajectory",
                 "trajectory_max_prompt_length": 2048,
                 "trajectory_max_response_length": 8192,
-                "debug": False,
-                "mismatch_log_dir": "./mismatch_cases",
             },
         },
     }
