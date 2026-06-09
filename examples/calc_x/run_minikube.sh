@@ -2,7 +2,7 @@
 # Run Calc-X VERL training with agl-lite's k8s controller on minikube.
 set -euo pipefail
 
-AGL_SERVER_PORT=8080
+AGL_SERVER_PORT=8181
 AGL_KEY=dummy
 LOG_SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
 SERVER_LOG="/tmp/agl-lite-server-$LOG_SUFFIX.log"
@@ -26,10 +26,7 @@ env LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
 
 minikube delete -p minikube >/dev/null 2>&1 || true
 minikube start --memory=65536 --cpus=16 --driver=docker
-(
-    cd examples/calc_x
-    minikube image build -t calc-x-agent:dev -f Dockerfile .
-)
+minikube image build -t calc-x-agent:dev -f Dockerfile .
 
 agl-lite-server \
     port="$AGL_SERVER_PORT" \
@@ -49,7 +46,7 @@ agl-lite-controller \
     k8s_runner.ttl_after_finished=600 \
     >"$CONTROLLER_LOG" 2>&1 &
 
-python examples/calc_x/train_calc_agent.py \
+python train_calc_agent.py \
     --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
     --agl-key "$AGL_KEY" \
     --run-name minikube \

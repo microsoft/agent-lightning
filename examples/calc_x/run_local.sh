@@ -2,7 +2,7 @@
 # Run Calc-X VERL training with agl-lite's local controller.
 set -euo pipefail
 
-AGL_SERVER_PORT=8080
+AGL_SERVER_PORT=8181
 AGL_KEY=dummy
 LOG_SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
 SERVER_LOG="/tmp/agl-lite-server-$LOG_SUFFIX.log"
@@ -17,7 +17,7 @@ cleanup() {
 cleanup
 trap cleanup EXIT INT TERM
 
-export PYTHONPATH="$(pwd)/examples/calc_x:${PYTHONPATH:-}"
+export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 
 printf 'agl-lite-server log: %s\n' "$SERVER_LOG"
 printf 'agl-lite-controller log: %s\n' "$CONTROLLER_LOG"
@@ -42,7 +42,7 @@ agl-lite-controller \
     agl_server.key="$AGL_KEY" \
     >"$CONTROLLER_LOG" 2>&1 &
 
-python examples/calc_x/train_calc_agent.py \
+python train_calc_agent.py \
     --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
     --agl-key "$AGL_KEY" \
     --run-name local \

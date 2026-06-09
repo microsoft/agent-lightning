@@ -31,6 +31,7 @@ The expected dataset files are:
 Make sure you have installed `docker` and `minikube`, then start training by:
 
 ```bash
+source .venv/bin/activate
 cd examples/calc_x
 bash run_minikube.sh
 ```
@@ -41,10 +42,11 @@ minikube needs at least 64 GB of memory; otherwise, it may be killed due to insu
 
 ## Local Mode
 
-Make sure you have installed the following package in Python:
+Make sure you have activated the project environment and installed the following package in Python:
 
-```python
-pip install \
+```bash
+source .venv/bin/activate
+uv pip install \
     openai \
     httpx \
     sympy \
@@ -57,10 +59,10 @@ pip install \
 Then start training:
 
 ```bash
+source .venv/bin/activate
 cd examples/calc_x
 bash run_local.sh
 ```
 
 `run_local.sh` starts agl-lite-server and agl-lite-controller, and writes their logs under `/tmp/`. The script starts the agent in multi-process mode.
 When `run_local.sh` exits, it automatically cleans up the server, controller, and agent it started.
-

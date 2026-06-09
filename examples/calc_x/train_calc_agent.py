@@ -76,7 +76,7 @@ def verl_default_config() -> dict[str, Any]:
             "total_epochs": 2,
         },
         "agentlightning": {
-            "agl_base_url": "http://localhost:8080",
+            "agl_base_url": "http://localhost:8181",
             "agl_key": "calcx-dev-key",
             "rollout_timeout_seconds": 300,
             "async_rollout": {
@@ -197,13 +197,13 @@ def main() -> None:
     parser.add_argument(
         "--train-file",
         type=str,
-        default="examples/calc_x/data/train.parquet",
+        default="data/train.parquet",
         help="Path to training parquet file",
     )
     parser.add_argument(
         "--val-file",
         type=str,
-        default="examples/calc_x/data/test.parquet",
+        default="data/test.parquet",
         help="Path to validation parquet file",
     )
     parser.add_argument(
@@ -215,7 +215,7 @@ def main() -> None:
     parser.add_argument(
         "--agl-base-url",
         type=str,
-        default="http://localhost:8080",
+        default="http://localhost:8181",
         help="agl-lite server URL for the trainer",
     )
     parser.add_argument(
