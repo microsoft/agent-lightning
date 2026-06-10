@@ -124,13 +124,18 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             k8s_job_template_path=al.k8s.job_template_path,
         )
 
+    def _rollout_replicas(self) -> list[Any]:
+        if hasattr(self, "llm_server_manager"):
+            return list(self.llm_server_manager.get_replicas())
+        return list(self.async_rollout_manager.rollout_replicas)
+
     @auto_await
     async def _abort_all_rollout_requests(self) -> None:
-        await asyncio.gather(*[replica.abort_all_requests() for replica in self.async_rollout_manager.rollout_replicas])
+        await asyncio.gather(*[replica.abort_all_requests() for replica in self._rollout_replicas()])
 
     @auto_await
     async def _resume_all_rollout_generation(self) -> None:
-        await asyncio.gather(*[replica.resume_generation() for replica in self.async_rollout_manager.rollout_replicas])
+        await asyncio.gather(*[replica.resume_generation() for replica in self._rollout_replicas()])
 
     def _resume_gateway(self) -> None:
         response = self._ensure_agl_client().post("/proxy/resume")
@@ -279,7 +284,12 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
     def _rollout(self, gen_batch: DataProto, is_train: bool) -> tuple[DataProto, dict[str, Any]]:
         """Run agl-lite rollouts and return the resulting DataProto plus metrics."""
-        server_addresses = list(self.async_rollout_manager.server_addresses)
+        # verl 0.8.0 moved rollout server state behind llm_server_manager.
+        has_llm_server_manager = hasattr(self, "llm_server_manager")
+        if has_llm_server_manager:
+            server_addresses = list(self.llm_server_manager.get_addresses())
+        else:
+            server_addresses = list(self.async_rollout_manager.server_addresses)
         self._resume_all_rollout_generation()
         if self.is_async:
             self._resume_gateway()
@@ -362,17 +372,25 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
         gen_batch = self._get_gen_batch(batch)
         gen_batch.meta_info["global_steps"] = self.global_steps
+        # verl 0.8.0 moved rollout profiling behind llm_server_manager.
+        has_llm_server_manager = hasattr(self, "llm_server_manager")
 
         with marked_timer("gen", timing_raw, color="red"):
             if curr_step_profile:
-                self.async_rollout_manager.start_profile()
+                if has_llm_server_manager:
+                    self.llm_server_manager.start_profile()
+                else:
+                    self.async_rollout_manager.start_profile()
 
             gen_batch_output, agent_metrics = self._rollout(gen_batch, is_train=True)
             print("AglLiteRayPPOTrainer: sleeping rollout replicas.")
             self.checkpoint_manager.sleep_replicas()
             print("AglLiteRayPPOTrainer: rollout replicas slept.")
             if curr_step_profile:
-                self.async_rollout_manager.stop_profile()
+                if has_llm_server_manager:
+                    self.llm_server_manager.stop_profile()
+                else:
+                    self.async_rollout_manager.stop_profile()
             metrics.update(agent_metrics)
 
         if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
@@ -391,7 +409,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         assert "token_level_scores" in batch.batch, "rollout bridge must populate token_level_scores"
         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
-        divisor = self.actor_rollout_wg.world_size
+        divisor = self.actor_rollout_wg.world_size * int(
+            self.config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu
+        )
         batch_padded, pad_size = pad_dataproto_to_divisor(batch, divisor)
 
         rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
@@ -597,9 +617,13 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
     def _validate(self, merged: bool = False):
         """Run validation through the agl-lite rollout manager."""
-        assert self.async_rollout_manager.server_addresses, (
-            "_validate called before async_rollout_manager has server addresses"
-        )
+        # verl 0.8.0 moved rollout server state behind llm_server_manager.
+        has_llm_server_manager = hasattr(self, "llm_server_manager")
+        if has_llm_server_manager:
+            server_addresses = list(self.llm_server_manager.get_addresses())
+        else:
+            server_addresses = list(self.async_rollout_manager.server_addresses)
+        assert server_addresses, "_validate called before rollout server addresses are available"
 
         merged_metrics: dict[str, Any] = {}
         for test_data in self.val_dataloader:
