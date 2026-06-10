@@ -26,21 +26,15 @@ Three groups connected only by HTTP:
 
 ## Quick Start
 
-Run the math PoC — 30 GSM8K problems solved by Qwen2.5-1.5B-Instruct via vLLM:
+Install the project and run the remaining test suite:
 
 ```bash
-# Prerequisites: minikube running, uv installed, GPU with nvidia-container-toolkit
 git clone https://github.com/<org>/agl-lite && cd agl-lite
-
-# Start vLLM inference server
-scripts/start_vllm.sh
-
-# Configure and run
-export AGL_KEY=$(openssl rand -hex 32)
-examples/math-poc/run.sh
+uv sync --extra dev
+uv run pytest
 ```
 
-This builds images, deploys the controller to minikube, starts agl-lite on the host, and runs a multi-iteration RL loop: enqueue tasks → agents solve via vLLM → gateway captures trajectories → algorithm scores answers. See the [Getting Started guide](docs/get_started.md) for the full setup walkthrough.
+See the [Getting Started guide](docs/get_started.md) for the full setup walkthrough.
 
 ## How Agents Work
 
@@ -61,13 +55,6 @@ response = client.chat.completions.create(
 
 The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `AGL_TASK_INPUT`, and `AGL_EVENT_URL`. See [What Happens Next](docs/get_started.md#what-happens-next) for details.
 
-## Examples
-
-| Example | Description | Mode |
-|---------|-------------|------|
-| [Math PoC](examples/math-poc/) | GSM8K problems with Qwen2.5-1.5B-Instruct | Mock (CPU) or vLLM (GPU) |
-| [SWE-bench](examples/swe_bench/) | Coding tasks with Claude Code agent | vLLM + per-instance Docker images |
-
 ## Documentation
 
 | Section | Content |
@@ -79,14 +66,12 @@ The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPEN
 
 ## Project Status
 
-- **~3.5K lines** of source code, **333 tests** 
+- **~3.5K lines** of source code, endpoint test coverage
 - Gateway with route config, streaming proxy, and automatic event capture
 - In-memory store (rollouts, events, models, resources)
 - K8s controller with Job lifecycle management
 - Python client library (`AglLiteClient`)
 - VERL integration (`AglLiteRolloutBridge`) with triplet format
-- Math PoC end-to-end (mock + real vLLM)
-- SWE-bench example with Claude Code
 
 ## License
 

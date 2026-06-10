@@ -46,12 +46,7 @@ pythonVersion = "3.12"
 typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
-# Exclude e2e tests by default — they require a running K8s cluster.
-# Run explicitly: uv run pytest tests/e2e/cpu -v
-#                 uv run pytest tests/e2e/gpu -v
-addopts = "--ignore=tests/e2e"
 
 [build-system]
 requires = ["hatchling"]
@@ -59,9 +54,6 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "mkdocs-material>=9.7.6",
-    "mkdocstrings>=1.0.3",
-    "mkdocstrings-python>=2.0.3",
     "pytest-httpx>=0.36.0",
     "sympy>=1.14.0",
 ]

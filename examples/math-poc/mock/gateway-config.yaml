@@ -1,4 +1,0 @@
-# Gateway config for mock mode — no param injection needed.
-# Mockai echoes requests as-is; no return_token_ids support.
-
-routes: []
