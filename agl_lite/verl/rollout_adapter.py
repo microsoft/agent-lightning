@@ -83,6 +83,7 @@ class RolloutAdapter:
         is_drop_list: list[bool] = []
         response_log_probs_list: list[list[float] | None] = []
         n_trunc_sample_because_of_response = 0
+        n_skipped_empty_training_rows = 0
         unmerged_count = 0
         response_len_per_turn_list: list[int] = []
 
@@ -97,12 +98,12 @@ class RolloutAdapter:
             response_mask: list[int] | None = None,
             response_log_probs: list[float] | None = None,
         ) -> None:
-            nonlocal n_trunc_sample_because_of_response
+            nonlocal n_skipped_empty_training_rows, n_trunc_sample_because_of_response
             if len(prompt_ids) > self.max_prompt_length:
                 prompt_ids = prompt_ids[: self.max_prompt_length]
-                is_drop_list.append(True)
+                is_drop = True
             else:
-                is_drop_list.append(False)
+                is_drop = False
 
             if len(response_ids) > self.max_response_length:
                 response_ids = response_ids[: self.max_response_length]
@@ -115,6 +116,11 @@ class RolloutAdapter:
             if response_log_probs is not None and len(response_log_probs) != len(response_ids):
                 response_log_probs = None
 
+            train_token_count = sum(response_mask) if response_mask is not None else len(response_ids)
+            if train_token_count == 0:
+                n_skipped_empty_training_rows += 1
+                return
+
             one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
                 prompt_ids, self.max_prompt_length, self.pad_token_id
             )
@@ -125,6 +131,7 @@ class RolloutAdapter:
             input_attention_mask_list.append(one_input_attention_mask)
             response_ids_list.append(one_response_ids)
             response_attention_mask_list.append(one_response_attention_mask)
+            is_drop_list.append(is_drop)
             if response_mask is not None:
                 one_response_mask, _ = get_right_padded_ids_and_attention_mask(
                     response_mask, self.max_response_length, 0
@@ -297,6 +304,7 @@ class RolloutAdapter:
             "training/n_rollouts_w_trace": sample_with_trace_count,
             "training/n_rollouts_w_reward": sample_with_reward_count,
             "training/n_truncated_sample": n_trunc_sample_because_of_response,
+            "training/n_skipped_empty_rows": n_skipped_empty_training_rows,
             "training/n_turns": n_response_turns,
             "response_length/training/avg_by_turn": float(np.mean(response_len_per_turn_list)),
             "response_length/training/max_by_turn": int(np.max(response_len_per_turn_list)),

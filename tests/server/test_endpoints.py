@@ -172,6 +172,41 @@ def test_proxy_completion_endpoint(client: TestClient, auth_headers: dict[str, s
     assert events[0]["data"]["response_token_ids"] == [2]
 
 
+def test_proxy_error_triplet_preserves_status(client: TestClient, auth_headers: dict[str, str], monkeypatch):
+    async def fake_upstream(*, client: httpx.AsyncClient, url: str, body: dict) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"error": {"message": "maximum context length is 32768"}},
+            headers={"content-type": "application/json"},
+        )
+
+    monkeypatch.setattr("agl_lite.server.proxy._send_upstream_with_retries", fake_upstream)
+    rollout = _rollout(client, auth_headers)
+    client.post(
+        "/api/models",
+        json=[{"model": MODEL_NAME, "endpoint": "http://model.test/v1", "version": 3}],
+        headers=auth_headers,
+    )
+
+    proxied = client.post(
+        f"/proxy/rollout/{rollout['rollout_id']}/attempt/0/mode/train/openai/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+        headers=auth_headers,
+    )
+    assert proxied.status_code == 400
+
+    events = client.get(
+        f"/api/rollouts/{rollout['rollout_id']}/events",
+        params={"event_type": "model_request", "format": "triplet"},
+        headers=auth_headers,
+    ).json()
+    assert events[0]["data"]["prompt_token_ids"] == []
+    assert events[0]["data"]["response_token_ids"] == []
+    assert events[0]["data"]["http_status"] == 400
+    assert events[0]["data"]["status"] == "error"
+    assert events[0]["data"]["error"] == {"message": "maximum context length is 32768"}
+
+
 def test_proxy_admin_endpoints(client: TestClient, auth_headers: dict[str, str]):
     paused = client.post(
         "/proxy/pause",

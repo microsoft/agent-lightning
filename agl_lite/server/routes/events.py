@@ -125,12 +125,18 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
                     response_token_ids.extend(tids)
 
     srv = data.get("server", {})
-    return {
+    trimmed = {
         "prompt_token_ids": prompt_token_ids,
         "response_token_ids": response_token_ids,
         "response_log_probs": response_log_probs,
         "server": {"model": srv.get("model"), "version": srv.get("version")},
     }
+    for key in ("http_status", "status"):
+        if key in data:
+            trimmed[key] = data[key]
+    if isinstance(resp, dict) and "error" in resp:
+        trimmed["error"] = resp["error"]
+    return trimmed
 
 
 def _trim_reward(data: dict[str, Any]) -> dict[str, Any]:

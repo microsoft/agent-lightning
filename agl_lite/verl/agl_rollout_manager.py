@@ -300,11 +300,17 @@ class AglRolloutManagerBase:
             if event.event_type != "model_request":
                 continue
             data = event.data
+            http_status = data.get("http_status")
+            response_token_ids = data.get("response_token_ids", [])
+            if data.get("status") == "error" or (isinstance(http_status, int) and http_status >= 400):
+                continue
+            if not response_token_ids:
+                continue
             triplets.append(
                 Triplet(
                     prompt={"token_ids": data.get("prompt_token_ids", [])},
                     response={
-                        "token_ids": data.get("response_token_ids", []),
+                        "token_ids": response_token_ids,
                         "log_probs": data.get("response_log_probs"),
                     },
                     reward=None,
