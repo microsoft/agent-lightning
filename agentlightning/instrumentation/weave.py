@@ -471,6 +471,9 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
     def annotation_queue_delete(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError()
 
+    def annotation_queue_update(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
     def eval_results_query(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError()
 
