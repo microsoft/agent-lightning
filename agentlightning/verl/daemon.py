@@ -13,8 +13,6 @@ from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
-logger = logging.getLogger(__name__)
-
 import numpy as np
 import requests
 import torch
@@ -27,6 +25,8 @@ from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletB
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgentModeDaemon",
@@ -390,7 +390,9 @@ class AgentModeDaemon:
             current_time = time.time()
             num_requests += 1
             if current_time - last_request_time > 60 or num_requests == 1 or num_requests % 100 == 0:
-                logger.debug("Proxying %s request to %s. Request data: %s", request.method, target_server, request.get_data())
+                logger.debug(
+                    "Proxying %s request to %s. Request data: %s", request.method, target_server, request.get_data()
+                )
             last_request_time = current_time
 
             try:
@@ -614,7 +616,8 @@ class AgentModeDaemon:
         if rollout.final_reward is None:
             logger.warning(
                 "Reward is None for rollout %s, will be auto-set to %s.",
-                rollout.rollout_id, self.reward_fillna_value,
+                rollout.rollout_id,
+                self.reward_fillna_value,
             )
         if rollout.triplets is None:
             logger.warning("Triplet is None for rollout %s.", rollout.rollout_id)
