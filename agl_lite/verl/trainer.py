@@ -15,7 +15,6 @@ import torch
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from verl import DataProto
-from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics
 from verl.trainer.ppo.ray_trainer import (
     AdvantageEstimator,
@@ -44,15 +43,29 @@ from .rollout_adapter import RolloutAdapter
 log = logging.getLogger(__name__)
 
 
-def _suffix_metrics(metrics: dict[str, Any], suffix: str) -> dict[str, Any]:
-    return {f"{key}{suffix}": value for key, value in metrics.items()}
-
-
 def _batch_dict_len(batch: dict[str, Any] | None) -> int:
     """Leading-dim length of a dataloader batch dict (0 if absent/empty)."""
     if batch is None or not batch:
         return 0
     return len(next(iter(batch.values())))
+
+
+def _same_reward_uid_indices(batch: DataProto) -> list[int]:
+    if "uid" not in batch.non_tensor_batch:
+        return []
+
+    rewards = batch.batch["token_level_scores"].sum(dim=-1)
+    uid_to_indices: dict[Any, list[int]] = {}
+    for sample_idx, uid in enumerate(batch.non_tensor_batch["uid"]):
+        uid_to_indices.setdefault(uid, []).append(sample_idx)
+
+    same_reward_indices: list[int] = []
+    for indices in uid_to_indices.values():
+        group_rewards = rewards[indices]
+        if torch.allclose(group_rewards, group_rewards[0].expand_as(group_rewards)):
+            same_reward_indices.extend(indices)
+
+    return same_reward_indices
 
 
 class AglLiteRayPPOTrainer(RayPPOTrainer):
@@ -362,7 +375,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self,
         timing_raw: dict[str, float],
         curr_step_profile: bool,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         metrics: dict[str, Any] = {}
         rollout_n = self.config.actor_rollout_ref.rollout.n
 
@@ -409,43 +422,57 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         assert "token_level_scores" in batch.batch, "rollout bridge must populate token_level_scores"
         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
-        divisor = self.actor_rollout_wg.world_size * int(
-            self.config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu
-        )
-        batch_padded, pad_size = pad_dataproto_to_divisor(batch, divisor)
+        metrics["training/n_sample_collected"] = len(batch)
+        if "is_drop_mask" in batch.batch:
+            keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
+            metrics["training/n_sample_dropped/marked"] = len(batch) - len(keep)
+            batch = batch[keep]
+
+        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
+        n_transition = len(batch)
+        random_indices = list(range(n_transition))
+        random.shuffle(random_indices)
+        n_remained_transition = n_transition // mini_bs * mini_bs
+        metrics["training/n_sample_dropped/random"] = n_transition - n_remained_transition
+        batch = batch[random_indices[:n_remained_transition]]
+        metrics["training/n_sample_trained"] = len(batch)
+        if len(batch) == 0:
+            print("WARNING: no trainable batch after drop+floor; skipping this training step.")
+            return None
+
+        if self.config.trainer.balance_batch:
+            self._balance_batch(batch, metrics=metrics)
 
         rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
         bypass_mode = bool(rollout_corr_config and rollout_corr_config.get("bypass_mode", False))
 
         if bypass_mode:
-            if "rollout_log_probs" not in batch_padded.batch:
+            if "rollout_log_probs" not in batch.batch:
                 raise RuntimeError("bypass_mode requires rollout_log_probs in batch")
-            if not torch.isfinite(batch_padded.batch["rollout_log_probs"]).all():
+            if not torch.isfinite(batch.batch["rollout_log_probs"]).all():
                 raise RuntimeError("bypass_mode requires finite rollout_log_probs everywhere")
             with marked_timer("old_log_prob", timing_raw, color="blue"):
                 apply_bypass_mode(
-                    batch_padded,
+                    batch,
                     rollout_corr_config,
                     self.config.actor_rollout_ref.actor.policy_loss,
                 )
         else:
             with marked_timer("old_log_prob", timing_raw, color="blue"):
-                old_log_prob, _old_log_prob_mfu = self._compute_old_log_prob(batch_padded)
+                old_log_prob, _old_log_prob_mfu = self._compute_old_log_prob(batch)
                 if "entropys" in old_log_prob.batch:
                     old_log_prob.batch.pop("entropys")
-                batch_padded = batch_padded.union(old_log_prob)
+                batch = batch.union(old_log_prob)
 
         if self.use_reference_policy:
             with marked_timer("ref", timing_raw, color="olive"):
-                ref_log_prob = self._compute_ref_log_prob(batch_padded)
-                batch_padded = batch_padded.union(ref_log_prob)
+                ref_log_prob = self._compute_ref_log_prob(batch)
+                batch = batch.union(ref_log_prob)
 
         if self.use_critic:
             with marked_timer("values", timing_raw, color="cyan"):
-                values = self._compute_values(batch_padded)
-                batch_padded = batch_padded.union(values)
-
-        batch = unpad_dataproto(batch_padded, pad_size=pad_size)
+                values = self._compute_values(batch)
+                batch = batch.union(values)
 
         with marked_timer("adv", timing_raw, color="brown"):
             if self.config.algorithm.use_kl_in_reward:
@@ -482,39 +509,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 config=self.config.algorithm,
             )
 
-        metrics.update(
-            _suffix_metrics(
-                compute_data_metrics(batch=batch, use_critic=self.use_critic),
-                "_before_processing",
-            )
-        )
-
-        metrics["critic/n_transition_before_dropping"] = len(batch)
-        if "is_drop_mask" in batch.batch:
-            keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
-            metrics["training/n_sample_dropped_marked"] = len(batch) - len(keep)
-            batch = batch[keep]
-        mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
-        n_transition = len(batch)
-        random_indices = list(range(n_transition))
-        random.shuffle(random_indices)
-        batch.reorder(torch.tensor(random_indices).type(torch.int32))
-        n_remained_transition = n_transition // mini_bs * mini_bs
-        metrics["training/n_sample_dropped_reminded"] = n_transition - n_remained_transition
-        batch = batch[list(range(n_remained_transition))]
-        metrics["critic/n_transition_after_dropping"] = len(batch)
-        if len(batch) == 0:
-            raise RuntimeError("batch empty after drop+floor")
-
-        if self.config.trainer.balance_batch:
-            self._balance_batch(batch, metrics=metrics)
-
-        metrics.update(
-            _suffix_metrics(
-                compute_data_metrics(batch=batch, use_critic=self.use_critic),
-                "_after_processing",
-            )
-        )
+        metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
 
         if self.use_critic:
             with marked_timer("update_critic", timing_raw, color="pink"):
@@ -587,6 +582,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
             with marked_timer("step", timing_raw):
                 metrics = self._train_step(timing_raw, curr_step_profile)
+            if metrics is None:
+                print("AglLiteRayPPOTrainer: train step returned no batch; continuing training.")
+                continue
 
             is_last_step = self.global_steps >= self.total_training_steps
 
