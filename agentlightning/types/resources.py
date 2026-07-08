@@ -12,6 +12,7 @@ from typing import (
     Dict,
     Literal,
     Optional,
+    TypeAlias,
     Union,
 )
 
@@ -27,6 +28,9 @@ __all__ = [
     "LLM",
     "ProxyLLM",
     "PromptTemplate",
+    "get_registered_resource_types",
+    "get_resource_type",
+    "register_resource_type",
     "ResourceUnion",
     "NamedResources",
     "ResourcesUpdate",
@@ -166,10 +170,52 @@ class PromptTemplate(Resource):
             )
 
 
-# Use discriminated union for proper deserialization
-# TODO: migrate to use a registry
-ResourceUnion = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
-NamedResources = Dict[str, ResourceUnion]
+ResourceClass = type[Resource]
+_RESOURCE_REGISTRY: Dict[str, ResourceClass] = {}
+
+
+def _resource_type_name(resource_cls: ResourceClass) -> str:
+    field = resource_cls.model_fields.get("resource_type")
+    resource_type = field.default if field is not None else None
+    if not isinstance(resource_type, str):
+        raise ValueError(f"{resource_cls.__name__}.resource_type must define a string default")
+    return resource_type
+
+
+def register_resource_type(resource_cls: type[Any]) -> ResourceClass:
+    """Register a resource model for discriminated resource deserialization."""
+
+    if not issubclass(resource_cls, Resource):
+        raise TypeError("resource_cls must inherit from Resource")
+
+    resource_model = resource_cls
+    resource_type = _resource_type_name(resource_model)
+    existing = _RESOURCE_REGISTRY.get(resource_type)
+    if existing is not None and existing is not resource_model:
+        raise ValueError(f"Resource type '{resource_type}' is already registered by {existing.__name__}")
+
+    _RESOURCE_REGISTRY[resource_type] = resource_model
+    return resource_model
+
+
+def get_resource_type(resource_type: str) -> Optional[ResourceClass]:
+    """Return the registered model for a resource type, if present."""
+
+    return _RESOURCE_REGISTRY.get(resource_type)
+
+
+def get_registered_resource_types() -> Dict[str, ResourceClass]:
+    """Return a copy of the registered resource type mapping."""
+
+    return dict(_RESOURCE_REGISTRY)
+
+
+register_resource_type(LLM)
+register_resource_type(ProxyLLM)
+register_resource_type(PromptTemplate)
+
+ResourceUnion: TypeAlias = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
+NamedResources: TypeAlias = Dict[str, ResourceUnion]
 """Mapping from resource names to their configured instances.
 
 Examples:
