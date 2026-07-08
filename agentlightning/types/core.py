@@ -373,6 +373,9 @@ class Hook(ParallelWorkerBase):
             tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
             rollout: The [`Rollout`][agentlightning.Rollout] object that will be processed.
 
+        This is a control hook. If it raises, the runner treats the attempt as
+        failed and applies the caller's normal exception policy.
+
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource setup. By default, this is a no-op.
         """
@@ -388,6 +391,9 @@ class Hook(ParallelWorkerBase):
             tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
             rollout: The [`Rollout`][agentlightning.Rollout] object that has been processed.
 
+        This is an observation hook. If it raises, the runner logs the exception
+        and preserves the attempt outcome.
+
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource cleanup. By default, this is a no-op.
         """
@@ -399,6 +405,9 @@ class Hook(ParallelWorkerBase):
             agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
             runner: The [`Runner`][agentlightning.Runner] managing the rollout.
             rollout: The [`Rollout`][agentlightning.Rollout] object that will be processed.
+
+        This is a control hook. If it raises, the runner treats the attempt as
+        failed and applies the caller's normal exception policy.
 
         Subclasses can override this method to implement custom logic such as
         logging, metric collection, or resource setup. By default, this is a
@@ -420,6 +429,9 @@ class Hook(ParallelWorkerBase):
             runner: The [`Runner`][agentlightning.Runner] managing the rollout.
             rollout: The [`Rollout`][agentlightning.Rollout] object that has been processed.
             spans: The spans that have been added to the store.
+
+        This is an observation hook. If it raises, the runner logs the exception
+        and preserves the attempt outcome.
 
         Subclasses can override this method for cleanup or additional
         logging. By default, this is a no-op.

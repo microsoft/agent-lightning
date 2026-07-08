@@ -920,6 +920,78 @@ async def test_hooks_triggered_in_order() -> None:
 
 
 @pytest.mark.asyncio
+async def test_control_hook_failure_marks_attempt_failed_and_raises_for_step() -> None:
+    class FailingTraceStartHook(RecordingHook):
+        async def on_trace_start(
+            self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
+        ) -> None:
+            await super().on_trace_start(agent=agent, runner=runner, tracer=tracer, rollout=rollout)
+            raise RuntimeError("control hook failed")
+
+    class HookAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> List[AgentSpanPayload]:
+            return [create_agent_span_payload("unreachable")]
+
+    hook = FailingTraceStartHook()
+    agent = HookAgent()
+    runner, store, _ = await setup_runner(agent, hooks=[hook])
+    try:
+        with pytest.raises(RuntimeError, match="control hook failed"):
+            await runner.step({"task": "hook"})
+    finally:
+        teardown_runner(runner)
+
+    assert hook.calls == ["on_rollout_start", "on_trace_start", "on_rollout_end"]
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_observation_hook_failure_preserves_attempt_success() -> None:
+    class FailingObservationHook(RecordingHook):
+        async def on_trace_end(
+            self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
+        ) -> None:
+            await super().on_trace_end(agent=agent, runner=runner, tracer=tracer, rollout=rollout)
+            raise RuntimeError("trace observation hook failed")
+
+        async def on_rollout_end(
+            self,
+            *,
+            agent: LitAgent[Any],
+            runner: Runner[Any],
+            rollout: Rollout,
+            spans: List[ReadableSpan] | List[Span],
+        ) -> None:
+            await super().on_rollout_end(agent=agent, runner=runner, rollout=rollout, spans=spans)
+            raise RuntimeError("rollout observation hook failed")
+
+    class HookAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> List[AgentSpanPayload]:
+            return [create_agent_span_payload("hook-span")]
+
+    hook = FailingObservationHook()
+    agent = HookAgent()
+    runner, store, _ = await setup_runner(agent, hooks=[hook])
+    try:
+        result = await runner.step({"task": "hook"})
+    finally:
+        teardown_runner(runner)
+
+    assert result.status == "succeeded"
+    assert hook.calls == ["on_rollout_start", "on_trace_start", "on_trace_end", "on_rollout_end"]
+    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
+    spans = await store.query_spans(rollout_id, attempt_id)
+    assert [span.name for span in spans] == ["hook-span"]
+
+
+@pytest.mark.asyncio
 async def test_step_returns_completed_rollout() -> None:
     """Test that step() returns a Rollout object after execution."""
 

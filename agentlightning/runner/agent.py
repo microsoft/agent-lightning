@@ -58,6 +58,8 @@ T_task = TypeVar("T_task")
 logger = logging.getLogger(__name__)
 
 RolloutExecutionPolicy = Literal["inline", "thread", "process"]
+HookType = Literal["on_trace_start", "on_trace_end", "on_rollout_start", "on_rollout_end"]
+CONTROL_HOOK_TYPES: frozenset[str] = frozenset({"on_rollout_start", "on_trace_start"})
 
 
 def _invoke_sync_rollout(
@@ -318,15 +320,15 @@ class LitAgentRunner(Runner[T_task]):
 
     async def _trigger_hooks(
         self,
-        hook_type: Literal["on_trace_start", "on_trace_end", "on_rollout_start", "on_rollout_end"],
+        hook_type: HookType,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         """Trigger all registered hooks of a specific type.
 
-        This method calls the specified hook method on all registered hooks,
-        catching and logging any exceptions that occur during hook execution
-        to prevent them from disrupting the main execution flow.
+        Start hooks are control hooks: failures abort the attempt and follow
+        the runner's normal exception handling. End hooks are observation hooks:
+        failures are logged and do not change the attempt outcome.
 
         Args:
             hook_type: The type of hook to trigger. Valid values are:
@@ -334,11 +336,14 @@ class LitAgentRunner(Runner[T_task]):
             *args: Positional arguments to pass to the hook methods.
             **kwargs: Keyword arguments to pass to the hook methods.
         """
+        propagate = hook_type in CONTROL_HOOK_TYPES
         for hook in self._hooks:
             try:
                 await getattr(hook, hook_type)(*args, **kwargs)
             except Exception:
                 logger.exception(f"{self._log_prefix()} Exception during {hook_type} hook {hook}.")
+                if propagate:
+                    raise
 
     async def _post_process_rollout_result(
         self, rollout: AttemptedRollout, raw_result: RolloutResult
@@ -787,12 +792,9 @@ class LitAgentRunner(Runner[T_task]):
             if raise_on_exception:
                 raise
         finally:
-            try:
-                await self._trigger_hooks(
-                    hook_type="on_rollout_end", agent=agent, runner=self, rollout=next_rollout, spans=trace_spans
-                )
-            except Exception:
-                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
+            await self._trigger_hooks(
+                hook_type="on_rollout_end", agent=agent, runner=self, rollout=next_rollout, spans=trace_spans
+            )
 
             try:
                 if has_exception:
