@@ -7,7 +7,6 @@ from __future__ import annotations
 import inspect
 import logging
 import warnings
-import weakref
 from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
 from agentlightning.types import NamedResources, Rollout, RolloutResult, Task
@@ -15,7 +14,6 @@ from agentlightning.types import NamedResources, Rollout, RolloutResult, Task
 if TYPE_CHECKING:
     from agentlightning.runner import Runner
     from agentlightning.tracer import Tracer
-    from agentlightning.trainer import Trainer
 
 
 logger = logging.getLogger(__name__)
@@ -69,9 +67,6 @@ class LitAgent(Generic[T]):
             )
         self.trained_agents = trained_agents
 
-        self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
-        self._runner_ref: weakref.ReferenceType[Runner[T]] | None = None
-
     def is_async(self) -> bool:
         """Return `True` when the agent overrides any asynchronous rollout methods.
 
@@ -88,62 +83,6 @@ class LitAgent(Generic[T]):
             )
             or (hasattr(self, "rollout_async") and self.__class__.rollout_async is not LitAgent.rollout_async)  # type: ignore
         )
-
-    def set_trainer(self, trainer: Trainer) -> None:
-        """Attach the trainer responsible for orchestration.
-
-        Args:
-            trainer: [`Trainer`][agentlightning.Trainer] that manages the agent.
-        """
-        self._trainer_ref = weakref.ref(trainer)
-
-    def get_trainer(self) -> Trainer:
-        """Return the trainer associated with this agent."""
-        if self._trainer_ref is None:
-            raise ValueError("Trainer has not been set for this agent.")
-        trainer = self._trainer_ref()
-        if trainer is None:
-            raise ValueError("Trainer reference is no longer valid (object has been garbage collected).")
-        return trainer
-
-    @property
-    def trainer(self) -> Trainer:
-        """Return the trainer associated with this agent."""
-        return self.get_trainer()
-
-    def get_tracer(self) -> Tracer:
-        """Return the tracer configured for this agent."""
-        if hasattr(self.runner, "tracer"):
-            return self.runner.tracer  # type: ignore
-        else:
-            return self.trainer.tracer
-
-    @property
-    def tracer(self) -> Tracer:
-        """Return the tracer configured for this agent."""
-        return self.get_tracer()
-
-    def set_runner(self, runner: Runner[T]) -> None:
-        """Attach the runner responsible for executing rollouts.
-
-        Args:
-            runner: [`Runner`][agentlightning.Runner] coordinating execution.
-        """
-        self._runner_ref = weakref.ref(runner)
-
-    def get_runner(self) -> Runner[T]:
-        """Return the runner responsible for executing rollouts."""
-        if self._runner_ref is None:
-            raise ValueError("Runner has not been set for this agent.")
-        runner = self._runner_ref()
-        if runner is None:
-            raise ValueError("Runner reference is no longer valid (object has been garbage collected).")
-        return runner
-
-    @property
-    def runner(self) -> Runner[T]:
-        """Return the runner responsible for executing rollouts."""
-        return self.get_runner()
 
     def on_rollout_start(self, task: Task, runner: Runner[T], tracer: Tracer) -> None:
         """Hook invoked immediately before a rollout begins.

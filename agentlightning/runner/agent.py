@@ -123,7 +123,6 @@ class LitAgentRunner(Runner[T_task]):
             **kwargs: Additional initialization arguments (currently unused).
         """
         self._agent = agent
-        self._agent.set_runner(self)
         self._hooks = [*hooks] if hooks is not None else []
 
         self._tracer.init()

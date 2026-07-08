@@ -330,8 +330,6 @@ class Trainer:
                 "Trainer.fit no longer accepts string datasets. Use the latest execution-based API "
                 "with `ExecutionStrategy` and store-backed datasets."
             )
-        agent.set_trainer(self)
-
         algorithm_bundle = functools.partial(
             self._algorithm_bundle,
             train_dataset=train_dataset,
@@ -366,8 +364,6 @@ class Trainer:
         Raises:
             TypeError: If the configured algorithm does not inherit from `FastAlgorithm`.
         """
-        agent.set_trainer(self)
-
         # Sanity check
         if self.algorithm is None:
             algorithm = Baseline()
