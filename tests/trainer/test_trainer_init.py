@@ -6,6 +6,7 @@ import pytest
 
 import agentlightning as agl
 from agentlightning.litagent import LitAgent
+from agentlightning.trainer.registry import ExecutionStrategyRegistry
 
 
 class _NoopAgent(LitAgent[object]):
@@ -49,6 +50,11 @@ def test_trainer_with_strategy_dict_main_thread() -> None:
     assert isinstance(trainer.strategy, agl.SharedMemoryExecutionStrategy)
     assert trainer.strategy.main_thread == "algorithm"
     assert trainer.strategy.managed_store is False
+
+
+def test_trainer_strategy_registry_does_not_include_ipc() -> None:
+    """IPC alias remains removed until an inter-process strategy is implemented."""
+    assert "ipc" not in ExecutionStrategyRegistry
 
 
 def test_trainer_with_initialized_strategy_ignores_n_runners() -> None:
