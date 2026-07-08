@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import warnings
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, AsyncGenerator, Awaitable, Iterator, List, Optional
 
@@ -124,7 +123,6 @@ class OtelTracer(Tracer):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
     ) -> AsyncGenerator[trace_api.Tracer, None]:
@@ -133,7 +131,6 @@ class OtelTracer(Tracer):
 
         Args:
             name: Optional name for the tracing context.
-            store: Optional store to add the spans to.
             rollout_id: Optional rollout ID to add the spans to.
             attempt_id: Optional attempt ID to add the spans to.
 
@@ -143,14 +140,7 @@ class OtelTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None:
-            warnings.warn(
-                "store is deprecated in favor of init_worker(). It will be removed in the future.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-        else:
-            store = self._store
+        store = self._store
 
         if rollout_id is not None and attempt_id is not None:
             if store is None:

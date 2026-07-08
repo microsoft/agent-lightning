@@ -75,7 +75,6 @@ class Tracer(ParallelWorkerBase):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
     ) -> AsyncContextManager[Any]:
@@ -89,7 +88,6 @@ class Tracer(ParallelWorkerBase):
 
         Args:
             name: The name for the root span of this trace context.
-            store: The store to add the spans to. Deprecated in favor of passing store to init_worker().
             rollout_id: The rollout ID to add the spans to.
             attempt_id: The attempt ID to add the spans to.
         """

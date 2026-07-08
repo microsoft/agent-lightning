@@ -209,12 +209,12 @@ async def test_agentops_trace_without_store():
 @pytest.mark.asyncio
 async def test_agentops_trace_with_store_disable():
     tracer = AgentOpsTracer()
+    store = MockLightningStore()
 
-    with tracer.lifespan():
+    with tracer.lifespan(store=store):
         # Using AgentOpsTracer to trace a function with providing a store which disabled native otlp exporter, rollout_id, and attempt_id.
-        store = MockLightningStore()
         async with tracer.trace_context(
-            name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+            name="agentops_test", rollout_id="test_rollout_id", attempt_id="test_attempt_id"
         ):
             _func_without_exception()
         spans = tracer.get_last_trace()
@@ -227,13 +227,13 @@ async def test_agentops_trace_with_store_enable():
     port = mock_service.start_service()
 
     tracer = AgentOpsTracer()
+    store = MockLightningStore(port)
 
-    with tracer.lifespan():
+    with tracer.lifespan(store=store):
         try:
             # Using AgentOpsTracer to trace a function with providing a store which disabled native otlp exporter, rollout_id, and attempt_id.
-            store = MockLightningStore(port)
             async with tracer.trace_context(
-                name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+                name="agentops_test", rollout_id="test_rollout_id", attempt_id="test_attempt_id"
             ):
                 _func_without_exception()
             spans = tracer.get_last_trace()

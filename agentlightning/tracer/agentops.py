@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import warnings
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Iterator, List, Optional
 
@@ -111,7 +110,6 @@ class AgentOpsTracer(OtelTracer):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
     ) -> AsyncGenerator[trace_api.Tracer, None]:
@@ -120,22 +118,13 @@ class AgentOpsTracer(OtelTracer):
 
         Args:
             name: Optional name for the tracing context.
-            store: Optional store to add the spans to.
             rollout_id: Optional rollout ID to add the spans to.
             attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
             The OpenTelemetry tracer instance to collect spans.
         """
-        if store is not None:
-            warnings.warn(
-                "store is deprecated in favor of init_worker(). It will be removed in the future.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-        else:
-            store = self._store
-        with self._trace_context_sync(name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
+        with self._trace_context_sync(name=name, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
             yield tracer
 
     @contextmanager
@@ -143,7 +132,6 @@ class AgentOpsTracer(OtelTracer):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
     ) -> Iterator[trace_api.Tracer]:
@@ -157,6 +145,7 @@ class AgentOpsTracer(OtelTracer):
             kwargs["trace_name"] = name
         elif rollout_id is not None:
             kwargs["trace_name"] = rollout_id
+        store = self._store
         if store is not None and rollout_id is not None and attempt_id is not None:
             if store.capabilities.get("otlp_traces", False) is True:
                 logger.debug(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
@@ -175,7 +164,7 @@ class AgentOpsTracer(OtelTracer):
                 with self._agentops_trace_context(None, None, kwargs):
                     yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
         else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+            raise ValueError("rollout_id and attempt_id must be either both provided or both None")
 
     @contextmanager
     def _agentops_trace_context(self, rollout_id: Optional[str], attempt_id: Optional[str], kwargs: dict[str, Any]):
