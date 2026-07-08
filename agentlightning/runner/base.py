@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Generic, Iterator, Optional, Sequence, Ty
 from agentlightning.execution.events import ExecutionEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Hook, NamedResources, ParallelWorkerBase, Rollout, RolloutMode
+from agentlightning.types import Hook, NamedResources, Rollout, RolloutMode
 
 if TYPE_CHECKING:
     from agentlightning.execution.events import ExecutionEvent
@@ -22,7 +22,7 @@ T_task = TypeVar("T_task")
 logger = logging.getLogger(__name__)
 
 
-class Runner(ParallelWorkerBase, Generic[T_task]):
+class Runner(Generic[T_task]):
     """Abstract base class for long-running agent executors.
 
     Runner implementations coordinate [`LitAgent`][agentlightning.LitAgent]
@@ -62,18 +62,6 @@ class Runner(ParallelWorkerBase, Generic[T_task]):
             NotImplementedError: Subclasses must prepare per-worker resources.
         """
         raise NotImplementedError()
-
-    def run(self, *args: Any, **kwargs: Any) -> None:
-        """Deprecated synchronous entry point.
-
-        Use [`iter()`][agentlightning.Runner.iter] or [`step()`][agentlightning.Runner.step] instead.
-
-        Raises:
-            RuntimeError: Always raised to direct callers to
-                [iter()][agentlightning.Runner.iter] or
-                [step()][agentlightning.Runner.step].
-        """
-        raise RuntimeError("The behavior of run() of Runner is undefined. Use iter() or step() instead.")
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         """Release resources acquired during [`init()`][agentlightning.Runner.init].

@@ -26,7 +26,7 @@
 | 15 | 移除 `Algorithm.set_trainer/get_trainer` 与 `get_client` | P1 | Algorithm | 已完成 | 通过：`tests/algorithm/test_decorator.py::test_algorithm_no_longer_exposes_trainer_accessors` + `tests/algorithm/test_decorator.py::test_algorithm_no_longer_exposes_get_client` | 禁止反向依赖 Trainer 和 legacy client |
 | 16 | 删除 `@algo` 参数名隐式注入逻辑 | P1 | Algorithm | 已完成 | 通过：`tests/algorithm/test_decorator.py::test_algorithm_preserves_signature` + `tests/algorithm/test_decorator.py::test_algo_rejects_non_context_parameter_name` | 仅适配接收 `AlgorithmContext` 并返回 `None` 或 `Awaitable[None]` 的 callable |
 | 17 | 删除 legacy runner 体系（`runner/legacy.py`） | P1 | Runner | 已完成 | 通过：`tests/runner/test_runner_imports.py::test_runner_exports_do_not_include_legacy_runner` | 移除旧生命周期、`RolloutLegacy` 分支和 tracer 私有同步入口依赖 |
-| 18 | 删除 `Runner.run()` 同步接口与 legacy 回退 | P1 | Runner | 待开始 | 同步更新：运行接口测试 | 主 Runner 接口统一为 `iter()` 和 `step()` |
+| 18 | 删除 `Runner.run()` 同步接口与 legacy 回退 | P1 | Runner | 已完成 | 已验证：`tests/runner/test_runner_imports.py::test_runner_sync_run_interface_is_removed` | 主 Runner 接口统一为 `iter()` 和 `step()` |
 | 19 | 去掉 `LitAgent` 反向引用（trainer/runner/tracer/store） | P1 | LitAgent | 待开始 | 同步新增：对象职责边界测试 | Agent 只关心 rollout 行为 |
 | 20 | 移除 `LitAgent` 的 `trained_agents` 参数与持久字段 | P1 | LitAgent | 待开始 | 同步更新：构造参数/API 测试 | 训练目标匹配只由 adapter 的 `agent_match` 表达 |
 | 21 | 删除 `on_rollout_start/end` deprecated 生命周期 | P1 | LitAgent | 待开始 | 同步新增：新 Hook Interface 覆盖测试 | 不保留 legacy lifecycle fallback |
