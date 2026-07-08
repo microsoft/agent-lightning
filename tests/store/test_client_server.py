@@ -3,6 +3,7 @@
 import asyncio
 import multiprocessing
 import sys
+import threading
 from typing import Any, AsyncGenerator, Dict, Tuple, cast
 from unittest.mock import patch
 
@@ -422,6 +423,53 @@ async def test_client_dequeue_many_rollouts_skips_network_for_non_positive_limit
     assert await client.dequeue_many_rollouts(limit=0, worker_id="idle") == []
     assert await client.dequeue_many_rollouts(limit=-5) == []
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_close_closes_sessions_on_owner_event_loops() -> None:
+    client = LightningStoreClient("http://localhost:9002")
+    main_session = await client._get_session()  # pyright: ignore[reportPrivateUsage]
+    ready = threading.Event()
+    captured: Dict[str, Any] = {}
+
+    def run_background_loop() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        stop_future = loop.create_future()
+        captured["loop"] = loop
+        captured["stop_future"] = stop_future
+
+        async def create_session_and_wait() -> None:
+            captured["session"] = await client._get_session()  # pyright: ignore[reportPrivateUsage]
+            ready.set()
+            await stop_future
+
+        try:
+            loop.run_until_complete(create_session_and_wait())
+        finally:
+            loop.close()
+
+    thread = threading.Thread(target=run_background_loop, name="client-session-loop", daemon=True)
+    thread.start()
+
+    try:
+        assert await asyncio.to_thread(ready.wait, 1.0)
+        background_session = cast(aiohttp.ClientSession, captured["session"])
+
+        await client.close()
+
+        assert main_session.closed
+        assert background_session.closed
+        assert client._sessions == {}  # pyright: ignore[reportPrivateUsage]
+    finally:
+        loop = cast(asyncio.AbstractEventLoop | None, captured.get("loop"))
+        stop_future = captured.get("stop_future")
+        if loop is not None and stop_future is not None and not stop_future.done():
+            loop.call_soon_threadsafe(stop_future.set_result, None)
+        await asyncio.to_thread(thread.join, 1.0)
+        await client.close()
+
+    assert not thread.is_alive()
 
 
 @pytest.mark.asyncio

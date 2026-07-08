@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import os
 import re
@@ -77,6 +78,12 @@ API_V1_AGL_PREFIX = API_V1_PREFIX + API_AGL_PREFIX
 
 T = TypeVar("T")
 T_model = TypeVar("T_model", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class _ClientSessionRecord:
+    session: aiohttp.ClientSession
+    loop: asyncio.AbstractEventLoop
 
 
 class RolloutRequest(BaseModel):
@@ -1358,7 +1365,7 @@ class LightningStoreClient(LightningStore):
     ):
         self.server_address_root = server_address.rstrip("/")
         self.server_address = self.server_address_root + API_V1_AGL_PREFIX
-        self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
+        self._sessions: Dict[int, _ClientSessionRecord] = {}  # id(loop) -> session record
         self._lock = threading.Lock()
 
         # retry config
@@ -1443,17 +1450,18 @@ class LightningStoreClient(LightningStore):
         loop = asyncio.get_running_loop()
         key = id(loop)
         with self._lock:
-            sess = self._sessions.get(key)
-            if sess is None or sess.closed:
+            record = self._sessions.get(key)
+            if record is None or record.session.closed:
                 timeout = aiohttp.ClientTimeout(
                     total=self._request_timeout,
                     connect=self._connection_timeout,
                     sock_connect=self._connection_timeout,
                     sock_read=self._request_timeout,
                 )
-                sess = aiohttp.ClientSession(timeout=timeout)
-                self._sessions[key] = sess
-        return sess
+                session = aiohttp.ClientSession(timeout=timeout)
+                record = _ClientSessionRecord(session=session, loop=loop)
+                self._sessions[key] = record
+        return record.session
 
     async def _wait_until_healthy(self, session: aiohttp.ClientSession) -> bool:
         """
@@ -1546,26 +1554,33 @@ class LightningStoreClient(LightningStore):
         assert last_exc is not None
         raise last_exc
 
+    async def _close_session_record(self, record: _ClientSessionRecord) -> None:
+        """Close a session on the loop that owns it."""
+        session = record.session
+        if session.closed:
+            return
+
+        owner_loop = record.loop
+        current_loop = asyncio.get_running_loop()
+        if owner_loop is current_loop:
+            await session.close()
+            return
+
+        if owner_loop.is_closed() or not owner_loop.is_running():
+            client_logger.warning("Skipping close for ClientSession owned by a stopped event loop.")
+            return
+
+        future = asyncio.run_coroutine_threadsafe(session.close(), owner_loop)
+        await asyncio.to_thread(future.result)
+
     async def close(self):
-        """Close the HTTP session."""
+        """Close all HTTP sessions owned by this client."""
         with self._lock:
-            sessions = list(self._sessions.values())
+            records = list(self._sessions.values())
             self._sessions.clear()
 
-        # close them on their own loops to avoid warnings
-        async def _close(sess: aiohttp.ClientSession):
-            if not sess.closed:
-                await sess.close()
-
-        # If called from one loop, best-effort close here.
-        for s in sessions:
-            try:
-                await _close(s)
-            except RuntimeError:
-                # If created on a different loop/thread, schedule a thread-safe close
-                # Fallback: close without awaiting (library tolerates it in practice),
-                # or keep a per-loop shutdown hook where they were created.
-                pass
+        for record in records:
+            await self._close_session_record(record)
 
     async def start_rollout(
         self,
