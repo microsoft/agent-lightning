@@ -62,7 +62,6 @@ def test_algorithm_returns_functional_algorithm_instance():
     assert isinstance(sample_algorithm_func, FunctionalAlgorithm)
     assert hasattr(sample_algorithm_func, "run")
     assert hasattr(sample_algorithm_func, "get_store")
-    assert hasattr(sample_algorithm_func, "set_trainer")
 
 
 def test_algorithm_preserves_signature():
@@ -193,8 +192,6 @@ def test_algorithm_base_algorithm_methods():
         """Test algorithm."""
         pass
 
-    assert hasattr(test_algo, "set_trainer")
-    assert hasattr(test_algo, "get_trainer")
     assert hasattr(test_algo, "set_llm_proxy")
     assert hasattr(test_algo, "get_llm_proxy")
     assert hasattr(test_algo, "set_adapter")
@@ -203,3 +200,15 @@ def test_algorithm_base_algorithm_methods():
     assert hasattr(test_algo, "get_store")
     assert hasattr(test_algo, "get_initial_resources")
     assert hasattr(test_algo, "set_initial_resources")
+
+
+def test_algorithm_no_longer_exposes_trainer_accessors() -> None:
+    """Trainer accessors are removed from Algorithm."""
+
+    @algo
+    def test_algo(context: AlgorithmContext) -> None:
+        """Test algorithm."""
+        pass
+
+    assert not hasattr(test_algo, "set_trainer")
+    assert not hasattr(test_algo, "get_trainer")

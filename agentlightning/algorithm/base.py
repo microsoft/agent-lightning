@@ -4,28 +4,17 @@ from __future__ import annotations
 
 import inspect
 import weakref
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Awaitable,
-    Optional,
-    Union,
-)
+from typing import Any, Awaitable, Optional, Union
 
 from agentlightning.adapter import TraceAdapter
-from agentlightning.client import AgentLightningClient
+from agentlightning.llm_proxy import LLMProxy
 from agentlightning.store.base import LightningStore
 from agentlightning.types import AlgorithmContext, NamedResources
-
-if TYPE_CHECKING:
-    from agentlightning.llm_proxy import LLMProxy
-    from agentlightning.trainer import Trainer
 
 
 class Algorithm:
     """Algorithm is the strategy, or tuner to train the agent."""
 
-    _trainer_ref: weakref.ReferenceType[Trainer] | None = None
     _llm_proxy_ref: weakref.ReferenceType["LLMProxy"] | None = None
     _store: LightningStore | None = None
     _initial_resources: NamedResources | None = None
@@ -34,29 +23,6 @@ class Algorithm:
     def is_async(self) -> bool:
         """Return True if the algorithm is asynchronous."""
         return inspect.iscoroutinefunction(self.run)
-
-    def set_trainer(self, trainer: Trainer) -> None:
-        """
-        Set the trainer for this algorithm.
-
-        Args:
-            trainer: The Trainer instance that will handle training and validation.
-        """
-        self._trainer_ref = weakref.ref(trainer)
-
-    def get_trainer(self) -> Trainer:
-        """
-        Get the trainer for this algorithm.
-
-        Returns:
-            The Trainer instance associated with this agent.
-        """
-        if self._trainer_ref is None:
-            raise ValueError("Trainer has not been set for this agent.")
-        trainer = self._trainer_ref()
-        if trainer is None:
-            raise ValueError("Trainer reference is no longer valid (object has been garbage collected).")
-        return trainer
 
     def set_llm_proxy(self, llm_proxy: LLMProxy | None) -> None:
         """
@@ -144,16 +110,3 @@ class Algorithm:
             Algorithm should refrain from returning anything. It should just run the algorithm.
         """
         raise NotImplementedError("Subclasses must implement run().")
-
-    def get_client(self) -> AgentLightningClient:
-        """Get the client to communicate with the algorithm.
-
-        If the algorithm does not require a server-client communication, it can also create a mock client
-        that never communicates with itself.
-
-        Deprecated and will be removed in a future version.
-
-        Returns:
-            The AgentLightningClient instance associated with this algorithm.
-        """
-        raise NotImplementedError("Subclasses must implement get_client().")
