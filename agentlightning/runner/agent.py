@@ -299,6 +299,23 @@ class LitAgentRunner(Runner[T_task]):
         call = functools.partial(_invoke_sync_rollout, rollout_method, task, resources, rollout)
         return await loop.run_in_executor(self._get_rollout_process_pool(), call)
 
+    async def _await_with_event(
+        self, awaitable: Awaitable[RolloutResult], event: Optional[ExecutionEvent]
+    ) -> RolloutResult:
+        if event is None:
+            return await awaitable
+
+        task = asyncio.create_task(awaitable)
+        while not task.done():
+            if event.is_set():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+                raise asyncio.CancelledError()
+            await asyncio.wait({task}, timeout=0.05)
+
+        return await task
+
     async def _trigger_hooks(
         self,
         hook_type: Literal["on_trace_start", "on_trace_end", "on_rollout_start", "on_rollout_end"],
@@ -644,7 +661,12 @@ class LitAgentRunner(Runner[T_task]):
             if event.is_set():
                 return
 
-    async def _step_impl(self, next_rollout: AttemptedRollout, raise_on_exception: bool = False) -> str:
+    async def _step_impl(
+        self,
+        next_rollout: AttemptedRollout,
+        raise_on_exception: bool = False,
+        event: Optional[ExecutionEvent] = None,
+    ) -> str:
         """Execute a single rollout implementation.
 
         This is the core method that handles the execution of a single rollout,
@@ -656,11 +678,15 @@ class LitAgentRunner(Runner[T_task]):
                 and resources information.
             raise_on_exception: If True, exceptions during rollout execution will
                 be re-raised. If False, exceptions are logged but not propagated.
+            event: Optional cooperative cancellation signal for this rollout.
         """
         store = self.get_store()
         agent = self.get_agent()
 
         rollout_id = next_rollout.rollout_id
+        if event is not None and event.is_set():
+            await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="cancelled")
+            raise asyncio.CancelledError()
 
         resources_id = next_rollout.resources_id
         resources_update = None
@@ -707,8 +733,9 @@ class LitAgentRunner(Runner[T_task]):
                         agent.training_rollout_async if next_rollout.mode == "train" else agent.validation_rollout_async
                     )
                     logger.debug(f"{self._log_prefix(rollout_id)} Starting async rollout method.")
-                    result = await rollout_method(
-                        next_rollout.input, resources=resources_update.resources, rollout=next_rollout
+                    result = await self._await_with_event(
+                        rollout_method(next_rollout.input, resources=resources_update.resources, rollout=next_rollout),
+                        event,
                     )
                     logger.debug(f"{self._log_prefix(rollout_id)} Async rollout method completed.")
                 else:
@@ -719,9 +746,14 @@ class LitAgentRunner(Runner[T_task]):
                         f"{self._log_prefix(rollout_id)} Starting sync rollout method "
                         f"with policy={self._rollout_execution_policy}."
                     )
-                    result = await self._execute_sync_rollout(
-                        rollout_method,
-                        next_rollout.input, resources=resources_update.resources, rollout=next_rollout
+                    result = await self._await_with_event(
+                        self._execute_sync_rollout(
+                            rollout_method,
+                            next_rollout.input,
+                            resources=resources_update.resources,
+                            rollout=next_rollout,
+                        ),
+                        event,
                     )
                     logger.debug(f"{self._log_prefix(rollout_id)} Sync rollout method completed.")
 
@@ -819,7 +851,7 @@ class LitAgentRunner(Runner[T_task]):
                     return
 
                 # Execute the step
-                await self._step_impl(next_rollout)
+                await self._step_impl(next_rollout, event=event)
 
                 num_tasks_processed += 1
                 if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
@@ -853,8 +885,9 @@ class LitAgentRunner(Runner[T_task]):
                 If not provided, the latest resources from the store will be used.
             mode: Optional rollout mode ("train" or "validation"). If not provided,
                 the agent's default mode will be used.
-            event: Optional ExecutionEvent object to signal interruption (currently unused
-                but included for interface consistency).
+            event: Optional ExecutionEvent object to cancel this step cooperatively.
+                If already set, no rollout is created. If set while the rollout is
+                running, the attempt is marked `cancelled` and `CancelledError` is raised.
 
         Returns:
             The completed rollout.
@@ -865,6 +898,9 @@ class LitAgentRunner(Runner[T_task]):
         """
         store = self.get_store()
 
+        if event is not None and event.is_set():
+            raise asyncio.CancelledError()
+
         if resources is not None:
             resources_update = await store.add_resources(resources)
             resources_id = resources_update.resources_id
@@ -874,7 +910,7 @@ class LitAgentRunner(Runner[T_task]):
         attempted_rollout = await self.get_store().start_rollout(
             input=input, mode=mode, resources_id=resources_id, worker_id=self.get_worker_id()
         )
-        rollout_id = await self._step_impl(attempted_rollout, raise_on_exception=True)
+        rollout_id = await self._step_impl(attempted_rollout, raise_on_exception=True, event=event)
 
         completed_rollout = await store.get_rollout_by_id(rollout_id)
         if completed_rollout is None:

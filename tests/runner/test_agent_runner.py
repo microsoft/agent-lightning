@@ -792,6 +792,77 @@ async def test_step_impl_cancelled_marks_cancelled_and_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_step_with_presignalled_event_does_not_create_rollout() -> None:
+    class NoopAgent(LitAgent[Dict[str, Any]]):
+        async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> None:
+            _ = (task, resources, rollout)
+            return None
+
+    event = ThreadingEvent()
+    event.set()
+    runner, store, _ = await setup_runner(NoopAgent())
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await runner.step({"task": "cancel-before-start"}, event=event)
+    finally:
+        teardown_runner(runner)
+
+    assert len(await store.query_rollouts()) == 0
+
+
+@pytest.mark.asyncio
+async def test_step_event_cancels_async_rollout_and_marks_cancelled() -> None:
+    class CancellableAgent(LitAgent[Dict[str, Any]]):
+        async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            _ = (task, resources, rollout)
+            await asyncio.sleep(10)
+            return 0.0
+
+    event = ThreadingEvent()
+    runner, store, _ = await setup_runner(CancellableAgent())
+    task = asyncio.create_task(runner.step({"task": "cancel-during"}, event=event))
+    try:
+        await asyncio.sleep(0.05)
+        event.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        teardown_runner(runner)
+
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    assert rollouts[0].status == "cancelled"
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_step_event_cancels_thread_policy_rollout() -> None:
+    class BlockingAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            _ = (task, resources, rollout)
+            time.sleep(0.5)
+            return 0.0
+
+    event = ThreadingEvent()
+    runner, store, _ = await setup_runner(BlockingAgent(), rollout_execution_policy="thread")
+    start = time.monotonic()
+    task = asyncio.create_task(runner.step({"task": "cancel-thread"}, event=event))
+    try:
+        await asyncio.sleep(0.05)
+        event.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        teardown_runner(runner)
+
+    assert time.monotonic() - start < 0.5
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    assert rollouts[0].status == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_agent_emits_multiple_rewards() -> None:
     class RewardListAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(

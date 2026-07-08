@@ -45,7 +45,7 @@
 | 34 | 处理 `store/sqlite.py` TODO：实现或删除 | P1 | Store | 已完成 | 已验证：`tests/store/test_store_roles.py::test_sqlite_store_todo_file_is_removed` | 删除未实现占位文件，等待后续有完整 durable store 决策 |
 | 35 | 更新 docs/examples/tests 使用新接口与新生命周期模型 | P2 | 文档/示例 | 已完成 | 已验证：`tests/test_legacy_http_stack_cleanup.py` + 相关示例 `py_compile` + `mkdocs build --strict` | 删除 legacy APO/Calc-X 示例与 CI 引用，示例和文档中的 `Trainer(n_workers=...)` 已迁移到 `n_runners` |
 | 36 | 引入 rollout execution policy，默认/阻塞/线程/进程可配 | P2 | Runner | 已完成 | 已验证：`tests/runner/test_agent_runner.py::test_sync_rollout_thread_policy_keeps_event_loop_responsive` + `tests/runner/test_agent_runner.py::test_sync_rollout_process_policy_completes_rollout`（当前 sandbox 跳过 process） | `LitAgentRunner` 新增 `rollout_execution_policy="inline"|"thread"|"process"`，默认保持 inline；阻塞型同步 rollout 可用 thread 避免卡住 event loop，process 在环境支持时使用进程池 |
-| 37 | 完善 `step(..., event=...)` 取消与超时协同 | P2 | Runner | 待开始 | 同步新增：step 取消/超时测试 | 如果不支持该参数，应删除 API |
+| 37 | 完善 `step(..., event=...)` 取消与超时协同 | P2 | Runner | 已完成 | 已验证：`tests/runner/test_agent_runner.py::test_step_with_presignalled_event_does_not_create_rollout` + `test_step_event_cancels_async_rollout_and_marks_cancelled` + `test_step_event_cancels_thread_policy_rollout` | `step` 现在会在 event 已 set 时拒绝创建 rollout，并在执行中监听 event；触发后将 attempt/rollout 标为 `cancelled` 并抛 `CancelledError` |
 | 38 | 明确 hook 失败语义（观测型/控制型） | P2 | Runner | 待开始 | 同步新增：hook 异常传播测试 | 现在的吞掉异常行为需改为可预期策略 |
 | 39 | 重构 heartbeat 后台服务模型 | P2 | Runner | 待开始 | 同步新增：heartbeat 生命周期测试 | 分离线程事件循环与 store 调用，固定 shutdown 语义 |
 | 40 | 优化 latest attempt 查询，批量避免 N+1 | P2 | Store | 待开始 | 同步新增：批量查询正确性与性能测试 | 在 collection 层新增按 `rollout_id_in` 查询 latest attempt 的能力 |
