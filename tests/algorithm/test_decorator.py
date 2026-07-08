@@ -203,7 +203,7 @@ def test_algorithm_base_algorithm_methods():
 
 
 def test_algorithm_no_longer_exposes_trainer_accessors() -> None:
-    """Trainer accessors are removed from Algorithm."""
+    """Algorithm no longer exposes legacy trainer accessors."""
 
     @algo
     def test_algo(context: AlgorithmContext) -> None:
@@ -212,3 +212,14 @@ def test_algorithm_no_longer_exposes_trainer_accessors() -> None:
 
     assert not hasattr(test_algo, "set_trainer")
     assert not hasattr(test_algo, "get_trainer")
+
+
+def test_algorithm_no_longer_exposes_get_client() -> None:
+    """Algorithm no longer exposes legacy client accessors."""
+
+    @algo
+    def test_algo(context: AlgorithmContext) -> None:
+        """Test algorithm."""
+        pass
+
+    assert not hasattr(test_algo, "get_client")

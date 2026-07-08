@@ -79,10 +79,11 @@ class TrainerLegacy(ParallelWorkerBase):
                     "train_data must be a string URL or AgentLightningClient when no algorithm is provided."
                 )
             elif client is None and self.algorithm is not None:
-                # Algorithm will be responsible for creating the client
-                client = self.algorithm.get_client()
-                logger.info(f"Algorithm created client: {client}")
-                return client
+                # algorithm no longer owns legacy client creation; caller must pass an endpoint.
+                raise ValueError(
+                    "Algorithm.get_client() is no longer supported. "
+                    "Pass a server URL or AgentLightningClient in train_data when using legacy Trainer flow."
+                )
             if client is None:
                 raise ValueError(
                     "train_data must be a string URL or AgentLightningClient when no algorithm is provided."
@@ -241,8 +242,8 @@ class TrainerLegacy(ParallelWorkerBase):
         passed to the algorithm.
 
         If the algorithm is instantiated and there is no URL/client provided,
-        the algorithm will be responsible for creating a client that will connect to itself.
-        It can also create a mock client if the algorithm does not require a server.
+        this legacy path requires callers to provide a server client URL; algorithm-owned client
+        creation is no longer supported.
         """
 
         if dev_backend is not None:
@@ -255,10 +256,7 @@ class TrainerLegacy(ParallelWorkerBase):
         train_dataset = self._extract_dataset_from_data(train_data)
         val_dataset = self._extract_dataset_from_data(val_data) if val_data else None
 
-        # Initialize the algorithm with trainer if provided
-        if self.algorithm is not None:
-            self.algorithm.set_trainer(self)  # type: ignore
-            # DO NOT RUN TRAINING HERE. Need to spawn the worker first.
+        # DO NOT RUN TRAINING HERE. Need to spawn the worker first.
 
         # Determine the backend to use for client-server mode
         backend = self._determine_backend(train_data, dev_data)

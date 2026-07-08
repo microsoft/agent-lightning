@@ -8,7 +8,6 @@ from hydra import compose, initialize
 from omegaconf import OmegaConf
 
 from agentlightning.algorithm.base import Algorithm
-from agentlightning.client import AgentLightningClient
 from agentlightning.types import AlgorithmContext
 from agentlightning.verl.entrypoint import run_ppo  # type: ignore
 
@@ -172,12 +171,3 @@ class VERL(Algorithm):
             trainer_cls=trainer_cls,
             daemon_cls=daemon_cls,
         )
-
-    def get_client(self) -> AgentLightningClient:
-        """Create a client bound to the VERL-managed Agent Lightning server.
-
-        Deprecated:
-            Since v0.2.
-        """
-        port = self.config.agentlightning.port
-        return AgentLightningClient(endpoint=f"http://localhost:{port}")
