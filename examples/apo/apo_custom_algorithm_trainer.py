@@ -40,5 +40,5 @@ async def apo_algorithm_usable_in_trainer(*, store: LightningStore):
 
 if __name__ == "__main__":
     setup_logging()
-    trainer = Trainer(n_workers=1, algorithm=apo_algorithm_usable_in_trainer)
+    trainer = Trainer(n_runners=1, algorithm=apo_algorithm_usable_in_trainer)
     trainer.fit(apo_rollout)

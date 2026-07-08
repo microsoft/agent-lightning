@@ -85,24 +85,6 @@ jobs:
           unzip calc-x-data.zip -d data
           rm calc-x-data.zip
 
-      - name: APO example (legacy client-server style)
-        run: |
-          set -ex
-          cd examples/apo
-          uv run legacy_apo_client.py &
-          sleep 3  # Wait for the client to be up
-          uv run legacy_apo_server.py
-          pkill -f legacy_apo_client.py && echo "SIGTERM sent to legacy_apo_client.py" || echo "No legacy_apo_client.py process found"
-          while pgrep -f legacy_apo_client.py; do
-            echo "Waiting for legacy_apo_client.py to finish..."
-            sleep 5
-          done
-          echo "legacy_apo_client.py has finished."
-          sleep 10
-        env:
-          OPENAI_API_BASE: http://localhost:12306/
-          OPENAI_API_KEY: dummy
-
       - name: Calc-X MCP sanity check
         run: |
           set -ex
@@ -115,27 +97,19 @@ jobs:
         run: |
           set -ex
           cd examples/calc_x
-          uv run legacy_calc_agent_debug.py
+          uv run calc_agent.py
         env:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
 
-      - name: Calc-X training (legacy client-server style)
+      - name: Calc-X training
         run: |
           set -ex
           source .venv/bin/activate
           cd examples/calc_x
           ../../scripts/restart_ray.sh
           sleep 5
-          PYTHONUNBUFFERED=1 python legacy_calc_agent.py &
-          bash legacy_train.sh
-          pkill -f legacy_calc_agent.py && echo "SIGTERM sent to legacy_calc_agent.py" || echo "No legacy_calc_agent.py process found"
-          while pgrep -f legacy_calc_agent.py; do
-            echo "Waiting for legacy_calc_agent.py to finish..."
-            sleep 5
-          done
-          echo "legacy_calc_agent.py has finished."
-          sleep 10
+          python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast
         shell: bash
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}

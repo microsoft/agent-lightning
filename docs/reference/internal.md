@@ -56,16 +56,6 @@
 
 ## Deprecated APIs
 
-::: agentlightning.emitter.reward.reward
-
-::: agentlightning.server.AgentLightningServer
-
-::: agentlightning.server.ServerDataStore
-
-::: agentlightning.client.AgentLightningClient
-
-::: agentlightning.client.DevTaskLoader
-
 ::: agentlightning.types.legacy.Task
 
 ::: agentlightning.TaskInput

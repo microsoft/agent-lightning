@@ -530,7 +530,7 @@ def debug_sql_agent():
     print("Debug data:", df)
 
     trainer = agl.Trainer(
-        n_workers=1,
+        n_runners=1,
         initial_resources={
             "main_llm": agl.LLM(
                 endpoint=os.environ["OPENAI_API_BASE"],

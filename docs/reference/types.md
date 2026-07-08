@@ -6,6 +6,12 @@
 
 ::: agentlightning.RolloutResult
 
+::: agentlightning.AgentSpanPayload
+
+::: agentlightning.SpanWriteResult
+
+::: agentlightning.AlgorithmContext
+
 ::: agentlightning.RolloutMode
 
 ::: agentlightning.GenericResponse

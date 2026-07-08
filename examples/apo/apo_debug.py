@@ -97,7 +97,7 @@ def debug_with_trainer():
     # We also need a resource that is to be tuned (i.e., prompt template)
     resource = PromptTemplate(template="You are a helpful assistant. {any_question}", engine="f-string")
     trainer = Trainer(
-        n_workers=1,
+        n_runners=1,
         # This is very critical. It will be the only prompt template that will be passed to the agent.
         initial_resources={"main_prompt": resource},
     )

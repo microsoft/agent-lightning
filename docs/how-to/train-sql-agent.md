@@ -246,7 +246,7 @@ To begin, the agent needs a valid OpenAI-compatible endpoint since VERL is not a
 
 ```python
 trainer = agl.Trainer(
-    n_workers=1,
+    n_runners=1,
     initial_resources={
         "main_llm": agl.LLM(
             endpoint=os.environ["OPENAI_API_BASE"],

@@ -22,8 +22,6 @@ Follow the [installation guide](../../docs/tutorials/installation.md) to install
 | `apo_custom_algorithm.py` | Tutorial on creating custom algorithms (runnable as algo or runner) |
 | `apo_custom_algorithm_trainer.py` | Shows how to integrate custom algorithms into the Trainer |
 | `apo_debug.py` | Tutorial demonstrating various agent debugging techniques |
-| `legacy_apo_client.py` | Deprecated APO client implementation compatible with Agent-lightning v0.1.x |
-| `legacy_apo_server.py` | Deprecated APO server implementation compatible with Agent-lightning v0.1.x |
 
 ## Sample 1: Using Built-in APO Algorithm
 

@@ -33,9 +33,6 @@ The dataset contains mathematical problems with ground truth solutions for train
 | `eval_utils.py` | Evaluation utilities for assessing agent accuracy on math problems |
 | `data/` | Directory containing training and test datasets in parquet format |
 | `tests/` | Test files including MCP calculator verification script |
-| `legacy_calc_agent.py` | Legacy agent implementation compatible with Agent-lightning v0.1.x (deprecated) |
-| `legacy_calc_agent_debug.py` | Legacy debugging script compatible with Agent-lightning v0.1.x (deprecated) |
-| `legacy_train.sh` | Legacy training script compatible with Agent-lightning v0.1.x (deprecated) |
 
 ## Running Examples
 

@@ -38,7 +38,7 @@ from openai import AsyncOpenAI
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import Algorithm
 from agentlightning.algorithm.utils import batch_iter_over_dataset
-from agentlightning.reward import find_final_reward
+from agentlightning.emitter.reward import find_final_reward
 from agentlightning.types import (
     AlgorithmContext,
     Dataset,
@@ -847,11 +847,12 @@ class APO(Algorithm, Generic[T_task]):
         - Uses different training data samples for each gradient computation to ensure diversity
 
         Args:
-            train_dataset: Dataset of tasks for computing textual gradients. Required.
-            val_dataset: Dataset of tasks for evaluating and selecting prompts. Required.
+            context: Runtime context containing the store, adapter, optional LLM proxy,
+                initial resources, and datasets used by APO.
 
         Raises:
-            ValueError: If train_dataset or val_dataset is None, or if resources are not set.
+            ValueError: If `context.train_dataset`, `context.val_dataset`,
+                or initial resources are missing.
         """
         store = context.store
         llm_proxy = context.llm_proxy

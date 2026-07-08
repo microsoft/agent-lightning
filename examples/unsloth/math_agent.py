@@ -160,7 +160,7 @@ def math_agent_dry_run() -> None:
     """
     dataset = load_math_dataset(limit=4)
     trainer = Trainer(
-        n_workers=1,
+        n_runners=1,
         initial_resources={
             "llm": LLM(
                 endpoint=os.environ["OPENAI_BASE_URL"],

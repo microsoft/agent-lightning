@@ -103,11 +103,11 @@ def debug_chartqa_agent(use_llm_proxy: bool = False) -> None:
         proxy_port = 8089
         llm_proxy = create_llm_proxy_for_chartqa(endpoint, port=proxy_port)
         trainer_kwargs["llm_proxy"] = llm_proxy
-        trainer_kwargs["n_workers"] = 2
+        trainer_kwargs["n_runners"] = 2
         llm_endpoint = f"http://localhost:{proxy_port}/v1"
         agent = ChartQAAgent()
     else:
-        trainer_kwargs["n_workers"] = 1
+        trainer_kwargs["n_runners"] = 1
         agent = ChartQAAgent(use_base64_images=True)
 
     trainer = agl.Trainer(
