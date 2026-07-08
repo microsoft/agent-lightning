@@ -613,16 +613,21 @@ class LitAgentRunner(Runner[T_task]):
             logger.debug(f"{self._log_prefix(rollout_id)} No 'resources_id'. Fetching latest resources.")
             resources_update = await store.get_latest_resources()
         if not resources_update:
+            error = RuntimeError(f"{self._log_prefix(rollout_id)} Failed to fetch resources")
+            try:
+                await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
+            except Exception:
+                logger.exception(f"{self._log_prefix(rollout_id)} Exception during update_attempt for missing resources.")
             if raise_on_exception:
-                raise RuntimeError(f"{self._log_prefix(rollout_id)} Failed to fetch resources")
-            else:
-                logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
-                return rollout_id
+                raise error
+            logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
+            return rollout_id
 
         logger.debug(f"{self._log_prefix(rollout_id)} Resources fetched (id={resources_update.resources_id}).")
 
         trace_spans: List[Span] = []
         has_exception: bool = False
+        terminal_status: Literal["failed", "cancelled", "succeeded"] = "succeeded"
 
         try:
             await self._trigger_hooks(hook_type="on_rollout_start", agent=agent, runner=self, rollout=next_rollout)
@@ -676,9 +681,15 @@ class LitAgentRunner(Runner[T_task]):
                 f"Final reward: {last_reward}"
             )
 
+        except asyncio.CancelledError:
+            logger.exception(f"{self._log_prefix(rollout_id)} Execution was cancelled.")
+            has_exception = True
+            terminal_status = "cancelled"
+            raise
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
             has_exception = True
+            terminal_status = "failed"
 
             if raise_on_exception:
                 raise
@@ -692,8 +703,8 @@ class LitAgentRunner(Runner[T_task]):
 
             try:
                 if has_exception:
-                    # possibly timed out and cancelled?
-                    await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
+                    # Cancelled/failed execution should still be persisted as a terminal attempt status.
+                    await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status=terminal_status)
                 else:
                     await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
             except Exception:

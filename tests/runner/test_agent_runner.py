@@ -690,6 +690,34 @@ async def test_step_handles_agent_exception_marks_attempt_failed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_step_impl_cancelled_marks_cancelled_and_raises() -> None:
+    class CancellableAgent(LitAgent[Dict[str, Any]]):
+        async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            await asyncio.sleep(10)
+            return 0.0
+
+    agent = CancellableAgent()
+    runner, store, _ = await setup_runner(agent)
+
+    attempted_rollout = await store.start_rollout(input={"task": "cancel"}, mode="val")
+    task = asyncio.create_task(runner._step_impl(attempted_rollout, raise_on_exception=False))  # pyright: ignore[reportPrivateUsage]
+
+    try:
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        rollouts = await store.query_rollouts()
+        assert len(rollouts) == 1
+        assert rollouts[0].status == "cancelled"
+        attempts = await store.query_attempts(rollouts[0].rollout_id)
+        assert attempts[-1].status == "cancelled"
+    finally:
+        teardown_runner(runner)
+
+
+@pytest.mark.asyncio
 async def test_agent_emits_multiple_rewards() -> None:
     class RewardListAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
@@ -852,8 +880,8 @@ async def test_step_impl_returns_rollout_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_step_impl_returns_rollout_id_on_resource_failure() -> None:
-    """Test that _step_impl returns rollout_id even when resources fail to fetch."""
+async def test_step_impl_returns_rollout_id_on_resource_failure_and_marks_failed() -> None:
+    """Test that _step_impl returns rollout_id and marks failed when resources are missing."""
 
     class SimpleAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
@@ -876,6 +904,11 @@ async def test_step_impl_returns_rollout_id_on_resource_failure() -> None:
     # Verify the result is a string (rollout_id) even on early return
     assert isinstance(result, str)
     assert result == attempted_rollout.rollout_id
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    assert rollouts[0].status == "failed"
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
 
 
 @pytest.mark.asyncio
