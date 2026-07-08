@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Awaitable, Callable, ContextManager, List, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, ContextManager, List, Optional, TypeVar
 
 from agentlightning.store.base import LightningStore
 from agentlightning.types import Attributes, ParallelWorkerBase, Span, SpanCoreFields, SpanRecordingContext, TraceStatus
@@ -20,8 +20,6 @@ T = TypeVar("T")
 
 
 _active_tracer: Optional[Tracer] = None
-
-T_func = Callable[..., Awaitable[Any]]
 
 
 class Tracer(ParallelWorkerBase):
@@ -93,16 +91,6 @@ class Tracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
-    def _trace_context_sync(
-        self,
-        name: Optional[str] = None,
-        *,
-        rollout_id: Optional[str] = None,
-        attempt_id: Optional[str] = None,
-    ) -> ContextManager[Any]:
-        """Internal API for CI backward compatibility."""
-        raise NotImplementedError()
-
     def get_last_trace(self) -> List[Span]:
         """
         Retrieves the raw list of captured spans from the most recent trace.
@@ -111,23 +99,6 @@ class Tracer(ParallelWorkerBase):
             A list of [`Span`][agentlightning.Span] objects collected during the last trace.
         """
         raise NotImplementedError()
-
-    def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """
-        A convenience wrapper to trace the execution of a single synchronous function.
-
-        Deprecated in favor of customizing Runners.
-
-        Args:
-            func: The synchronous function to execute and trace.
-            *args: Positional arguments to pass to the function.
-            **kwargs: Keyword arguments to pass to the function.
-
-        Returns:
-            The return value of the function.
-        """
-        with self._trace_context_sync(name=func.__name__):
-            return func(*args, **kwargs)
 
     def create_span(
         self,
@@ -170,23 +141,6 @@ class Tracer(ParallelWorkerBase):
             A [`SpanRecordingContext`][agentlightning.SpanRecordingContext] for recording the operation on the span.
         """
         raise NotImplementedError()
-
-    async def trace_run_async(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
-        """
-        A convenience wrapper to trace the execution of a single asynchronous function.
-
-        Deprecated in favor of customizing Runners.
-
-        Args:
-            func: The asynchronous function to execute and trace.
-            *args: Positional arguments to pass to the function.
-            **kwargs: Keyword arguments to pass to the function.
-
-        Returns:
-            The return value of the function.
-        """
-        async with self.trace_context(name=func.__name__):
-            return await func(*args, **kwargs)
 
     def get_langchain_handler(self) -> Optional[BaseCallbackHandler]:  # type: ignore
         """Get a handler to install in langchain agent callback.

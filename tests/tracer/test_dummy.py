@@ -7,7 +7,7 @@ import itertools
 import pytest
 
 from agentlightning.tracer import dummy as dummy_module
-from agentlightning.tracer.base import clear_active_tracer, get_active_tracer, set_active_tracer
+from agentlightning.tracer.base import Tracer, clear_active_tracer, get_active_tracer, set_active_tracer
 from agentlightning.tracer.dummy import DummyTracer
 
 
@@ -85,3 +85,9 @@ def test_clear_active_tracer_removes_current() -> None:
     set_active_tracer(tracer)
     clear_active_tracer()
     assert get_active_tracer() is None
+
+
+def test_tracer_core_has_no_trace_run_wrappers() -> None:
+    assert not hasattr(Tracer, "trace_run")
+    assert not hasattr(Tracer, "trace_run_async")
+    assert not hasattr(Tracer, "_trace_context_sync")
