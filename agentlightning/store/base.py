@@ -775,7 +775,8 @@ class LightningStore:
 
         If `worker_id` is present, the worker status will be updated following the rules:
 
-        1. If attempt status is "succeeded" or "failed", the corresponding worker status will be set to "idle".
+        1. If attempt status is "succeeded", "failed", or "cancelled", the corresponding worker
+           status will be set to "idle".
         2. If attempt status is "unresponsive" or "timeout", the corresponding worker status will be set to "unknown".
         3. Otherwise, the worker status will be set to "busy".
 

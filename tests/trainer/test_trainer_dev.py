@@ -12,6 +12,7 @@ from agentlightning.algorithm import Algorithm, Baseline
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.litagent import LitAgent
 from agentlightning.trainer import Trainer
+from agentlightning.types import AlgorithmContext
 
 
 class DummyStrategy(ExecutionStrategy):
@@ -31,7 +32,7 @@ class DummyAgent(LitAgent[Any]):
 class SlowAlgorithm(Algorithm):
     """Algorithm that does not qualify as FastAlgorithm."""
 
-    def run(self, train_dataset=None, val_dataset=None):  # type: ignore[override]
+    def run(self, context: AlgorithmContext):  # type: ignore[override]
         return None
 
 

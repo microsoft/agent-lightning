@@ -16,7 +16,7 @@ from agentlightning.types import (
     PromptTemplate,
     ProxyLLM,
     Rollout,
-    RolloutRawResult,
+    RolloutResult,
 )
 
 from .litagent import LitAgent
@@ -36,19 +36,19 @@ T_contra = TypeVar("T_contra", contravariant=True)
 
 
 class LlmRolloutFuncSync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM) -> RolloutRawResult: ...
+    def __call__(self, task: T_contra, llm: LLM) -> RolloutResult: ...
 
 
 class LlmRolloutFuncSync3(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM, rollout: Rollout) -> RolloutRawResult: ...
+    def __call__(self, task: T_contra, llm: LLM, rollout: Rollout) -> RolloutResult: ...
 
 
 class LlmRolloutFuncAsync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM) -> Awaitable[RolloutRawResult]: ...
+    def __call__(self, task: T_contra, llm: LLM) -> Awaitable[RolloutResult]: ...
 
 
 class LlmRolloutFuncAsync3(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM, rollout: Rollout) -> Awaitable[RolloutRawResult]: ...
+    def __call__(self, task: T_contra, llm: LLM, rollout: Rollout) -> Awaitable[RolloutResult]: ...
 
 
 LlmRolloutFunc = Union[
@@ -60,21 +60,21 @@ LlmRolloutFunc = Union[
 
 
 class PromptRolloutFuncSync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> RolloutRawResult: ...
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> RolloutResult: ...
 
 
 class PromptRolloutFuncAsync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> Awaitable[RolloutRawResult]: ...
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> Awaitable[RolloutResult]: ...
 
 
 class PromptRolloutFuncSync3(Protocol[T_contra]):
-    def __call__(self, task: T_contra, prompt_template: PromptTemplate, rollout: Rollout) -> RolloutRawResult: ...
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate, rollout: Rollout) -> RolloutResult: ...
 
 
 class PromptRolloutFuncAsync3(Protocol[T_contra]):
     def __call__(
         self, task: T_contra, prompt_template: PromptTemplate, rollout: Rollout
-    ) -> Awaitable[RolloutRawResult]: ...
+    ) -> Awaitable[RolloutResult]: ...
 
 
 PromptRolloutFunc = Union[
@@ -88,7 +88,7 @@ PromptRolloutFunc = Union[
 class FunctionalLitAgentFunc(Protocol[T_contra]):
     def __call__(
         self, task: T_contra, *args: Any, **kwargs: Any
-    ) -> Union[RolloutRawResult, Awaitable[RolloutRawResult]]: ...
+    ) -> Union[RolloutResult, Awaitable[RolloutResult]]: ...
 
 
 class FunctionalLitAgent(LitAgent[T]):
@@ -137,7 +137,7 @@ class FunctionalLitAgent(LitAgent[T]):
     def is_async(self) -> bool:
         return self._is_async
 
-    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Execute a synchronous rollout using the wrapped function.
 
         Args:
@@ -157,7 +157,7 @@ class FunctionalLitAgent(LitAgent[T]):
         kwargs = self._get_kwargs(resources, rollout)
         return self._rollout_func(task, **kwargs)  # type: ignore
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Execute an asynchronous rollout using the wrapped function.
 
         Args:

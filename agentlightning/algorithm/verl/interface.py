@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 
 from agentlightning.algorithm.base import Algorithm
 from agentlightning.client import AgentLightningClient
-from agentlightning.types import Dataset
+from agentlightning.types import AlgorithmContext
 from agentlightning.verl.entrypoint import run_ppo  # type: ignore
 
 if TYPE_CHECKING:
@@ -144,8 +144,7 @@ class VERL(Algorithm):
 
     def run(
         self,
-        train_dataset: Optional[Dataset[Any]] = None,
-        val_dataset: Optional[Dataset[Any]] = None,
+        context: AlgorithmContext,
     ) -> None:
         """Launch the VERL PPO entrypoint with the configured runtime context.
 
@@ -163,34 +162,16 @@ class VERL(Algorithm):
 
         trainer_cls = self.trainer_cls or AgentLightningTrainer
         daemon_cls = self.daemon_cls or AgentModeDaemon
-        try:
-            store = self.get_store()
-        except Exception:
-            print("Store is not set. Assuming v0 execution mode.")
-            run_ppo(
-                self.config,
-                train_dataset=train_dataset,
-                val_dataset=val_dataset,
-                store=None,
-                llm_proxy=None,
-                adapter=None,
-                trainer_cls=trainer_cls,
-                daemon_cls=daemon_cls,
-            )
-        else:
-            print("Store is set. Assuming v1 execution mode.")
-            llm_proxy = self.get_llm_proxy()
-            adapter = self.get_adapter()
-            run_ppo(
-                self.config,
-                train_dataset=train_dataset,
-                val_dataset=val_dataset,
-                store=store,
-                llm_proxy=llm_proxy,
-                adapter=adapter,
-                trainer_cls=trainer_cls,
-                daemon_cls=daemon_cls,
-            )
+        run_ppo(
+            self.config,
+            train_dataset=context.train_dataset,
+            val_dataset=context.val_dataset,
+            store=context.store,
+            llm_proxy=context.llm_proxy,
+            adapter=context.adapter,
+            trainer_cls=trainer_cls,
+            daemon_cls=daemon_cls,
+        )
 
     def get_client(self) -> AgentLightningClient:
         """Create a client bound to the VERL-managed Agent Lightning server.

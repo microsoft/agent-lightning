@@ -10,7 +10,7 @@ import warnings
 import weakref
 from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
-from agentlightning.types import NamedResources, Rollout, RolloutRawResult, Task
+from agentlightning.types import NamedResources, Rollout, RolloutResult, Task
 
 if TYPE_CHECKING:
     from agentlightning.runner import Runner
@@ -178,7 +178,7 @@ class LitAgent(Generic[T]):
             instead of this method when extending agents.
         """
 
-    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Execute a rollout synchronously.
 
 
@@ -196,13 +196,11 @@ class LitAgent(Generic[T]):
 
             * `None` when tracing is handled by the runner.
             * `float` representing the final reward.
-            * `List[ReadableSpan]` with OpenTelemetry spans.
-            * `List[Span]` with Agent Lightning spans.
-            * `List[SpanCoreFields]` with Agent Lightning spans.
+            * `list[AgentSpanPayload]` with agent-defined spans.
         """
         raise NotImplementedError("Agents must implement the `rollout` method.")
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Execute a rollout asynchronously.
 
         Args:
@@ -217,7 +215,7 @@ class LitAgent(Generic[T]):
         """
         raise NotImplementedError("Agents must implement the `rollout_async` method for async operations.")
 
-    def training_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def training_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Process a single training task synchronously.
 
         By default, this method delegates to
@@ -225,7 +223,7 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    def validation_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def validation_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Process a single validation task synchronously.
 
         Override this method when validation should differ from training. The default
@@ -234,7 +232,7 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    async def training_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def training_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Process a single training task asynchronously.
 
         By default, this method delegates to
@@ -242,7 +240,7 @@ class LitAgent(Generic[T]):
         """
         return await self.rollout_async(task, resources, rollout)
 
-    async def validation_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def validation_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Process a single validation task asynchronously.
 
         Override this method when validation should differ from training. The default

@@ -14,7 +14,8 @@ from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent
 from agentlightning.runner import LegacyAgentRunner
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import Dataset, ParallelWorkerBase
+from agentlightning.execution.events import ThreadingEvent
+from agentlightning.types import AlgorithmContext, Dataset, ParallelWorkerBase
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +277,15 @@ class TrainerLegacy(ParallelWorkerBase):
         mode = "asynchronous" if agent.is_async() else "synchronous"
 
         try:
+            store = getattr(self, "store", None)
+            if store is None:
+                raise ValueError("Trainer store is not initialized. Unable to run algorithm bundle.")
+            algorithm_context = AlgorithmContext(
+                store=store,
+                event=ThreadingEvent(),
+                train_dataset=train_dataset,
+                val_dataset=val_dataset,
+            )
             if self.n_workers == 1:
                 logger.info(f"Running with n_workers=1 ({mode} in main process).")
 
@@ -292,10 +302,7 @@ class TrainerLegacy(ParallelWorkerBase):
                 # If algorithm is provided and we have datasets, run algorithm after worker completes
                 if self.algorithm is not None and train_dataset is not None:
                     logger.info("Running algorithm training after worker completion.")
-                    self.algorithm.run(
-                        train_dataset=train_dataset,
-                        val_dataset=val_dataset,
-                    )
+                    self.algorithm.run(algorithm_context)
             else:
                 logger.info(f"Running with n_workers={self.n_workers} ({mode} multiprocessing).")
                 for i in range(self.n_workers):
@@ -314,10 +321,7 @@ class TrainerLegacy(ParallelWorkerBase):
                     # If algorithm is provided and we have datasets, pass them to the algorithm
                     if self.algorithm is not None:
                         logger.info("All workers have been spawned. Running algorithm training with provided datasets.")
-                        self.algorithm.run(
-                            train_dataset=train_dataset,
-                            val_dataset=val_dataset,
-                        )
+                        self.algorithm.run(algorithm_context)
                         logger.info("Algorithm exits. Killing the workers.")
                         self._terminate_processes(processes)
 
@@ -343,10 +347,7 @@ class TrainerLegacy(ParallelWorkerBase):
 
                     if self.algorithm is not None:
                         logger.info("Main process continues to run algorithm.")
-                        self.algorithm.run(
-                            train_dataset=train_dataset,
-                            val_dataset=val_dataset,
-                        )
+                        self.algorithm.run(algorithm_context)
                         logger.info("Algorithm exits. Killing the workers.")
                         self._terminate_processes(processes)
 

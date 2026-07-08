@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -28,12 +29,16 @@ from typing import (
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
 
-from .tracer import Span, SpanCoreFields
+from .tracer import Span
 
 if TYPE_CHECKING:
+    from agentlightning.adapter import TraceAdapter
+    from agentlightning.execution.events import ExecutionEvent
     from agentlightning.litagent import LitAgent
+    from agentlightning.llm_proxy import LLMProxy
     from agentlightning.runner.base import Runner
     from agentlightning.tracer.base import Tracer
+    from agentlightning.store.base import LightningStore
 
 __all__ = [
     "Triplet",
@@ -43,6 +48,11 @@ __all__ = [
     "TaskIfAny",
     "RolloutRawResultLegacy",
     "RolloutRawResult",
+    "RolloutResult",
+    "AlgorithmContext",
+    "AgentSpanPayload",
+    "SpanWriteResult",
+    "SpanWriter",
     "RolloutMode",
     "GenericResponse",
     "ParallelWorkerBase",
@@ -73,6 +83,62 @@ class Triplet(BaseModel):
     response: Any
     reward: Optional[float] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentSpanPayload(BaseModel):
+    """Span payload produced by agents during rollout.
+
+    The payload intentionally omits rollout ownership fields; the framework assigns
+    ownership (rollout/attempt/sequence) when persisting.
+    """
+
+    name: str
+    status: Dict[str, Any]
+    attributes: Dict[str, Any]
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    events: List[Dict[str, Any]] = Field(default_factory=lambda: cast(List[Dict[str, Any]], []))
+
+
+RunConfig = Dict[str, Any]
+"""General algorithm config container passed via context."""
+
+RolloutResult = Union[None, float, List[AgentSpanPayload]]
+"""Algorithm/LitAgent return contract for a completed rollout."""
+
+
+@dataclass(frozen=True)
+class AlgorithmContext:
+    """Input context passed into :meth:`Algorithm.run`."""
+
+    store: "LightningStore"
+    event: "ExecutionEvent"
+    adapter: Optional["TraceAdapter[Any]"] = None
+    llm_proxy: Optional["LLMProxy"] = None
+    initial_resources: Optional[Dict[str, Any]] = None
+    train_dataset: Optional[Dataset[Any]] = None
+    val_dataset: Optional[Dataset[Any]] = None
+    config: RunConfig = field(default_factory=lambda: cast(RunConfig, {}))
+
+
+class SpanWriteResult(BaseModel):
+    """Result summary for a span-batch write attempt."""
+
+    inserted: int = 0
+    duplicates: int = 0
+    failed: int = 0
+
+
+class SpanWriter(Protocol):
+    """Interface for writing owned spans into the store."""
+
+    async def __call__(
+        self,
+        *,
+        rollout_id: str,
+        attempt_id: str,
+        spans: "Sequence[AgentSpanPayload]",
+    ) -> SpanWriteResult: ...
 
 
 class RolloutLegacy(BaseModel):
@@ -118,12 +184,12 @@ RolloutStatus = Literal[
 """The status of a rollout."""
 
 AttemptStatus = Literal[
-    # A status is essentially a process.
-    # It should not have scheduling/management statuses like "queuing" or "cancelled".
+    # Attempt execution status and terminal reason.
     "preparing",
     "running",
     "failed",
     "succeeded",
+    "cancelled",
     "unresponsive",  # the worker has not reported results for a while
     "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
 ]
@@ -299,19 +365,13 @@ RolloutRawResultLegacy = Union[None, float, List[Triplet], List[Dict[str, Any]],
 """Legacy rollout result type.
 
 !!! warning "Deprecated"
-    Use [`RolloutRawResult`][agentlightning.RolloutRawResult] instead.
+    Use [`RolloutResult`][agentlightning.RolloutResult] instead.
 """
 
-RolloutRawResult = Union[
-    None,  # nothing (relies on tracer)
-    float,  # only final reward
-    List[ReadableSpan],  # constructed OTEL spans by user
-    List[Span],  # constructed Span objects by user
-    List[SpanCoreFields],  # constructed SpanCoreFields objects by user
-]
-"""Rollout result type.
+RolloutRawResult = RolloutResult
+"""Compatibility alias for legacy call-sites.
 
-Possible return values of [`rollout`][agentlightning.LitAgent.rollout].
+New code should use [`RolloutResult`][agentlightning.RolloutResult].
 """
 
 

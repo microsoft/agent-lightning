@@ -2730,6 +2730,45 @@ async def test_update_attempt_sets_end_time_for_terminal_status(store_fixture: L
 
 
 @pytest.mark.asyncio
+async def test_update_attempt_sets_end_time_for_cancelled_status(store_fixture: LightningStore) -> None:
+    """Cancelled attempt status should be terminal and set end_time."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "data"})
+    await store_fixture.dequeue_rollout()
+
+    attempt = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    cancelled = await store_fixture.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt.attempt_id,
+        status="cancelled",
+    )
+    assert cancelled.status == "cancelled"
+    assert cancelled.end_time is not None
+    assert cancelled.end_time >= cancelled.start_time
+
+    current_rollout = await store_fixture.get_rollout_by_id(rollout_id=rollout.rollout_id)
+    assert current_rollout is not None
+    assert current_rollout.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_update_attempt_cancelled_marks_worker_idle(store_fixture: LightningStore) -> None:
+    """Cancelling an attempt should leave worker in idle state."""
+    rollout = await store_fixture.start_rollout(input={"task": "cancelled-state"}, worker_id="worker-cancel")
+
+    await store_fixture.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=rollout.attempt.attempt_id,
+        status="cancelled",
+    )
+
+    worker = await store_fixture.get_worker_by_id("worker-cancel")
+    assert worker is not None
+    assert worker.status == "idle"
+    assert worker.current_rollout_id is None
+    assert worker.current_attempt_id is None
+
+
+@pytest.mark.asyncio
 async def test_rollout_retry_lifecycle_updates_statuses(
     store_fixture: LightningStore, mock_readable_span: Mock
 ) -> None:

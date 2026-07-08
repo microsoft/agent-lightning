@@ -28,22 +28,21 @@ from typing import (
     cast,
 )
 
-from opentelemetry.sdk.trace import ReadableSpan
-
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.tracer.otel import OtelTracer
 from agentlightning.types import (
+    AgentSpanPayload,
     AttemptedRollout,
     Hook,
     NamedResources,
     Rollout,
+    RolloutResult,
     RolloutMode,
-    RolloutRawResult,
     Span,
     SpanCoreFields,
+    TraceStatus,
 )
 from agentlightning.utils.system_snapshot import system_snapshot
 
@@ -268,8 +267,8 @@ class LitAgentRunner(Runner[T_task]):
                 logger.exception(f"{self._log_prefix()} Exception during {hook_type} hook {hook}.")
 
     async def _post_process_rollout_result(
-        self, rollout: AttemptedRollout, raw_result: RolloutRawResult
-    ) -> List[ReadableSpan] | List[Span]:
+        self, rollout: AttemptedRollout, raw_result: RolloutResult
+    ) -> List[Span]:
         """Standardizes the agent's return value and report what's needed to report to the store.
 
         Args:
@@ -291,13 +290,7 @@ class LitAgentRunner(Runner[T_task]):
             result_recognized = True
 
         # Case 1: result is a float (final reward)
-        if isinstance(raw_result, (bool, int, float)):
-            if isinstance(raw_result, (bool, int)):
-                logger.warning(
-                    f"{self._log_prefix(rollout.rollout_id)} Reward is not a number, got: {type(raw_result)}. "
-                    "Auto converting to float."
-                )
-                raw_result = float(raw_result)
+        if isinstance(raw_result, float):
             # Preserve the existing spans before another span is emitted
             trace_spans = list(self._tracer.get_last_trace())
             # This will NOT emit another span to the tracer
@@ -313,50 +306,26 @@ class LitAgentRunner(Runner[T_task]):
             await store.add_span(reward_span)
             result_recognized = True
 
-        # Case 2-4: result is a list
+        # Case 2: result is a list
         if isinstance(raw_result, list):
-            # Case 2: result is a list of ReadableSpan (OpenTelemetry spans)
-            if len(raw_result) > 0 and all(isinstance(t, ReadableSpan) for t in raw_result):
-                if isinstance(self._tracer, OtelTracer):
-                    logger.warning(
-                        f"{self._log_prefix(rollout.rollout_id)} Tracer is already an OpenTelemetry tracer. "
-                        "The traces should have already been added to the store. "
-                        "Returning the traces from the rollout will result in duplicate spans."
-                    )
-                for span in raw_result:
-                    added_span = await store.add_otel_span(
-                        rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
-                    )
-                    if added_span is not None:
-                        trace_spans.append(added_span)
-                    else:
-                        logger.error(
-                            f"{self._log_prefix(rollout.rollout_id)} Failed to add OpenTelemetry span to the store: {span}"
-                        )
-                result_recognized = True
-
-            # Case 3: result is a list of Span (agentlightning spans)
-            elif len(raw_result) > 0 and all(isinstance(t, Span) for t in raw_result):
-                # Add the spans directly to the store
-                for span in raw_result:
-                    await store.add_span(cast(Span, span))
-                trace_spans = [cast(Span, span) for span in raw_result]
-                result_recognized = True
-
-            # Case 4: result is a list of SpanCoreFields (agentlightning spans)
-            elif len(raw_result) > 0 and all(isinstance(t, SpanCoreFields) for t in raw_result):
-                # Add the spans directly to the store too, but needs to get sequence id first
+            if len(raw_result) > 0 and all(isinstance(t, AgentSpanPayload) for t in raw_result):
                 sequence_ids = await store.get_many_span_sequence_ids(
                     [(rollout.rollout_id, rollout.attempt.attempt_id) for _ in range(len(raw_result))]
                 )
                 trace_spans = [
                     Span.from_core_fields(
-                        cast(SpanCoreFields, span_core_fields),
+                        SpanCoreFields(
+                            name=cast(AgentSpanPayload, span_payload).name,
+                            status=TraceStatus(**cast(AgentSpanPayload, span_payload).status),
+                            attributes=cast(AgentSpanPayload, span_payload).attributes,
+                            start_time=cast(AgentSpanPayload, span_payload).start_time,
+                            end_time=cast(AgentSpanPayload, span_payload).end_time,
+                        ),
                         rollout_id=rollout.rollout_id,
                         attempt_id=rollout.attempt.attempt_id,
                         sequence_id=sequence_id,
                     )
-                    for span_core_fields, sequence_id in zip(raw_result, sequence_ids, strict=True)
+                    for span_payload, sequence_id in zip(raw_result, sequence_ids, strict=True)
                 ]
                 await store.add_many_spans(trace_spans)
                 result_recognized = True
@@ -373,13 +342,13 @@ class LitAgentRunner(Runner[T_task]):
             else:
                 types = [type(t).__name__ for t in raw_result][:10]
                 raise ValueError(
-                    f"Invalid raw result type. It's expected to be a list of ReadableSpan or Span, "
+                    f"Invalid raw result type. It's expected to be a list of AgentSpanPayload, "
                     f"but got: {', '.join(types)}..."
                 )
 
         if not result_recognized:
             raise TypeError(
-                f"Invalid raw result type. It's expected to be none, float, or a list of ReadableSpan or Span, "
+                f"Invalid raw result type. It's expected to be none, float, or a list of AgentSpanPayload, "
                 f"but got: {type(raw_result).__name__}..."
             )
 
@@ -652,7 +621,7 @@ class LitAgentRunner(Runner[T_task]):
 
         logger.debug(f"{self._log_prefix(rollout_id)} Resources fetched (id={resources_update.resources_id}).")
 
-        trace_spans: List[ReadableSpan] | List[Span] = []
+        trace_spans: List[Span] = []
         has_exception: bool = False
 
         try:

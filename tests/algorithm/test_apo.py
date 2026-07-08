@@ -12,8 +12,10 @@ import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, VersionedPromptTemplate, batch_iter_over_dataset
+from agentlightning.execution.events import ThreadingEvent
 from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.types import (
+    AlgorithmContext,
     Dataset,
     NamedResources,
 )
@@ -25,6 +27,15 @@ from agentlightning.types import (
     SpanContext,
     TraceStatus,
 )
+
+
+def _context(*, train_dataset: Optional[Dataset[Any]] = None, val_dataset: Optional[Dataset[Any]] = None) -> AlgorithmContext:
+    return AlgorithmContext(
+        store=Mock(),  # type: ignore[arg-type]
+        event=ThreadingEvent(),
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+    )
 
 
 class DummyTraceMessagesAdapter(TraceToMessages):
@@ -792,7 +803,7 @@ async def test_run_performs_initial_validation_when_enabled(monkeypatch: pytest.
     monkeypatch.setattr(apo_module.random, "shuffle", lambda seq: None)  # type: ignore
 
     val_dataset = [{"task": "val"}]
-    await apo.run(train_dataset=[{"task": "train"}], val_dataset=val_dataset)  # type: ignore
+    await apo.run(_context(train_dataset=[{"task": "train"}], val_dataset=val_dataset))
 
     # Verify initial validation was performed
     assert apo._history_best_prompt is seed_prompt
@@ -849,7 +860,7 @@ async def test_run_skips_initial_validation_when_disabled(monkeypatch: pytest.Mo
     train_dataset = [{"task": "train"}]
     val_dataset = [{"task": "val"}]
 
-    await apo.run(train_dataset=train_dataset, val_dataset=val_dataset)  # type: ignore
+    await apo.run(_context(train_dataset=train_dataset, val_dataset=val_dataset))
 
     # Verify best prompt was updated through normal optimization (not initial validation)
     best_prompt = apo.get_best_prompt()
@@ -913,7 +924,7 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
     train_dataset = [{"task": "train"}]
     val_dataset = [{"task": "val"}]
 
-    await apo.run(train_dataset=train_dataset, val_dataset=val_dataset)  # type: ignore
+    await apo.run(_context(train_dataset=train_dataset, val_dataset=val_dataset))
 
     # Verify best prompt was updated
     best_prompt = apo.get_best_prompt()

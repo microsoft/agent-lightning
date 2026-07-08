@@ -25,6 +25,7 @@ pytestmark = [pytest.mark.store]
         ("preparing", "preparing"),
         ("running", "running"),
         ("succeeded", "succeeded"),
+        ("cancelled", "cancelled"),
     ],
 )
 @pytest.mark.asyncio

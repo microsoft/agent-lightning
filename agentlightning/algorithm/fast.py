@@ -5,16 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from agentlightning.types import Attempt, Dataset, Rollout, RolloutStatus, Span
 
 from .base import Algorithm
-from .utils import with_llm_proxy, with_store
+from agentlightning.types import AlgorithmContext
 
-if TYPE_CHECKING:
-    from agentlightning.llm_proxy import LLMProxy
-    from agentlightning.store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
@@ -187,64 +184,74 @@ class Baseline(FastAlgorithm):
 
             await asyncio.sleep(self.polling_interval)
 
-    @with_llm_proxy()
-    @with_store
     async def run(
         self,
-        store: LightningStore,  # Injected by decorator - callers should not provide this parameter
-        llm_proxy: Optional[LLMProxy],  # Injected by decorator - callers should not provide this parameter
-        train_dataset: Optional[Dataset[Any]] = None,
-        val_dataset: Optional[Dataset[Any]] = None,
+        context: AlgorithmContext,
     ) -> None:
         """Execute the baseline loop across the provided datasets."""
-        train_dataset_length = len(train_dataset) if train_dataset is not None else 0
-        val_dataset_length = len(val_dataset) if val_dataset is not None else 0
-        if train_dataset_length == 0 and val_dataset_length == 0:
-            logger.error(
-                "MockAlgorithm requires at least one dataset. Provide train_dataset or val_dataset before running."
-            )
-            return
+        store = context.store
+        train_dataset = context.train_dataset
+        val_dataset = context.val_dataset
+        llm_proxy = context.llm_proxy
+        managed_proxy = False
+        if llm_proxy is not None and not llm_proxy.is_running():
+            await llm_proxy.start()
+            managed_proxy = True
 
-        concatenated_dataset = [train_dataset[i] for i in range(train_dataset_length) if train_dataset is not None] + [
-            val_dataset[i] for i in range(val_dataset_length) if val_dataset is not None
-        ]
-        train_indices = list(range(0, train_dataset_length))
-        val_indices = list(range(train_dataset_length, train_dataset_length + val_dataset_length))
-        logger.debug(f"Train indices: {train_indices}")
-        logger.debug(f"Val indices: {val_indices}")
-
-        # Currently we only supports a single resource update at the start.
-        initial_resources = self.get_initial_resources()
-        if initial_resources is not None:
-            resource_update = await store.update_resources("default", initial_resources)
-            resources_id = resource_update.resources_id
-            logger.info(f"Initial resources set: {initial_resources}")
-        else:
-            logger.warning("No initial resources provided. Skip initializing resources.")
-            resources_id = None
-
-        for epoch in range(self.n_epochs):
-            harvest_tasks: List[asyncio.Task[None]] = []
-            logger.info(f"Proceeding epoch {epoch + 1}/{self.n_epochs}.")
-            for index in train_indices + val_indices:
-                logger.info(
-                    f"Processing index {index}. {len(train_indices)} train indices and {len(val_indices)} val indices in total."
+        try:
+            train_dataset_length = len(train_dataset) if train_dataset is not None else 0
+            val_dataset_length = len(val_dataset) if val_dataset is not None else 0
+            if train_dataset_length == 0 and val_dataset_length == 0:
+                logger.error(
+                    "MockAlgorithm requires at least one dataset. Provide train_dataset or val_dataset before running."
                 )
-                while True:
-                    queuing_rollouts = await store.query_rollouts(status_in=["queuing", "requeuing"])
-                    if len(queuing_rollouts) <= self.max_queue_length:
-                        # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
-                        sample = concatenated_dataset[index]
-                        mode = "train" if index in train_indices else "val"
-                        rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
-                        harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
-                        logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
-                        break
-                    else:
-                        # Sleep a bit and try again later.
-                        await asyncio.sleep(self.polling_interval)
+                return
 
-            # Wait for all harvest tasks to complete
-            logger.info(f"Waiting for {len(harvest_tasks)} harvest tasks to complete...")
-            if len(harvest_tasks) > 0:
-                await asyncio.gather(*harvest_tasks)
+            concatenated_dataset = [train_dataset[i] for i in range(train_dataset_length) if train_dataset is not None] + [
+                val_dataset[i] for i in range(val_dataset_length) if val_dataset is not None
+            ]
+            train_indices = list(range(0, train_dataset_length))
+            val_indices = list(range(train_dataset_length, train_dataset_length + val_dataset_length))
+            logger.debug(f"Train indices: {train_indices}")
+            logger.debug(f"Val indices: {val_indices}")
+
+            # Currently we only supports a single resource update at the start.
+            initial_resources = self.get_initial_resources()
+            if initial_resources is not None:
+                resource_update = await store.update_resources("default", initial_resources)
+                resources_id = resource_update.resources_id
+                logger.info(f"Initial resources set: {initial_resources}")
+            else:
+                logger.warning("No initial resources provided. Skip initializing resources.")
+                resources_id = None
+
+            for epoch in range(self.n_epochs):
+                harvest_tasks: List[asyncio.Task[None]] = []
+                logger.info(f"Proceeding epoch {epoch + 1}/{self.n_epochs}.")
+                for index in train_indices + val_indices:
+                    logger.info(
+                        f"Processing index {index}. {len(train_indices)} train indices and {len(val_indices)} val indices in total."
+                    )
+                    while True:
+                        queuing_rollouts = await store.query_rollouts(status_in=["queuing", "requeuing"])
+                        if len(queuing_rollouts) <= self.max_queue_length:
+                            # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
+                            sample = concatenated_dataset[index]
+                            mode = "train" if index in train_indices else "val"
+                            rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
+                            harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
+                            logger.info(
+                                f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}"
+                            )
+                            break
+                        else:
+                            # Sleep a bit and try again later.
+                            await asyncio.sleep(self.polling_interval)
+
+                # Wait for all harvest tasks to complete
+                logger.info(f"Waiting for {len(harvest_tasks)} harvest tasks to complete...")
+                if len(harvest_tasks) > 0:
+                    await asyncio.gather(*harvest_tasks)
+        finally:
+            if managed_proxy and llm_proxy is not None:
+                await llm_proxy.stop()

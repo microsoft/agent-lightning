@@ -23,7 +23,16 @@ from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.store.base import UNSET, LightningStore, Unset
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanCoreFields, Worker
+from agentlightning.types import (
+    AgentSpanPayload,
+    LLM,
+    Hook,
+    NamedResources,
+    PromptTemplate,
+    Rollout,
+    Span,
+    Worker,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -68,6 +77,24 @@ def create_agent_span(
         rollout_id=rollout_id,
         attempt_id=attempt_id,
         sequence_id=sequence_id,
+    )
+
+
+def create_agent_span_payload(
+    name: str,
+    attributes: Optional[Dict[str, Any]] = None,
+    *,
+    status_code: str = "OK",
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+) -> AgentSpanPayload:
+    """Create an AgentSpanPayload payload for tests."""
+    return AgentSpanPayload(
+        name=name,
+        status={"status_code": status_code},
+        attributes=attributes or {},
+        start_time=start_time,
+        end_time=end_time,
     )
 
 
@@ -252,8 +279,12 @@ async def test_step_records_spans_for_none_result() -> None:
     finally:
         teardown_runner(runner)
 
-    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
-    spans = await store.query_spans(rollout_id, attempt_id)
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "succeeded"
+
+    spans = await store.query_spans(rollouts[0].rollout_id, attempts[-1].attempt_id)
     assert [span.name for span in spans] == ["work"]
     assert find_final_reward(spans) is None
 
@@ -271,31 +302,62 @@ async def test_step_emits_reward_for_float_result() -> None:
     finally:
         teardown_runner(runner)
 
-    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
-    spans = await store.query_spans(rollout_id, attempt_id)
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "succeeded"
+
+    spans = await store.query_spans(rollouts[0].rollout_id, attempts[-1].attempt_id)
     rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.75]
 
 
 @pytest.mark.asyncio
-async def test_step_emits_reward_for_bool_result(caplog: pytest.LogCaptureFixture) -> None:
+async def test_step_rejects_bool_result() -> None:
     class BoolRewardAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> bool:
             return True
 
     agent = BoolRewardAgent()
     runner, store, _ = await setup_runner(agent)
-    caplog.set_level(logging.WARNING)
     try:
-        await runner.step({"prompt": "hello"})
+        with pytest.raises(TypeError, match="Invalid raw result type"):
+            await runner.step({"prompt": "hello"})
     finally:
         teardown_runner(runner)
 
-    assert "Reward is not a number" in caplog.text
-    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
+
+    rollout_id, attempt_id = rollouts[0].rollout_id, attempts[-1].attempt_id
     spans = await store.query_spans(rollout_id, attempt_id)
-    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
-    assert rewards == [1.0]
+    assert len(spans) == 0
+
+
+@pytest.mark.asyncio
+async def test_step_rejects_int_result() -> None:
+    class IntRewardAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> int:
+            return 1
+
+    agent = IntRewardAgent()
+    runner, store, _ = await setup_runner(agent)
+    try:
+        with pytest.raises(TypeError, match="Invalid raw result type"):
+            await runner.step({"prompt": "hello"})
+    finally:
+        teardown_runner(runner)
+
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
+
+    rollout_id, attempt_id = rollouts[0].rollout_id, attempts[-1].attempt_id
+    spans = await store.query_spans(rollout_id, attempt_id)
+    assert len(spans) == 0
 
 
 @pytest.mark.asyncio
@@ -321,61 +383,31 @@ async def test_step_raises_for_invalid_result_type() -> None:
 
 
 @pytest.mark.asyncio
-async def test_readable_spans_return_skip_store_when_tracer_is_otel(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    class DummyTracerWithOtel(DummyTracer):
-        pass
-
-    class RecordingStore(InMemoryLightningStore):
-        def __init__(self) -> None:
-            super().__init__()
-            self.add_otel_span_calls = 0
-
-        async def add_otel_span(
-            self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
-        ) -> Span | None:
-            self.add_otel_span_calls += 1
-            return await super().add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
-
-    monkeypatch.setattr("agentlightning.runner.agent.OtelTracer", DummyTracerWithOtel)
-
-    store = RecordingStore()
-    await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
-
-    tracer = DummyTracerWithOtel()
-    runner = LitAgentRunner[Any](tracer=tracer)
+async def test_post_process_rejects_readable_spans() -> None:
     agent = HeartbeatAgent()
-    runner.init(agent)
-    runner.init_worker(worker_id=0, store=store)
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "payload"}, mode="val")
+    spans = [create_readable_span("rejected-span")]
 
-    attempted_rollout = await store.start_rollout(input={"task": "otel"}, mode="val")
-    spans = [create_readable_span("otel-span")]
-
-    result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
-        attempted_rollout, spans
-    )
-
-    assert all(isinstance(span, Span) for span in result_spans)
-    # Warned, but still logged
-    assert [span.name for span in result_spans] == ["otel-span"]
-    assert store.add_otel_span_calls == 1
-    assert "Tracer is already an OpenTelemetry tracer" in caplog.text
+    with pytest.raises(ValueError, match="list of AgentSpanPayload"):
+        await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, spans
+        )
 
     teardown_runner(runner)
 
 
 @pytest.mark.asyncio
-async def test_post_process_readable_spans_adds_each_span() -> None:
+async def test_post_process_agent_span_payloads() -> None:
     agent = HeartbeatAgent()
     runner, store, _ = await setup_runner(agent)
     attempted_rollout = await store.start_rollout(input={"task": "post-process"}, mode="val")
 
-    spans = [create_readable_span("case-2-span-a"), create_readable_span("case-2-span-b")]
+    payloads = [create_agent_span_payload("case-2-span-a"), create_agent_span_payload("case-2-span-b")]
 
     try:
         result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
-            attempted_rollout, spans
+            attempted_rollout, payloads
         )
     finally:
         teardown_runner(runner)
@@ -386,23 +418,40 @@ async def test_post_process_readable_spans_adds_each_span() -> None:
 
 
 @pytest.mark.asyncio
-async def test_post_process_span_core_fields_create_spans() -> None:
+async def test_post_process_agent_span_payloads_rewrite_ownership() -> None:
     agent = HeartbeatAgent()
     runner, store, _ = await setup_runner(agent)
     attempted_rollout = await store.start_rollout(input={"task": "reward-list"}, mode="val")
 
-    span_core_fields = [emit_reward(0.5, propagate=False), emit_reward(-0.2, propagate=False)]
+    core_fields = [emit_reward(0.5, propagate=False), emit_reward(-0.2, propagate=False)]
+    span_payloads = [
+        AgentSpanPayload(
+            name=payload.name,
+            status=payload.status.model_dump(),
+            attributes=payload.attributes,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+        )
+        for payload in core_fields
+    ]
 
     try:
         result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
-            attempted_rollout, span_core_fields
+            attempted_rollout, span_payloads
         )
     finally:
         teardown_runner(runner)
 
     assert all(span.name == AGL_ANNOTATION for span in result_spans)
     stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
-    assert [span.attributes.get("agentlightning.reward.0.value") for span in stored_spans] == [0.5, -0.2]
+    reward_values = [
+        span.attributes.get("agentlightning.reward.0.value") for span in stored_spans if span.name == AGL_ANNOTATION
+    ]
+    assert reward_values == [0.5, -0.2]
+
+    assert result_spans[0].rollout_id == attempted_rollout.rollout_id
+    assert result_spans[1].attempt_id == attempted_rollout.attempt.attempt_id
+    assert [span.sequence_id for span in result_spans] == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -433,7 +482,7 @@ async def test_step_handles_non_llm_resource() -> None:
 
 
 @pytest.mark.asyncio
-async def test_step_accepts_readable_span_list() -> None:
+async def test_step_rejects_readable_span_list() -> None:
     class ReadableSpanAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
             self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
@@ -443,22 +492,25 @@ async def test_step_accepts_readable_span_list() -> None:
     agent = ReadableSpanAgent()
     runner, store, _ = await setup_runner(agent)
     try:
-        await runner.step({"payload": True})
+        with pytest.raises(ValueError, match="list of AgentSpanPayload"):
+            await runner.step({"payload": True})
     finally:
         teardown_runner(runner)
-
-    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
-    spans = await store.query_spans(rollout_id, attempt_id)
-    assert [span.name for span in spans] == ["trace-0", "trace-1"]
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
 
 
 @pytest.mark.asyncio
-async def test_step_accepts_agent_span_list() -> None:
+async def test_step_accepts_agent_span_payload_list() -> None:
     class AgentSpanAgent(LitAgent[Dict[str, Any]]):
-        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> List[Span]:
+        def validation_rollout(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> List[AgentSpanPayload]:
             return [
-                create_agent_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "custom-1", {"order": 1}),
-                create_agent_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "custom-2", {"order": 2}),
+                create_agent_span_payload("custom-1", {"order": 1}),
+                create_agent_span_payload("custom-2", {"order": 2}),
             ]
 
     agent = AgentSpanAgent()
@@ -642,8 +694,18 @@ async def test_agent_emits_multiple_rewards() -> None:
     class RewardListAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
             self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
-        ) -> List[SpanCoreFields]:
-            return [emit_reward(0.2, propagate=False), emit_reward(0.6, propagate=False)]
+        ) -> List[AgentSpanPayload]:
+            rewards = [emit_reward(0.2, propagate=False), emit_reward(0.6, propagate=False)]
+            return [
+                AgentSpanPayload(
+                    name=payload.name,
+                    status=payload.status.model_dump(),
+                    attributes=payload.attributes,
+                    start_time=payload.start_time,
+                    end_time=payload.end_time,
+                )
+                for payload in rewards
+            ]
 
     agent = RewardListAgent()
     runner, store, _ = await setup_runner(agent)
@@ -667,8 +729,8 @@ async def test_hooks_triggered_in_order() -> None:
     class HookAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
             self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
-        ) -> List[ReadableSpan]:
-            return [create_readable_span("hook-span")]
+        ) -> List[AgentSpanPayload]:
+            return [create_agent_span_payload("hook-span")]
 
     agent = HookAgent()
     runner, store, _ = await setup_runner(agent, hooks=[hook])
@@ -717,8 +779,8 @@ async def test_step_returns_rollout_with_spans() -> None:
     class SpanAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
             self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
-        ) -> List[ReadableSpan]:
-            return [create_readable_span("test-span-1"), create_readable_span("test-span-2")]
+        ) -> List[AgentSpanPayload]:
+            return [create_agent_span_payload("test-span-1"), create_agent_span_payload("test-span-2")]
 
     agent = SpanAgent()
     runner, store, _ = await setup_runner(agent)

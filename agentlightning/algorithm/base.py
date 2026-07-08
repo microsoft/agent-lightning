@@ -15,7 +15,7 @@ from typing import (
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Dataset, NamedResources
+from agentlightning.types import AlgorithmContext, NamedResources
 
 if TYPE_CHECKING:
     from agentlightning.llm_proxy import LLMProxy
@@ -133,15 +133,12 @@ class Algorithm:
         return self.run(*args, **kwargs)
 
     def run(
-        self,
-        train_dataset: Optional[Dataset[Any]] = None,
-        val_dataset: Optional[Dataset[Any]] = None,
+        self, context: AlgorithmContext
     ) -> Union[None, Awaitable[None]]:
         """Subclasses should implement this method to implement the algorithm.
 
         Args:
-            train_dataset: The dataset to train on. Not all algorithms require a training dataset.
-            val_dataset: The dataset to validate on. Not all algorithms require a validation dataset.
+            context: Runtime input for the algorithm execution.
 
         Returns:
             Algorithm should refrain from returning anything. It should just run the algorithm.

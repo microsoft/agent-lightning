@@ -68,7 +68,7 @@ async def rollout_status_from_attempt(
         The status of the rollout from the perspective of the attempt.
     """
     # Propagate the status directly to the rollout
-    if attempt.status == "preparing" or attempt.status == "running" or attempt.status == "succeeded":
+    if attempt.status in ("preparing", "running", "succeeded", "cancelled"):
         return attempt.status
 
     if attempt.status == "failed" or attempt.status == "timeout" or attempt.status == "unresponsive":

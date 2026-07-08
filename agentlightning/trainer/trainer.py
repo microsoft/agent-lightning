@@ -19,7 +19,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import Dataset, Hook, NamedResources
+from agentlightning.types import AlgorithmContext, Dataset, Hook, NamedResources
 
 from .init_utils import build_component, instantiate_component
 from .legacy import TrainerLegacy
@@ -502,7 +502,6 @@ class Trainer(TrainerLegacy):
         seeding or external algorithms).
         """
         if algorithm is not None:
-            algorithm.set_trainer(self)
             algorithm.set_store(store)
             algorithm.set_adapter(self.adapter)
             if self.initial_resources is not None:
@@ -515,19 +514,23 @@ class Trainer(TrainerLegacy):
             while not event.is_set():
                 await asyncio.sleep(0.1)
             return
+
+        context = AlgorithmContext(
+            store=store,
+            event=event,
+            adapter=self.adapter,
+            llm_proxy=self.llm_proxy,
+            initial_resources=self.initial_resources,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+        )
         try:
             if algorithm.is_async():
-                await algorithm.run(  # type: ignore
-                    train_dataset=train_dataset,
-                    val_dataset=val_dataset,
-                )
+                await algorithm.run(context)  # type: ignore[call-arg]
             else:
                 # This will block the event loop to maximize the debugging experience
                 # It's the responsibility of the execution strategy to enable async execution
-                algorithm.run(
-                    train_dataset=train_dataset,
-                    val_dataset=val_dataset,
-                )
+                algorithm.run(context)  # type: ignore[call-arg]
         except Exception:
             logger.exception("Algorithm bundle encountered an error.")
             raise

@@ -334,7 +334,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         # NOTE: We don't check the status change anymore, in sake of performance.
         # Instead, we always update the last_idle_time regardless of whether the attempt status has changed.
-        if attempt.status in ("succeeded", "failed"):
+        if attempt.status in ("succeeded", "failed", "cancelled"):
             worker.last_idle_time = now
             worker.status = "idle"
             worker.current_rollout_id = None
@@ -1599,7 +1599,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not isinstance(status, Unset):
             attempt.status = status
             # Also update end_time if the status indicates completion
-            if status in ["failed", "succeeded"]:
+            if status in ["failed", "succeeded", "cancelled"]:
                 attempt.end_time = time.time()
             worker_sync_required = worker_sync_required or bool(attempt.worker_id)
         if not isinstance(last_heartbeat_time, Unset):
