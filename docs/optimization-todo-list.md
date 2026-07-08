@@ -35,15 +35,15 @@
 | 24 | 删除 `OtelTracer` 私有 `_trace_context_sync()` | P1 | Tracer | 已完成 | 已验证：`tests/tracer/test_agentops.py::test_agentops_trace_with_store_disable`（无同步入口路径） + `tests/tracer/test_otel.py::test_context_managers_clear_state[store-no-otlp]`（保持行为） | `_trace_context_sync()` 不再作为公开依赖；同步追踪行为通过 `trace_context` 路径验证 |
 | 25 | 删除 `trace_run` / `trace_run_async` deprecated wrappers | P1 | Tracer | 已完成 | 已验证：`tests/tracer/test_dummy.py::test_tracer_core_has_no_trace_run_wrappers`（无兼容 wrapper） | 生命周期由 Runner 或显式 `trace_context` 管理 |
 | 26 | 统一 `Store.query_rollouts` 参数为 `status_in`/`rollout_id_in` | P1 | Store | 已完成 | 已通过：`tests/store/test_core.py`, `tests/store/test_threading.py`, `tests/store/test_client_server.py`（query 过滤）, `tests/store/test_restful.py`（兼容过滤） | 删除 `status=`、`rollout_ids=` 旧参数分支 |
-| 27 | 重构 Store 层级：`LightningStoreServer` 不再实现业务 `Store` | P1 | Store | 待开始 | 同步新增：类型/职责断言测试 | server 为 has-a lifecycle container；client/threaded/local 为 Store adapters |
-| 28 | 修复 `ClientServerExecutionStrategy` 传递纯 `LightningStore` facade | P1 | Execution/Store | 待开始 | 同步新增：bundle 传参测试 | server 模式下传给 algorithm/runner/proxy 的必须是 `LightningStoreClient` facade |
+| 27 | 重构 Store 层级：`LightningStoreServer` 不再实现业务 `Store` | P1 | Store | 已完成 | 已验证：`tests/store/test_store_roles.py::test_lightning_store_server_is_not_business_store` + `tests/store/test_store_roles.py::test_runtime_roles_match_design_intent` | server 为 has-a lifecycle container；client/threaded/local 为 Store adapters |
+| 28 | 修复 `ClientServerExecutionStrategy` 传递纯 `LightningStore` facade | P1 | Execution/Store | 已完成 | 已验证：`tests/execution/test_client_server.py::test_execute_algorithm_managed_store_starts_server` | server 模式下传给 algorithm/runner/proxy 的必须是 `LightningStoreClient` facade |
 | 29 | 删除 legacy client/server 协议栈 | P1 | 网络 | 待开始 | 同步更新：导出、API 与 runtime 路径扫描 | 远程运行统一走 `LightningStoreServer` + `LightningStoreClient` |
-| 30 | 删除 legacy reward 解析与 deprecated reward re-export | P1 | Reward/Emitter | 待开始 | 同步新增：reward payload 测试 | 仅支持 `AGL_ANNOTATION` 与 `agentlightning.reward.*` 新 attributes |
-| 31 | 精简 adapter 兼容键列表，移除历史 attribute key | P1 | Adapter | 待开始 | 同步新增：adapter fixture 测试 | 先定义当前 instrumentation key 清单，再清理 `TracerTraceToTriplet`、`LlmProxyTraceToTriplet` |
-| 32 | 删除 VERL 的 v0/v1 双轨执行逻辑 | P1 | VERL | 待开始 | 同步新增：v1-only smoke tests | 仅保留 store/proxy/adapter 新模型；禁止 v0 fallback 和 `get_client()` |
-| 33 | 处理 `inter_process.py` TODO：实现或删除 | P1 | Execution | 待开始 | 同步新增或更新：execution strategy 测试 | Major 中不能保留未实现占位逻辑 |
-| 34 | 处理 `store/sqlite.py` TODO：实现或删除 | P1 | Store | 待开始 | 同步新增或更新：sqlite entry 测试 | 与整体 Store 架构一致后再决策 |
-| 35 | 更新 docs/examples/tests 使用新接口与新生命周期模型 | P2 | 文档/示例 | 待开始 | 同步验证：example smoke、docs 链接、`mkdocs build --strict` | 放在 P2 生产化清理前，避免旧接口在示例和文档中滞留 |
+| 30 | 删除 legacy reward 解析与 deprecated reward re-export | P1 | Reward/Emitter | 已完成 | 已验证：`tests/emitter/test_reward.py` + `tests/runner/test_agent_runner.py` reward import path coverage | 仅支持 `AGL_ANNOTATION` 与 `agentlightning.emitter.reward.*` 新 attributes |
+| 31 | 精简 adapter 兼容键列表，移除历史 attribute key | P1 | Adapter | 已完成 | 已验证：`tests/adapter/test_llm_proxy.py` + `tests/adapter/test_triplet_trace_tree.py` | 已定义当前 instrumentation key 清单并清理历史 AgentOps reward/key 路径 |
+| 32 | 删除 VERL 的 v0/v1 双轨执行逻辑 | P1 | VERL | 已完成 | 已验证：`tests/algorithm/test_verl.py::test_verl_run_rejects_missing_store` + `tests/algorithm/test_verl.py::test_run_ppo_rejects_missing_store` | 仅保留 store/proxy/adapter 新模型；禁止 v0 fallback 和 `get_client()` |
+| 33 | 处理 `inter_process.py` TODO：实现或删除 | P1 | Execution | 已完成 | 已验证：`tests/trainer/test_trainer_init.py::test_trainer_strategy_registry_does_not_include_ipc` | 已删除未实现占位模块与注册入口 |
+| 34 | 处理 `store/sqlite.py` TODO：实现或删除 | P1 | Store | 已完成 | 已验证：`tests/store/test_store_roles.py::test_sqlite_store_todo_file_is_removed` | 删除未实现占位文件，等待后续有完整 durable store 决策 |
+| 35 | 更新 docs/examples/tests 使用新接口与新生命周期模型 | P2 | 文档/示例 | 已完成 | 已验证：`tests/test_legacy_http_stack_cleanup.py` + 相关示例 `py_compile` + `mkdocs build --strict` | 删除 legacy APO/Calc-X 示例与 CI 引用，示例和文档中的 `Trainer(n_workers=...)` 已迁移到 `n_runners` |
 | 36 | 引入 rollout execution policy，默认/阻塞/线程/进程可配 | P2 | Runner | 待开始 | 同步新增：阻塞策略切换测试 | 解决 event loop 被同步 rollout 卡住问题 |
 | 37 | 完善 `step(..., event=...)` 取消与超时协同 | P2 | Runner | 待开始 | 同步新增：step 取消/超时测试 | 如果不支持该参数，应删除 API |
 | 38 | 明确 hook 失败语义（观测型/控制型） | P2 | Runner | 待开始 | 同步新增：hook 异常传播测试 | 现在的吞掉异常行为需改为可预期策略 |
