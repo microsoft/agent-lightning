@@ -2,6 +2,7 @@
 
 """Tests for LitAgent interface boundaries."""
 
+import pytest
 from typing import Any, Dict
 
 from agentlightning.litagent import LitAgent
@@ -27,3 +28,13 @@ def test_litagent_no_reverse_references_to_runner_trainer_or_tracer() -> None:
     assert not hasattr(agent, "runner")
     assert not hasattr(agent, "get_tracer")
     assert not hasattr(agent, "tracer")
+
+
+def test_litagent_does_not_store_trained_agents_marker() -> None:
+    """Validate the deprecated `trained_agents` argument is removed."""
+    agent = _BoundaryAgent()
+
+    assert not hasattr(agent, "trained_agents")
+
+    with pytest.raises(TypeError, match="__init__"):
+        _BoundaryAgent(trained_agents="legacy")

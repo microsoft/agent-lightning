@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-import warnings
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
 
 from agentlightning.types import NamedResources, Rollout, RolloutResult, Task
 
@@ -47,25 +46,8 @@ class LitAgent(Generic[T]):
     runner infrastructure manages orchestration, tracing, and persistence.
     """
 
-    def __init__(self, *, trained_agents: Optional[str] = None) -> None:  # FIXME: str | None won't work for cli
-        """Initialize the agent instance.
-
-        Args:
-            trained_agents: Optional identifier used by legacy tooling to mark trained
-                agents.
-
-        !!! warning "Deprecated"
-            The `trained_agents` flag is deprecated. Configure `agent_match` in the adapter
-            layer instead. See [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet]
-            for more details.
-        """
-        if trained_agents is not None:
-            warnings.warn(
-                "`trained_agents` is deprecated. Configure `agent_match` in adapter instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        self.trained_agents = trained_agents
+    def __init__(self) -> None:
+        """Initialize the agent instance."""
 
     def is_async(self) -> bool:
         """Return `True` when the agent overrides any asynchronous rollout methods.
