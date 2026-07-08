@@ -161,9 +161,9 @@ class AgentLightningTrainer(RayPPOTrainer):
     Specialized PPO trainer for agent-based reinforcement learning.
 
     This trainer is designed specifically for scenarios where the model interacts with
-    external environments, tools, or APIs through an AgentLightningServer. It simplifies
-    the training loop by removing the complex conditional logic present in the original
-    RayPPOTrainer and focusing on the agent mode workflow.
+    external environments, tools, or APIs through the AgentModeDaemon and LightningStore
+    control plane. It simplifies the training loop by removing the complex conditional
+    logic present in the original RayPPOTrainer and focusing on the agent mode workflow.
 
     Key differences from RayPPOTrainer:
 

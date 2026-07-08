@@ -16,19 +16,10 @@ def _iter_code_files(root: Path):
 def test_core_runtime_does_not_import_legacy_client_server_stack() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     package_root = repo_root / "agentlightning"
-    allowed_legacy_importers = {
-        package_root / "client.py",
-        package_root / "server.py",
-        package_root / "trainer" / "legacy.py",
-        package_root / "verl" / "daemon.py",
-    }
 
     violations: list[tuple[Path, str]] = []
 
     for path in _iter_code_files(package_root):
-        if path in allowed_legacy_importers:
-            continue
-
         text = path.read_text(encoding="utf-8")
         tree = ast.parse(text)
 
@@ -53,13 +44,20 @@ def test_core_runtime_does_not_import_legacy_client_server_stack() -> None:
 
     if violations:
         lines = "\n".join(f"{path}: {msg}" for path, msg in violations)
-        raise AssertionError(
-            "Core runtime should not import legacy HTTP stack directly:\n"
-            + lines
-            + "\n"
-            + "Allowed legacy import locations are: "
-            + ", ".join(str(path) for path in sorted(allowed_legacy_importers))
-        )
+        raise AssertionError("Core runtime should not import legacy HTTP stack directly:\n" + lines)
+
+
+def test_legacy_client_server_stack_files_are_removed() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    removed_paths = [
+        repo_root / "agentlightning" / "client.py",
+        repo_root / "agentlightning" / "server.py",
+        repo_root / "agentlightning" / "trainer" / "legacy.py",
+        repo_root / "tests" / "test_client.py",
+    ]
+
+    existing = [path for path in removed_paths if path.exists()]
+    assert existing == []
 
 
 def test_examples_and_workflows_do_not_reference_removed_legacy_examples() -> None:

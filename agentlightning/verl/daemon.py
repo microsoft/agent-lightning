@@ -207,11 +207,12 @@ def _to_native(obj: Any) -> Any:
 
 class AgentModeDaemon:
     """
-    AgentModeDaemon using the AgentLightningServer SDK.
+    Agent-mode daemon backed by the LightningStore control plane.
 
-    This class manages the server lifecycle, task queuing, and results
-    retrieval, while also running a proxy server for LLM requests. It maintains
-    the original interface for compatibility with the RayPPOTrainer.
+    This class manages rollout queuing, result retrieval, and the proxy server
+    for LLM requests. It maintains the original interface expected by the
+    RayPPOTrainer integration while using the store/proxy/adapter execution
+    model.
     """
 
     def __init__(
