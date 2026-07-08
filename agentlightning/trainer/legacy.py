@@ -1,21 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import asyncio
 import logging
 import multiprocessing
-import signal
 import time
-import warnings
 from typing import Any, List, Optional, TypeVar, Union
 
-from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
+from agentlightning.adapter import TraceAdapter
 from agentlightning.algorithm import Algorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent
-from agentlightning.runner import LegacyAgentRunner
 from agentlightning.tracer.base import Tracer
-from agentlightning.execution.events import ThreadingEvent
-from agentlightning.types import AlgorithmContext, Dataset, ParallelWorkerBase
+from agentlightning.types import Dataset, ParallelWorkerBase
 
 logger = logging.getLogger(__name__)
 
@@ -141,48 +136,7 @@ class TrainerLegacy(ParallelWorkerBase):
             worker_id: The unique ID for this worker.
             is_async: A boolean indicating if the async loop should be run.
         """
-        if self.n_workers > 1:
-            import setproctitle
-
-            # Ignore Ctrl+C in worker processes; the main process handles it
-            signal.signal(signal.SIGINT, signal.SIG_IGN)
-            setproctitle.setproctitle(multiprocessing.current_process().name)
-
-        # Now we are in child processes, so we can safely set up the environment.
-        agent.set_trainer(self)  # type: ignore
-        if not isinstance(self.triplet_exporter, TracerTraceToTriplet):  # type: ignore
-            raise ValueError("triplet_exporter must be a TracerTraceToTriplet for the legacy trainer.")
-        # TODO: this should be set elsewhere
-        if agent.trained_agents:
-            self.triplet_exporter.agent_match = agent.trained_agents
-        self._initialize_worker_env(worker_id)
-
-        mode = "Async" if is_async else "Sync"
-        logger.info(f"[Worker {worker_id}] {mode} worker process started.")
-
-        num_processed = 0
-
-        try:
-            client = self.client()
-            loop = LegacyAgentRunner(
-                agent=agent,
-                client=client,
-                tracer=self.tracer,
-                triplet_exporter=self.triplet_exporter,
-                max_tasks=self.max_tasks,
-                worker_id=worker_id,
-            )
-            loop.init_worker(worker_id)  # type: ignore
-            if is_async:
-                num_processed = asyncio.run(loop.iter_async())
-            else:
-                num_processed = loop.iter()
-        except Exception:
-            logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
-        finally:
-            self._teardown_worker_env(worker_id)
-
-        return num_processed
+        raise RuntimeError("Legacy worker loop is removed in this major version.")
 
     def _initialize_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up trainer environment...")  # worker_id included in process name
@@ -245,122 +199,4 @@ class TrainerLegacy(ParallelWorkerBase):
         this legacy path requires callers to provide a server client URL; algorithm-owned client
         creation is no longer supported.
         """
-
-        if dev_backend is not None:
-            warnings.warn("dev_backend is deprecated. Use dev_data instead.")
-            if dev_data is not None:
-                raise ValueError("dev_data and dev_backend cannot be provided at the same time.")
-            dev_data = dev_backend
-
-        # Extract datasets for algorithm if available
-        train_dataset = self._extract_dataset_from_data(train_data)
-        val_dataset = self._extract_dataset_from_data(val_data) if val_data else None
-
-        # DO NOT RUN TRAINING HERE. Need to spawn the worker first.
-
-        # Determine the backend to use for client-server mode
-        backend = self._determine_backend(train_data, dev_data)
-
-        if self._dev:
-            logger.warning(f"Running in dev mode. Using dev backend: {backend}")
-        else:
-            logger.debug(f"Running in non-dev mode. Using backend: {backend}")
-
-        self.init(backend)
-
-        processes: List[multiprocessing.Process] = []
-
-        # Determine if the agent is asynchronous
-
-        mode = "asynchronous" if agent.is_async() else "synchronous"
-
-        try:
-            store = getattr(self, "store", None)
-            if store is None:
-                raise ValueError("Trainer store is not initialized. Unable to run algorithm bundle.")
-            algorithm_context = AlgorithmContext(
-                store=store,
-                event=ThreadingEvent(),
-                train_dataset=train_dataset,
-                val_dataset=val_dataset,
-            )
-            if self.n_workers == 1:
-                logger.info(f"Running with n_workers=1 ({mode} in main process).")
-
-                # Warn if algorithm is set with single worker mode
-                if self.algorithm is not None:
-                    logger.warning(
-                        "Algorithm is set but using single worker mode. Algorithm will never get the chance to run."
-                    )
-                    # Ideally the single worker should be run in a separate thread or process.
-
-                num_tasks = self._worker_main_loop(agent, 0, agent.is_async())
-                logger.info(f"Single worker mode finished. Tasks processed: {num_tasks}")
-
-                # If algorithm is provided and we have datasets, run algorithm after worker completes
-                if self.algorithm is not None and train_dataset is not None:
-                    logger.info("Running algorithm training after worker completion.")
-                    self.algorithm.run(algorithm_context)
-            else:
-                logger.info(f"Running with n_workers={self.n_workers} ({mode} multiprocessing).")
-                for i in range(self.n_workers):
-                    process_name = f"AgentLightning-Worker-{i}"
-                    p = multiprocessing.Process(
-                        target=self._worker_main_loop,
-                        args=(agent, i, agent.is_async()),
-                        daemon=self.daemon,
-                        name=process_name,
-                    )
-                    processes.append(p)
-                    logger.info(f"Starting worker process {i} (name: {process_name})...")
-                    p.start()
-
-                if self.daemon:
-                    # If algorithm is provided and we have datasets, pass them to the algorithm
-                    if self.algorithm is not None:
-                        logger.info("All workers have been spawned. Running algorithm training with provided datasets.")
-                        self.algorithm.run(algorithm_context)
-                        logger.info("Algorithm exits. Killing the workers.")
-                        self._terminate_processes(processes)
-
-                    for i, p in enumerate(processes):
-                        p.join()  # Wait for the process to complete
-                        logger.info(
-                            f"Worker process {i} (name: {p.name}, PID: {p.pid}) joined with exit code {p.exitcode}."
-                        )
-                        if p.exitcode != 0:
-                            logger.warning(
-                                f"Worker process {i} (name: {p.name}, PID: {p.pid}) exited with non-zero code: {p.exitcode}."
-                            )
-
-                    logger.info(f"All {self.n_workers} worker processes have completed.")
-                else:
-                    logger.info("All worker processes started. Main process will not wait.")
-
-                    # A hack to stop the main process from waiting for child processes to finish.
-                    time.sleep(1)  # Give workers time to start
-                    import multiprocessing.process as multiprocessing_process
-
-                    multiprocessing_process._children.clear()  # type: ignore
-
-                    if self.algorithm is not None:
-                        logger.info("Main process continues to run algorithm.")
-                        self.algorithm.run(algorithm_context)
-                        logger.info("Algorithm exits. Killing the workers.")
-                        self._terminate_processes(processes)
-
-        except KeyboardInterrupt:
-            logger.info("KeyboardInterrupt received. Killing the workers.")
-            self._terminate_processes(processes)
-            logger.info(f"Workers terminated or single worker interrupted.")
-            raise
-        except Exception:
-            logger.exception(f"Unhandled exception in fit method.")
-            self._terminate_processes(processes)
-            logger.info(f"Workers terminated or single worker interrupted.")
-            raise
-        finally:
-            if self.daemon:
-                self.teardown()
-            else:
-                logger.info("Main process exiting. Please use Trainer.kill_orphaned_processes() for cleanup.")
+        raise RuntimeError("fit_v0 is removed in this major version. Use Trainer.fit().")
