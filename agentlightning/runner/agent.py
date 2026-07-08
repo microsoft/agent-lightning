@@ -532,8 +532,9 @@ class LitAgentRunner(Runner[T_task]):
     def _start_heartbeat_thread_loop(self, store: LightningStore) -> Optional[Callable[[], Awaitable[None]]]:
         """Start a background heartbeat loop using threading.
 
-        It uses two threads: one to produce the snapshot and one to consume it,
-        to avoid either of them blocking the event loop.
+        It uses a background thread only for system snapshot collection. Store
+        updates stay on the caller's asyncio loop so store implementations do
+        not need to be safe across event loops.
 
         Args:
             store: The lightning store to update.
@@ -542,6 +543,7 @@ class LitAgentRunner(Runner[T_task]):
             An async stopper function that can be used to stop the heartbeat loop.
         """
         stop_evt = threading.Event()
+        async_stop_evt = asyncio.Event()
         lock = threading.Lock()
 
         latest_snapshot = None
@@ -571,76 +573,75 @@ class LitAgentRunner(Runner[T_task]):
                 )
                 stop_evt.wait(max(interval, 0.01))
 
-        def consumer() -> None:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        async def consumer() -> None:
             last_warned_ts = None  # Track which snapshot we've already warned about
-            try:
-                while not stop_evt.is_set():
-                    with lock:
-                        snap = latest_snapshot
-                        ts = latest_ts
+            while not async_stop_evt.is_set():
+                with lock:
+                    snap = latest_snapshot
+                    ts = latest_ts
 
-                    wait_interval = max(
-                        self._heartbeat_interval
-                        + self._random_state.uniform(-self._interval_jitter, self._interval_jitter),
-                        0.01,
-                    )
+                wait_interval = max(
+                    self._heartbeat_interval
+                    + self._random_state.uniform(-self._interval_jitter, self._interval_jitter),
+                    0.01,
+                )
 
-                    if snap is None:
-                        # probably just started
-                        logger.debug("%s Heartbeat consumer: no snapshot yet; skipping update.", self._log_prefix())
-                        stop_evt.wait(wait_interval)
-                        continue
+                if snap is None:
+                    # probably just started
+                    logger.debug("%s Heartbeat consumer: no snapshot yet; skipping update.", self._log_prefix())
+                    with suppress(asyncio.TimeoutError):
+                        await asyncio.wait_for(async_stop_evt.wait(), timeout=wait_interval)
+                    continue
 
-                    age = time.monotonic() - ts
-                    if age > stale_after:
-                        # Only warn once per stale snapshot (check if we haven't warned about this timestamp yet)
-                        if last_warned_ts != ts:
-                            logger.warning(
-                                "%s Heartbeat consumer: snapshot stale (age=%.2fs > %.2fs); skipping update.",
-                                self._log_prefix(),
-                                age,
-                                stale_after,
-                            )
-                            last_warned_ts = ts
-                        stop_evt.wait(wait_interval)
-                        continue
-
-                    try:
-                        logger.debug(f"{self._log_prefix()} Heartbeat consumer: updating worker.")
-                        loop.run_until_complete(
-                            asyncio.wait_for(
-                                store.update_worker(worker_id, snap),
-                                timeout=self._heartbeat_interval,
-                            )
-                        )
-                        logger.debug(f"{self._log_prefix()} Heartbeat consumer: worker updated.")
-                    except asyncio.TimeoutError:
+                age = time.monotonic() - ts
+                if age > stale_after:
+                    # Only warn once per stale snapshot (check if we haven't warned about this timestamp yet)
+                    if last_warned_ts != ts:
                         logger.warning(
-                            "%s Heartbeat consumer: update timed out after %.1fs.",
+                            "%s Heartbeat consumer: snapshot stale (age=%.2fs > %.2fs); skipping update.",
                             self._log_prefix(),
-                            self._heartbeat_interval,
+                            age,
+                            stale_after,
                         )
-                    except Exception:
-                        logger.warning("%s Heartbeat consumer: update failed.", self._log_prefix(), exc_info=True)
+                        last_warned_ts = ts
+                    with suppress(asyncio.TimeoutError):
+                        await asyncio.wait_for(async_stop_evt.wait(), timeout=wait_interval)
+                    continue
 
-                    stop_evt.wait(wait_interval)
-            finally:
-                with suppress(Exception):
-                    loop.stop()
-                with suppress(Exception):
-                    loop.close()
+                try:
+                    logger.debug(f"{self._log_prefix()} Heartbeat consumer: updating worker.")
+                    await asyncio.wait_for(
+                        store.update_worker(worker_id, snap),
+                        timeout=self._heartbeat_interval,
+                    )
+                    logger.debug(f"{self._log_prefix()} Heartbeat consumer: worker updated.")
+                except asyncio.CancelledError:
+                    raise
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "%s Heartbeat consumer: update timed out after %.1fs.",
+                        self._log_prefix(),
+                        self._heartbeat_interval,
+                    )
+                except Exception:
+                    logger.warning("%s Heartbeat consumer: update failed.", self._log_prefix(), exc_info=True)
+
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(async_stop_evt.wait(), timeout=wait_interval)
 
         t_prod = threading.Thread(target=producer, name=f"{worker_id}-heartbeat-producer", daemon=True)
-        t_cons = threading.Thread(target=consumer, name=f"{worker_id}-heartbeat-consumer", daemon=True)
         t_prod.start()
-        t_cons.start()
+        consumer_task = asyncio.create_task(consumer(), name=f"{worker_id}-heartbeat-consumer")
 
         async def stop() -> None:
             stop_evt.set()
-            await asyncio.to_thread(t_prod.join)
-            await asyncio.to_thread(t_cons.join)
+            async_stop_evt.set()
+            with suppress(asyncio.CancelledError):
+                await consumer_task
+            join_timeout = max(self._heartbeat_interval + self._interval_jitter, 0.01)
+            await asyncio.to_thread(t_prod.join, join_timeout)
+            if t_prod.is_alive():
+                logger.warning("%s Heartbeat producer did not stop within %.2fs.", self._log_prefix(), join_timeout)
 
         return stop
 

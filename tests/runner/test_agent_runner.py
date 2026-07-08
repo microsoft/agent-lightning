@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
@@ -174,6 +175,22 @@ class RecordingStore(InMemoryLightningStore):
     ) -> Worker:
         payload = None if isinstance(heartbeat_stats, Unset) else heartbeat_stats
         self.worker_updates.append((worker_id, payload))
+        return await super().update_worker(worker_id, heartbeat_stats=heartbeat_stats)
+
+
+class ThreadRecordingStore(RecordingStore):
+    """Recording store that tracks which thread performs heartbeat writes."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.update_thread_ids: List[int] = []
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        self.update_thread_ids.append(threading.get_ident())
         return await super().update_worker(worker_id, heartbeat_stats=heartbeat_stats)
 
 
@@ -1398,6 +1415,71 @@ async def test_thread_heartbeat_loop_runs_until_stopped(monkeypatch: pytest.Monk
     assert len(store.worker_updates) >= 1
     assert all(stats == snapshot for _, stats in store.worker_updates if stats is not None)
     assert include_flags and all(include_flags)
+
+
+@pytest.mark.asyncio
+async def test_thread_heartbeat_updates_store_on_event_loop_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"cpu_pct": 13.0}
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
+
+    main_thread_id = threading.get_ident()
+    store = ThreadRecordingStore()
+    runner = LitAgentRunner[Any](
+        tracer=DummyTracer(),
+        heartbeat_interval=0.02,
+        heartbeat_launch_mode="thread",
+    )
+    agent = HeartbeatAgent()
+    runner.init(agent)
+    runner.init_worker(worker_id=0, store=store)
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        await asyncio.sleep(0.12)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    assert store.update_thread_ids
+    assert set(store.update_thread_ids) == {main_thread_id}
+    assert all(stats == snapshot for _, stats in store.worker_updates if stats is not None)
+
+
+@pytest.mark.asyncio
+async def test_thread_heartbeat_stop_does_not_wait_for_blocked_snapshot(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    snapshot_entered = threading.Event()
+    release_snapshot = threading.Event()
+
+    def blocked_system_snapshot(_include_gpu: bool = False) -> Dict[str, Any]:
+        snapshot_entered.set()
+        release_snapshot.wait(timeout=5.0)
+        return {"cpu_pct": 91.0}
+
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", blocked_system_snapshot)
+
+    caplog.set_level(logging.WARNING)
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.02,
+        heartbeat_launch_mode="thread",
+    )
+    runner._interval_jitter = 0.0  # pyright: ignore[reportPrivateUsage]
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        assert await asyncio.to_thread(snapshot_entered.wait, 1.0)
+        started = time.monotonic()
+        await asyncio.wait_for(stop_heartbeat(), timeout=0.5)
+        elapsed = time.monotonic() - started
+    finally:
+        release_snapshot.set()
+        teardown_runner(runner)
+
+    assert elapsed < 0.5
+    assert "Heartbeat producer did not stop" in caplog.text
 
 
 @pytest.mark.asyncio
