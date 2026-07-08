@@ -127,21 +127,21 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     async def _execute_algorithm(
         self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
     ) -> None:
-        wrapper_store: LightningStore | None = None
-        if self.managed_store:
-            logger.info("Starting LightningStore server on %s:%s", self.server_host, self.server_port)
-            wrapper_store = LightningStoreServer(store, host=self.server_host, port=self.server_port)
-            server_started = False
-        else:
-            wrapper_store = store
-            server_started = False
+        facade_store: LightningStore = store
+        server: LightningStoreServer | None = None
+        server_started = False
+        client_store: LightningStoreClient | None = None
 
         try:
-            if self.managed_store and isinstance(wrapper_store, LightningStoreServer):
-                await wrapper_store.start()
+            if self.managed_store:
+                logger.info("Starting LightningStore server on %s:%s", self.server_host, self.server_port)
+                server = LightningStoreServer(store, host=self.server_host, port=self.server_port)
+                await server.start()
                 server_started = True
-                logger.debug("Algorithm bundle starting against endpoint %s", wrapper_store.endpoint)
-            await algorithm(wrapper_store, stop_evt)
+                logger.debug("Algorithm bundle starting against endpoint %s", server.endpoint)
+                client_store = LightningStoreClient(server.endpoint)
+                facade_store = client_store
+            await algorithm(facade_store, stop_evt)
             logger.debug("Algorithm bundle completed successfully")
         except asyncio.CancelledError:
             logger.info("Algorithm received CancelledError; signaling stop event")
@@ -156,9 +156,17 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             stop_evt.set()
             raise
         finally:
-            if self.managed_store and isinstance(wrapper_store, LightningStoreServer) and server_started:
+            if self.managed_store and client_store is not None:
                 try:
-                    await wrapper_store.stop()
+                    await client_store.close()
+                except Exception:
+                    logger.exception("Error closing LightningStore client for algorithm")
+                else:
+                    logger.debug("Algorithm closed LightningStore client")
+
+            if self.managed_store and server is not None and server_started:
+                try:
+                    await server.stop()
                 except Exception:
                     logger.exception("Error stopping LightningStore server")
                 else:

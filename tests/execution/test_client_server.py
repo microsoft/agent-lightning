@@ -157,6 +157,7 @@ def test_execute_algorithm_managed_store_starts_server(
     monkeypatch: pytest.MonkeyPatch, store: DummyLightningStore
 ) -> None:
     created: list["RecordingServer"] = []
+    created_clients: list["RecordingClient"] = []
 
     class RecordingServer(LightningStore):  # type: ignore[misc]
         def __init__(self, wrapped: LightningStore, host: str, port: int) -> None:
@@ -174,7 +175,17 @@ def test_execute_algorithm_managed_store_starts_server(
         async def stop(self) -> None:
             self.stopped = True
 
+    class RecordingClient(LightningStore):
+        def __init__(self, url: str) -> None:
+            self.url = url
+            self.closed = False
+            created_clients.append(self)
+
+        async def close(self) -> None:
+            self.closed = True
+
     monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreServer", RecordingServer)
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreClient", RecordingClient)
 
     strat = ClientServerExecutionStrategy(
         role="algorithm",
@@ -196,7 +207,10 @@ def test_execute_algorithm_managed_store_starts_server(
     assert server.wrapped is store
     assert server.started is True
     assert server.stopped is True
-    assert seen_store and isinstance(seen_store[0], RecordingServer)
+    assert seen_store and isinstance(seen_store[0], RecordingClient)
+    assert len(created_clients) == 1
+    assert created_clients[0].url == "http://127.0.0.1:8123"
+    assert created_clients[0].closed is True
 
 
 def test_execute_algorithm_unmanaged_uses_provided_store(
@@ -300,7 +314,7 @@ async def _noop_algorithm(store: LightningStore, event: ExecutionEvent) -> None:
 
 
 async def _algo_calls_store_enqueue(store: LightningStore, event: ExecutionEvent) -> None:
-    # Calls a delegated method on the server wrapper; real server is running.
+    # Calls a method through the store facade exposed to the bundle.
     await store.enqueue_rollout(input={"x": 1})
     await asyncio.sleep(0)
     assert not event.is_set()
@@ -1166,7 +1180,7 @@ def test_subprocess_spawned_in_algorithm_visible_to_all(main_process: str) -> No
     """
     Test that when the algorithm spawns a subprocess that writes to the store,
     those writes are visible to:
-    - The algorithm itself (via LightningStoreServer auto-delegation)
+    - The algorithm itself (via LightningStoreClient facade)
     - The runner processes (via HTTP client)
     - The main pytest process (only when main_process='algorithm')
 
