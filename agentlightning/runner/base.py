@@ -118,18 +118,19 @@ class Runner(ParallelWorkerBase, Generic[T_task]):
             worker_id: Override the worker identifier used during setup. Defaults
                 to `0`.
         """
+        resolved_worker_id: int = 0 if worker_id is None else worker_id
         _initialized: bool = False
         _worker_initialized: bool = False
         try:
             self.init(agent=agent, hooks=hooks)
             _initialized = True
-            self.init_worker(worker_id=0, store=store)
+            self.init_worker(worker_id=resolved_worker_id, store=store)
             _worker_initialized = True
             yield self
         finally:
             try:
                 if _worker_initialized:
-                    self.teardown_worker(worker_id=worker_id if worker_id is not None else 0)
+                    self.teardown_worker(worker_id=resolved_worker_id)
             except Exception:
                 logger.error("Error during runner worker teardown", exc_info=True)
 

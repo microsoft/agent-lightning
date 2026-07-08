@@ -36,6 +36,8 @@ class DummyTracer(Tracer):
         self.init_worker_called = False
         self.teardown_called = False
         self.teardown_worker_called = False
+        self.init_worker_id: Optional[int] = None
+        self.teardown_worker_id: Optional[int] = None
 
     def init(self, *args: Any, **kwargs: Any) -> None:
         self.init_called = True
@@ -43,6 +45,7 @@ class DummyTracer(Tracer):
 
     def init_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
         self.init_worker_called = True
+        self.init_worker_id = worker_id
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         self.teardown_called = True
@@ -50,6 +53,7 @@ class DummyTracer(Tracer):
 
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
         self.teardown_worker_called = True
+        self.teardown_worker_id = worker_id
 
     def get_last_trace(self) -> List[Span]:
         return list(self._last_trace)
@@ -143,6 +147,20 @@ async def test_run_context_with_hooks() -> None:
     with runner.run_context(agent=agent, store=store, hooks=[hook]):
         # Verify hooks were registered
         assert runner._hooks == [hook]  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.asyncio
+async def test_run_context_uses_passed_worker_id() -> None:
+    tracer = DummyTracer()
+    agent = DummyAgent()
+    store = InMemoryLightningStore()
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
+
+    with runner.run_context(agent=agent, store=store, worker_id=7):
+        assert runner.worker_id == 7
+
+    assert tracer.init_worker_id == 7
+    assert tracer.teardown_worker_id == 7
 
 
 @pytest.mark.asyncio
