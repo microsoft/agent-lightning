@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from agentlightning.adapter.triplet import RewardMatchPolicy, TracerTraceToTriplet, TraceTree
+from agentlightning.semconv import AGL_OPERATION, AGL_REWARD, LightningSpanAttributes
 from agentlightning.types import Span
 from agentlightning.types.tracer import SpanNames
 from agentlightning.utils.otel import filter_and_unflatten_attributes
@@ -145,7 +146,9 @@ def make_llm_span(
 
 def reward_attributes(value: float) -> Dict[str, Any]:
     return {
-        "agentops.task.output": json.dumps({"type": "reward", "value": value}),
+        LightningSpanAttributes.OPERATION_NAME.value: AGL_REWARD,
+        f"{LightningSpanAttributes.REWARD.value}.0.name": "trajectory",
+        f"{LightningSpanAttributes.REWARD.value}.0.value": value,
     }
 
 
@@ -304,7 +307,7 @@ def test_trace_tree_to_trajectory_skips_empty_and_dedupes_llm_calls():
     )
     reward = make_span(
         "reward",
-        "agent.reward",
+        AGL_OPERATION,
         parent_id="agent",
         start_time=6.0,
         end_time=6.1,
@@ -357,7 +360,7 @@ def test_tracer_trace_to_triplet_repair_required_for_agent_filter():
     )
     reward = make_span(
         "reward",
-        "agent.reward",
+        AGL_OPERATION,
         parent_id="agent",
         start_time=4.0,
         end_time=4.5,
@@ -414,7 +417,7 @@ def test_tracer_trace_to_triplet_dedup_and_skip_empty_token_spans():
     )
     reward = make_span(
         "reward",
-        "agent.reward",
+        AGL_OPERATION,
         parent_id="agent",
         start_time=6.0,
         end_time=6.5,
@@ -510,7 +513,7 @@ def test_tracer_trace_to_triplet_handles_multimodal_payloads():
     )
     reward = make_span(
         "reward",
-        "agent.reward",
+        AGL_OPERATION,
         parent_id="agent",
         start_time=12.0,
         end_time=12.5,
@@ -627,7 +630,7 @@ def test_tracer_trace_to_triplet_reward_match_first_sibling():
     )
     reward = make_span(
         "reward",
-        "agent.reward",
+        AGL_OPERATION,
         parent_id="agent",
         start_time=3.5,
         end_time=3.6,

@@ -21,6 +21,35 @@ from .base import TraceAdapter
 logger = logging.getLogger(__name__)
 
 
+TRACER_TOKEN_IDS_KEYS = {
+    "prompt": ("prompt_token_ids",),
+    "response": ("response_token_ids",),
+}
+
+TRACER_RESPONSE_ID_KEYS = ("gen_ai.response.id", f"{LightningSpanAttributes.OPERATION_OUTPUT.value}.id")
+
+TRACER_REQUEST_KEY_PREFIXES = ("gen_ai.request", LightningSpanAttributes.OPERATION_INPUT.value)
+
+TRACER_RESPONSE_KEY_PREFIXES = ("gen_ai.response", LightningSpanAttributes.OPERATION_OUTPUT.value)
+
+TRACER_PROMPT_KEY_PREFIXES = ("gen_ai.prompt", f"{LightningSpanAttributes.OPERATION_INPUT.value}.messages")
+
+TRACER_COMPLETION_KEY_PREFIXES = ("gen_ai.completion", f"{LightningSpanAttributes.OPERATION_OUTPUT.value}.choices")
+
+LLM_PROXY_RAW_TOKEN_KEYS = {
+    "prompt": ("llm.hosted_vllm.prompt_token_ids",),
+    "response_choices": ("llm.hosted_vllm.choices",),
+    "response_tokens": ("llm.hosted_vllm.response_token_ids",),
+}
+
+LLM_PROXY_OPENAI_TOKEN_KEYS = {
+    "prompt": ("prompt_token_ids",),
+    "response": ("response_token_ids",),
+}
+
+LLM_PROXY_RESPONSE_ID_KEYS = ("gen_ai.response.id", "llm.hosted_vllm.id")
+
+
 def _attributes_get_multiple(attributes: Dict[str, Any], keys: List[str]) -> Optional[str]:
     """Get a string from the attributes, if present.
     If there are multiple matches, the first one is returned.
@@ -636,37 +665,27 @@ class TraceTree:
         """
         prompt_token_ids = (
             _attributes_get_ids_multiple(
-                span.attributes,
-                [
-                    "prompt_token_ids",
-                    "agentlightning.operation.output.prompt_token_ids",  # Weave tracer
-                ],
+                span.attributes, list(TRACER_TOKEN_IDS_KEYS["prompt"])
             )
             or []
         )
         response_token_ids = (
             _attributes_get_ids_multiple(
-                span.attributes,
-                [
-                    "response_token_ids",
-                    "agentlightning.operation.output.response_token_ids.0",  # Weave tracer
-                    "agentlightning.operation.output.choices.0.token_ids",  # Weave tracer with newer vLLM
-                    "agentlightning.operation.output.choices.0.provider_specific_fields.token_ids",  # new vLLM + new OpenAI client SDK
-                ],
+                span.attributes, list(TRACER_TOKEN_IDS_KEYS["response"])
             )
             or []
         )
 
         response_id = _attributes_get_multiple(
-            span.attributes, ["gen_ai.response.id", "agentlightning.operation.output.id"]
+            span.attributes, list(TRACER_RESPONSE_ID_KEYS)
         )
         request_metadata = _attributes_unflatten_multiple(
-            span.attributes, ["gen_ai.request", "agentlightning.operation.input"]
+            span.attributes, list(TRACER_REQUEST_KEY_PREFIXES)
         )
         response_metadata = _attributes_unflatten_multiple(
-            span.attributes, ["gen_ai.response", "agentlightning.operation.output"]
+            span.attributes, list(TRACER_RESPONSE_KEY_PREFIXES)
         )
-        # Special handling for Weave tracer: messages are handled separately
+        # Special handling for operation output messages: messages are handled separately.
         if isinstance(request_metadata, dict):
             request_metadata.pop("messages", None)
         if isinstance(response_metadata, dict):
@@ -675,10 +694,10 @@ class TraceTree:
             response_metadata.pop("response_token_ids", None)
 
         prompt_raw_content = _attributes_unflatten_multiple(
-            span.attributes, ["gen_ai.prompt", "agentlightning.operation.input.messages"]
+            span.attributes, list(TRACER_PROMPT_KEY_PREFIXES)
         )
         completion_raw_content = _attributes_unflatten_multiple(
-            span.attributes, ["gen_ai.completion", "agentlightning.operation.output.choices"]
+            span.attributes, list(TRACER_COMPLETION_KEY_PREFIXES)
         )
         image_urls = self.extract_prompt_image_urls(prompt_raw_content)
         prompt_payload = {"token_ids": prompt_token_ids, "raw_content": prompt_raw_content, "image_urls": image_urls}
@@ -870,7 +889,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
 
     1. Sort spans by `(sequence_id, start_time)` for deterministic processing.
     2. Extract token identifiers from `litellm_request` or `raw_gen_ai_request` spans.
-    3. Extract rewards from spans exposing AgentOps-style payloads or explicit reward spans.
+    3. Extract rewards from AGL reward spans.
     4. Match each reward to the most recent unmatched LLM call whose sequence is smaller.
     """
 
@@ -885,23 +904,18 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         return v
 
     def _extract_tokens_from_raw(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
-        """Extract token ids from raw_gen_ai_request attributes.
-
-        - llm.hosted_vllm.prompt_token_ids: string -> List[int]
-        - llm.hosted_vllm.response_token_ids: string -> List[List[int]] -> take first
-        - llm.hosted_vllm.choices: string -> [{'token_ids': [...]}] -> take first
-        """
+        """Extract token ids from `raw_gen_ai_request` attributes."""
         prompt_ids: List[int] = []
         resp_ids: List[int] = []
 
         # prompt
-        p = attrs.get("llm.hosted_vllm.prompt_token_ids")
+        p = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["prompt"][0])
         p = self._literal_eval_maybe(p)
         if isinstance(p, list) and all(isinstance(x, int) for x in p):  # type: ignore
             prompt_ids = cast(List[int], p)
 
         # response preferred path
-        r = attrs.get("llm.hosted_vllm.response_token_ids")
+        r = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["response_tokens"][0])
         r = self._literal_eval_maybe(r)
         if isinstance(r, list) and len(r) > 0 and isinstance(r[0], list):  # type: ignore
             first = cast(List[Any], r[0])
@@ -910,7 +924,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
 
         # fallback via choices
         if not resp_ids:
-            choices = attrs.get("llm.hosted_vllm.choices")
+            choices = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["response_choices"][0])
             choices = self._literal_eval_maybe(choices)
             if isinstance(choices, list) and choices:
                 cand = cast(Any, choices[0])
@@ -922,8 +936,8 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         return prompt_ids, resp_ids
 
     def _extract_tokens_from_openai(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
-        prompt_ids = cast(Any, attrs.get("prompt_token_ids") or [])
-        resp_ids = cast(Any, attrs.get("response_token_ids") or [])
+        prompt_ids = cast(Any, attrs.get(LLM_PROXY_OPENAI_TOKEN_KEYS["prompt"][0]) or [])
+        resp_ids = cast(Any, attrs.get(LLM_PROXY_OPENAI_TOKEN_KEYS["response"][0]) or [])
         prompt_ids = self._literal_eval_maybe(prompt_ids)
         resp_ids = self._literal_eval_maybe(resp_ids)
         if not (isinstance(prompt_ids, list) and all(isinstance(x, int) for x in prompt_ids)):  # type: ignore
@@ -933,12 +947,11 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         return cast(List[int], prompt_ids), cast(List[int], resp_ids)
 
     def _maybe_reward_value(self, span: Span) -> Optional[float]:
-        """Parse reward from typical AgentOps payloads or explicit reward spans."""
+        """Parse reward from AGL reward spans."""
         return get_reward_value(span)
 
     def _request_id_from_attrs(self, attrs: Dict[str, Any]) -> Optional[str]:
-        # Prefer OpenAI-like id if present, else proxy raw id.
-        rid = attrs.get("gen_ai.response.id") or attrs.get("llm.hosted_vllm.id")
+        rid = _attributes_get_multiple(attrs, list(LLM_PROXY_RESPONSE_ID_KEYS))
         return str(rid) if isinstance(rid, str) and rid else None
 
     def adapt(self, source: Sequence[Span], /) -> List[Triplet]:  # type: ignore

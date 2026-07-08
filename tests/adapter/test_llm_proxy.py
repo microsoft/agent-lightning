@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import json
 from typing import Any, Dict, List
 
 from agentlightning.adapter import LlmProxyTraceToTriplet
+from agentlightning.semconv import AGL_OPERATION, AGL_REWARD, LightningSpanAttributes
 from agentlightning.types import Span
 
 
@@ -48,12 +48,11 @@ def _raw_attrs_with_tokens(
     }
 
 
-def _agentops_reward_attrs(value: float):
-    # As in the sample: agentops.task.output is often a JSON-encoded dict
+def _agl_reward_attrs(value: float):
     return {
-        "agentops.task.output": json.dumps({"type": "reward", "value": value}),
-        "agentops.span.kind": "task",
-        "operation.name": "agentops_reward_operation",
+        LightningSpanAttributes.OPERATION_NAME.value: AGL_REWARD,
+        f"{LightningSpanAttributes.REWARD.value}.0.name": "trajectory",
+        f"{LightningSpanAttributes.REWARD.value}.0.value": value,
     }
 
 
@@ -91,11 +90,11 @@ def test_sequence_matching_assigns_reward_to_latest_prior_llm():
         ),
         _mk_span(
             span_id="s-reward-6",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=6,
             start=3000,
             end=3001,
-            attrs=_agentops_reward_attrs(0.0),
+            attrs=_agl_reward_attrs(0.0),
         ),
     ]
 
@@ -143,11 +142,11 @@ def test_deduplicates_same_response_id_from_raw_spans():
         ),
         _mk_span(
             span_id="reward-3",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=3,
             start=200,
             end=201,
-            attrs=_agentops_reward_attrs(1.0),
+            attrs=_agl_reward_attrs(1.0),
         ),
     ]
 
@@ -180,11 +179,11 @@ def test_ignores_litellm_request_without_token_ids():
         ),
         _mk_span(
             span_id="reward-2",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=2,
             start=30,
             end=31,
-            attrs=_agentops_reward_attrs(0.5),
+            attrs=_agl_reward_attrs(0.5),
         ),
     ]
 
@@ -229,11 +228,11 @@ def test_rewards_before_or_equal_sequence_are_skipped():
     spans = [
         _mk_span(
             span_id="reward-early",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=1,
             start=10,
             end=11,
-            attrs=_agentops_reward_attrs(1.0),
+            attrs=_agl_reward_attrs(1.0),
         ),
         _mk_span(
             span_id="llm-call",
@@ -245,19 +244,19 @@ def test_rewards_before_or_equal_sequence_are_skipped():
         ),
         _mk_span(
             span_id="reward-same-seq",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=2,
             start=22,
             end=23,
-            attrs=_agentops_reward_attrs(2.0),
+            attrs=_agl_reward_attrs(2.0),
         ),
         _mk_span(
             span_id="reward-late",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=3,
             start=30,
             end=31,
-            attrs=_agentops_reward_attrs(3.5),
+            attrs=_agl_reward_attrs(3.5),
         ),
     ]
 
@@ -307,27 +306,27 @@ def test_multiple_rewards_attach_to_latest_unmatched_llm_calls():
         ),
         _mk_span(
             span_id="reward-1",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=5,
             start=200,
             end=201,
-            attrs=_agentops_reward_attrs(0.1),
+            attrs=_agl_reward_attrs(0.1),
         ),
         _mk_span(
             span_id="reward-2",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=7,
             start=210,
             end=211,
-            attrs=_agentops_reward_attrs(0.2),
+            attrs=_agl_reward_attrs(0.2),
         ),
         _mk_span(
             span_id="reward-3",
-            name="agentops_reward_operation.task",
+            name=AGL_OPERATION,
             seq=8,
             start=220,
             end=221,
-            attrs=_agentops_reward_attrs(0.3),
+            attrs=_agl_reward_attrs(0.3),
         ),
     ]
 
