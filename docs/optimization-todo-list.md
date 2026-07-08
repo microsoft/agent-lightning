@@ -34,7 +34,7 @@
 | 23 | 删除 Tracer `trace_context(store=...)` 参数 | P1 | Tracer | 已完成 | 已验证：`tests/tracer/test_agentops.py::test_agentops_trace_with_store_disable` + `tests/tracer/test_agentops.py::test_agentops_trace_with_store_enable` | `store` 通过 `init_worker(worker_id, store)` 或 `SpanWriter` 注入 |
 | 24 | 删除 `OtelTracer` 私有 `_trace_context_sync()` | P1 | Tracer | 已完成 | 已验证：`tests/tracer/test_agentops.py::test_agentops_trace_with_store_disable`（无同步入口路径） + `tests/tracer/test_otel.py::test_context_managers_clear_state[store-no-otlp]`（保持行为） | `_trace_context_sync()` 不再作为公开依赖；同步追踪行为通过 `trace_context` 路径验证 |
 | 25 | 删除 `trace_run` / `trace_run_async` deprecated wrappers | P1 | Tracer | 已完成 | 已验证：`tests/tracer/test_dummy.py::test_tracer_core_has_no_trace_run_wrappers`（无兼容 wrapper） | 生命周期由 Runner 或显式 `trace_context` 管理 |
-| 26 | 统一 `Store.query_rollouts` 参数为 `status_in`/`rollout_id_in` | P1 | Store | 待开始 | 同步更新：Store API 契约测试 | 删除 `status=`、`rollout_ids=` 旧参数分支 |
+| 26 | 统一 `Store.query_rollouts` 参数为 `status_in`/`rollout_id_in` | P1 | Store | 已完成 | 已通过：`tests/store/test_core.py`, `tests/store/test_threading.py`, `tests/store/test_client_server.py`（query 过滤）, `tests/store/test_restful.py`（兼容过滤） | 删除 `status=`、`rollout_ids=` 旧参数分支 |
 | 27 | 重构 Store 层级：`LightningStoreServer` 不再实现业务 `Store` | P1 | Store | 待开始 | 同步新增：类型/职责断言测试 | server 为 has-a lifecycle container；client/threaded/local 为 Store adapters |
 | 28 | 修复 `ClientServerExecutionStrategy` 传递纯 `LightningStore` facade | P1 | Execution/Store | 待开始 | 同步新增：bundle 传参测试 | server 模式下传给 algorithm/runner/proxy 的必须是 `LightningStoreClient` facade |
 | 29 | 删除 legacy client/server 协议栈 | P1 | 网络 | 待开始 | 同步更新：导出、API 与 runtime 路径扫描 | 远程运行统一走 `LightningStoreServer` + `LightningStoreClient` |

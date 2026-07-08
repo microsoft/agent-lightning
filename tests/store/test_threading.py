@@ -207,7 +207,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
     )
     assert await threaded_store.dequeue_rollout() == attempted_rollout
     assert await threaded_store.start_attempt(rollout_id) == attempted_rollout
-    assert await threaded_store.query_rollouts(status=["preparing", "running"], rollout_ids=[rollout_id]) == [
+    assert await threaded_store.query_rollouts(status_in=["preparing", "running"], rollout_id_in=[rollout_id]) == [
         base_rollout
     ]
     assert await threaded_store.query_attempts(rollout_id) == [base_attempt]

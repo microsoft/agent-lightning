@@ -1114,8 +1114,6 @@ class LightningStoreServer(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-        status: Optional[Sequence[RolloutStatus]] = None,
-        rollout_ids: Optional[Sequence[str]] = None,
     ) -> PaginatedResult[Union[AttemptedRollout, Rollout]]:
         return await self._call_store_method(
             "query_rollouts",
@@ -1127,8 +1125,6 @@ class LightningStoreServer(LightningStore):
             sort_order=sort_order,
             limit=limit,
             offset=offset,
-            status=status,
-            rollout_ids=rollout_ids,
         )
 
     async def query_attempts(
@@ -1700,11 +1696,9 @@ class LightningStoreClient(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-        status: Optional[Sequence[RolloutStatus]] = None,
-        rollout_ids: Optional[Sequence[str]] = None,
     ) -> PaginatedResult[Union[AttemptedRollout, Rollout]]:
-        resolved_status = status_in if status_in is not None else status
-        resolved_rollout_ids = rollout_id_in if rollout_id_in is not None else rollout_ids
+        resolved_status = status_in
+        resolved_rollout_ids = rollout_id_in
 
         payload: Dict[str, Any] = {
             "limit": limit,

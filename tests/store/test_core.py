@@ -149,7 +149,7 @@ async def test_add_rollout_initializes_attempt(store_fixture: LightningStore) ->
     assert attempt_rollout.attempt.sequence_id == 1
     assert attempt_rollout.attempt.status == "preparing"
 
-    stored = await store_fixture.query_rollouts(status=["preparing"])
+    stored = await store_fixture.query_rollouts(status_in=["preparing"])
     assert len(stored) == 1
     assert stored[0].rollout_id == attempt_rollout.rollout_id
     assert stored[0].resources_id == "res-add"
@@ -198,20 +198,20 @@ async def test_query_rollouts_by_status(store_fixture: LightningStore) -> None:
     all_rollouts = await store_fixture.query_rollouts()
     assert len(all_rollouts) == 3
 
-    queuing = await store_fixture.query_rollouts(status=["queuing"])
+    queuing = await store_fixture.query_rollouts(status_in=["queuing"])
     assert len(queuing) == 1
     assert queuing[0].rollout_id == r3.rollout_id
 
-    preparing = await store_fixture.query_rollouts(status=["preparing"])
+    preparing = await store_fixture.query_rollouts(status_in=["preparing"])
     assert len(preparing) == 1
     assert preparing[0].rollout_id == r1.rollout_id
 
-    finished = await store_fixture.query_rollouts(status=["failed", "succeeded"])
+    finished = await store_fixture.query_rollouts(status_in=["failed", "succeeded"])
     assert len(finished) == 1
     assert finished[0].rollout_id == r2.rollout_id
 
     # Empty status list
-    none = await store_fixture.query_rollouts(status=[])
+    none = await store_fixture.query_rollouts(status_in=[])
     assert len(none) == 0
 
 
@@ -221,7 +221,7 @@ async def test_query_rollouts_returns_latest_attempt(store_fixture: LightningSto
     attempted = await store_fixture.start_rollout(input={"sample": "latest"})
     latest_attempt = await store_fixture.start_attempt(attempted.rollout_id)
 
-    results = await store_fixture.query_rollouts(rollout_ids=[attempted.rollout_id])
+    results = await store_fixture.query_rollouts(rollout_id_in=[attempted.rollout_id])
     assert len(results) == 1
 
     retrieved = results[0]
@@ -261,30 +261,6 @@ async def test_query_rollouts_supports_new_filters(store_fixture: LightningStore
 
 
 @pytest.mark.asyncio
-async def test_query_rollouts_status_in_takes_precedence(store_fixture: LightningStore) -> None:
-    """status_in should override the legacy status parameter when both are provided."""
-    failed = await store_fixture.enqueue_rollout(input={"kind": "failed"})
-    pending = await store_fixture.enqueue_rollout(input={"kind": "pending"})
-
-    await store_fixture.update_rollout(rollout_id=failed.rollout_id, status="failed")
-
-    results = await store_fixture.query_rollouts(status=["queuing"], status_in=["failed"])
-    assert [rollout.rollout_id for rollout in results] == [failed.rollout_id]
-
-    legacy = await store_fixture.query_rollouts(status=["queuing"])
-    assert any(rollout.rollout_id == pending.rollout_id for rollout in legacy)
-
-
-@pytest.mark.asyncio
-async def test_query_rollouts_rollout_id_in_takes_precedence(store_fixture: LightningStore) -> None:
-    """rollout_id_in should override the legacy rollout_ids parameter."""
-    keep = await store_fixture.enqueue_rollout(input={"kind": "keep"})
-    ignored = await store_fixture.enqueue_rollout(input={"kind": "ignored"})
-
-    results = await store_fixture.query_rollouts(rollout_ids=[ignored.rollout_id], rollout_id_in=[keep.rollout_id])
-    assert [rollout.rollout_id for rollout in results] == [keep.rollout_id]
-
-
 @pytest.mark.asyncio
 async def test_query_rollouts_filter_logic_controls_contains_behavior(store_fixture: LightningStore) -> None:
     """Changing filter_logic should alter how status and substring filters are combined."""
@@ -491,18 +467,18 @@ async def test_query_rollouts_by_rollout_ids(store_fixture: LightningStore) -> N
     r3 = await store_fixture.enqueue_rollout(input={"id": 3})
 
     # Query by specific IDs
-    selected = await store_fixture.query_rollouts(rollout_ids=[r1.rollout_id, r3.rollout_id])
+    selected = await store_fixture.query_rollouts(rollout_id_in=[r1.rollout_id, r3.rollout_id])
     assert len(selected) == 2
     selected_ids = {r.rollout_id for r in selected}
     assert selected_ids == {r1.rollout_id, r3.rollout_id}
 
     # Query by single ID
-    single = await store_fixture.query_rollouts(rollout_ids=[r2.rollout_id])
+    single = await store_fixture.query_rollouts(rollout_id_in=[r2.rollout_id])
     assert len(single) == 1
     assert single[0].rollout_id == r2.rollout_id
 
     # Query by non-existent ID
-    none = await store_fixture.query_rollouts(rollout_ids=["nonexistent"])
+    none = await store_fixture.query_rollouts(rollout_id_in=["nonexistent"])
     assert len(none) == 0
 
     # Combine with status filter
@@ -510,7 +486,7 @@ async def test_query_rollouts_by_rollout_ids(store_fixture: LightningStore) -> N
     await store_fixture.update_rollout(rollout_id=r2.rollout_id, status="failed")
 
     filtered = await store_fixture.query_rollouts(
-        rollout_ids=[r1.rollout_id, r2.rollout_id, r3.rollout_id], status=["succeeded", "queuing"]
+        rollout_id_in=[r1.rollout_id, r2.rollout_id, r3.rollout_id], status_in=["succeeded", "queuing"]
     )
     assert len(filtered) == 2
     filtered_ids = {r.rollout_id for r in filtered}
@@ -2069,7 +2045,7 @@ async def test_span_triggers_status_transition(store_fixture: LightningStore, mo
     assert popped.status == "preparing"
 
     # Verify status in store
-    rollouts = await store_fixture.query_rollouts(status=["preparing"])
+    rollouts = await store_fixture.query_rollouts(status_in=["preparing"])
     assert len(rollouts) == 1
 
     # Get the attempt
@@ -2080,7 +2056,7 @@ async def test_span_triggers_status_transition(store_fixture: LightningStore, mo
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
 
     # Status should transition to running
-    rollouts = await store_fixture.query_rollouts(status=["running"])
+    rollouts = await store_fixture.query_rollouts(status_in=["running"])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == rollout.rollout_id
 
@@ -2784,7 +2760,7 @@ async def test_rollout_retry_lifecycle_updates_statuses(
     await store_fixture.add_otel_span(rollout.rollout_id, first_attempt.attempt_id, mock_readable_span)
 
     # Status should reflect running state after span is recorded
-    running_rollout = await store_fixture.query_rollouts(status=["running"])
+    running_rollout = await store_fixture.query_rollouts(status_in=["running"])
     assert running_rollout and running_rollout[0].rollout_id == rollout.rollout_id
 
     running_attempts = await store_fixture.query_attempts(rollout.rollout_id)
@@ -2825,7 +2801,7 @@ async def test_rollout_retry_lifecycle_updates_statuses(
     )
     await store_fixture.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
 
-    final_rollout = await store_fixture.query_rollouts(status=["succeeded"])
+    final_rollout = await store_fixture.query_rollouts(status_in=["succeeded"])
     assert final_rollout and final_rollout[0].rollout_id == rollout.rollout_id
 
     final_attempts = await store_fixture.query_attempts(rollout.rollout_id)
@@ -3060,7 +3036,7 @@ async def test_healthcheck_timeout_behavior(store_fixture: LightningStore, mock_
     await store_fixture.add_otel_span(rollout.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
 
     # Verify it's running
-    running_rollouts = await store_fixture.query_rollouts(status=["running"])
+    running_rollouts = await store_fixture.query_rollouts(status_in=["running"])
     assert len(running_rollouts) == 1
 
     # Wait for timeout to occur
@@ -3139,7 +3115,7 @@ async def test_full_lifecycle_success(store_fixture: LightningStore, mock_readab
     assert span is not None and span.sequence_id == 1
 
     # Check status transitions
-    rollouts = await store_fixture.query_rollouts(status=["running"])
+    rollouts = await store_fixture.query_rollouts(status_in=["running"])
     assert len(rollouts) == 1
 
     attempts = await store_fixture.query_attempts(rollout.rollout_id)

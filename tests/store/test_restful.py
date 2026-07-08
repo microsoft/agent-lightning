@@ -1456,12 +1456,12 @@ async def test_client_query_with_filters(
     await server.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
 
     # Query via client with status filter
-    rollouts = await client.query_rollouts(status=["succeeded"])
+    rollouts = await client.query_rollouts(status_in=["succeeded"])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == r1.rollout_id
 
     # Query via client with rollout_ids filter
-    rollouts = await client.query_rollouts(rollout_ids=[r2.rollout_id])
+    rollouts = await client.query_rollouts(rollout_id_in=[r2.rollout_id])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == r2.rollout_id
 

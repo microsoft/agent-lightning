@@ -399,18 +399,13 @@ class LightningStore:
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-        # Deprecated fields
-        status: Optional[Sequence[RolloutStatus]] = None,
-        rollout_ids: Optional[Sequence[str]] = None,
     ) -> Sequence[Rollout]:
         """Retrieve rollouts filtered by status and/or explicit identifiers.
 
         This interface supports structured filtering, sorting, and pagination so
         callers can build simple dashboards without copying data out of the
-        store. The legacy parameters `status` and `rollout_ids` remain valid and
-        are treated as aliases for `status_in` and `rollout_id_in`
-        respectively—when both the new and deprecated parameters are supplied
-        the new parameters take precedence.
+        store. Filter by status via `status_in` and by rollout identifiers via
+        `rollout_id_in`.
 
         Args:
             status_in: Optional whitelist of [`RolloutStatus`][agentlightning.RolloutStatus] values.
@@ -422,9 +417,6 @@ class LightningStore:
             sort_order: Direction to sort when `sort_by` is provided.
             limit: Maximum number of rows to return. Use `-1` for "no limit".
             offset: Number of rows to skip before returning results.
-            status: Deprecated field. Use `status_in` instead.
-            rollout_ids: Deprecated field. Use `rollout_id_in` instead.
-
         Returns:
             A sequence of matching rollouts (or [`AttemptedRollout`][agentlightning.AttemptedRollout]
             when attempts exist). Ordering is deterministic when `sort_by` is set.

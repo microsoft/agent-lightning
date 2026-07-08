@@ -116,8 +116,6 @@ class LightningStoreThreaded(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-        status: Optional[Sequence[RolloutStatus]] = None,
-        rollout_ids: Optional[Sequence[str]] = None,
     ) -> Sequence[Rollout]:
         with self._lock:
             return await self.store.query_rollouts(
@@ -129,8 +127,6 @@ class LightningStoreThreaded(LightningStore):
                 sort_order=sort_order,
                 limit=limit,
                 offset=offset,
-                status=status,
-                rollout_ids=rollout_ids,
             )
 
     async def query_attempts(

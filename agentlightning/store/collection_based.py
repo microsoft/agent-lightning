@@ -17,7 +17,6 @@ import asyncio
 import functools
 import logging
 import time
-import warnings
 from collections import defaultdict
 from contextvars import ContextVar
 from types import CoroutineType
@@ -771,37 +770,18 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-        status: Optional[Sequence[RolloutStatus]] = None,
-        rollout_ids: Optional[Sequence[str]] = None,
     ) -> PaginatedResult[Union[Rollout, AttemptedRollout]]:
         """Retrieve rollouts with filtering and pagination.
 
         See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
         """
-        # Construct filters condition
-        if status_in is not None:
-            resolved_status = status_in
-        elif status is not None:
-            warnings.warn("status is deprecated, use status_in instead", DeprecationWarning, stacklevel=3)
-            resolved_status = status
-        else:
-            resolved_status = None
-
-        if rollout_id_in is not None:
-            resolved_rollout_ids = rollout_id_in
-        elif rollout_ids is not None:
-            warnings.warn("rollout_ids is deprecated, use rollout_id_in instead", DeprecationWarning, stacklevel=3)
-            resolved_rollout_ids = rollout_ids
-        else:
-            resolved_rollout_ids = None
-
         filters: FilterOptions = {}
         filters["_aggregate"] = filter_logic
-        if resolved_status is not None:
-            filters["status"] = {"within": list(resolved_status)}
-        if resolved_rollout_ids is not None:
+        if status_in is not None:
+            filters["status"] = {"within": list(status_in)}
+        if rollout_id_in is not None:
             rollout_id_field = cast(FilterField, filters.setdefault("rollout_id", {}))
-            rollout_id_field["within"] = list(resolved_rollout_ids)
+            rollout_id_field["within"] = list(rollout_id_in)
         if rollout_id_contains is not None:
             rollout_id_field = cast(FilterField, filters.setdefault("rollout_id", {}))
             rollout_id_field["contains"] = rollout_id_contains

@@ -704,7 +704,7 @@ async def test_client_server_end_to_end(
 
     all_rollouts = await client.query_rollouts()
     assert any(r.rollout_id == enqueued.rollout_id for r in all_rollouts)
-    assert await client.query_rollouts(rollout_ids=[enqueued.rollout_id])
+    assert await client.query_rollouts(rollout_id_in=[enqueued.rollout_id])
     # Test that attempt is present in the rollout
     assert any(hasattr(r, "attempt") and r.attempt is not None for r in all_rollouts)  # type: ignore
     attempts = await client.query_attempts(dequeued_client.rollout_id)
