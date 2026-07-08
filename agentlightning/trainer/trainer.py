@@ -3,7 +3,6 @@
 import asyncio
 import functools
 import logging
-import warnings
 from typing import Any, Callable, Dict, Optional, Sequence, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
@@ -96,29 +95,12 @@ class Trainer:
     """An instance of [`LLMProxy`][agentlightning.LLMProxy] to use for intercepting the LLM calls.
     If not provided, algorithm may create one on its own."""
 
-    n_workers: int
-    """Number of agent workers to run in parallel. Deprecated in favor of `n_runners`."""
-
-    max_tasks: Optional[int]
-    """Maximum number of tasks to process per runner. Deprecated in favor of `max_rollouts`."""
-
-    daemon: bool
-    """Whether worker processes should be daemons. Daemon processes
-    are terminated automatically when the main process exits. Deprecated.
-    Only have effect with `fit_v0`."""
-
-    triplet_exporter: TraceAdapter[Any]
-    """An instance of [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] to export triplets from traces,
-    or a dictionary with the initialization parameters for the exporter.
-    Deprecated. Use [`adapter`][agentlightning.Trainer.adapter] instead."""
-
     port: Optional[int]
     """Port forwarded to [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]."""
 
     def __init__(
         self,
         *,
-        dev: bool = False,
         n_runners: Optional[int] = None,
         max_rollouts: Optional[int] = None,
         initial_resources: Optional[NamedResources] = None,
@@ -130,10 +112,6 @@ class Trainer:
         port: Optional[int] = None,
         algorithm: ComponentSpec[Algorithm] = None,
         llm_proxy: ComponentSpec[LLMProxy] = None,
-        n_workers: Optional[int] = None,
-        max_tasks: Optional[int] = None,
-        daemon: bool = True,
-        triplet_exporter: ComponentSpec[TracerTraceToTriplet] = None,
         hooks: Optional[Union[Hook, Sequence[Hook]]] = None,
     ):
         """Configure the trainer and resolve user-provided component specifications.
@@ -146,71 +124,16 @@ class Trainer:
         [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]
         instances constructed (or supplied) for the trainer.
         """
-        # Do not call super().__init__() here.
-        # super().__init__() will call TrainerLegacy's initialization, which is not intended.
         self.worker_id: Optional[int] = None
-
-        if dev:
-            warnings.warn(
-                "Trainer(dev=True) is deprecated and will be removed in future versions. "
-                "Please use Trainer.dev(...) instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        self._dev = dev
-        self.daemon = daemon
-
-        if n_workers is not None:
-            warnings.warn(
-                "`n_workers` is deprecated. Please use `n_runners`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         if n_runners is None:
-            n_runners = n_workers if n_workers is not None else 1
-        else:
-            if n_workers is not None and n_workers != n_runners:
-                warnings.warn(
-                    "`n_workers` is ignored when `n_runners` is provided.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
+            n_runners = 1
 
         self.n_runners = n_runners
-        self.n_workers = n_runners  # Backwards compatibility for fit_v0
-
-        if max_tasks is not None:
-            warnings.warn(
-                "`max_tasks` is deprecated. Please use `max_rollouts`.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        if max_rollouts is None:
-            max_rollouts = max_tasks
-        elif max_tasks is not None and max_tasks != max_rollouts:
-            warnings.warn(
-                "`max_tasks` is ignored when `max_rollouts` is provided.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
         self.max_rollouts = max_rollouts
-        self.max_tasks = max_tasks if max_tasks is not None else max_rollouts
 
         self.tracer = self._make_tracer(tracer)
-
-        if adapter is not None and triplet_exporter is not None:
-            warnings.warn(
-                "`triplet_exporter` is deprecated and ignored because `adapter` is provided.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        adapter_spec = adapter if adapter is not None else triplet_exporter
-        self.adapter = self._make_adapter(adapter_spec)
-        self.triplet_exporter = self.adapter  # Backwards compatibility
+        self.adapter = self._make_adapter(adapter)
 
         self.algorithm = self._make_algorithm(algorithm)
 
@@ -233,25 +156,17 @@ class Trainer:
             strategy_runners = getattr(self.strategy, "n_runners")
             if isinstance(strategy_runners, int) and strategy_runners > 0:
                 self.n_runners = strategy_runners
-                self.n_workers = strategy_runners
 
         self.llm_proxy = self._make_llm_proxy(llm_proxy, store=self.store)
 
         self.hooks = self._normalize_hooks(hooks)
-
-        if not self.daemon:
-            logger.warning(
-                "daemon=False. Worker processes are non-daemonic. "
-                "The worker processes will NOT be terminated when the main process exits. "
-                "The cleanup must be handled manually."
-            )
 
     def _make_tracer(self, tracer: ComponentSpec[Tracer]) -> Tracer:
         """Resolve the tracer component from user input, falling back to AgentOpsTracer."""
         default_factory = lambda: AgentOpsTracer(
             agentops_managed=True,
             instrument_managed=True,
-            daemon=self.daemon,
+            daemon=True,
         )
         return build_component(
             tracer,

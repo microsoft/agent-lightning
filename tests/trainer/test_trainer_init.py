@@ -174,3 +174,21 @@ def test_trainer_fit_rejects_string_dataset() -> None:
 
     with pytest.raises(TypeError, match="no longer accepts string"):
         trainer.fit(_NoopAgent(), train_dataset="http://localhost:8080")
+
+
+def test_trainer_rejects_legacy_constructor_args() -> None:
+    """Legacy constructor aliases are removed from Trainer.__init__."""
+    with pytest.raises(TypeError, match="got an unexpected keyword argument 'n_workers'"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, n_workers=1)  # type: ignore[misc]
+
+    with pytest.raises(TypeError, match="got an unexpected keyword argument 'max_tasks'"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, max_tasks=1)  # type: ignore[misc]
+
+    with pytest.raises(TypeError, match="got an unexpected keyword argument 'daemon'"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, daemon=False)  # type: ignore[misc]
+
+    with pytest.raises(TypeError, match="got an unexpected keyword argument 'triplet_exporter'"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, triplet_exporter=None)  # type: ignore[misc]
+
+    with pytest.raises(TypeError, match="got an unexpected keyword argument 'dev'"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, dev=True)  # type: ignore[misc]
