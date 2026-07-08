@@ -8,8 +8,6 @@ import string
 
 import sympy
 
-from agentlightning.reward import reward
-
 
 def normalize_option(option: str) -> str:
     """
@@ -64,6 +62,5 @@ async def evaluate(prediction: str, ground_truth: str) -> float:
     return float(scalar_are_results_same(prediction, ground_truth, 1e-2))
 
 
-@reward
 async def evaluate_v0_1(prediction: str, ground_truth: str) -> float:
     return float(scalar_are_results_same(prediction, ground_truth, 1e-2))

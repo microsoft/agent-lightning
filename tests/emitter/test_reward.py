@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import importlib
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
@@ -9,7 +8,7 @@ import pytest
 
 reward_module = importlib.import_module("agentlightning.emitter.reward")
 from agentlightning.emitter.reward import emit_reward, get_rewards_from_span
-from agentlightning.reward import find_final_reward, find_reward_spans, get_reward_value, is_reward_span
+from agentlightning.emitter.reward import find_final_reward, find_reward_spans, get_reward_value, is_reward_span
 from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
 from agentlightning.types import SpanLike
 from agentlightning.utils.otel import make_link_attributes, make_tag_attributes
@@ -92,50 +91,38 @@ def test_emit_reward_example_with_tags(monkeypatch: pytest.MonkeyPatch) -> None:
     assert reward_dimensions == [{"name": "primary", "value": 0.7}]
 
 
-def test_get_reward_value_from_agentops_dict() -> None:
-    span = make_span(
-        name="any",
-        attributes={
-            "agentops.task.output": {"type": "reward", "value": 3.5},
-        },
-    )
-
-    assert get_reward_value(span) == 3.5
-
-
-def test_get_reward_value_from_agentops_json_string() -> None:
-    payload = json.dumps({"type": "reward", "value": 1.25})
-    span = make_span(name="any", attributes={"agentops.entity.output": payload})
-
-    assert get_reward_value(span) == 1.25
-
-
 def test_get_reward_value_from_reward_span_attributes() -> None:
     span = make_span(
         name=AGL_ANNOTATION,
-        attributes={"reward": 0.75},
+        attributes={
+            f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+            f"{LightningSpanAttributes.REWARD.value}.0.value": 0.75,
+        },
     )
 
     assert get_reward_value(span) == 0.75
 
 
-def test_get_reward_value_returns_none_when_not_reward() -> None:
-    span = make_span(name="any", attributes={"agentops.task.output": {"foo": "bar"}})
+def test_get_reward_value_only_parses_annotated_reward_spans() -> None:
+    span = make_span(
+        name="other",
+        attributes={
+            f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+            f"{LightningSpanAttributes.REWARD.value}.0.value": 1.0,
+        },
+    )
 
     assert get_reward_value(span) is None
 
 
-def test_is_reward_span_matches_reward_value() -> None:
-    span = make_span(
-        name="whatever",
-        attributes={"agentops.task.output": {"type": "reward", "value": 4.2}},
-    )
+def test_get_reward_value_returns_none_when_not_reward() -> None:
+    span = make_span(name=AGL_ANNOTATION, attributes={})
 
-    assert is_reward_span(span) is True
+    assert get_reward_value(span) is None
 
 
 def test_is_reward_span_false_when_no_reward() -> None:
-    span = make_span(name="absent", attributes={"agentops.entity.output": {"value": 1}})
+    span = make_span(name="agent", attributes={})
 
     assert is_reward_span(span) is False
 
@@ -143,9 +130,15 @@ def test_is_reward_span_false_when_no_reward() -> None:
 def test_find_reward_spans_filters_correctly() -> None:
     reward_span = make_span(
         name=AGL_ANNOTATION,
-        attributes={"reward": 2.0},
+        attributes={
+            f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+            f"{LightningSpanAttributes.REWARD.value}.0.value": 2.0,
+        },
     )
-    non_reward_span = make_span(name="other", attributes={})
+    non_reward_span = make_span(
+        name="other",
+        attributes={f"{LightningSpanAttributes.REWARD.value}.0.name": "primary"},
+    )
 
     spans = find_reward_spans([non_reward_span, reward_span, non_reward_span])
 
@@ -155,8 +148,20 @@ def test_find_reward_spans_filters_correctly() -> None:
 def test_find_final_reward_returns_last_reward_value() -> None:
     spans = [
         make_span(name="first", attributes={}),
-        make_span(name=AGL_ANNOTATION, attributes={"reward": 1.0}),
-        make_span(name="agentops", attributes={"agentops.task.output": {"type": "reward", "value": 5.5}}),
+        make_span(
+            name=AGL_ANNOTATION,
+            attributes={
+                f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+                f"{LightningSpanAttributes.REWARD.value}.0.value": 1.0,
+            },
+        ),
+        make_span(
+            name=AGL_ANNOTATION,
+            attributes={
+                f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+                f"{LightningSpanAttributes.REWARD.value}.0.value": 5.5,
+            },
+        ),
     ]
 
     assert find_final_reward(spans) == 5.5
@@ -165,7 +170,7 @@ def test_find_final_reward_returns_last_reward_value() -> None:
 def test_find_final_reward_returns_none_when_no_reward() -> None:
     spans = [
         make_span(name="first", attributes={}),
-        make_span(name="second", attributes={"agentops.task.output": {"foo": "bar"}}),
+        make_span(name="second", attributes={}),
     ]
 
     assert find_final_reward(spans) is None

@@ -22,11 +22,9 @@ from .reward import (
     get_reward_value,
     get_rewards_from_span,
     is_reward_span,
-    reward,
 )
 
 __all__ = [
-    "reward",
     "operation",
     "emit_reward",
     "get_reward_value",

@@ -3,10 +3,7 @@
 import agentops
 from agentops.sdk.decorators import operation
 
-from agentlightning.reward import reward
 
-
-@reward
 def process_data(data: str) -> float:
     # Your function logic here
     processed_result = data.upper()  # type: ignore

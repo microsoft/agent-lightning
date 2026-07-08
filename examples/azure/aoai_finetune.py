@@ -19,7 +19,7 @@ from openai import OpenAI
 from agentlightning.adapter.messages import OpenAIMessages, TraceToMessages
 from agentlightning.algorithm import Algorithm
 from agentlightning.algorithm.utils import batch_iter_over_dataset
-from agentlightning.reward import find_final_reward
+from agentlightning.emitter.reward import find_final_reward
 from agentlightning.types import LLM, RolloutMode, TaskInput
 
 logger = logging.getLogger("agentlightning.aoai")
