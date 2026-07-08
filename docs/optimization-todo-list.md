@@ -20,7 +20,7 @@
 | 9 | 修复 `Runner.run_context(worker_id=...)` 初始化/teardown worker_id 不一致 | P0 | Runner | 已完成 | 已验证：`tests/runner/test_runner_context.py::test_run_context_uses_passed_worker_id` | 初始化和清理使用同一 resolved worker id |
 | 10 | 抽取并共享 `SpanWriter`，统一 `LightningSpanProcessor` 与 `LLMProxy` 导出行为 | P0 | Tracer/LLMProxy | 已完成 | 已验证：`tests/tracer/test_otel.py::test_store_write_timeout` + `tests/llm_proxy/test_llm_proxy_cpu.py::test_exporter_export_handles_store_failures` + `tests/llm_proxy/test_llm_proxy_cpu.py::test_exporter_shutdown_is_idempotent` | 写入确认、超时和关闭语义只能有一处实现 |
 | 11 | 清理 `agentlightning.__init__` 的 deprecated 导出 | P1 | API | 已完成 | 已验证：`tests/test_init_exports.py::test_top_level_exports_do_not_include_deprecated_symbols` | 移除 `AgentLightningClient`、`AgentLightningServer`、`configure_logger` 等旧符号 |
-| 12 | 去除 `Trainer` 对 `TrainerLegacy` 的继承与 `fit_v0` | P1 | Trainer | 待开始 | 同步更新：Trainer 构造/API 测试 | 统一仅支持新 runtime 所需参数 |
+| 12 | 去除 `Trainer` 对 `TrainerLegacy` 的继承与 `fit_v0` | P1 | Trainer | 已完成 | 已验证：`tests/trainer/test_trainer_init.py::test_trainer_no_longer_has_fit_v0` + `tests/trainer/test_trainer_init.py::test_trainer_fit_rejects_string_dataset` | 统一新 runtime 流程，不再通过 legacy 路径运行 |
 | 13 | 移除 `Trainer` 旧入口参数（`n_workers`、`max_tasks`、`daemon`、`triplet_exporter`、`dev=True` 等） | P1 | Trainer | 待开始 | 同步更新：配置校验测试 | 旧运行方式迁移到 `Execution` |
 | 14 | 删除 `Algorithm` 对 `Trainer` 的弱引用（`_trainer_ref`） | P1 | Algorithm | 待开始 | 同步新增：算法与 Runner 解耦测试 | `Trainer` 构造 `AlgorithmContext` 并调用 `Algorithm.run(context)` |
 | 15 | 移除 `Algorithm.set_trainer/get_trainer` 与 `get_client` | P1 | Algorithm | 待开始 | 同步新增：接口边界测试 | 禁止反向依赖 Trainer 和 legacy client |

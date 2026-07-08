@@ -5,6 +5,11 @@ from __future__ import annotations
 import pytest
 
 import agentlightning as agl
+from agentlightning.litagent import LitAgent
+
+
+class _NoopAgent(LitAgent[object]):
+    """Minimal agent used to validate trainer API behavior."""
 
 
 def test_trainer_with_predefined_tracer() -> None:
@@ -156,3 +161,16 @@ def test_trainer_with_adapter_dict_no_type() -> None:
     assert isinstance(trainer.adapter, agl.TracerTraceToTriplet)
     assert trainer.adapter.agent_match == "plan_agent"
     assert trainer.adapter.repair_hierarchy is False
+
+
+def test_trainer_no_longer_has_fit_v0() -> None:
+    """Trainer no longer exposes legacy `fit_v0`."""
+    assert not hasattr(agl.Trainer, "fit_v0")
+
+
+def test_trainer_fit_rejects_string_dataset() -> None:
+    """Legacy string dataset path is intentionally removed from Trainer.fit."""
+    trainer = agl.Trainer(algorithm=agl.Baseline(), n_runners=1)
+
+    with pytest.raises(TypeError, match="no longer accepts string"):
+        trainer.fit(_NoopAgent(), train_dataset="http://localhost:8080")

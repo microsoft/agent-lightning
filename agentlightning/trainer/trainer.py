@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, Optional, Sequence, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
 from agentlightning.algorithm import Algorithm, Baseline, FastAlgorithm
-from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
 from agentlightning.execution.events import ExecutionEvent
@@ -22,7 +21,6 @@ from agentlightning.tracer.base import Tracer
 from agentlightning.types import AlgorithmContext, Dataset, Hook, NamedResources
 
 from .init_utils import build_component, instantiate_component
-from .legacy import TrainerLegacy
 from .registry import ExecutionStrategyRegistry
 
 logger = logging.getLogger(__name__)
@@ -33,7 +31,7 @@ T = TypeVar("T")
 ComponentSpec = Union[T, type[T], Callable[[], T], str, Dict[str, Any], None]
 
 
-class Trainer(TrainerLegacy):
+class Trainer:
     """High-level orchestration layer that wires Algorithm <-> Runner <-> Store.
 
     A [`Trainer`][agentlightning.Trainer] packages the moving parts of Agent-Lightning's
@@ -161,7 +159,6 @@ class Trainer(TrainerLegacy):
             )
         self._dev = dev
         self.daemon = daemon
-        self._client: AgentLightningClient | None = None  # Will be initialized in fit or fit_v0
 
         if n_workers is not None:
             warnings.warn(
@@ -414,17 +411,10 @@ class Trainer(TrainerLegacy):
             val_dataset: Optional iterable consumed by validation passes.
         """
         if isinstance(train_dataset, str):
-            logger.warning(
-                "Trainer.fit will no longer accepts a string URL in future version. "
-                "To continue using a string URL, please use Trainer.fit_v0 instead. "
-                "See documentation for how to migrate to latest version: https://microsoft.github.io/agent-lightning/stable/"
+            raise TypeError(
+                "Trainer.fit no longer accepts string datasets. Use the latest execution-based API "
+                "with `ExecutionStrategy` and store-backed datasets."
             )
-            return self.fit_v0(  # type: ignore
-                agent,
-                train_dataset,
-                val_dataset,  # type: ignore
-            )
-
         agent.set_trainer(self)
 
         algorithm_bundle = functools.partial(
