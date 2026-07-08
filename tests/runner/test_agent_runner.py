@@ -5,7 +5,7 @@ import logging
 import random
 import time
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple, cast
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -99,11 +99,12 @@ def create_agent_span_payload(
 
 
 class DummyTracer(Tracer):
-    def __init__(self) -> None:
+    def __init__(self, *, persist_spans: bool = False) -> None:
         super().__init__()
         self._last_trace: List[Span] = []
         self._contexts: List[Dict[str, Any]] = []
         self._sequence_id = 0
+        self._persist_spans = persist_spans
 
     def init(self, *args: Any, **kwargs: Any) -> None:
         self._last_trace.clear()
@@ -135,6 +136,11 @@ class DummyTracer(Tracer):
         try:
             yield self._last_trace
         finally:
+            if self._persist_spans:
+                target_store = store if store is not None else self._store
+                if target_store is not None:
+                    for span in self._last_trace:
+                        await target_store.add_span(span)
             self._contexts.pop()
             if previous is None:
                 self._contexts = []
@@ -263,13 +269,11 @@ class RecordingHook(Hook):
 
 @pytest.mark.asyncio
 async def test_step_records_spans_for_none_result() -> None:
-    tracer = DummyTracer()
+    tracer = DummyTracer(persist_spans=True)
 
     class AsyncSpanAgent(LitAgent[Dict[str, Any]]):
         async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> None:
-            span = tracer.record_span("work", {"task_id": task["task_id"]})
-            store = cast(LitAgentRunner[Dict[str, Any]], self.runner).get_store()
-            await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, span)  # type: ignore[attr-defined]
+            tracer.record_span("work", {"task_id": task["task_id"]})
             return None
 
     agent = AsyncSpanAgent()

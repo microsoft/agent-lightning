@@ -117,7 +117,7 @@ The value your agent function returns (i.e., the return value of the function de
 
     When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the [Use Emitters](./emitter.md) documentation). Wrapping your reward calculation function with the `@reward` decorator is NOT the recommended approach any more.
 
-* **`list[ReadableSpan]`**, **`list[SpanCoreFields]`**, or **`list[Span]`**: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry `ReadableSpan` objects or Agent-lightning's native `Span` objects.
+* **[`list[AgentSpanPayload]`][agentlightning.AgentSpanPayload]**: For advanced use cases, you can return structured payloads for each span and let the runner assign ownership (`rollout_id`/`attempt_id`/`sequence_id`) during persistence.
 
 For most users, returning a **`float`** for simple agents or returning **`None`** and using the emitter for more complex ones are the recommended approaches.
 
