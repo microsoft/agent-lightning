@@ -15,6 +15,7 @@ import contextlib
 from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 import aiohttp
+import httpx
 import pytest
 import pytest_asyncio
 from portpicker import pick_unused_port
@@ -69,6 +70,24 @@ async def _run_server_with_cors(cors_origins: List[str] | str | None = None):
     finally:
         await session.close()
         await server.stop()
+
+
+@contextlib.asynccontextmanager
+async def _run_server_with_broken_statistics(*, debug_errors: bool = False):
+    store = InMemoryLightningStore()
+
+    async def broken_statistics() -> Dict[str, Any]:
+        raise RuntimeError("synthetic statistics failure")
+
+    store.statistics = broken_statistics  # type: ignore[method-assign]
+    server = LightningStoreServer(store, "127.0.0.1", 0, debug_errors=debug_errors)
+    assert server.app is not None
+    transport = httpx.ASGITransport(app=server.app)
+    session = httpx.AsyncClient(transport=transport, base_url="http://testserver")
+    try:
+        yield server, session
+    finally:
+        await session.aclose()
 
 
 async def _request_rollouts_page(
@@ -162,6 +181,28 @@ async def server_client(
 
 
 # CORS configuration tests
+
+
+@pytest.mark.asyncio
+async def test_server_error_response_hides_traceback_by_default() -> None:
+    async with _run_server_with_broken_statistics(debug_errors=False) as (_server, session):
+        resp = await session.get("/v1/agl/statistics")
+        assert resp.status_code == 500
+        body = resp.json()
+
+    assert body == {"detail": "Internal server error"}
+
+
+@pytest.mark.asyncio
+async def test_server_error_response_includes_traceback_in_debug_mode() -> None:
+    async with _run_server_with_broken_statistics(debug_errors=True) as (_server, session):
+        resp = await session.get("/v1/agl/statistics")
+        assert resp.status_code == 500
+        body = resp.json()
+
+    assert body["detail"] == "Internal server error"
+    assert body["error_type"] == "RuntimeError"
+    assert "synthetic statistics failure" in body["traceback"]
 
 
 @pytest.mark.asyncio

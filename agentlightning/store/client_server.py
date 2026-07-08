@@ -253,6 +253,8 @@ class LightningStoreServer:
             It's not allowed to set `host`, `port`, `launch_mode` together with `launcher_args`.
         n_workers: The number of workers to run in the server. Only applicable for `mp` launch mode.
         tracker: The metrics tracker to use for the server.
+        debug_errors: Whether `/v1/agl` unhandled exception responses include
+            `error_type` and `traceback`. Keep disabled outside development.
     """
 
     def __init__(
@@ -265,6 +267,7 @@ class LightningStoreServer:
         launcher_args: PythonServerLauncherArgs | None = None,
         n_workers: int = 1,
         tracker: MetricsBackend | None = None,
+        debug_errors: bool = False,
     ):
         self.store = store
 
@@ -305,6 +308,7 @@ class LightningStoreServer:
 
         self._lock: threading.Lock = threading.Lock()
         self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
+        self._debug_errors = debug_errors
         self._apply_cors()
         self._setup_routes()
 
@@ -347,6 +351,7 @@ class LightningStoreServer:
             "launcher_args": self.launcher_args,
             "server_launcher": self.server_launcher,
             "_owner_pid": self._owner_pid,
+            "_debug_errors": self._debug_errors,
         }
 
     def __setstate__(self, state: Dict[str, Any]):
@@ -366,6 +371,7 @@ class LightningStoreServer:
         self._tracker = None
         self._owner_pid = state["_owner_pid"]
         self._cors_allow_origins = state.get("_cors_allow_origins")
+        self._debug_errors = state.get("_debug_errors", False)
         self._client = None
         self._lock = threading.Lock()
         self._prometheus_registry = None
@@ -452,7 +458,6 @@ class LightningStoreServer:
         if self._tracker is not None:
             self._setup_metrics(api=api, app=self.app)
 
-        # TODO: This should only be enabled in development mode.
         @self.app.middleware("http")
         async def _app_exception_handler(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -473,11 +478,14 @@ class LightningStoreServer:
                 # decide whether to convert this into your 400 JSONResponse
                 if request.url.path.startswith(API_V1_AGL_PREFIX):
                     server_logger.exception("Unhandled application error", exc_info=exc)
-                    payload = {
-                        "detail": "Internal server error",
-                        "error_type": type(exc).__name__,
-                        "traceback": traceback.format_exc(),
-                    }
+                    payload = {"detail": "Internal server error"}
+                    if self._debug_errors:
+                        payload.update(
+                            {
+                                "error_type": type(exc).__name__,
+                                "traceback": traceback.format_exc(),
+                            }
+                        )
                     # 500 so clients can decide to retry
                     return JSONResponse(status_code=500, content=payload)
                 # otherwise re-raise and let FastAPI/Starlette handle it (500 or other handlers)
