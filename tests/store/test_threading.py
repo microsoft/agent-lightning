@@ -24,6 +24,7 @@ from agentlightning.types import (
     Rollout,
     Span,
     SpanContext,
+    SpanWriteResult,
     TaskInput,
     TraceStatus,
     Worker,
@@ -180,7 +181,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "get_resources_by_id": resources_update,
         "get_latest_resources": resources_update,
         "add_span": span,
-        "add_many_spans": [span],
+        "add_many_spans": SpanWriteResult(inserted=1),
         "add_otel_span": span,
         "wait_for_rollouts": [base_rollout],
         "get_next_span_sequence_id": 42,
@@ -216,7 +217,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
     assert await threaded_store.get_resources_by_id("resources-1") == resources_update
     assert await threaded_store.get_latest_resources() == resources_update
     assert await threaded_store.add_span(span) == span
-    assert await threaded_store.add_many_spans([span]) == [span]
+    assert await threaded_store.add_many_spans([span]) == SpanWriteResult(inserted=1)
     assert await threaded_store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id=5) == span
     assert await threaded_store.wait_for_rollouts(rollout_ids=[rollout_id], timeout=1.0) == [base_rollout]
     assert await threaded_store.get_next_span_sequence_id(rollout_id, attempt_id) == 42

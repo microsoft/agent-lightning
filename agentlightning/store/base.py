@@ -17,6 +17,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutMode,
     RolloutStatus,
+    SpanWriteResult,
     Span,
     TaskInput,
     Worker,
@@ -319,11 +320,15 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+    async def add_many_spans(self, spans: Sequence[Span]) -> SpanWriteResult:
         """Persist a sequence of pre-constructed spans emitted during rollout execution.
 
         Implementations can simply delegate to [`add_span()`][agentlightning.LightningStore.add_span] for each span.
         However, if the store supports bulk insertion, it can implement this method to improve performance.
+
+        Returns:
+            A [`SpanWriteResult`][agentlightning.SpanWriteResult] describing how many spans were
+            inserted, how many duplicates were skipped, and how many failed.
         """
         raise NotImplementedError()
 

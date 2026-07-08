@@ -18,6 +18,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     Span,
+    SpanWriteResult,
     TaskInput,
     Worker,
     WorkerStatus,
@@ -194,7 +195,7 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.get_latest_resources()
 
-    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+    async def add_many_spans(self, spans: Sequence[Span]) -> SpanWriteResult:
         with self._lock:
             return await self.store.add_many_spans(spans)
 

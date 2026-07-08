@@ -1055,12 +1055,10 @@ async def test_server_get_many_span_sequence_ids_and_add_many_spans_mixed_batche
         _make_span(second.rollout_id, second.attempt.attempt_id, 11, "server-batch-2"),
         _make_span(retried.rollout_id, retried.attempt.attempt_id, 12, "server-batch-retry"),
     ]
-    stored_spans = await server.add_many_spans(batch_spans)
-    assert {span.name for span in stored_spans} == {
-        "server-batch-1",
-        "server-batch-2",
-        "server-batch-retry",
-    }
+    stored_result = await server.add_many_spans(batch_spans)
+    assert stored_result.inserted == 3
+    assert stored_result.duplicates == 0
+    assert stored_result.failed == 0
 
     spans_first = await server.query_spans(first.rollout_id)
     assert any(span.name == "server-batch-1" for span in spans_first)
@@ -1092,7 +1090,9 @@ async def test_client_handles_optional_span_results_and_batch_insert(
         base_span,
     ]
     inserted = await client.add_many_spans(batch_spans)
-    assert [span.name for span in inserted] == ["client-span-2", "client-span-other"]
+    assert inserted.inserted == 2
+    assert inserted.duplicates == 1
+    assert inserted.failed == 0
 
     sequence_ids = await client.get_many_span_sequence_ids(
         [

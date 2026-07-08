@@ -323,10 +323,10 @@ def _dequeue_and_update_attempt_task(args: tuple[str, str, str, int]) -> bool:
             )
             for sequence_id in sequence_ids
         ]
-        stored_spans = await store.add_many_spans(spans)
-        if len(stored_spans) != len(spans):
+        write_result = await store.add_many_spans(spans)
+        if write_result.inserted != len(spans):
             console.print(
-                f"[Task {task_id}] Only stored {len(stored_spans)}/{len(spans)} spans for "
+                f"[Task {task_id}] Only inserted {write_result.inserted}/{len(spans)} spans for "
                 f"rollout_id={attempted.rollout_id} attempt_id={attempted.attempt.attempt_id}"
             )
             return False

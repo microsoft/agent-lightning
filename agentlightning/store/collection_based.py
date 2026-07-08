@@ -55,6 +55,7 @@ from agentlightning.types import (
     RolloutStatus,
     SortOptions,
     Span,
+    SpanWriteResult,
     TaskInput,
     Worker,
     WorkerStatus,
@@ -1061,11 +1062,11 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         # Update the sequence ID to be synced with latest input span
         await self._sync_span_sequence_id(span.rollout_id, span.sequence_id)
-        successful_spans = await self._add_many_spans_helper(span.rollout_id, span.attempt_id, [span])
-        return successful_spans[0] if len(successful_spans) > 0 else None
+        insert_result = await self._add_many_spans_helper(span.rollout_id, span.attempt_id, [span])
+        return span if insert_result.inserted > 0 else None
 
     @tracked("add_many_spans")
-    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+    async def add_many_spans(self, spans: Sequence[Span]) -> SpanWriteResult:
         """Persist a sequence of pre-converted spans.
 
         See [`LightningStore.add_many_spans()`][agentlightning.LightningStore.add_many_spans] for semantics.
@@ -1076,12 +1077,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             spans_by_rollout_attempt[(span.rollout_id, span.attempt_id)].append(span)
 
         # Bulk add spans for each rollout and attempt
-        successful_spans: List[Span] = []
+        write_result = SpanWriteResult()
         for (rollout_id, attempt_id), spans in spans_by_rollout_attempt.items():
             await self._sync_span_sequence_id(rollout_id, max(span.sequence_id for span in spans))
             ret = await self._add_many_spans_helper(rollout_id, attempt_id, spans)
-            successful_spans.extend(ret)
-        return successful_spans
+            write_result.inserted += ret.inserted
+            write_result.duplicates += ret.duplicates
+            write_result.failed += ret.failed
+        return write_result
 
     @tracked("add_otel_span")
     async def add_otel_span(
@@ -1107,10 +1110,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
         )
         ret = await self._add_many_spans_helper(rollout_id, attempt_id, [span])
-        return ret[0] if len(ret) > 0 else None
+        return span if ret.inserted > 0 else None
 
     @tracked("_insert_spans_with_fallback")
-    async def _insert_spans_with_fallback(self, spans: Sequence[Span]) -> Sequence[Span]:
+    async def _insert_spans_with_fallback(self, spans: Sequence[Span]) -> Tuple[SpanWriteResult, List[Span]]:
         """Insert spans into the store. If the insert fails, fallback to inserting one by one."""
 
         async def _add_span_fallback(collections: T_collections, span: Span) -> bool:
@@ -1124,6 +1127,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 return False
 
         successful_spans: List[Span] = []
+        write_result = SpanWriteResult()
         try:
             # This is not guarded by commit=True.
             async with self.collections.atomic(
@@ -1133,6 +1137,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 # In that case, the "insert spans" return values might not be accurate.
                 await collections.spans.insert(spans)
             successful_spans.extend(spans)
+            write_result.inserted = len(spans)
         except DuplicatedPrimaryKeyError:
             # There is a duplicate span, we warn it
             # We fallback to adding the spans one by one
@@ -1143,11 +1148,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                     # No need to commit here, it will be simple atomic write operations
                     if await _add_span_fallback(collections, span):
                         successful_spans.append(span)
+                        write_result.inserted += 1
+                    else:
+                        write_result.duplicates += 1
 
-        return successful_spans
+        return write_result, successful_spans
 
     @tracked("_add_many_spans_helper")
-    async def _add_many_spans_helper(self, rollout_id: str, attempt_id: str, spans: Sequence[Span]) -> Sequence[Span]:
+    async def _add_many_spans_helper(
+        self, rollout_id: str, attempt_id: str, spans: Sequence[Span]
+    ) -> SpanWriteResult:
         """Add many spans to the store. All spans must be for the same rollout and attempt.
 
         This method is divided into three parts:
@@ -1170,13 +1180,20 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if not current_attempt:
                 raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
 
-        successful_spans = await self._insert_spans_with_fallback(spans)
+        write_result, successful_spans = await self._insert_spans_with_fallback(spans)
         if successful_spans:
             await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 
-        logger.debug("Added %d spans for rollout %s, attempt %s", len(successful_spans), rollout_id, attempt_id)
+        logger.debug(
+            "Added %d spans for rollout %s, attempt %s (%d duplicates, %d failed).",
+            write_result.inserted,
+            rollout_id,
+            attempt_id,
+            write_result.duplicates,
+            write_result.failed,
+        )
 
-        return successful_spans
+        return write_result
 
     @tracked("_post_add_spans")
     async def _post_add_spans(self, spans: Sequence[Span], rollout_id: str, attempt_id: str) -> None:

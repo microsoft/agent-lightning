@@ -1314,9 +1314,10 @@ async def test_add_many_spans_handles_mixed_rollouts_and_attempts(store_fixture:
     span_second = _build_span(3, second.rollout_id, second.attempt.attempt_id)
     duplicate_first = _build_span(1, first.rollout_id, first.attempt.attempt_id)
 
-    stored = await store_fixture.add_many_spans([span_first, span_retry, span_second, duplicate_first])
-    if isinstance(store_fixture, InMemoryLightningStore):
-        assert {span.span_id for span in stored} == {span_first.span_id, span_retry.span_id, span_second.span_id}
+    write_result = await store_fixture.add_many_spans([span_first, span_retry, span_second, duplicate_first])
+    assert write_result.inserted == 3
+    assert write_result.duplicates == 1
+    assert write_result.failed == 0
 
     spans_first = await store_fixture.query_spans(first.rollout_id)
     assert {span.span_id for span in spans_first} >= {span_first.span_id, span_retry.span_id}

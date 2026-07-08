@@ -55,6 +55,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     Span,
+    SpanWriteResult,
     TaskInput,
     Worker,
     WorkerStatus,
@@ -1189,7 +1190,7 @@ class LightningStoreServer(LightningStore):
     async def add_span(self, span: Span) -> Optional[Span]:
         return await self._call_store_method("add_span", span)
 
-    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+    async def add_many_spans(self, spans: Sequence[Span]) -> SpanWriteResult:
         return await self._call_store_method("add_many_spans", spans)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
@@ -1886,12 +1887,14 @@ class LightningStoreClient(LightningStore):
         data = await self._request_json("post", "/spans", json=span.model_dump(mode="json"))
         return Span.model_validate(data) if data is not None else None
 
-    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
-        result: List[Span] = []
+    async def add_many_spans(self, spans: Sequence[Span]) -> SpanWriteResult:
+        result = SpanWriteResult()
         for span in spans:
             ret = await self.add_span(span)
             if ret is not None:
-                result.append(ret)
+                result.inserted += 1
+            else:
+                result.duplicates += 1
         return result
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:

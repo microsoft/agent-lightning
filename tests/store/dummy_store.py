@@ -17,6 +17,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     Span,
+    SpanWriteResult,
     TaskInput,
     Worker,
 )
@@ -120,7 +121,7 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("add_span", (span,), {}))
         return self.return_values["add_span"]
 
-    async def add_many_spans(self, spans: Sequence[Span]) -> List[Span]:
+    async def add_many_spans(self, spans: Sequence[Span]) -> SpanWriteResult:
         self.calls.append(("add_many_spans", (spans,), {}))
         return self.return_values["add_many_spans"]
 
@@ -231,7 +232,7 @@ def minimal_dummy_store() -> DummyLightningStore:
             "get_latest_resources": None,
             "query_resources": [],
             "add_span": None,
-            "add_many_spans": [],
+            "add_many_spans": SpanWriteResult(),
             "add_otel_span": None,
             "wait_for_rollouts": [],
             "get_next_span_sequence_id": 0,
