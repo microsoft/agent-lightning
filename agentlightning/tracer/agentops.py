@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional
 
@@ -15,7 +16,6 @@ from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.trace.status import StatusCode
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
-from agentlightning.store.base import LightningStore
 from agentlightning.utils.otel import get_span_processors, get_tracer_provider
 
 from .base import with_active_tracer_context
@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+_instrumentation_lock = threading.Lock()
+_managed_instrumentation_refcount = 0
 
 
 class AgentOpsTracer(OtelTracer):
@@ -54,6 +57,7 @@ class AgentOpsTracer(OtelTracer):
         self.agentops_managed = agentops_managed
         self.instrument_managed = instrument_managed
         self.daemon = daemon
+        self._managed_instrumentation_active = False
 
         if not self.agentops_managed:
             logger.warning("agentops_managed=False. You are responsible for AgentOps setup.")
@@ -66,11 +70,33 @@ class AgentOpsTracer(OtelTracer):
     def uninstrument(self, worker_id: int):
         uninstrument_all()
 
+    def _acquire_managed_instrumentation(self, worker_id: int) -> None:
+        global _managed_instrumentation_refcount
+        if self._managed_instrumentation_active:
+            return
+
+        with _instrumentation_lock:
+            if _managed_instrumentation_refcount == 0:
+                self.instrument(worker_id)
+            _managed_instrumentation_refcount += 1
+            self._managed_instrumentation_active = True
+
+    def _release_managed_instrumentation(self, worker_id: int) -> None:
+        global _managed_instrumentation_refcount
+        if not self._managed_instrumentation_active:
+            return
+
+        with _instrumentation_lock:
+            _managed_instrumentation_refcount = max(_managed_instrumentation_refcount - 1, 0)
+            self._managed_instrumentation_active = False
+            if _managed_instrumentation_refcount == 0:
+                self.uninstrument(worker_id)
+
     def _initialize_tracer_provider(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up AgentOps tracer...")  # worker_id included in process name
 
         if self.instrument_managed:
-            self.instrument(worker_id)
+            self._acquire_managed_instrumentation(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation applied.")
 
         if self.agentops_managed:
@@ -98,8 +124,11 @@ class AgentOpsTracer(OtelTracer):
         super().teardown_worker(worker_id)
 
         if self.instrument_managed:
-            self.uninstrument(worker_id)
-            logger.info(f"[Worker {worker_id}] Instrumentation removed.")
+            self._release_managed_instrumentation(worker_id)
+            logger.info(f"[Worker {worker_id}] Instrumentation lease released.")
+
+        self._store = None
+        self._lightning_span_processor = None
 
         # NOTE: The teardown doesn't try to remove the LightningSpanProcessor from the TracerProvider.
         # Currently there is no stable way to fully restore the AgentOps state to the initial state.

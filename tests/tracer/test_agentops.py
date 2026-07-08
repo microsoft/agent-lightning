@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, List, Optional, Union
+from importlib import import_module
+from typing import Any, List, Optional, Union, cast
 
 import agentops
 import pytest
@@ -17,6 +18,7 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceResponse,
 )
 from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.trace.status import StatusCode
 from portpicker import pick_unused_port
 
@@ -26,6 +28,8 @@ from agentlightning.types import Span, TraceStatus
 from agentlightning.utils import otlp
 
 pytestmark = [pytest.mark.agentops]
+
+agentops_tracer_module = import_module("agentlightning.tracer.agentops")
 
 
 @pytest_asyncio.fixture
@@ -129,6 +133,67 @@ def _func_with_exception():
 def _func_without_exception():
     """Function that always executed successfully to test success tracing."""
     pass
+
+
+class RecordingAgentOpsTracer(AgentOpsTracer):
+    def __init__(self, events: List[tuple[str, int]]) -> None:
+        super().__init__(agentops_managed=False, instrument_managed=True)
+        self._events = events
+        self._test_provider = TracerProviderImpl()
+
+    def instrument(self, worker_id: int) -> None:
+        self._events.append(("instrument", worker_id))
+
+    def uninstrument(self, worker_id: int) -> None:
+        self._events.append(("uninstrument", worker_id))
+
+    def _get_tracer_provider(self) -> TracerProviderImpl:
+        self._tracer_provider = self._test_provider
+        return self._test_provider
+
+
+def _reset_agentops_instrumentation_refcount() -> None:
+    cast(Any, agentops_tracer_module)._managed_instrumentation_refcount = 0
+
+
+def test_agentops_managed_instrumentation_uses_lifecycle_refcount() -> None:
+    _reset_agentops_instrumentation_refcount()
+    events: List[tuple[str, int]] = []
+    first = RecordingAgentOpsTracer(events)
+    second = RecordingAgentOpsTracer(events)
+
+    try:
+        first.init_worker(1)
+        second.init_worker(2)
+
+        assert events == [("instrument", 1)]
+
+        first.teardown_worker(1)
+        assert events == [("instrument", 1)]
+        assert first._lightning_span_processor is None  # pyright: ignore[reportPrivateUsage]
+
+        second.teardown_worker(2)
+        assert events == [("instrument", 1), ("uninstrument", 2)]
+        assert second._lightning_span_processor is None  # pyright: ignore[reportPrivateUsage]
+    finally:
+        _reset_agentops_instrumentation_refcount()
+
+
+@pytest.mark.asyncio
+async def test_agentops_trace_context_requires_reinit_after_teardown() -> None:
+    _reset_agentops_instrumentation_refcount()
+    events: List[tuple[str, int]] = []
+    tracer = RecordingAgentOpsTracer(events)
+
+    try:
+        tracer.init_worker(1)
+        tracer.teardown_worker(1)
+
+        with pytest.raises(RuntimeError, match="LightningSpanProcessor is not initialized"):
+            async with tracer.trace_context(name="after-teardown"):
+                pass
+    finally:
+        _reset_agentops_instrumentation_refcount()
 
 
 def test_agentops_tracer_create_span(agentops_tracer: AgentOpsTracer) -> None:
