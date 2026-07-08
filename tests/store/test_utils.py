@@ -5,6 +5,7 @@ from typing import List, Optional, cast
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from agentlightning.store.utils import rollout_status_from_attempt, scan_unhealthy_rollouts
 from agentlightning.types import (
@@ -249,6 +250,19 @@ async def test_scan_unhealthy_rollouts_unresponsive_with_heartbeat_timing() -> N
 
     # Only the old heartbeat should trigger unresponsive
     assert updates == {("rollout-old", "attempt-old"): "unresponsive"}
+
+
+@pytest.mark.parametrize("status", ["requeuing", "queuing"])
+def test_attempt_status_literal_rejects_queued_transitions(status: str) -> None:
+    """AttemptStatus must stay within attempt-only terminal states."""
+    with pytest.raises(ValidationError):
+        Attempt(
+            rollout_id="test-rollout",
+            attempt_id="test-attempt",
+            sequence_id=1,
+            start_time=time.time(),
+            status=status,  # Attempt cannot enter queue states.
+        )
 
 
 @pytest.mark.asyncio
