@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager, contextmanager
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional
 
 import agentops
 import agentops.sdk.core
@@ -124,18 +124,6 @@ class AgentOpsTracer(OtelTracer):
         Yields:
             The OpenTelemetry tracer instance to collect spans.
         """
-        with self._trace_context_sync(name=name, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
-            yield tracer
-
-    @contextmanager
-    def _trace_context_sync(
-        self,
-        name: Optional[str] = None,
-        *,
-        rollout_id: Optional[str] = None,
-        attempt_id: Optional[str] = None,
-    ) -> Iterator[trace_api.Tracer]:
-        """Implementation of `trace_context` for synchronous execution."""
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
         tracer_provider = self._get_tracer_provider()
