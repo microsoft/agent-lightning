@@ -216,10 +216,14 @@ class CachedStaticFiles(StaticFiles):
         return resp
 
 
-class LightningStoreServer(LightningStore):
+class LightningStoreServer:
     """
-    Server wrapper that exposes a LightningStore via HTTP API.
-    Delegates all operations to an underlying store implementation.
+    HTTP server container for a LightningStore-backed control plane.
+
+    This object is a has-a lifecycle holder around a store. It is not itself a
+    `LightningStore` business adapter; callers should use `LightningStoreClient`
+    (same process or subprocess) when an interface conforming to `LightningStore`
+    is required.
 
     Healthcheck and watchdog relies on the underlying store.
 
@@ -255,7 +259,6 @@ class LightningStoreServer(LightningStore):
         n_workers: int = 1,
         tracker: MetricsBackend | None = None,
     ):
-        super().__init__()
         self.store = store
 
         if launcher_args is not None:
