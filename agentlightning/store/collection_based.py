@@ -848,8 +848,26 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         self, collections: T_collections, rollouts: Sequence[Rollout]
     ) -> List[Union[Rollout, AttemptedRollout]]:
         """Query the latest attempts for the rollouts, and attach them to the rollout objects."""
-        # TODO: Maybe we can use asyncio.gather here to speed up the process?
-        return [await self._unlocked_rollout_to_attempted_rollout(collections, rollout) for rollout in rollouts]
+        if not rollouts:
+            return []
+
+        attempts = await collections.attempts.query(
+            filter={"rollout_id": {"within": [rollout.rollout_id for rollout in rollouts]}},
+            sort={"name": "sequence_id", "order": "desc"},
+        )
+        latest_attempts: Dict[str, Attempt] = {}
+        for attempt in attempts:
+            if attempt.rollout_id not in latest_attempts:
+                latest_attempts[attempt.rollout_id] = attempt
+
+        return [
+            (
+                AttemptedRollout(**rollout.model_dump(), attempt=latest_attempts[rollout.rollout_id])
+                if rollout.rollout_id in latest_attempts
+                else rollout
+            )
+            for rollout in rollouts
+        ]
 
     @tracked("_unlocked_get_latest_attempt")
     async def _unlocked_get_latest_attempt(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:

@@ -231,6 +231,58 @@ async def test_query_rollouts_returns_latest_attempt(store_fixture: LightningSto
 
 
 @pytest.mark.asyncio
+async def test_query_rollouts_returns_latest_attempts_for_multiple_rollouts(store_fixture: LightningStore) -> None:
+    """Batch rollout queries should attach the latest attempt per rollout."""
+    attempted_rollouts = [await store_fixture.start_rollout(input={"idx": idx}) for idx in range(3)]
+    queued = await store_fixture.enqueue_rollout(input={"idx": "queued"})
+    latest_attempt_ids: dict[str, str] = {}
+
+    for attempted in attempted_rollouts:
+        await store_fixture.start_attempt(attempted.rollout_id)
+        latest = await store_fixture.start_attempt(attempted.rollout_id)
+        latest_attempt_ids[attempted.rollout_id] = latest.attempt.attempt_id
+
+    requested_ids = [attempted.rollout_id for attempted in attempted_rollouts] + [queued.rollout_id]
+    results = await store_fixture.query_rollouts(rollout_id_in=requested_ids, sort_by="rollout_id")
+    by_id = {rollout.rollout_id: rollout for rollout in results}
+
+    assert set(by_id) == set(requested_ids)
+    for rollout_id, attempt_id in latest_attempt_ids.items():
+        retrieved = by_id[rollout_id]
+        assert type(retrieved) is AttemptedRollout
+        assert retrieved.attempt.attempt_id == attempt_id
+        assert retrieved.attempt.sequence_id == 3
+
+    assert type(by_id[queued.rollout_id]) is Rollout
+
+
+@pytest.mark.asyncio
+async def test_query_rollouts_batches_latest_attempt_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In-memory query_rollouts should avoid per-rollout latest-attempt lookups."""
+    store = InMemoryLightningStore(scan_debounce_seconds=0)
+    attempted_rollouts = [await store.start_rollout(input={"idx": idx}) for idx in range(5)]
+    for attempted in attempted_rollouts:
+        await store.start_attempt(attempted.rollout_id)
+
+    original_query = store.collections.attempts.query
+    query_calls: List[tuple[Any, Any]] = []
+
+    async def counting_query(*args: Any, **kwargs: Any) -> PaginatedResult[Attempt]:
+        query_calls.append((kwargs.get("filter"), kwargs.get("sort")))
+        return await original_query(*args, **kwargs)
+
+    monkeypatch.setattr(store.collections.attempts, "query", counting_query)
+
+    rollout_ids = [attempted.rollout_id for attempted in attempted_rollouts]
+    results = await store.query_rollouts(rollout_id_in=rollout_ids)
+
+    assert len(results) == len(rollout_ids)
+    assert len(query_calls) == 1
+    assert query_calls[0][0] == {"rollout_id": {"within": rollout_ids}}
+    assert query_calls[0][1] == {"name": "sequence_id", "order": "desc"}
+
+
+@pytest.mark.asyncio
 async def test_query_rollouts_supports_new_filters(store_fixture: LightningStore) -> None:
     """The expanded query interface should honor filtering, sorting, and pagination."""
     rollouts = [await store_fixture.enqueue_rollout(input={"idx": idx}) for idx in range(3)]
