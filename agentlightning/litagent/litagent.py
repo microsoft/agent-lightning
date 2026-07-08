@@ -6,13 +6,9 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
-from agentlightning.types import NamedResources, Rollout, RolloutResult, Task
-
-if TYPE_CHECKING:
-    from agentlightning.runner import Runner
-    from agentlightning.tracer import Tracer
+from agentlightning.types import NamedResources, Rollout, RolloutResult
 
 
 logger = logging.getLogger(__name__)
@@ -65,39 +61,6 @@ class LitAgent(Generic[T]):
             )
             or (hasattr(self, "rollout_async") and self.__class__.rollout_async is not LitAgent.rollout_async)  # type: ignore
         )
-
-    def on_rollout_start(self, task: Task, runner: Runner[T], tracer: Tracer) -> None:
-        """Hook invoked immediately before a rollout begins.
-
-        Subclasses can override this method to implement custom logic such as logging,
-        metric collection, or resource setup. The default implementation is a no-op.
-
-        Args:
-            task: [`Task`][agentlightning.Task] that will be processed.
-            runner: [`Runner`][agentlightning.Runner] managing the rollout.
-            tracer: [`Tracer`][agentlightning.Tracer] associated with the runner.
-
-        !!! warning "Deprecated"
-            Override [`Hook.on_rollout_start`][agentlightning.Hook.on_rollout_start]
-            instead of this method when extending agents.
-        """
-
-    def on_rollout_end(self, task: Task, rollout: Rollout, runner: Runner[T], tracer: Tracer) -> None:
-        """Hook invoked after a rollout completes.
-
-        Subclasses can override this method for cleanup or additional logging. The default
-        implementation is a no-op.
-
-        Args:
-            task: [`Task`][agentlightning.Task] that was processed.
-            rollout: Resulting [`Rollout`][agentlightning.Rollout].
-            runner: [`Runner`][agentlightning.Runner] managing the rollout.
-            tracer: [`Tracer`][agentlightning.Tracer] associated with the runner.
-
-        !!! warning "Deprecated"
-            Override [`Hook.on_rollout_end`][agentlightning.Hook.on_rollout_end]
-            instead of this method when extending agents.
-        """
 
     def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Execute a rollout synchronously.

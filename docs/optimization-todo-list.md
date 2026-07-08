@@ -29,7 +29,7 @@
 | 18 | 删除 `Runner.run()` 同步接口与 legacy 回退 | P1 | Runner | 已完成 | 已验证：`tests/runner/test_runner_imports.py::test_runner_sync_run_interface_is_removed` | 主 Runner 接口统一为 `iter()` 和 `step()` |
 | 19 | 去掉 `LitAgent` 反向引用（trainer/runner/tracer/store） | P1 | LitAgent | 已完成 | 已验证：`tests/litagent/test_litagent.py::test_litagent_no_reverse_references_to_runner_trainer_or_tracer` | Agent 只关心 rollout 行为 |
 | 20 | 移除 `LitAgent` 的 `trained_agents` 参数与持久字段 | P1 | LitAgent | 已完成 | 已验证：`tests/litagent/test_litagent.py::test_litagent_does_not_store_trained_agents_marker` | 训练目标匹配只由 adapter 的 `agent_match` 表达 |
-| 21 | 删除 `on_rollout_start/end` deprecated 生命周期 | P1 | LitAgent | 待开始 | 同步新增：新 Hook Interface 覆盖测试 | 不保留 legacy lifecycle fallback |
+| 21 | 删除 `on_rollout_start/end` deprecated 生命周期 | P1 | LitAgent | 已完成 | 已验证：`tests/litagent/test_litagent.py::test_litagent_no_legacy_rollout_lifecycle_methods` | 不保留 legacy lifecycle fallback |
 | 22 | 清理 legacy 类型传播（`RolloutLegacy`、`Task`、`TaskIfAny`、`RolloutRawResultLegacy`、`ReadableSpan` result path） | P1 | Types | 待开始 | 同步新增：类型导入清理扫描 | 运行时仅保留新 rollout/attempt/span/resource 模型 |
 | 23 | 删除 Tracer `trace_context(store=...)` 参数 | P1 | Tracer | 待开始 | 同步更新：Tracer 初始化测试 | `store` 通过 `init_worker(worker_id, store)` 或 `SpanWriter` 注入 |
 | 24 | 删除 `OtelTracer` 私有 `_trace_context_sync()` | P1 | Tracer | 待开始 | 同步更新：同步追踪行为测试或移除扫描 | legacy runner 删除后不再依赖私有同步入口 |

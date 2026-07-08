@@ -38,3 +38,11 @@ def test_litagent_does_not_store_trained_agents_marker() -> None:
 
     with pytest.raises(TypeError, match="__init__"):
         _BoundaryAgent(trained_agents="legacy")
+
+
+def test_litagent_no_legacy_rollout_lifecycle_methods() -> None:
+    """Validate deprecated rollout lifecycle hooks are removed from LitAgent."""
+    agent = _BoundaryAgent()
+
+    assert not hasattr(agent, "on_rollout_start")
+    assert not hasattr(agent, "on_rollout_end")
