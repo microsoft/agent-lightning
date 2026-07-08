@@ -18,7 +18,8 @@ from typing import Any, Dict, List, Optional, Union
 import aiohttp
 import requests
 
-from .types import NamedResources, ResourcesUpdate, RolloutLegacy, Task, TaskIfAny, TaskInput
+from .types import NamedResources, ResourcesUpdate, TaskInput
+from .types.legacy import RolloutLegacy, Task, TaskIfAny
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class AgentLightningClient:
         """Poll the server asynchronously until a task becomes available.
 
         Returns:
-            The next [`Task`][agentlightning.Task] exposed by the server,
+            The next [`Task`][agentlightning.types.legacy.Task] exposed by the server,
             or ``None`` if polling fails.
         """
         url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
@@ -217,7 +218,7 @@ class AgentLightningClient:
         """Poll the server synchronously until a task becomes available.
 
         Returns:
-            The next [`Task`][agentlightning.Task] available for execution, or
+            The next [`Task`][agentlightning.types.legacy.Task] available for execution, or
             ``None`` if polling fails.
         """
         url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
@@ -313,7 +314,7 @@ class DevTaskLoader(AgentLightningClient):
             **kwargs: Additional keyword arguments forwarded to the parent client.
 
         Raises:
-            ValueError: If no tasks are provided or both [`Task`][agentlightning.Task]
+            ValueError: If no tasks are provided or both [`Task`][agentlightning.types.legacy.Task]
                 and [`TaskInput`][agentlightning.TaskInput] instances are mixed.
         """
         warnings.warn("DevTaskLoader is deprecated. Please use Trainer.dev instead.", DeprecationWarning)
@@ -348,7 +349,7 @@ class DevTaskLoader(AgentLightningClient):
         """Return the next task from the local queue.
 
         If [`TaskInput`][agentlightning.TaskInput] instances were provided,
-        they are converted into [`Task`][agentlightning.Task] objects on the
+        they are converted into [`Task`][agentlightning.types.legacy.Task] objects on the
         fly. Otherwise, the preconstructed tasks are returned in sequence.
 
         Returns:

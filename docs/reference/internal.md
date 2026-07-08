@@ -66,12 +66,12 @@
 
 ::: agentlightning.client.DevTaskLoader
 
-::: agentlightning.Task
+::: agentlightning.types.legacy.Task
 
 ::: agentlightning.TaskInput
 
-::: agentlightning.TaskIfAny
+::: agentlightning.types.legacy.TaskIfAny
 
-::: agentlightning.RolloutRawResultLegacy
+::: agentlightning.types.legacy.RolloutRawResultLegacy
 
-::: agentlightning.RolloutLegacy
+::: agentlightning.types.legacy.RolloutLegacy

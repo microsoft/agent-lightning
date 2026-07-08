@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from typing import Any
+import agentlightning.types.core as core
 
 from agentlightning.types import AgentSpanPayload, RolloutResult, SpanWriteResult
 
@@ -51,3 +52,13 @@ def test_rollout_result_contract_alias() -> None:
     assert payload_result == [payload]
     assert isinstance(payload_result, list)
     assert isinstance(payload_result[0], AgentSpanPayload)
+
+
+def test_core_does_not_expose_legacy_result_contracts() -> None:
+    """Core type module should not expose legacy HTTP payload models."""
+
+    assert not hasattr(core, "RolloutLegacy")
+    assert not hasattr(core, "Task")
+    assert not hasattr(core, "TaskIfAny")
+    assert not hasattr(core, "RolloutRawResultLegacy")
+    assert not hasattr(core, "RolloutRawResult")

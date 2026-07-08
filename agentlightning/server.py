@@ -25,10 +25,8 @@ from .types import (
     GenericResponse,
     NamedResources,
     ResourcesUpdate,
-    RolloutLegacy,
-    Task,
-    TaskIfAny,
 )
+from .types.legacy import RolloutLegacy, Task, TaskIfAny
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +94,7 @@ class ServerDataStore:
         """Retrieve the next task from the queue without blocking.
 
         Returns:
-            Next [`Task`][agentlightning.Task] ready to execute, or ``None``
+            Next [`Task`][agentlightning.types.legacy.Task] ready to execute, or ``None``
             when the queue is empty.
         """
         try:
@@ -175,7 +173,7 @@ class ServerDataStore:
             rollout_id: Identifier of the rollout to fetch.
 
         Returns:
-            Stored [`RolloutLegacy`][agentlightning.RolloutLegacy], or ``None``
+            Stored [`RolloutLegacy`][agentlightning.types.legacy.RolloutLegacy], or ``None``
             when the identifier is unknown.
         """
         async with self._results_lock:

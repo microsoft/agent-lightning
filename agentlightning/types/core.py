@@ -26,7 +26,6 @@ from typing import (
     overload,
 )
 
-from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
 
 from .tracer import Span
@@ -42,12 +41,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Triplet",
-    "RolloutLegacy",
-    "Task",
     "TaskInput",
-    "TaskIfAny",
-    "RolloutRawResultLegacy",
-    "RolloutRawResult",
     "RolloutResult",
     "AlgorithmContext",
     "AgentSpanPayload",
@@ -139,37 +133,6 @@ class SpanWriter(Protocol):
         attempt_id: str,
         spans: "Sequence[AgentSpanPayload]",
     ) -> SpanWriteResult: ...
-
-
-class RolloutLegacy(BaseModel):
-    """Legacy reporting payload exchanged with the deprecated HTTP server.
-
-    !!! warning "Deprecated"
-        Use [`Rollout`][agentlightning.Rollout] instead.
-    """
-
-    rollout_id: str
-
-    # Echoing the input task
-    task: Optional[Task] = None
-
-    # Primary, high-level feedback
-    final_reward: Optional[float] = None
-
-    # Structured, sequential feedback for RL-style optimization
-    triplets: Optional[List[Triplet]] = None
-
-    # Optional, rich-context data for deep analysis
-    trace: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        description="A list of spans that conform to the OpenTelemetry JSON format. "
-        "Users of the opentelemetry-sdk can generate this by calling "
-        "json.loads(readable_span.to_json()).",
-    )
-    logs: Optional[List[str]] = None
-
-    # A bucket for any other relevant information
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 RolloutStatus = Literal[
@@ -326,55 +289,6 @@ TaskInput = Any
 """Task input type. Accepts arbitrary payloads."""
 
 
-class Task(BaseModel):
-    """Rollout request served to client agents.
-
-    !!! warning "Deprecated"
-        The legacy HTTP client/server stack still uses this model. Prefer
-        [`LightningStore`][agentlightning.LightningStore] APIs for new workflows.
-    """
-
-    rollout_id: str
-    input: TaskInput
-
-    mode: Optional[RolloutMode] = None
-    resources_id: Optional[str] = None
-
-    # Optional fields for tracking task lifecycle
-    create_time: Optional[float] = None
-    last_claim_time: Optional[float] = None
-    num_claims: Optional[int] = None
-
-    # Allow additional metadata fields
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class TaskIfAny(BaseModel):
-    """A task or indication that no task is available.
-
-    !!! warning "Deprecated"
-        Use [`LightningStore`][agentlightning.LightningStore] APIs for new workflows.
-    """
-
-    is_available: bool
-    """Indication that a task is available."""
-    task: Optional[Task] = None
-
-
-RolloutRawResultLegacy = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], RolloutLegacy]
-"""Legacy rollout result type.
-
-!!! warning "Deprecated"
-    Use [`RolloutResult`][agentlightning.RolloutResult] instead.
-"""
-
-RolloutRawResult = RolloutResult
-"""Compatibility alias for legacy call-sites.
-
-New code should use [`RolloutResult`][agentlightning.RolloutResult].
-"""
-
-
 class GenericResponse(BaseModel):
     """Generic server response used by compatibility endpoints.
 
@@ -497,7 +411,7 @@ class Hook(ParallelWorkerBase):
         agent: LitAgent[Any],
         runner: Runner[Any],
         rollout: Rollout,
-        spans: Union[List[ReadableSpan], List[Span]],
+        spans: List[Span],
     ) -> None:
         """Hook called after a rollout *attempt* completes.
 

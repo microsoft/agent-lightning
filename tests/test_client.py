@@ -10,7 +10,8 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
-from agentlightning import LLM, NamedResources, PromptTemplate, ResourcesUpdate, Task, Triplet
+from agentlightning import LLM, NamedResources, PromptTemplate, ResourcesUpdate, Triplet
+from agentlightning.types.legacy import RolloutLegacy, Task
 from agentlightning.client import AgentLightningClient, DevTaskLoader
 from agentlightning.server import AgentLightningServer
 

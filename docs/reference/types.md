@@ -4,7 +4,7 @@
 
 ::: agentlightning.Triplet
 
-::: agentlightning.RolloutRawResult
+::: agentlightning.RolloutResult
 
 ::: agentlightning.RolloutMode
 

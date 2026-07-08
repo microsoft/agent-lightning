@@ -19,11 +19,12 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
-from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
+from agentlightning import LLM, AgentLightningServer, NamedResources
+from agentlightning.types.legacy import RolloutLegacy, Task
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
-from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
+from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig
 
 __all__ = [
     "AgentModeDaemon",
