@@ -102,4 +102,11 @@ def algo(
         await context.store.enqueue_rollout(input={\"prompt\": \"hello\"}, mode=\"train\")
     ```
     """
+    signature = inspect.signature(func)
+    params = list(signature.parameters.values())
+    if len(params) != 1 or params[0].name != "context":
+        raise TypeError(
+            "Functions decorated with @algo must accept exactly one parameter named `context` of type AlgorithmContext."
+        )
+
     return FunctionalAlgorithm(func)

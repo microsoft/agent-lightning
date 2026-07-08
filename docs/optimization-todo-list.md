@@ -24,7 +24,7 @@
 | 13 | 移除 `Trainer` 旧入口参数（`n_workers`、`max_tasks`、`daemon`、`triplet_exporter`、`dev=True` 等） | P1 | Trainer | 已完成 | 已验证：`tests/trainer/test_trainer_init.py::test_trainer_rejects_legacy_constructor_args` + `tests/trainer/test_trainer_init.py::test_trainer_fit_rejects_string_dataset` | 旧运行方式迁移到 `Execution` |
 | 14 | 删除 `Algorithm` 对 `Trainer` 的弱引用（`_trainer_ref`） | P1 | Algorithm | 已完成 | 已验证：`tests/algorithm/test_decorator.py::test_algorithm_no_longer_exposes_trainer_accessors` | 仅保留 `AlgorithmContext` 传递，弱引用 Trainer 依赖清理 |
 | 15 | 移除 `Algorithm.set_trainer/get_trainer` 与 `get_client` | P1 | Algorithm | 已完成 | 通过：`tests/algorithm/test_decorator.py::test_algorithm_no_longer_exposes_trainer_accessors` + `tests/algorithm/test_decorator.py::test_algorithm_no_longer_exposes_get_client` | 禁止反向依赖 Trainer 和 legacy client |
-| 16 | 删除 `@algo` 参数名隐式注入逻辑 | P1 | Algorithm | 待开始 | 同步新增：decorator 签名、context 字段完整性、`context.event` 协作式停止测试 | 仅适配接收 `AlgorithmContext` 并返回 `None` 或 `Awaitable[None]` 的 callable |
+| 16 | 删除 `@algo` 参数名隐式注入逻辑 | P1 | Algorithm | 已完成 | 通过：`tests/algorithm/test_decorator.py::test_algorithm_preserves_signature` + `tests/algorithm/test_decorator.py::test_algo_rejects_non_context_parameter_name` | 仅适配接收 `AlgorithmContext` 并返回 `None` 或 `Awaitable[None]` 的 callable |
 | 17 | 删除 legacy runner 体系（`runner/legacy.py`） | P1 | Runner | 待开始 | 同步更新：运行路径覆盖测试与导出扫描 | 移除旧生命周期、`RolloutLegacy` 分支和 tracer 私有同步入口依赖 |
 | 18 | 删除 `Runner.run()` 同步接口与 legacy 回退 | P1 | Runner | 待开始 | 同步更新：运行接口测试 | 主 Runner 接口统一为 `iter()` 和 `step()` |
 | 19 | 去掉 `LitAgent` 反向引用（trainer/runner/tracer/store） | P1 | LitAgent | 待开始 | 同步新增：对象职责边界测试 | Agent 只关心 rollout 行为 |

@@ -70,6 +70,17 @@ def test_algorithm_preserves_signature():
     assert params == ["context"]
 
 
+def test_algo_rejects_non_context_parameter_name() -> None:
+    """@algo should reject legacy call signatures that rely on implicit injection."""
+
+    def legacy_algorithm(train_dataset: list[Any]) -> None:
+        """Legacy style function with dataset-first parameters."""
+        legacy_algorithm.called = True  # type: ignore[attr-defined]
+
+    with pytest.raises(TypeError, match="must accept exactly one parameter named `context`"):
+        algo(legacy_algorithm)
+
+
 def test_algorithm_run_method():
     """Test that the run method works correctly."""
 
