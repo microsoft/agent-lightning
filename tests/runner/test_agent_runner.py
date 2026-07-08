@@ -16,7 +16,7 @@ from opentelemetry.trace.status import Status, StatusCode
 
 from agentlightning.execution.events import ExecutionEvent, ThreadingEvent
 from agentlightning.litagent import LitAgent
-from agentlightning.reward import emit_reward, find_final_reward
+from agentlightning.emitter.reward import emit_reward, find_final_reward
 from agentlightning.runner import LitAgentRunner
 from agentlightning.runner.base import Runner
 from agentlightning.semconv import AGL_ANNOTATION

@@ -29,7 +29,7 @@ from typing import (
 )
 
 from agentlightning.litagent import LitAgent
-from agentlightning.reward import emit_reward, find_final_reward
+from agentlightning.emitter.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import (

@@ -18,7 +18,7 @@ from rich.console import Console
 
 from agentlightning.adapter import TraceToMessages
 from agentlightning.litagent import rollout
-from agentlightning.reward import find_final_reward
+from agentlightning.emitter.reward import find_final_reward
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer

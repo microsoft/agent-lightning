@@ -10,7 +10,7 @@ import pytest
 
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
-from agentlightning.reward import emit_reward
+from agentlightning.emitter.reward import emit_reward
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
