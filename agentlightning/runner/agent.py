@@ -10,10 +10,12 @@ and distributed worker coordination.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import random
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import suppress
 from typing import (
     TYPE_CHECKING,
@@ -55,6 +57,17 @@ T_task = TypeVar("T_task")
 
 logger = logging.getLogger(__name__)
 
+RolloutExecutionPolicy = Literal["inline", "thread", "process"]
+
+
+def _invoke_sync_rollout(
+    rollout_method: Callable[..., RolloutResult],
+    task: Any,
+    resources: NamedResources,
+    rollout: AttemptedRollout,
+) -> RolloutResult:
+    return rollout_method(task, resources=resources, rollout=rollout)
+
 
 class LitAgentRunner(Runner[T_task]):
     """Execute [`LitAgent`][agentlightning.LitAgent] tasks with tracing support.
@@ -76,6 +89,8 @@ class LitAgentRunner(Runner[T_task]):
         interval_jitter: float = 0.5,
         heartbeat_launch_mode: Literal["asyncio", "thread"] = "thread",
         heartbeat_include_gpu: bool = False,
+        rollout_execution_policy: RolloutExecutionPolicy = "inline",
+        rollout_process_workers: int = 1,
     ) -> None:
         """Initialize the agent runner.
 
@@ -93,8 +108,17 @@ class LitAgentRunner(Runner[T_task]):
                 under load. Use "asyncio" for simpler deployments with low worker counts.
             heartbeat_include_gpu: Whether to include GPU stats in heartbeat snapshots.
                 Querying GPU stats can be slow under load, so this is disabled by default.
+            rollout_execution_policy: How synchronous rollout methods are executed.
+                `"inline"` preserves existing behavior and runs in the event loop.
+                `"thread"` uses `asyncio.to_thread` for blocking agents.
+                `"process"` uses a process pool for pickleable agents and payloads.
+            rollout_process_workers: Process pool size used when `rollout_execution_policy="process"`.
         """
         super().__init__()
+        if rollout_execution_policy not in ("inline", "thread", "process"):
+            raise ValueError("rollout_execution_policy must be one of: inline, thread, process")
+        if rollout_process_workers < 1:
+            raise ValueError("rollout_process_workers must be at least 1")
         self._tracer = tracer
         self._max_rollouts = max_rollouts
         self._poll_interval = poll_interval
@@ -102,6 +126,9 @@ class LitAgentRunner(Runner[T_task]):
         self._interval_jitter = interval_jitter
         self._heartbeat_launch_mode = heartbeat_launch_mode
         self._heartbeat_include_gpu = heartbeat_include_gpu
+        self._rollout_execution_policy = rollout_execution_policy
+        self._rollout_process_workers = rollout_process_workers
+        self._rollout_process_pool: ProcessPoolExecutor | None = None
         self._random_state = random.Random()
 
         # Set later
@@ -160,6 +187,9 @@ class LitAgentRunner(Runner[T_task]):
         self._hooks = []
 
         self._tracer.teardown()
+        if self._rollout_process_pool is not None:
+            self._rollout_process_pool.shutdown(wait=True, cancel_futures=True)
+            self._rollout_process_pool = None
 
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
         """Teardown the runner for a specific worker.
@@ -240,6 +270,34 @@ class LitAgentRunner(Runner[T_task]):
         if rollout_id:
             return f"[Rollout {rollout_id}]"
         return "[Default Worker]"
+
+    def _get_rollout_process_pool(self) -> ProcessPoolExecutor:
+        if self._rollout_process_pool is None:
+            try:
+                self._rollout_process_pool = ProcessPoolExecutor(max_workers=self._rollout_process_workers)
+            except (NotImplementedError, OSError) as exc:
+                raise RuntimeError(
+                    "rollout_execution_policy='process' is unavailable in this environment. "
+                    "Use 'thread' for blocking rollout methods when multiprocessing is restricted."
+                ) from exc
+        return self._rollout_process_pool
+
+    async def _execute_sync_rollout(
+        self,
+        rollout_method: Callable[..., RolloutResult],
+        task: T_task,
+        resources: NamedResources,
+        rollout: AttemptedRollout,
+    ) -> RolloutResult:
+        """Execute a synchronous rollout using the configured policy."""
+        if self._rollout_execution_policy == "inline":
+            return _invoke_sync_rollout(rollout_method, task, resources, rollout)
+        if self._rollout_execution_policy == "thread":
+            return await asyncio.to_thread(_invoke_sync_rollout, rollout_method, task, resources, rollout)
+
+        loop = asyncio.get_running_loop()
+        call = functools.partial(_invoke_sync_rollout, rollout_method, task, resources, rollout)
+        return await loop.run_in_executor(self._get_rollout_process_pool(), call)
 
     async def _trigger_hooks(
         self,
@@ -657,8 +715,12 @@ class LitAgentRunner(Runner[T_task]):
                     rollout_method = (
                         agent.training_rollout if next_rollout.mode == "train" else agent.validation_rollout
                     )
-                    logger.debug(f"{self._log_prefix(rollout_id)} Starting sync rollout method.")
-                    result = rollout_method(
+                    logger.debug(
+                        f"{self._log_prefix(rollout_id)} Starting sync rollout method "
+                        f"with policy={self._rollout_execution_policy}."
+                    )
+                    result = await self._execute_sync_rollout(
+                        rollout_method,
                         next_rollout.input, resources=resources_update.resources, rollout=next_rollout
                     )
                     logger.debug(f"{self._log_prefix(rollout_id)} Sync rollout method completed.")

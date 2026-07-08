@@ -4,6 +4,7 @@ import asyncio
 import logging
 import random
 import time
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple
 
@@ -211,12 +212,18 @@ async def setup_runner(
     max_rollouts: Optional[int] = None,
     poll_interval: float = 0.01,
     hooks: Sequence[Hook] = (),
+    rollout_execution_policy: Literal["inline", "thread", "process"] = "inline",
 ) -> tuple[LitAgentRunner[Any], InMemoryLightningStore, DummyTracer]:
     tracer = tracer or DummyTracer()
     store = InMemoryLightningStore()
     await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
 
-    runner = LitAgentRunner[Any](tracer=tracer, max_rollouts=max_rollouts, poll_interval=poll_interval)
+    runner = LitAgentRunner[Any](
+        tracer=tracer,
+        max_rollouts=max_rollouts,
+        poll_interval=poll_interval,
+        rollout_execution_policy=rollout_execution_policy,
+    )
     runner.init(agent=agent, hooks=hooks)
     runner.init_worker(worker_id=0, store=store)
     return runner, store, tracer
@@ -265,6 +272,21 @@ class RecordingHook(Hook):
     ) -> None:
         self.calls.append("on_rollout_end")
         self.received_spans = spans
+
+
+class ProcessPolicyAgent(LitAgent[Dict[str, Any]]):
+    def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+        _ = (task, resources, rollout)
+        return 0.5
+
+
+def _process_pool_available() -> bool:
+    try:
+        pool = ProcessPoolExecutor(max_workers=1)
+    except (NotImplementedError, OSError):
+        return False
+    pool.shutdown(wait=True, cancel_futures=True)
+    return True
 
 
 @pytest.mark.asyncio
@@ -673,6 +695,54 @@ async def test_training_rollout_sync_used() -> None:
         teardown_runner(runner)
 
     assert agent.training_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_rollout_thread_policy_keeps_event_loop_responsive() -> None:
+    class BlockingAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            _ = (task, resources, rollout)
+            time.sleep(0.1)
+            return 0.25
+
+    agent = BlockingAgent()
+    runner, _, _ = await setup_runner(agent, rollout_execution_policy="thread")
+    ticks = 0
+    done = False
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while not done:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    tick_task = asyncio.create_task(ticker())
+    try:
+        await runner.step({"task": "blocking"}, resources={})
+    finally:
+        done = True
+        await tick_task
+        teardown_runner(runner)
+
+    assert ticks > 0
+
+
+@pytest.mark.asyncio
+async def test_sync_rollout_process_policy_completes_rollout() -> None:
+    if not _process_pool_available():
+        pytest.skip("ProcessPoolExecutor is unavailable in this environment")
+
+    agent = ProcessPolicyAgent()
+    runner, store, _ = await setup_runner(agent, rollout_execution_policy="process")
+    try:
+        result = await runner.step({"task": "process"}, resources={})
+    finally:
+        teardown_runner(runner)
+
+    assert result.status == "succeeded"
+    rollouts = await store.query_rollouts()
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "succeeded"
 
 
 @pytest.mark.asyncio
