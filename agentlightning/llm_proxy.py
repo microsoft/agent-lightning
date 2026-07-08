@@ -49,6 +49,7 @@ from starlette.types import Scope
 
 from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.types import LLM, ProxyLLM
+from agentlightning.utils.async_store_span_writer import AsyncStoreSpanWriter, STORE_WRITE_TIMEOUT_SECONDS
 from agentlightning.utils.server_launcher import (
     LaunchMode,
     PythonServerLauncher,
@@ -214,11 +215,13 @@ class LightningSpanExporter(SpanExporter):
         self._store: Optional[LightningStore] = _store  # this is only for testing purposes
         self._buffer: List[ReadableSpan] = []
         self._lock: Optional[threading.Lock] = None
-        self._loop_lock_pid: Optional[int] = None
 
-        # Single dedicated event loop running in a daemon thread.
-        # This decouples OTEL SDK threads from our async store I/O.
-        # Deferred creation until first use.
+        self._loop_writer = AsyncStoreSpanWriter(
+            thread_name="LightningSpanExporterLoop",
+            clear_on_fork=True,
+            startup_timeout=30.0,
+            shutdown_timeout=2.0,
+        )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
 
@@ -230,11 +233,8 @@ class LightningSpanExporter(SpanExporter):
         Returns:
             asyncio.AbstractEventLoop: The initialized event loop.
         """
-        self._clear_loop_and_lock()
-        if self._loop is None:
-            self._loop = asyncio.new_event_loop()
-            self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
-            self._loop_thread.start()
+        self._loop = self._loop_writer.ensure_loop()
+        self._loop_thread = self._loop_writer.loop_thread
         return self._loop
 
     def _ensure_lock(self) -> threading.Lock:
@@ -243,31 +243,10 @@ class LightningSpanExporter(SpanExporter):
         Returns:
             threading.Lock: The initialized lock.
         """
-        self._clear_loop_and_lock()
+        self._loop_writer.ensure_lock()
         if self._lock is None:
             self._lock = threading.Lock()
         return self._lock
-
-    def _clear_loop_and_lock(self) -> None:
-        """Clear the loop and lock.
-        This happens if the exporter was used in a process then used in another process.
-
-        This should only happen in CI.
-        """
-        if os.getpid() != self._loop_lock_pid:
-            logger.warning("Loop and lock are not owned by the current process. Clearing them.")
-            self._loop = None
-            self._loop_thread = None
-            self._lock = None
-            self._loop_lock_pid = os.getpid()
-        elif self._loop_lock_pid is None:
-            self._loop_lock_pid = os.getpid()
-
-    def _run_loop(self) -> None:
-        """Run the private asyncio loop forever on the exporter thread."""
-        assert self._loop is not None, "Loop should be initialized before thread starts"
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
 
     def shutdown(self) -> None:
         """Shut down the exporter event loop.
@@ -275,21 +254,9 @@ class LightningSpanExporter(SpanExporter):
         Safe to call at process exit.
 
         """
-        if self._loop is None:
-            return
-
-        try:
-
-            def _stop():
-                assert self._loop is not None
-                self._loop.stop()
-
-            self._loop.call_soon_threadsafe(_stop)
-            if self._loop_thread is not None:
-                self._loop_thread.join(timeout=2.0)
-            self._loop.close()
-        except Exception:
-            logger.exception("Error during exporter shutdown")
+        self._loop_writer.shutdown()
+        self._loop = None
+        self._loop_thread = None
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         """Export spans via buffered subtree flush.
@@ -428,15 +395,14 @@ class LightningSpanExporter(SpanExporter):
             else:
                 # The old way: store does not support OTLP endpoint
                 for span in subtree_spans:
-                    loop = self._ensure_loop()
+                    self._ensure_loop()
                     add_otel_span_task = store.add_otel_span(
                         rollout_id=rollout_id,
                         attempt_id=attempt_id,
                         sequence_id=sequence_id_decimal,
                         readable_span=span,
                     )
-                    fut = asyncio.run_coroutine_threadsafe(add_otel_span_task, loop)
-                    fut.result()  # Bubble up any exceptions from the coroutine.
+                    self._loop_writer.run_in_loop(add_otel_span_task, timeout=STORE_WRITE_TIMEOUT_SECONDS)
 
     def _get_root_span_ids(self) -> Iterable[int]:
         """Yield span_ids for root spans currently in the buffer.

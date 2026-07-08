@@ -20,15 +20,13 @@ from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
 from agentlightning.types import Attributes, Span, SpanCoreFields, SpanRecordingContext, StatusCode, TraceStatus
 from agentlightning.types.tracer import convert_timestamp
+from agentlightning.utils.async_store_span_writer import AsyncStoreSpanWriter, STORE_WRITE_TIMEOUT_SECONDS
 from agentlightning.utils.otel import get_tracer_provider
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer, with_active_tracer_context
 
 logger = logging.getLogger(__name__)
-
-STORE_WRITE_TIMEOUT_SECONDS = 10.0
-
 
 def to_otel_status_code(status_code: StatusCode) -> trace_api.StatusCode:
     if status_code == "UNSET":
@@ -326,11 +324,10 @@ class LightningSpanProcessor(SpanProcessor):
         self._local_sequence_id: int = 0
         self._lock = threading.Lock()
 
-        # private asyncio loop running in a daemon thread
-        self._loop_ready = threading.Event()
+        # private asyncio loop writer
+        self._loop_writer = AsyncStoreSpanWriter(thread_name="otel-loop", clear_on_fork=False, startup_timeout=30.0, shutdown_timeout=5.0)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
-        self._loop_init_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return (
@@ -366,27 +363,9 @@ class LightningSpanProcessor(SpanProcessor):
         self._disable_store_submission = value
 
     def _ensure_loop(self) -> None:
-        # Fast path: loop already initialized
-        if self._loop_thread is not None and self._loop is not None:
-            return
-
-        with self._loop_init_lock:
-            # Double-check after acquiring lock
-            if self._loop_thread is not None and self._loop is not None:
-                return
-            self._loop_ready.clear()
-            self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
-            self._loop_thread.start()
-            if not self._loop_ready.wait(timeout=30.0):
-                raise RuntimeError("Timed out waiting for otel-loop thread to start")
-
-    def _loop_runner(self):
-        loop = asyncio.new_event_loop()
-        self._loop = loop
-        asyncio.set_event_loop(loop)
-        self._loop_ready.set()
-        loop.run_forever()
-        loop.close()
+        self._loop_writer.ensure_loop()
+        self._loop = self._loop_writer.loop
+        self._loop_thread = self._loop_writer.loop_thread
 
     def __enter__(self):
         self._last_trace = None
@@ -399,45 +378,12 @@ class LightningSpanProcessor(SpanProcessor):
         self._attempt_id = None
 
     def _await_in_loop(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
-        # submit to the dedicated loop and wait synchronously
-        self._ensure_loop()
-        if self._loop is None:
-            raise RuntimeError("Loop is not initialized. This should not happen.")
-
-        # If already on the exporter loop thread, schedule and return immediately.
-        # ---------------------------------------------------------------------------
-        # WHY THIS CONDITIONAL EXISTS:
-        # In rare cases, span.end() is triggered from a LangchainCallbackHandler.__del__
-        # (or another finalizer) while the Python garbage collector is running on the
-        # *same thread* that owns our exporter event loop ("otel-loop").
-        #
-        # When that happens, on_end() executes on the exporter loop thread itself.
-        # If we were to call `asyncio.run_coroutine_threadsafe(...).result()` here,
-        # it would deadlock immediately — because the loop cannot both wait on and run
-        # the same coroutine. The Future stays pending forever and the loop stops
-        # processing scheduled callbacks.
-        #
-        # To avoid that self-deadlock, we detect when on_end() runs on the exporter
-        # loop thread. If so, we *schedule* the coroutine on the loop (fire-and-forget)
-        # instead of blocking with .result().
-        #
-        # This situation can occur because Python calls __del__ in whatever thread
-        # releases the last reference, which can easily be our loop thread if the
-        # object is dereferenced during loop._run_once().
-        # ---------------------------------------------------------------------------
-        if threading.current_thread() is self._loop_thread:
-            self._loop.call_soon_threadsafe(asyncio.create_task, coro)  # type: ignore
-            return None
-
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
-        return fut.result(timeout=timeout)  # raises on error  # type: ignore
+        return self._loop_writer.run_in_loop(coro, timeout=timeout)
 
     def shutdown(self) -> None:
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            self._loop = None
-        if self._loop_thread:
-            self._loop_thread.join(timeout=5)
+        self._loop_writer.shutdown()
+        self._loop = None
+        self._loop_thread = None
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         return True

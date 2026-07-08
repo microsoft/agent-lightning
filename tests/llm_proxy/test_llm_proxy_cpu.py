@@ -65,6 +65,13 @@ class _FakeStore(InMemoryLightningStore):
         return cast(Span, None)
 
 
+class _FailingStore(_FakeStore):
+    async def add_otel_span(  # type: ignore[override]
+        self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+    ) -> Span:
+        raise RuntimeError("exporter-failure")
+
+
 @pytest.mark.asyncio
 async def test_exporter_tree_and_flush_headers_parsing():
     store = _FakeStore()
@@ -90,6 +97,22 @@ async def test_exporter_tree_and_flush_headers_parsing():
         assert sid == 7
         assert isinstance(sp, _FakeReadableSpan)
 
+    exporter.shutdown()
+
+
+def test_exporter_export_handles_store_failures():
+    exporter = LightningSpanExporter(_FailingStore())
+    root = _FakeReadableSpan(1, None, {"metadata.requester_custom_headers": "{'x-rollout-id':'r1','x-attempt-id':'a1','x-sequence-id':'7'}"})
+
+    result = exporter.export(cast(List[ReadableSpan], [root]))
+    assert result.name == "FAILURE"
+
+    exporter.shutdown()
+
+
+def test_exporter_shutdown_is_idempotent():
+    exporter = LightningSpanExporter(_FakeStore())
+    exporter.shutdown()
     exporter.shutdown()
 
 
