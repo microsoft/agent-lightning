@@ -733,7 +733,7 @@ class LightningStore:
         * Validate the rollout exists before mutating it.
         * Replace each property when a concrete value (including `None`) is supplied.
         * When the status switches into a terminal state, set `end_time` and signal any waiters.
-        * When the status re-enters a queueing state, ensure the rollout is enqueued exactly once.
+        * When the status re-enters a queuing state, ensure the rollout is enqueued exactly once.
 
         Args:
             rollout_id: Identifier of the rollout to update.

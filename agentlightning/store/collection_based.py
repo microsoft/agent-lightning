@@ -525,7 +525,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await self._enqueue_many_rollouts([rollout])
         # Notify the subclass that the rollout status has changed.
         all_fields = list(Rollout.model_fields.keys())
-        # Skip queueing because the rollout is already in the queue.
+        # Skip queuing because the rollout is already in the queue.
         await self._post_update_rollout([(rollout, all_fields)], skip_enqueue=True)
 
         # Return the rollout with no attempt attached.
@@ -1225,7 +1225,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         updated_fields: List[str] = []
         latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout.rollout_id)
         if latest_attempt is not None and attempt.attempt_id == latest_attempt.attempt_id:
-            if rollout.status in ["preparing", "queueing", "requeuing"]:
+            if rollout.status in ["preparing", "queuing", "requeuing"]:
                 # If rollout is currently preparing or queuing, set it to running
                 rollout.status = "running"
                 await collections.rollouts.update([rollout], update_fields=["status"])
@@ -1506,7 +1506,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         Args:
             rollouts: A sequence of tuples, each containing a rollout and the fields that were updated.
-            skip_enqueue: Whether to skip queueing the rollouts.
+            skip_enqueue: Whether to skip queuing the rollouts.
         """
         for rollout, updated_fields in rollouts:
             # Sometimes "end_time" is set but it's not really updated.

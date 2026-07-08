@@ -17,7 +17,7 @@ At a high level:
 
 Rollout and Task share the same surface in practice: [`Rollout.input`][agentlightning.types.Rollout] is the task input. The queue stores rollouts that are not yet running; [Runners][agentlightning.Runner] dequeue them and update the same rollout's status as work progresses.
 
-Before we look at status transitions, it helps to keep in mind that rollouts are the "outside view," while attempts are the "inside view." Attempts are what actually run; rollouts summarize the latest attempt plus a small set of control actions like queueing and cancellation.
+Before we look at status transitions, it helps to keep in mind that rollouts are the "outside view," while attempts are the "inside view." Attempts are what actually run; rollouts summarize the latest attempt plus a small set of control actions like queuing and cancellation.
 
 ## Attempt Status Transitions
 
@@ -83,7 +83,7 @@ Because every transition flows through these APIs, worker status is derived auto
 
 ## Rollout Transition Map
 
-Rollout status is an **aggregated view** of its latest attempt’s status, with additional transitions for queueing and explicit cancellation.
+Rollout status is an **aggregated view** of its latest attempt’s status, with additional transitions for queuing and explicit cancellation.
 
 A rollout’s retry behavior is controlled by [`Rollout.config`][agentlightning.types.Rollout] (a [`RolloutConfig`][agentlightning.types.RolloutConfig]). The key fields are:
 

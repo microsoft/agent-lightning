@@ -205,7 +205,7 @@ class AgentModeDaemon:
     """
     AgentModeDaemon using the AgentLightningServer SDK.
 
-    This class manages the server lifecycle, task queueing, and results
+    This class manages the server lifecycle, task queuing, and results
     retrieval, while also running a proxy server for LLM requests. It maintains
     the original interface for compatibility with the RayPPOTrainer.
     """

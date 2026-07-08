@@ -204,7 +204,7 @@ class ServerDataStore:
 class AgentLightningServer:
     """High-level controller for the legacy Agent Lightning FastAPI server.
 
-    The controller orchestrates server start-up, task queueing, resource updates,
+    The controller orchestrates server start-up, task queuing, resource updates,
     and retrieval of client rollouts. It is primarily used by existing systems that
     still rely on the HTTP-based workflow.
 
