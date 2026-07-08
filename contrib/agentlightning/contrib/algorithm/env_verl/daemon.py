@@ -25,7 +25,7 @@ from verl import DataProto
 import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
-from agentlightning.reward import find_final_reward
+from agentlightning.emitter.reward import find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
 from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup

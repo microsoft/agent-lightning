@@ -470,7 +470,6 @@ class AgentLightningTrainer(RayPPOTrainer):
             tokenizer=self.tokenizer,
             mini_batch_size=self.config.actor_rollout_ref.actor.ppo_mini_batch_size,
             pad_token_id=self.tokenizer.pad_token_id,
-            mode="v1" if self.store is not None else "v0",
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,

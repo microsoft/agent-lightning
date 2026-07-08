@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional, Type, cast
 
 from hydra import compose, initialize
 from omegaconf import OmegaConf
@@ -14,6 +14,7 @@ from agentlightning.verl.entrypoint import run_ppo  # type: ignore
 if TYPE_CHECKING:
     from agentlightning.verl.daemon import AgentModeDaemon
     from agentlightning.verl.trainer import AgentLightningTrainer
+    from agentlightning.store.base import LightningStore
 
 
 class VERL(Algorithm):
@@ -148,16 +149,19 @@ class VERL(Algorithm):
         """Launch the VERL PPO entrypoint with the configured runtime context.
 
         Args:
-            train_dataset: Optional dataset forwarded to VERL for training.
-            val_dataset: Optional dataset forwarded to VERL for evaluation.
+            context: Runtime context containing the store, adapter, LLM proxy,
+                and optional datasets forwarded to VERL.
 
         Raises:
-            ValueError: If required dependencies such as the store, LLM proxy, or
-                adapter have been garbage-collected when using the V1 execution
-                mode.
+            ValueError: If required dependencies such as the store, LLM proxy,
+                or adapter are missing for V1 execution mode.
         """
         from agentlightning.verl.daemon import AgentModeDaemon
         from agentlightning.verl.trainer import AgentLightningTrainer
+
+        store = cast(Optional["LightningStore"], context.store)
+        if store is None:
+            raise ValueError("VERL execution requires a store and does not support v0 fallback mode.")
 
         trainer_cls = self.trainer_cls or AgentLightningTrainer
         daemon_cls = self.daemon_cls or AgentModeDaemon
@@ -165,7 +169,7 @@ class VERL(Algorithm):
             self.config,
             train_dataset=context.train_dataset,
             val_dataset=context.val_dataset,
-            store=context.store,
+            store=store,
             llm_proxy=context.llm_proxy,
             adapter=context.adapter,
             trainer_cls=trainer_cls,

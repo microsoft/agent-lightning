@@ -59,6 +59,9 @@ def run_ppo(
     trainer_cls: Type[AgentLightningTrainer],
     daemon_cls: Type[AgentModeDaemon],
 ) -> None:
+    if store is None:
+        raise ValueError("VERL execution requires a store and does not support v0 fallback mode.")
+
     if not ray.is_initialized():
         # this is for local ray cluster
         try:
