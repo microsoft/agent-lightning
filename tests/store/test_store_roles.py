@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
@@ -25,3 +27,9 @@ def test_runtime_roles_match_design_intent() -> None:
     assert not isinstance(store, LightningStore)
     assert isinstance(client, LightningStore)
     assert isinstance(threaded, LightningStore)
+
+
+def test_sqlite_store_todo_file_is_removed() -> None:
+    """The project should not keep unimplemented SQLite store placeholders."""
+    root = Path(__file__).resolve().parents[2]
+    assert not (root / "agentlightning" / "store" / "sqlite.py").exists()
