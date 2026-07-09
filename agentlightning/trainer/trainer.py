@@ -25,9 +25,28 @@ from .registry import ExecutionStrategyRegistry
 logger = logging.getLogger(__name__)
 
 T_co = TypeVar("T_co", covariant=True)
-T = TypeVar("T")
 
-ComponentSpec: TypeAlias = Union[T, type[T], Callable[[], T], str, Dict[str, Any], None]
+TracerSpec: TypeAlias = Union[Tracer, type[Tracer], Callable[[], Tracer], str, Dict[str, Any], None]
+AdapterSpec: TypeAlias = Union[
+    TraceAdapter[Any],
+    type[TraceAdapter[Any]],
+    Callable[[], TraceAdapter[Any]],
+    str,
+    Dict[str, Any],
+    None,
+]
+StoreSpec: TypeAlias = Union[LightningStore, type[LightningStore], Callable[[], LightningStore], str, Dict[str, Any], None]
+RunnerSpec: TypeAlias = Union[Runner[Any], type[Runner[Any]], Callable[[], Runner[Any]], str, Dict[str, Any], None]
+StrategySpec: TypeAlias = Union[
+    ExecutionStrategy,
+    type[ExecutionStrategy],
+    Callable[[], ExecutionStrategy],
+    str,
+    Dict[str, Any],
+    None,
+]
+AlgorithmSpec: TypeAlias = Union[Algorithm, type[Algorithm], Callable[[], Algorithm], str, Dict[str, Any], None]
+LLMProxySpec: TypeAlias = Union[LLMProxy, type[LLMProxy], Callable[[], LLMProxy], str, Dict[str, Any], None]
 
 
 async def _run_runner_bundle(
@@ -147,14 +166,14 @@ class Trainer:
         n_runners: Optional[int] = None,
         max_rollouts: Optional[int] = None,
         initial_resources: Optional[NamedResources] = None,
-        tracer: ComponentSpec[Tracer] = None,
-        adapter: ComponentSpec[TraceAdapter[Any]] = None,
-        store: ComponentSpec[LightningStore] = None,
-        runner: ComponentSpec[Runner[Any]] = None,
-        strategy: ComponentSpec[ExecutionStrategy] = None,
+        tracer: TracerSpec = None,
+        adapter: AdapterSpec = None,
+        store: StoreSpec = None,
+        runner: RunnerSpec = None,
+        strategy: StrategySpec = None,
         port: Optional[int] = None,
-        algorithm: ComponentSpec[Algorithm] = None,
-        llm_proxy: ComponentSpec[LLMProxy] = None,
+        algorithm: AlgorithmSpec = None,
+        llm_proxy: LLMProxySpec = None,
         hooks: Optional[Union[Hook, Sequence[Hook]]] = None,
     ):
         """Configure the trainer and resolve user-provided component specifications.
@@ -203,7 +222,7 @@ class Trainer:
 
         self.hooks = self._normalize_hooks(hooks)
 
-    def _make_tracer(self, tracer: ComponentSpec[Tracer]) -> Tracer:
+    def _make_tracer(self, tracer: TracerSpec) -> Tracer:
         """Resolve the tracer component from user input, falling back to AgentOpsTracer."""
 
         def default_factory() -> Tracer:
@@ -223,7 +242,7 @@ class Trainer:
             type_error_fmt="Tracer factory returned {type_name}, which is not a Tracer subclass.",
         )
 
-    def _make_algorithm(self, algorithm: ComponentSpec[Algorithm]) -> Optional[Algorithm]:
+    def _make_algorithm(self, algorithm: AlgorithmSpec) -> Optional[Algorithm]:
         """Resolve the algorithm component, allowing `None` for dev-mode dry runs."""
         return build_component(
             algorithm,
@@ -234,7 +253,7 @@ class Trainer:
             type_error_fmt="Algorithm factory returned {type_name}, which is not a Algorithm subclass.",
         )
 
-    def _make_adapter(self, adapter: ComponentSpec[TraceAdapter[Any]]) -> TraceAdapter[Any]:
+    def _make_adapter(self, adapter: AdapterSpec) -> TraceAdapter[Any]:
         """Resolve the adapter used to transform spans into algorithm-ready payloads."""
 
         def default_factory() -> TraceAdapter[Any]:
@@ -251,7 +270,7 @@ class Trainer:
             type_error_fmt="Adapter factory returned {type_name}, which is not a TraceAdapter subclass.",
         )
 
-    def _make_store(self, store: ComponentSpec[LightningStore], strategy: ExecutionStrategy) -> LightningStore:
+    def _make_store(self, store: StoreSpec, strategy: ExecutionStrategy) -> LightningStore:
         """Resolve the store implementation backing rollouts, attempts, spans, and resources.
 
         By default, it's always a in-memory store. If using a client/server execution strategy,
@@ -273,7 +292,7 @@ class Trainer:
 
     def _make_strategy(
         self,
-        strategy: ComponentSpec[ExecutionStrategy],
+        strategy: StrategySpec,
         *,
         n_runners: int,
         port: Optional[int] = None,
@@ -305,7 +324,7 @@ class Trainer:
 
     def _make_llm_proxy(
         self,
-        llm_proxy: ComponentSpec[LLMProxy],
+        llm_proxy: LLMProxySpec,
         *,
         store: LightningStore,
     ) -> Optional[LLMProxy]:
@@ -328,7 +347,7 @@ class Trainer:
             type_error_fmt="llm_proxy factory returned {type_name}, which is not an LLMProxy subclass.",
         )
 
-    def _make_runner(self, runner: ComponentSpec[Runner[Any]]) -> Runner[Any]:
+    def _make_runner(self, runner: RunnerSpec) -> Runner[Any]:
         """Resolve the runner responsible for executing the agent inside each worker."""
         optional_defaults: Dict[str, Callable[[], Any]] = {"tracer": lambda: self.tracer}
         if self.max_rollouts is not None:
