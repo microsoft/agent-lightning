@@ -12,8 +12,6 @@ Please do not use the file as a reference for the expected behavior of config.
 import argparse
 import inspect
 import sys
-from typing import TypeVar  # Added for completeness if testing TypeVars directly
-from typing import _GenericAlias  # type: ignore
 from typing import (
     Any,
     Callable,
@@ -31,10 +29,11 @@ from unittest import mock  # For mock.patch.object, mock.call, MagicMock etc.
 import pytest
 
 from agentlightning import config
+from agentlightning.execution.client_server import ClientServerExecutionStrategy
+from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.trainer import Trainer
 
-# TypeVar as used in the original code
 CliConfigurable = Any
-_C = TypeVar("_C", bound=CliConfigurable)
 
 
 # --- Helper classes for testing ---
@@ -606,3 +605,38 @@ def test_lightning_cli_optional_no_default_behavior():
     # Provided with a value
     (cfg3,) = run_lightning_cli([OptionalNoDefaultConfig], ["--optionalnodefaultconfig.opt-val", "ActualValue"])
     assert cfg3.opt_val == "ActualValue"
+
+
+def test_lightning_cli_instantiates_latest_trainer_arguments():
+    """Trainer CLI construction should follow the execution-based trainer API."""
+
+    (trainer,) = run_lightning_cli(
+        [Trainer],
+        [
+            "--trainer.n-runners",
+            "2",
+            "--trainer.max-rollouts",
+            "3",
+            "--trainer.port",
+            "4321",
+        ],
+    )
+
+    assert isinstance(trainer, Trainer)
+    assert trainer.n_runners == 2
+    assert trainer.max_rollouts == 3
+    assert trainer.port == 4321
+    assert isinstance(trainer.store, InMemoryLightningStore)
+    assert isinstance(trainer.strategy, ClientServerExecutionStrategy)
+    assert trainer.strategy.server_port == 4321
+
+
+def test_lightning_cli_rejects_legacy_trainer_arguments(capsys):
+    """Removed Trainer constructor arguments must not be reintroduced through the CLI."""
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_lightning_cli([Trainer], ["--trainer.n-workers", "2"])
+
+    assert exc_info.value.code != 0
+    captured = capsys.readouterr()
+    assert "unrecognized arguments: --trainer.n-workers 2" in captured.err

@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
-from typing import _GenericAlias  # type: ignore
 from typing import (
     Any,
     Callable,
@@ -69,9 +68,9 @@ def nullable_float(value: str) -> float | None:
         raise argparse.ArgumentTypeError(f"Invalid float value: '{value}'")
 
 
-def _str_to_bool(v: str) -> bool:
+def _str_to_bool(v: str | bool) -> bool:
     """Converts common string representations of bool to Python bool (case-insensitive)."""
-    if isinstance(v, bool):  # type: ignore
+    if isinstance(v, bool):
         return v  # Allow passing bools directly if used programmatically
     lowered_v = v.lower()
     if lowered_v in ("yes", "true", "t", "y", "1"):
@@ -109,7 +108,7 @@ def _get_param_type_details(param_annotation: Any) -> Tuple[Any, bool, bool]:
 
     # Check if the (potentially unwrapped) type is a List
     origin = get_origin(current_type)  # Re-check origin after potential unwrap
-    if origin is list or (isinstance(current_type, _GenericAlias) and current_type.__origin__ is list):
+    if origin is list:
         is_list = True
 
     return current_type, is_optional, is_list
@@ -303,6 +302,8 @@ def _instantiate_classes(
 
 
 @overload
+def lightning_cli() -> Tuple[()]: ...
+@overload
 def lightning_cli(cls1: Type[_C1]) -> _C1: ...
 @overload
 def lightning_cli(cls1: Type[_C1], cls2: Type[_C2]) -> Tuple[_C1, _C2]: ...
@@ -311,13 +312,22 @@ def lightning_cli(cls1: Type[_C1], cls2: Type[_C2], cls3: Type[_C3]) -> Tuple[_C
 @overload
 def lightning_cli(cls1: Type[_C1], cls2: Type[_C2], cls3: Type[_C3], cls4: Type[_C4]) -> Tuple[_C1, _C2, _C3, _C4]: ...
 @overload  # Fallback for more than 4 or a dynamic number of classes
-def lightning_cli(*classes: Type[CliConfigurable]) -> Tuple[CliConfigurable, ...]: ...
+def lightning_cli(
+    cls1: Type[CliConfigurable],
+    cls2: Type[CliConfigurable],
+    cls3: Type[CliConfigurable],
+    cls4: Type[CliConfigurable],
+    *classes: Type[CliConfigurable],
+) -> Tuple[CliConfigurable, ...]: ...
 
 
-# FIXME: lightning_cli needs to be fixed to comply with the latest trainer implementation.
-
-
-def lightning_cli(*classes: Type[CliConfigurable]) -> CliConfigurable | Tuple[CliConfigurable, ...]:  # type: ignore
+def lightning_cli(
+    cls1: Type[CliConfigurable] | None = None,
+    cls2: Type[CliConfigurable] | None = None,
+    cls3: Type[CliConfigurable] | None = None,
+    cls4: Type[CliConfigurable] | None = None,
+    *additional_classes: Type[CliConfigurable],
+) -> CliConfigurable | Tuple[CliConfigurable, ...]:
     """
     Parses command-line arguments to configure and instantiate provided CliConfigurable classes.
 
@@ -328,6 +338,7 @@ def lightning_cli(*classes: Type[CliConfigurable]) -> CliConfigurable | Tuple[Cl
     Returns:
         A tuple of instantiated objects, corresponding to the input classes in order.
     """
+    classes = tuple(cls for cls in (cls1, cls2, cls3, cls4) if cls is not None) + additional_classes
     if not classes:
         return tuple()  # Return an empty tuple if no classes are provided
 
