@@ -17,7 +17,7 @@ from litellm.utils import custom_llm_setup
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
-from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
+from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy, _rollout_headers_from_headers
 from agentlightning.store import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.store.threading import LightningStoreThreaded
@@ -28,6 +28,21 @@ from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
 
 pytestmark = pytest.mark.llmproxy
+
+
+def test_rollout_headers_from_asgi_byte_headers():
+    headers = [
+        (b"host", b"localhost"),
+        (b"x-rollout-id", b"r-bytes"),
+        (b"x-attempt-id", b"a-bytes"),
+        (b"x-sequence-id", b"11"),
+    ]
+
+    assert _rollout_headers_from_headers(headers) == {
+        "x-rollout-id": "r-bytes",
+        "x-attempt-id": "a-bytes",
+        "x-sequence-id": "11",
+    }
 
 
 class _FakeSpanContext:

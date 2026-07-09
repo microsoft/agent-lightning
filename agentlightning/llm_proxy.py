@@ -11,6 +11,7 @@ import re
 import tempfile
 import threading
 import time
+from contextvars import ContextVar
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import (
@@ -64,6 +65,7 @@ logger = logging.getLogger(__name__)
 _ROLLOUT_ID_ATTR = "agentlightning.rollout_id"
 _ATTEMPT_ID_ATTR = "agentlightning.attempt_id"
 _SEQUENCE_ID_ATTR = "agentlightning.sequence_id"
+_CURRENT_ROLLOUT_HEADERS: ContextVar[Dict[str, str]] = ContextVar("agentlightning_llm_proxy_headers", default={})
 
 __all__ = [
     "LLMProxy",
@@ -152,11 +154,28 @@ def _reset_litellm_logging_callback_manager() -> None:
 
 
 def _headers_get(headers: Any, key: str) -> Optional[str]:
-    """Return a case-insensitive header value from dict-like headers."""
-    if not isinstance(headers, dict):
-        return None
     key_lower = key.lower()
-    for header_key, value in headers.items():
+
+    if hasattr(headers, "get"):
+        value = headers.get(key) or headers.get(key_lower)
+        if value is not None:
+            return str(value)
+
+    if isinstance(headers, dict):
+        items = headers.items()
+    elif isinstance(headers, (list, tuple)):
+        items = headers
+    else:
+        return None
+
+    for item in items:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        header_key, value = item
+        if isinstance(header_key, bytes):
+            header_key = header_key.decode()
+        if isinstance(value, bytes):
+            value = value.decode()
         if str(header_key).lower() == key_lower:
             return str(value)
     return None
@@ -383,7 +402,8 @@ class LightningSpanExporter(SpanExporter):
                     )
                     continue
                 if not headers_str.strip():
-                    logger.warning("metadata.requester_custom_headers is an empty string. Skipping the span.")
+                    if not headers_merged:
+                        logger.warning("metadata.requester_custom_headers is an empty string. Skipping the span.")
                     continue
                 try:
                     # Use literal_eval to parse the stringified dict safely.
@@ -534,7 +554,7 @@ class LightningOpenTelemetry(OpenTelemetry):
         """The root span is sometimes missing (e.g., when Anthropic endpoint is used).
         It is created in an auth module in LiteLLM. If it's missing, we create it here.
         """
-        rollout_headers = _rollout_headers_from_headers(kwargs.get("headers", {}))
+        rollout_headers = _rollout_headers_from_headers(kwargs.get("headers", {})) or _CURRENT_ROLLOUT_HEADERS.get()
         if "metadata" not in kwargs or "litellm_parent_otel_span" not in kwargs["metadata"]:
             parent_otel_span = self.create_litellm_proxy_request_started_span(  # type: ignore
                 start_time=datetime.now(),
@@ -571,6 +591,7 @@ class RolloutAttemptMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
+        context_token = None
         if match:
             rollout_id = match.group(1)
             attempt_id = match.group(2)
@@ -584,18 +605,27 @@ class RolloutAttemptMiddleware(BaseHTTPMiddleware):
             if store is not None:
                 # Allocate a monotonic sequence id per (rollout, attempt).
                 sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)
+                rollout_headers = {
+                    "x-rollout-id": rollout_id,
+                    "x-attempt-id": attempt_id,
+                    "x-sequence-id": str(sequence_id),
+                }
+                context_token = _CURRENT_ROLLOUT_HEADERS.set(rollout_headers)
 
                 # Inject headers so downstream components and exporters can retrieve them.
                 request.scope["headers"] = list(request.scope["headers"]) + [
-                    (b"x-rollout-id", rollout_id.encode()),
-                    (b"x-attempt-id", attempt_id.encode()),
-                    (b"x-sequence-id", str(sequence_id).encode()),
+                    (b"x-rollout-id", rollout_headers["x-rollout-id"].encode()),
+                    (b"x-attempt-id", rollout_headers["x-attempt-id"].encode()),
+                    (b"x-sequence-id", rollout_headers["x-sequence-id"].encode()),
                 ]
             else:
                 logger.warning("Store is not set. Skipping sequence id allocation and header injection.")
 
-        response = await call_next(request)
-        return response
+        try:
+            return await call_next(request)
+        finally:
+            if context_token is not None:
+                _CURRENT_ROLLOUT_HEADERS.reset(context_token)
 
 
 class MessageInspectionMiddleware(BaseHTTPMiddleware):
