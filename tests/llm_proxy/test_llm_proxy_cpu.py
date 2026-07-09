@@ -156,6 +156,36 @@ async def test_exporter_uses_stable_rollout_attributes_when_headers_are_empty():
     exporter.shutdown()
 
 
+@pytest.mark.asyncio
+async def test_exporter_backfills_stable_attributes_from_root_to_children():
+    store = _FakeStore()
+    exporter = LightningSpanExporter(store)
+
+    root = _FakeReadableSpan(
+        1,
+        None,
+        {
+            "metadata.requester_custom_headers": "",
+            "agentlightning.rollout_id": "r-root",
+            "agentlightning.attempt_id": "a-root",
+            "agentlightning.sequence_id": "13",
+        },
+    )
+    child = _FakeReadableSpan(2, 1, {"metadata.requester_custom_headers": ""})
+
+    res = exporter.export(cast(List[ReadableSpan], [child, root]))
+    assert res.name == "SUCCESS"
+    await asyncio.sleep(0.1)
+
+    assert len(store.added) == 2
+    child_span = next(span for _, _, _, span in store.added if span.get_span_context().span_id == 2)
+    assert child_span.attributes["agentlightning.rollout_id"] == "r-root"
+    assert child_span.attributes["agentlightning.attempt_id"] == "a-root"
+    assert child_span.attributes["agentlightning.sequence_id"] == "13"
+
+    exporter.shutdown()
+
+
 def test_exporter_shutdown_is_idempotent():
     exporter = LightningSpanExporter(_FakeStore())
     exporter.shutdown()

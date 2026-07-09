@@ -202,6 +202,23 @@ def _set_rollout_span_attributes(span: Any, headers: Dict[str, str]) -> None:
         logger.debug("Unable to set rollout attributes on LiteLLM root span.", exc_info=True)
 
 
+def _set_readable_span_attribute(span: ReadableSpan, key: str, value: str) -> None:
+    if isinstance(span.attributes, dict):
+        span.attributes[key] = value
+        return
+    attributes = dict(span.attributes or {})
+    attributes[key] = value
+    span._attributes = attributes  # pyright: ignore[reportPrivateUsage]
+
+
+def _set_readable_span_rollout_attributes(span: ReadableSpan, headers: Dict[str, str]) -> None:
+    if not headers:
+        return
+    _set_readable_span_attribute(span, _ROLLOUT_ID_ATTR, headers["x-rollout-id"])
+    _set_readable_span_attribute(span, _ATTEMPT_ID_ATTR, headers["x-attempt-id"])
+    _set_readable_span_attribute(span, _SEQUENCE_ID_ATTR, headers["x-sequence-id"])
+
+
 class AddReturnTokenIds(CustomLogger):
     """LiteLLM logger hook to request token ids from vLLM.
 
@@ -402,8 +419,6 @@ class LightningSpanExporter(SpanExporter):
                     )
                     continue
                 if not headers_str.strip():
-                    if not headers_merged:
-                        logger.warning("metadata.requester_custom_headers is an empty string. Skipping the span.")
                     continue
                 try:
                     # Use literal_eval to parse the stringified dict safely.
@@ -421,9 +436,7 @@ class LightningSpanExporter(SpanExporter):
                 headers_merged.update(cast(Dict[str, Any], headers))
 
             if not headers_merged:
-                logger.warning(
-                    f"No headers found in {len(subtree_spans)} subtree spans of root {root_span_id}. Cannot log to store."
-                )
+                logger.warning(f"No headers found in {len(subtree_spans)} subtree spans of root {root_span_id}.")
                 continue
 
             # Validate and normalize required header fields.
@@ -441,6 +454,14 @@ class LightningSpanExporter(SpanExporter):
                 )
                 continue
             sequence_id_decimal = int(sequence_id)
+            normalized_headers = {
+                "x-rollout-id": rollout_id,
+                "x-attempt-id": attempt_id,
+                "x-sequence-id": sequence_id,
+            }
+
+            for span in subtree_spans:
+                _set_readable_span_rollout_attributes(span, normalized_headers)
 
             # Persist each span in the subtree with the resolved identifiers.
             if otlp_enabled:
