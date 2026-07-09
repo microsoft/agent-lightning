@@ -3,7 +3,7 @@
 import asyncio
 import functools
 import logging
-from typing import Any, Callable, Dict, Optional, Sequence, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, Sequence, TypeAlias, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
 from agentlightning.algorithm import Algorithm, Baseline, FastAlgorithm
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 T_co = TypeVar("T_co", covariant=True)
 T = TypeVar("T")
 
-ComponentSpec = Union[T, type[T], Callable[[], T], str, Dict[str, Any], None]
+ComponentSpec: TypeAlias = Union[T, type[T], Callable[[], T], str, Dict[str, Any], None]
 
 
 async def _run_runner_bundle(
@@ -168,10 +168,9 @@ class Trainer:
         instances constructed (or supplied) for the trainer.
         """
         self.worker_id: Optional[int] = None
-        if n_runners is None:
-            n_runners = 1
+        resolved_n_runners = 1 if n_runners is None else n_runners
 
-        self.n_runners = n_runners
+        self.n_runners = resolved_n_runners
 
         self.max_rollouts = max_rollouts
 
@@ -206,11 +205,14 @@ class Trainer:
 
     def _make_tracer(self, tracer: ComponentSpec[Tracer]) -> Tracer:
         """Resolve the tracer component from user input, falling back to AgentOpsTracer."""
-        default_factory = lambda: AgentOpsTracer(
-            agentops_managed=True,
-            instrument_managed=True,
-            daemon=True,
-        )
+
+        def default_factory() -> Tracer:
+            return AgentOpsTracer(
+                agentops_managed=True,
+                instrument_managed=True,
+                daemon=True,
+            )
+
         return build_component(
             tracer,
             expected_type=Tracer,
@@ -234,11 +236,15 @@ class Trainer:
 
     def _make_adapter(self, adapter: ComponentSpec[TraceAdapter[Any]]) -> TraceAdapter[Any]:
         """Resolve the adapter used to transform spans into algorithm-ready payloads."""
+
+        def default_factory() -> TraceAdapter[Any]:
+            return TracerTraceToTriplet()
+
         return build_component(
             adapter,
             expected_type=TraceAdapter,
             spec_name="adapter",
-            default_factory=TracerTraceToTriplet,
+            default_factory=default_factory,
             dict_requires_type=False,
             dict_default_cls=TracerTraceToTriplet,
             invalid_spec_error_fmt="Invalid adapter type: {actual_type}. Expected TraceAdapter, dict, or None.",
@@ -252,7 +258,10 @@ class Trainer:
         the in-memory store will be initialized in a thread-safe manner.
         """
         is_client_server = isinstance(strategy, ClientServerExecutionStrategy)
-        default_store_factory = lambda: InMemoryLightningStore(thread_safe=is_client_server)
+
+        def default_store_factory() -> LightningStore:
+            return InMemoryLightningStore(thread_safe=is_client_server)
+
         return build_component(
             store,
             expected_type=LightningStore,
