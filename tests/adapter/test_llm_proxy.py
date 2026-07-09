@@ -194,6 +194,86 @@ def test_ignores_litellm_request_without_token_ids():
     assert trips == []
 
 
+def test_extracts_token_ids_from_litellm_request_with_nested_response_ids():
+    prompt_ids = [10, 11, 12]
+    resp_ids = [20, 21]
+    spans = [
+        _mk_span(
+            span_id="litellm-with-tids",
+            name="litellm_request",
+            seq=1,
+            start=10,
+            end=20,
+            attrs={
+                "prompt_token_ids": str(prompt_ids),
+                "response_token_ids": str([resp_ids]),
+                "gen_ai.response.id": "chatcmpl-openai-tokens",
+            },
+        )
+    ]
+
+    adapter = LlmProxyTraceToTriplet()
+    trips = adapter.adapt(spans)
+
+    assert len(trips) == 1
+    assert trips[0].prompt["token_ids"] == prompt_ids
+    assert trips[0].response["token_ids"] == resp_ids
+
+
+def test_extracts_token_ids_from_unknown_span_name_when_attributes_are_present():
+    prompt_ids = [31, 32]
+    resp_ids = [41, 42]
+    spans = [
+        _mk_span(
+            span_id="renamed-span",
+            name="gen_ai.client.operation",
+            seq=1,
+            start=10,
+            end=20,
+            attrs={
+                "llm.hosted_vllm.prompt_token_ids": str(prompt_ids),
+                "llm.hosted_vllm.response_token_ids": str(resp_ids),
+                "llm.hosted_vllm.id": "chatcmpl-renamed-span",
+            },
+        )
+    ]
+
+    adapter = LlmProxyTraceToTriplet()
+    trips = adapter.adapt(spans)
+
+    assert len(trips) == 1
+    assert trips[0].prompt["token_ids"] == prompt_ids
+    assert trips[0].response["token_ids"] == resp_ids
+
+
+def test_extracts_response_token_ids_from_provider_specific_choice_fields():
+    prompt_ids = [51, 52]
+    resp_ids = [61, 62]
+    spans = [
+        _mk_span(
+            span_id="choice-provider-fields",
+            name="raw_gen_ai_request",
+            seq=1,
+            start=10,
+            end=20,
+            attrs={
+                "llm.hosted_vllm.prompt_token_ids": str(prompt_ids),
+                "llm.hosted_vllm.choices": str(
+                    [{"provider_specific_fields": {"token_ids": resp_ids}}],
+                ),
+                "llm.hosted_vllm.id": "chatcmpl-provider-fields",
+            },
+        )
+    ]
+
+    adapter = LlmProxyTraceToTriplet()
+    trips = adapter.adapt(spans)
+
+    assert len(trips) == 1
+    assert trips[0].prompt["token_ids"] == prompt_ids
+    assert trips[0].response["token_ids"] == resp_ids
+
+
 def test_reward_none():
     prompt_ids = [1, 2, 3]
     resp_ids = [4, 5, 6]

@@ -903,52 +903,74 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
                 return v
         return v
 
-    def _extract_tokens_from_raw(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
-        """Extract token ids from `raw_gen_ai_request` attributes."""
-        prompt_ids: List[int] = []
-        resp_ids: List[int] = []
-
-        # prompt
-        p = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["prompt"][0])
-        p = self._literal_eval_maybe(p)
-        if isinstance(p, list) and all(isinstance(x, int) for x in p):  # type: ignore
-            prompt_ids = cast(List[int], p)
-
-        # response preferred path
-        r = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["response_tokens"][0])
-        r = self._literal_eval_maybe(r)
-        if isinstance(r, list) and len(r) > 0 and isinstance(r[0], list):  # type: ignore
-            first = cast(List[Any], r[0])
+    def _as_token_ids(self, value: Any) -> List[int]:
+        """Normalize token ids from list[int], tuple[int], or first element of list[list[int]]."""
+        value = self._literal_eval_maybe(value)
+        if isinstance(value, tuple):
+            value = list(value)
+        if not isinstance(value, list):
+            return []
+        if all(isinstance(x, int) for x in value):
+            return cast(List[int], value)
+        if value and isinstance(value[0], (list, tuple)):
+            first = list(cast(Sequence[Any], value[0]))
             if all(isinstance(x, int) for x in first):
-                resp_ids = cast(List[int], first)
+                return cast(List[int], first)
+        return []
 
-        # fallback via choices
+    def _first_token_ids(self, attrs: Dict[str, Any], keys: Sequence[str]) -> List[int]:
+        for key in keys:
+            token_ids = self._as_token_ids(attrs.get(key))
+            if token_ids:
+                return token_ids
+        return []
+
+    def _extract_choice_token_ids(self, attrs: Dict[str, Any]) -> List[int]:
+        choices = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["response_choices"][0])
+        choices = self._literal_eval_maybe(choices)
+        if not (isinstance(choices, list) and choices):
+            return []
+        cand = cast(Any, choices[0])
+        if not isinstance(cand, dict):
+            return []
+        token_ids = self._as_token_ids(cand.get("token_ids"))
+        if token_ids:
+            return token_ids
+        provider_fields = cand.get("provider_specific_fields")
+        if isinstance(provider_fields, dict):
+            return self._as_token_ids(provider_fields.get("token_ids"))
+        return []
+
+    def _extract_tokens(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
+        """Extract token ids from any LLM proxy span carrying supported token attributes."""
+        prompt_ids = self._first_token_ids(
+            attrs,
+            (
+                *LLM_PROXY_RAW_TOKEN_KEYS["prompt"],
+                *LLM_PROXY_OPENAI_TOKEN_KEYS["prompt"],
+            ),
+        )
+        resp_ids = self._first_token_ids(
+            attrs,
+            (
+                *LLM_PROXY_RAW_TOKEN_KEYS["response_tokens"],
+                *LLM_PROXY_OPENAI_TOKEN_KEYS["response"],
+            ),
+        )
         if not resp_ids:
-            choices = attrs.get(LLM_PROXY_RAW_TOKEN_KEYS["response_choices"][0])
-            choices = self._literal_eval_maybe(choices)
-            if isinstance(choices, list) and choices:
-                cand = cast(Any, choices[0])
-                if isinstance(cand, dict):
-                    tids = cast(Dict[str, Any], cand).get("token_ids")
-                    if isinstance(tids, list) and all(isinstance(x, int) for x in tids):  # type: ignore
-                        resp_ids = cast(List[int], tids)
-
+            resp_ids = self._extract_choice_token_ids(attrs)
         return prompt_ids, resp_ids
-
-    def _extract_tokens_from_openai(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
-        prompt_ids = cast(Any, attrs.get(LLM_PROXY_OPENAI_TOKEN_KEYS["prompt"][0]) or [])
-        resp_ids = cast(Any, attrs.get(LLM_PROXY_OPENAI_TOKEN_KEYS["response"][0]) or [])
-        prompt_ids = self._literal_eval_maybe(prompt_ids)
-        resp_ids = self._literal_eval_maybe(resp_ids)
-        if not (isinstance(prompt_ids, list) and all(isinstance(x, int) for x in prompt_ids)):  # type: ignore
-            prompt_ids = []
-        if not (isinstance(resp_ids, list) and all(isinstance(x, int) for x in resp_ids)):  # type: ignore
-            resp_ids = []
-        return cast(List[int], prompt_ids), cast(List[int], resp_ids)
 
     def _maybe_reward_value(self, span: Span) -> Optional[float]:
         """Parse reward from AGL reward spans."""
-        return get_reward_value(span)
+        reward = get_reward_value(span)
+        if reward is not None:
+            return reward
+        reward_attr = span.attributes or {}
+        legacy_reward = reward_attr.get(f"{LightningSpanAttributes.REWARD.value}.0.value")
+        if isinstance(legacy_reward, (int, float, bool)):
+            return float(legacy_reward)
+        return None
 
     def _request_id_from_attrs(self, attrs: Dict[str, Any]) -> Optional[str]:
         rid = _attributes_get_multiple(attrs, list(LLM_PROXY_RESPONSE_ID_KEYS))
@@ -977,11 +999,21 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
             prompt_ids: List[int] = []
             resp_ids: List[int] = []
 
-            if s.name == "raw_gen_ai_request":
-                prompt_ids, resp_ids = self._extract_tokens_from_raw(attrs)
-            elif s.name == "litellm_request":
-                # Some proxies never include token ids here. Ignore unless present.
-                prompt_ids, resp_ids = self._extract_tokens_from_openai(attrs)
+            if s.name in {"raw_gen_ai_request", "litellm_request"}:
+                prompt_ids, resp_ids = self._extract_tokens(attrs)
+            elif any(
+                key in attrs
+                for key in (
+                    *LLM_PROXY_RAW_TOKEN_KEYS["prompt"],
+                    *LLM_PROXY_OPENAI_TOKEN_KEYS["prompt"],
+                    *LLM_PROXY_RAW_TOKEN_KEYS["response_tokens"],
+                    *LLM_PROXY_OPENAI_TOKEN_KEYS["response"],
+                    *LLM_PROXY_RAW_TOKEN_KEYS["response_choices"],
+                )
+            ):
+                # LiteLLM/OpenTelemetry span names have changed across versions.
+                # Treat token-id attributes as the compatibility contract.
+                prompt_ids, resp_ids = self._extract_tokens(attrs)
 
             if prompt_ids and resp_ids:
                 rid = self._request_id_from_attrs(attrs)
