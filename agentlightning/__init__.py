@@ -4,7 +4,6 @@ __version__ = "0.3.1"
 
 from .adapter import *
 from .algorithm import *
-from .config import *
 from .emitter import *
 from .env_var import *
 from .execution import *

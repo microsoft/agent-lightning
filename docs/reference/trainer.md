@@ -20,10 +20,6 @@
 
 ::: agentlightning.MultiprocessingEvent
 
-## CLI Builder
-
-::: agentlightning.lightning_cli
-
 ## Logging
 
 ::: agentlightning.setup_logging
