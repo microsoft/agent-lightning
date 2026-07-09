@@ -16,6 +16,7 @@ from verl import DataProto
 
 from agentlightning import NamedResources
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
+from agentlightning.emitter.reward import find_final_reward
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Triplet
@@ -36,6 +37,10 @@ class _CompletedRollout:
     final_reward: Optional[float]
     triplets: List[Triplet]
     metadata: Dict[str, Any]
+
+
+_TRACE_READY_TIMEOUT_SECONDS = 10.0
+_TRACE_READY_POLL_INTERVAL_SECONDS = 0.25
 
 
 def get_left_padded_ids_and_attention_mask(
@@ -321,9 +326,7 @@ class AgentModeDaemon:
 
         # 1. Update resources on the server for clients to use
         llm_resource = self.llm_proxy.as_resource(
-            sampling_parameters={
-                "temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)
-            },
+            sampling_parameters={"temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)},
         )
 
         resources: NamedResources = {"main_llm": llm_resource}
@@ -401,15 +404,18 @@ class AgentModeDaemon:
 
     async def _build_completed_rollout(self, rollout: Rollout) -> _CompletedRollout:
         """Build completion payload and validate rollout/spans from v1 store representation."""
-        # Query spans for this rollout (latest attempt)
-        spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
-
-        # Convert spans to triplets using the adapter
-        if not spans:
-            # No triplets found, will emit a warning later.
-            triplets = []
-        else:
-            triplets = self.adapter.adapt(spans)
+        spans: List[Any] = []
+        triplets: List[Triplet] = []
+        deadline = asyncio.get_running_loop().time() + _TRACE_READY_TIMEOUT_SECONDS
+        while True:
+            # Span export from LiteLLM/OpenTelemetry can lag slightly behind rollout completion.
+            # Wait until the adapter can form trainable triplets instead of permanently caching
+            # an empty trace for this rollout.
+            spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
+            triplets = self.adapter.adapt(spans) if spans else []
+            if triplets or asyncio.get_running_loop().time() >= deadline:
+                break
+            await asyncio.sleep(_TRACE_READY_POLL_INTERVAL_SECONDS)
 
         # Extract final reward from triplets
         final_reward: Optional[float] = None
@@ -419,6 +425,8 @@ class AgentModeDaemon:
                 if triplet.reward is not None:
                     final_reward = triplet.reward
                     break
+        if final_reward is None and spans:
+            final_reward = find_final_reward(spans)
 
         result_rollout = _CompletedRollout(
             rollout_id=rollout.rollout_id,
