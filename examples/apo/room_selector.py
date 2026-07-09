@@ -2,9 +2,12 @@
 
 import asyncio
 import json
+import os
+import re
 import traceback
 from typing import List, Optional, Tuple, TypedDict, cast
 
+import litellm
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -25,6 +28,11 @@ from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Dataset, PromptTemplate
 
 console = Console()
+ROOM_SELECTOR_MODEL = os.getenv("AGL_APO_ROOM_SELECTOR_MODEL", "deepseek-v4-flash")
+ROOM_SELECTOR_LITELLM_MODEL = os.getenv(
+    "AGL_APO_ROOM_SELECTOR_LITELLM_MODEL",
+    f"openai/{ROOM_SELECTOR_MODEL}",
+)
 
 
 class JudgeResponse(BaseModel):
@@ -91,28 +99,44 @@ def prompt_template_baseline() -> PromptTemplate:
     )
 
 
+def _parse_judge_response(content: Optional[str]) -> JudgeResponse:
+    if content is None:
+        raise ValueError("Judge returned no content.")
+    try:
+        return JudgeResponse.model_validate_json(content)
+    except ValueError:
+        match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+        if match is None:
+            raise
+        return JudgeResponse.model_validate_json(match.group(0))
+
+
 def room_selection_grader(client: OpenAI, final_message: Optional[str], expected_choice: str) -> float:
+    _ = client
     judge_prompt = (
         f"You are a strict grader of exact room choice."
         f"Task output:\n{final_message}\n\n"
         f"Task expected answer:\n{expected_choice}\n\n"
         f"Score the match on a 0-1 scale. Be critical.\n"
-        f"Bear in mind that the score can be partially correct (between 0 and 1)."
+        f"Bear in mind that the score can be partially correct (between 0 and 1).\n"
+        f'Return only JSON with this schema: {{"reason": "short reason", "score": 0.0}}'
     )
-    judge = client.chat.completions.parse(
-        model="gpt-4.1-mini",
+    judge = litellm.completion(
+        model=ROOM_SELECTOR_LITELLM_MODEL,
         messages=[
             {"role": "user", "content": judge_prompt},
         ],
-        response_format=JudgeResponse,
+        api_base=os.getenv("OPENAI_BASE_URL"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        response_format={"type": "json_object"},
         temperature=0.0,
     )
 
-    judge_result = judge.choices[0].message.content
+    judge_result = cast(str | None, judge.choices[0].message.content)
     console.print(f"[bold yellow]=== Judge ===[/bold yellow]")
     console.print(judge_result)
 
-    judge_result_parsed = JudgeResponse.model_validate_json(judge_result)  # type: ignore
+    judge_result_parsed = _parse_judge_response(judge_result)
 
     console.print(f"[bold yellow]=== Judge Score ===[/bold yellow]")
     console.print(judge_result_parsed.score)
@@ -150,7 +174,7 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     """
 
     client = OpenAI()
-    model = "gpt-4.1-nano"
+    model = ROOM_SELECTOR_MODEL
 
     user_message = prompt_template.format(**task["task_input"])
 

@@ -43,6 +43,8 @@ def main() -> None:
         val_batch_size=10,
         gradient_batch_size=4,
         beam_width=2,
+        gradient_model="deepseek-v4-pro",
+        apply_edit_model="deepseek-v4-flash",
         branch_factor=2,
         beam_rounds=2,
         _poml_trace=True,

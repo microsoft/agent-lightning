@@ -19,6 +19,47 @@ from .events import ExecutionEvent, MultiprocessingEvent
 logger = logging.getLogger(__name__)
 
 
+def _runner_process_entrypoint(
+    strategy: "ClientServerExecutionStrategy",
+    runner: RunnerBundle,
+    worker_id: int,
+    store: LightningStore,
+    stop_evt: ExecutionEvent,
+) -> None:
+    """Run a runner bundle from a child process.
+
+    This must stay at module scope so multiprocessing ``spawn`` can pickle it
+    on macOS and Windows.
+    """
+    try:
+        asyncio.run(strategy._execute_runner(runner, worker_id, store, stop_evt))
+    except KeyboardInterrupt:
+        logger.warning("Runner (asyncio) %s received KeyboardInterrupt; exiting gracefully", worker_id)
+    except BaseException as exc:
+        logger.exception("Runner (asyncio) %s crashed by %s; signaling stop event", worker_id, exc)
+        raise
+
+
+def _algorithm_process_entrypoint(
+    strategy: "ClientServerExecutionStrategy",
+    algorithm: AlgorithmBundle,
+    store: LightningStore,
+    stop_evt: ExecutionEvent,
+) -> None:
+    """Run an algorithm bundle from a child process.
+
+    This must stay at module scope so multiprocessing ``spawn`` can pickle it
+    on macOS and Windows.
+    """
+    try:
+        asyncio.run(strategy._execute_algorithm(algorithm, store, stop_evt))
+    except KeyboardInterrupt:
+        logger.warning("Algorithm (asyncio.run) received KeyboardInterrupt; exiting gracefully")
+    except BaseException as exc:
+        logger.exception("Algorithm (asyncio.run) crashed by %s; signaling stop event", exc)
+        raise
+
+
 class ClientServerExecutionStrategy(ExecutionStrategy):
     """Run algorithm and runner bundles as separate processes over HTTP.
 
@@ -223,21 +264,14 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
 
-        def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
-            # Runners are executed in child processes; each process owns its own
-            # event loop to keep the asyncio scheduler isolated.
-            try:
-                asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
-            except KeyboardInterrupt:
-                logger.warning("Runner (asyncio) %s received KeyboardInterrupt; exiting gracefully", worker_id)
-            except BaseException as exc:
-                logger.exception("Runner (asyncio) %s crashed by %s; signaling stop event", worker_id, exc)
-                raise
-
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
-                ctx.Process(target=_runner_sync, args=(runner, i, store, stop_evt), name=f"runner-{i}"),  # type: ignore
+                ctx.Process(
+                    target=_runner_process_entrypoint,
+                    args=(self, runner, i, store, stop_evt),
+                    name=f"runner-{i}",
+                ),  # type: ignore
             )
             process.start()
             logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)
@@ -255,18 +289,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     ) -> multiprocessing.Process:
         """Used when `main_process == "runner"`."""
 
-        def _algorithm_sync(algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent) -> None:
-            try:
-                asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
-            except KeyboardInterrupt:
-                logger.warning("Algorithm (asyncio.run) received KeyboardInterrupt; exiting gracefully")
-            except BaseException as exc:
-                logger.exception("Algorithm (asyncio.run) crashed by %s; signaling stop event", exc)
-                raise
-
         process = cast(
             multiprocessing.Process,
-            ctx.Process(target=_algorithm_sync, args=(algorithm, store, stop_evt), name="algorithm"),  # type: ignore
+            ctx.Process(
+                target=_algorithm_process_entrypoint,
+                args=(self, algorithm, store, stop_evt),
+                name="algorithm",
+            ),  # type: ignore
         )
         process.start()
         logger.debug("Spawned algorithm process %s (pid=%s)", process.name, process.pid)

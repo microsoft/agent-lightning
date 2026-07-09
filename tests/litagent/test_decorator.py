@@ -5,6 +5,7 @@
 """Test that @llm_rollout and @rollout decorators preserve function executability."""
 
 import inspect
+import pickle
 from typing import Any, cast
 
 import pytest
@@ -105,6 +106,13 @@ def test_rollout_returns_litagent_instance():
     assert hasattr(sample_rollout_func, "rollout")
     assert hasattr(sample_rollout_func, "rollout_async")
     assert hasattr(sample_rollout_func, "training_rollout")
+
+
+def test_rollout_agent_pickles_by_module_reference():
+    """Module-level decorated rollout agents can be restored under multiprocessing spawn."""
+    restored = pickle.loads(pickle.dumps(sample_rollout_func))
+
+    assert restored is sample_rollout_func
 
 
 def test_rollout_preserves_signature():

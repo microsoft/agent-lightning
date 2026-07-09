@@ -29,6 +29,8 @@ python apo_custom_algorithm_trainer.py
 
 import argparse
 import asyncio
+import os
+import time
 from typing import Optional, Sequence
 
 from openai import AsyncOpenAI
@@ -37,6 +39,7 @@ from rich.console import Console
 import agentlightning as agl
 
 console = Console()
+ROLLOUT_WAIT_TIMEOUT_SECONDS = float(os.getenv("AGL_APO_EXAMPLE_ROLLOUT_TIMEOUT", "120"))
 
 
 async def apo_algorithm(*, store: agl.LightningStore):
@@ -72,7 +75,8 @@ async def apo_algorithm(*, store: agl.LightningStore):
         console.print(f"{algo_marker} Task '{rollout.rollout_id}' is now available for clients.")
 
         # 3. The algorithm waits for clients to process the task
-        for _ in range(30):  # Wait for at most 30 seconds
+        deadline = time.monotonic() + ROLLOUT_WAIT_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
             rollouts = await store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=0.01)
             if rollouts:
                 break
@@ -105,7 +109,7 @@ async def apo_rollout(task: str, prompt_template: agl.PromptTemplate) -> float:
     client = AsyncOpenAI()
 
     result = await client.chat.completions.create(
-        model="gpt-4.1-nano",
+        model="deepseek-v4-flash",
         messages=[
             {"role": "user", "content": prompt_template.format(any_question=task)},
         ],
@@ -132,7 +136,7 @@ Output: {output}
 You must be very critical and strict in your evaluation.
 Return only a number between 0 and 1. No text, punctuation, or explanation."""
     result = await client.chat.completions.create(
-        model="gpt-4.1-nano",
+        model="deepseek-v4-flash",
         messages=[
             {"role": "user", "content": judge_prompt},
         ],

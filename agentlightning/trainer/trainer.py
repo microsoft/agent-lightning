@@ -30,6 +30,49 @@ T = TypeVar("T")
 ComponentSpec = Union[T, type[T], Callable[[], T], str, Dict[str, Any], None]
 
 
+async def _run_runner_bundle(
+    store: LightningStore,
+    worker_id: int,
+    event: ExecutionEvent,
+    *,
+    runner: Runner[Any],
+    agent: LitAgent[Any],
+    hooks: Sequence[Hook],
+) -> None:
+    """Run a runner without capturing the whole Trainer instance.
+
+    Client/server execution may pickle runner bundles for multiprocessing
+    ``spawn``. Capturing ``Trainer`` would also capture its algorithm, which is
+    unnecessary for runner workers and can make scripts run as ``__main__``
+    unpicklable on macOS.
+    """
+    runner_instance: Runner[Any] | None = None
+    runner_initialized = False
+    worker_initialized = False
+    try:
+        runner_instance = runner
+        runner_instance.init(agent=agent, hooks=hooks)
+        runner_initialized = True
+        runner_instance.init_worker(worker_id, store)
+        worker_initialized = True
+        await runner_instance.iter(event=event)
+    except Exception:
+        logger.exception("Runner bundle encountered an error (worker_id=%s).", worker_id)
+        raise
+    finally:
+        if runner_instance is not None:
+            if worker_initialized:
+                try:
+                    runner_instance.teardown_worker(worker_id)
+                except Exception:
+                    logger.exception("Error during runner worker teardown (worker_id=%s).", worker_id)
+            if runner_initialized:
+                try:
+                    runner_instance.teardown()
+                except Exception:
+                    logger.exception("Error during runner teardown (worker_id=%s).", worker_id)
+
+
 class Trainer:
     """High-level orchestration layer that wires Algorithm <-> Runner <-> Store.
 
@@ -336,7 +379,7 @@ class Trainer:
             val_dataset=val_dataset,
             algorithm=self.algorithm,
         )
-        runner_bundle = functools.partial(self._runner_bundle, agent=agent)
+        runner_bundle = functools.partial(_run_runner_bundle, agent=agent, runner=self.runner, hooks=self.hooks)
 
         self.strategy.execute(algorithm_bundle, runner_bundle, self.store)
 
@@ -382,7 +425,7 @@ class Trainer:
             val_dataset=val_dataset,
             algorithm=algorithm,
         )
-        runner_bundle = functools.partial(self._runner_bundle, agent=agent)
+        runner_bundle = functools.partial(_run_runner_bundle, agent=agent, runner=self.runner, hooks=self.hooks)
         self.strategy.execute(algorithm_bundle, runner_bundle, self.store)
 
     async def _algorithm_bundle(
@@ -446,29 +489,4 @@ class Trainer:
         loop until the execution event is set or an exception occurs. Cleanup mirrors the initialization
         sequence to keep tracer state, hooks, and agent resources consistent across restarts.
         """
-        runner_instance: Runner[Any] | None = None
-        runner_initialized = False
-        worker_initialized = False
-        try:
-            # If not using shm execution strategy, we are already in the forked process
-            runner_instance = self.runner
-            runner_instance.init(agent=agent, hooks=self.hooks)
-            runner_initialized = True
-            runner_instance.init_worker(worker_id, store)
-            worker_initialized = True
-            await runner_instance.iter(event=event)
-        except Exception:
-            logger.exception("Runner bundle encountered an error (worker_id=%s).", worker_id)
-            raise
-        finally:
-            if runner_instance is not None:
-                if worker_initialized:
-                    try:
-                        runner_instance.teardown_worker(worker_id)
-                    except Exception:
-                        logger.exception("Error during runner worker teardown (worker_id=%s).", worker_id)
-                if runner_initialized:
-                    try:
-                        runner_instance.teardown()
-                    except Exception:
-                        logger.exception("Error during runner teardown (worker_id=%s).", worker_id)
+        await _run_runner_bundle(store, worker_id, event, agent=agent, runner=self.runner, hooks=self.hooks)

@@ -1275,7 +1275,7 @@ def test_spawn_runners_handles_keyboard_interrupt_gracefully(store: LightningSto
 
     try:
         for p in processes:
-            p.join(timeout=2.0)
+            p.join(timeout=10.0)
 
         for p in processes:
             assert not p.is_alive()
@@ -1305,7 +1305,7 @@ def test_spawn_runners_treats_cancelled_error_as_crash(store: LightningStore) ->
 
     try:
         for p in processes:
-            p.join(timeout=2.0)
+            p.join(timeout=10.0)
 
         for p in processes:
             assert not p.is_alive()

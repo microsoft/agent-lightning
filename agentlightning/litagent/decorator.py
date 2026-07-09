@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import inspect
 import logging
 from typing import Any, Awaitable, Callable, Dict, Protocol, TypeGuard, TypeVar, Union, overload
@@ -33,6 +34,14 @@ __all__ = [
 
 
 T_contra = TypeVar("T_contra", contravariant=True)
+
+
+def _resolve_module_attr(module_name: str, qualname: str) -> Any:
+    """Resolve a module-level decorated object for multiprocessing spawn."""
+    obj: Any = importlib.import_module(module_name)
+    for attr in qualname.split("."):
+        obj = getattr(obj, attr)
+    return obj
 
 
 class LlmRolloutFuncSync2(Protocol[T_contra]):
@@ -133,6 +142,10 @@ class FunctionalLitAgent(LitAgent[T]):
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Make the agent instance callable, preserving the original function behavior."""
         return self._rollout_func(*args, **kwargs)  # type: ignore
+
+    def __reduce__(self) -> tuple[Any, tuple[str, str]]:
+        """Restore module-level decorated agents by import path under spawn."""
+        return (_resolve_module_attr, (self.__module__, self.__qualname__))
 
     def is_async(self) -> bool:
         return self._is_async

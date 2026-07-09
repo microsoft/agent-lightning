@@ -21,21 +21,24 @@ from rich.console import Console
 
 from agentlightning import Trainer, setup_logging
 from agentlightning.algorithm import algo
-from agentlightning.store import LightningStore
+from agentlightning.types import AlgorithmContext
 
 console = Console()
 
 
 @algo
-async def apo_algorithm_usable_in_trainer(*, store: LightningStore):
+async def apo_algorithm_usable_in_trainer(context: AlgorithmContext):
     """
     You need to wrap the apo_algorithm in an algo decorator to make it usable in trainer.
 
     This is equivalent to the following:
 
-        apo_algorithm_usable_in_trainer = algo(apo_algorithm)
+        async def wrapper(context: AlgorithmContext):
+            return await apo_algorithm(store=context.store)
+
+        apo_algorithm_usable_in_trainer = algo(wrapper)
     """
-    return await apo_algorithm(store=store)
+    return await apo_algorithm(store=context.store)
 
 
 if __name__ == "__main__":
