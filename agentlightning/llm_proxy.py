@@ -61,6 +61,10 @@ from .store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
+_ROLLOUT_ID_ATTR = "agentlightning.rollout_id"
+_ATTEMPT_ID_ATTR = "agentlightning.attempt_id"
+_SEQUENCE_ID_ATTR = "agentlightning.sequence_id"
+
 __all__ = [
     "LLMProxy",
 ]
@@ -145,6 +149,38 @@ def _reset_litellm_logging_callback_manager() -> None:
         litellm.logging_callback_manager._reset_all_callbacks()  # pyright: ignore[reportPrivateUsage]
     except Exception:  # pragma: no cover - best-effort hygiene
         logger.warning("Unable to reset LiteLLM logging callback manager.", exc_info=True)
+
+
+def _headers_get(headers: Any, key: str) -> Optional[str]:
+    """Return a case-insensitive header value from dict-like headers."""
+    if not isinstance(headers, dict):
+        return None
+    key_lower = key.lower()
+    for header_key, value in headers.items():
+        if str(header_key).lower() == key_lower:
+            return str(value)
+    return None
+
+
+def _rollout_headers_from_headers(headers: Any) -> Dict[str, str]:
+    rollout_id = _headers_get(headers, "x-rollout-id")
+    attempt_id = _headers_get(headers, "x-attempt-id")
+    sequence_id = _headers_get(headers, "x-sequence-id")
+    if not rollout_id or not attempt_id or not sequence_id:
+        return {}
+    return {"x-rollout-id": rollout_id, "x-attempt-id": attempt_id, "x-sequence-id": sequence_id}
+
+
+def _set_rollout_span_attributes(span: Any, headers: Dict[str, str]) -> None:
+    if not headers:
+        return
+    try:
+        span.set_attribute(_ROLLOUT_ID_ATTR, headers["x-rollout-id"])
+        span.set_attribute(_ATTEMPT_ID_ATTR, headers["x-attempt-id"])
+        span.set_attribute(_SEQUENCE_ID_ATTR, headers["x-sequence-id"])
+        span.set_attribute("metadata.requester_custom_headers", str(headers))
+    except Exception:
+        logger.debug("Unable to set rollout attributes on LiteLLM root span.", exc_info=True)
 
 
 class AddReturnTokenIds(CustomLogger):
@@ -327,6 +363,17 @@ class LightningSpanExporter(SpanExporter):
             for span in subtree_spans:
                 if span.attributes is None:
                     continue
+                rollout_id_attr = span.attributes.get(_ROLLOUT_ID_ATTR)
+                attempt_id_attr = span.attributes.get(_ATTEMPT_ID_ATTR)
+                sequence_id_attr = span.attributes.get(_SEQUENCE_ID_ATTR)
+                if rollout_id_attr and attempt_id_attr and sequence_id_attr:
+                    headers_merged.update(
+                        {
+                            "x-rollout-id": str(rollout_id_attr),
+                            "x-attempt-id": str(attempt_id_attr),
+                            "x-sequence-id": str(sequence_id_attr),
+                        }
+                    )
                 headers_str = span.attributes.get("metadata.requester_custom_headers")
                 if headers_str is None:
                     continue
@@ -487,15 +534,23 @@ class LightningOpenTelemetry(OpenTelemetry):
         """The root span is sometimes missing (e.g., when Anthropic endpoint is used).
         It is created in an auth module in LiteLLM. If it's missing, we create it here.
         """
+        rollout_headers = _rollout_headers_from_headers(kwargs.get("headers", {}))
         if "metadata" not in kwargs or "litellm_parent_otel_span" not in kwargs["metadata"]:
             parent_otel_span = self.create_litellm_proxy_request_started_span(  # type: ignore
                 start_time=datetime.now(),
                 headers=kwargs.get("headers", {}),
             )
-            updated_metadata = {**kwargs.get("metadata", {}), "litellm_parent_otel_span": parent_otel_span}
+            _set_rollout_span_attributes(parent_otel_span, rollout_headers)
+            updated_metadata = {
+                **kwargs.get("metadata", {}),
+                "litellm_parent_otel_span": parent_otel_span,
+                "requester_custom_headers": rollout_headers,
+            }
 
             return {**kwargs, "metadata": updated_metadata}
         else:
+            parent_otel_span = kwargs["metadata"]["litellm_parent_otel_span"]
+            _set_rollout_span_attributes(parent_otel_span, rollout_headers)
             return kwargs
 
 

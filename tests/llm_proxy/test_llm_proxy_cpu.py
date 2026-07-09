@@ -102,10 +102,41 @@ async def test_exporter_tree_and_flush_headers_parsing():
 
 def test_exporter_export_handles_store_failures():
     exporter = LightningSpanExporter(_FailingStore())
-    root = _FakeReadableSpan(1, None, {"metadata.requester_custom_headers": "{'x-rollout-id':'r1','x-attempt-id':'a1','x-sequence-id':'7'}"})
+    root = _FakeReadableSpan(
+        1, None, {"metadata.requester_custom_headers": "{'x-rollout-id':'r1','x-attempt-id':'a1','x-sequence-id':'7'}"}
+    )
 
     result = exporter.export(cast(List[ReadableSpan], [root]))
     assert result.name == "FAILURE"
+
+    exporter.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_exporter_uses_stable_rollout_attributes_when_headers_are_empty():
+    store = _FakeStore()
+    exporter = LightningSpanExporter(store)
+
+    root = _FakeReadableSpan(
+        1,
+        None,
+        {
+            "metadata.requester_custom_headers": "",
+            "agentlightning.rollout_id": "r-stable",
+            "agentlightning.attempt_id": "a-stable",
+            "agentlightning.sequence_id": "9",
+        },
+    )
+
+    res = exporter.export(cast(List[ReadableSpan], [root]))
+    assert res.name == "SUCCESS"
+    await asyncio.sleep(0.1)
+
+    assert len(store.added) == 1
+    rid, aid, sid, _ = store.added[0]
+    assert rid == "r-stable"
+    assert aid == "a-stable"
+    assert sid == 9
 
     exporter.shutdown()
 
