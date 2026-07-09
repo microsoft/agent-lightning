@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from collections.abc import Callable as CallableABC
 from typing import Any, Callable, Dict, Optional, TypeVar, Union, cast, overload
 
 OptionalDefaults = Dict[str, Callable[[], Any] | Any]
@@ -86,7 +87,7 @@ def _ensure_expected_type(
 
 @overload
 def build_component(
-    spec: Union[T, str, Dict[str, Any], type[T], Callable[[], T], None],
+    spec: object | None,
     *,
     expected_type: type[T],
     spec_name: str,
@@ -103,7 +104,7 @@ def build_component(
 
 @overload
 def build_component(
-    spec: Union[T, str, Dict[str, Any], type[T], Callable[[], T], None],
+    spec: object | None,
     *,
     expected_type: type[T],
     spec_name: str,
@@ -120,7 +121,7 @@ def build_component(
 
 @overload
 def build_component(
-    spec: Union[T, str, Dict[str, Any], type[T], Callable[[], T], None],
+    spec: object | None,
     *,
     expected_type: type[T],
     spec_name: str,
@@ -136,7 +137,7 @@ def build_component(
 
 
 def build_component(
-    spec: Union[T, str, Dict[str, Any], type[T], Callable[[], T], None],
+    spec: object | None,
     *,
     expected_type: type[T],
     spec_name: str,
@@ -209,7 +210,7 @@ def build_component(
         ...                            spec_name='optimizer')
     """
     if isinstance(spec, expected_type):
-        return cast(T, spec)
+        return spec
 
     if spec is None:
         if default_factory is not None:
@@ -227,8 +228,9 @@ def build_component(
         instance = instantiate_component(spec, optional_defaults=optional_defaults)
         return _ensure_expected_type(instance, expected_type, spec_name, type_error_fmt)
 
-    if callable(spec) and not isinstance(spec, type):  # type: ignore
-        instance = spec()
+    if isinstance(spec, CallableABC) and not isinstance(spec, type):
+        factory = cast(Callable[[], object], spec)
+        instance = factory()
         return _ensure_expected_type(instance, expected_type, spec_name, type_error_fmt)
 
     if isinstance(spec, str):
@@ -243,8 +245,9 @@ def build_component(
         return _ensure_expected_type(instance, expected_type, spec_name, type_error_fmt)
 
     if isinstance(spec, dict):
+        spec_dict = cast(Dict[str, Any], spec)
         instance = instantiate_from_spec(
-            spec,  # type: ignore
+            spec_dict,
             spec_name=spec_name,
             optional_defaults=optional_defaults,
             dict_requires_type=dict_requires_type,
@@ -254,9 +257,9 @@ def build_component(
         return _ensure_expected_type(instance, expected_type, spec_name, type_error_fmt)
 
     if invalid_spec_error_fmt:
-        raise ValueError(invalid_spec_error_fmt.format(actual_type=type(spec), expected_type=expected_type.__name__))  # type: ignore
+        raise ValueError(invalid_spec_error_fmt.format(actual_type=type(spec), expected_type=expected_type.__name__))
 
-    type_name = str(type(spec))  # type: ignore
+    type_name = str(type(spec))
     raise ValueError(f"Invalid {spec_name} type: {type_name}. Expected {expected_type.__name__}, str, dict, or None.")
 
 
