@@ -15,7 +15,13 @@ from typing import (
 
 from pydantic import TypeAdapter
 
-from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
+from agentlightning.semconv import (
+    AGL_ANNOTATION,
+    AGL_OPERATION,
+    AGL_REWARD,
+    LightningSpanAttributes,
+    RewardPydanticModel,
+)
 from agentlightning.types import SpanCoreFields, SpanLike
 from agentlightning.utils.otel import filter_and_unflatten_attributes
 
@@ -114,7 +120,11 @@ def get_reward_value(span: SpanLike) -> Optional[float]:
     Returns:
         The primary reward encoded in the span or `None` when the span does not represent a reward.
     """
-    if span.name != AGL_ANNOTATION:
+    if span.name == AGL_OPERATION and span.attributes:
+        operation_name = span.attributes.get(LightningSpanAttributes.OPERATION_NAME.value)
+        if operation_name != AGL_REWARD:
+            return None
+    elif span.name != AGL_ANNOTATION:
         return None
     reward_list = get_rewards_from_span(span)
     if reward_list:

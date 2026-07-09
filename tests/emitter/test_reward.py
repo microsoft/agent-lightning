@@ -9,7 +9,13 @@ import pytest
 reward_module = importlib.import_module("agentlightning.emitter.reward")
 from agentlightning.emitter.reward import emit_reward, get_rewards_from_span
 from agentlightning.emitter.reward import find_final_reward, find_reward_spans, get_reward_value, is_reward_span
-from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
+from agentlightning.semconv import (
+    AGL_ANNOTATION,
+    AGL_OPERATION,
+    AGL_REWARD,
+    LightningSpanAttributes,
+    RewardPydanticModel,
+)
 from agentlightning.types import SpanLike
 from agentlightning.utils.otel import make_link_attributes, make_tag_attributes
 
@@ -109,6 +115,32 @@ def test_get_reward_value_only_parses_annotated_reward_spans() -> None:
         attributes={
             f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
             f"{LightningSpanAttributes.REWARD.value}.0.value": 1.0,
+        },
+    )
+
+    assert get_reward_value(span) is None
+
+
+def test_get_reward_value_parses_reward_operation_spans() -> None:
+    span = make_span(
+        name=AGL_OPERATION,
+        attributes={
+            LightningSpanAttributes.OPERATION_NAME.value: AGL_REWARD,
+            f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+            f"{LightningSpanAttributes.REWARD.value}.0.value": 0.5,
+        },
+    )
+
+    assert get_reward_value(span) == 0.5
+
+
+def test_get_reward_value_ignores_non_reward_operation_spans() -> None:
+    span = make_span(
+        name=AGL_OPERATION,
+        attributes={
+            LightningSpanAttributes.OPERATION_NAME.value: "other-operation",
+            f"{LightningSpanAttributes.REWARD.value}.0.name": "primary",
+            f"{LightningSpanAttributes.REWARD.value}.0.value": 0.5,
         },
     )
 
