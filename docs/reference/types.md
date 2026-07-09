@@ -4,6 +4,8 @@
 
 ::: agentlightning.Triplet
 
+::: agentlightning.TaskInput
+
 ::: agentlightning.RolloutResult
 
 ::: agentlightning.AgentSpanPayload

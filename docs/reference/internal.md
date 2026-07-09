@@ -53,15 +53,3 @@
 ## Tracing and OpenTelemetry
 
 ::: agentlightning.tracer.otel.LightningSpanProcessor
-
-## Deprecated APIs
-
-::: agentlightning.types.legacy.Task
-
-::: agentlightning.TaskInput
-
-::: agentlightning.types.legacy.TaskIfAny
-
-::: agentlightning.types.legacy.RolloutRawResultLegacy
-
-::: agentlightning.types.legacy.RolloutLegacy

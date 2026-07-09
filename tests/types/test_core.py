@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any
+from pathlib import Path
+
 import agentlightning.types.core as core
 
 from agentlightning.types import AgentSpanPayload, RolloutResult, SpanWriteResult
@@ -62,3 +63,9 @@ def test_core_does_not_expose_legacy_result_contracts() -> None:
     assert not hasattr(core, "TaskIfAny")
     assert not hasattr(core, "RolloutRawResultLegacy")
     assert not hasattr(core, "RolloutRawResult")
+
+
+def test_legacy_types_module_is_removed() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+
+    assert not (repo_root / "agentlightning" / "types" / "legacy.py").exists()
