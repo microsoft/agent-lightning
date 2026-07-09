@@ -6,47 +6,12 @@ import logging
 import os
 import platform
 import sys
-import warnings
 from logging.config import dictConfig
 from typing import Any, Dict, Optional
 
 from rich.console import Console
 
-__all__ = ["setup", "configure_logger", "setup_module"]
-
-
-def configure_logger(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:
-    """Create or reset a namespaced logger with a consistent console format.
-
-    This helper clears any previously attached handlers before binding a single
-    `StreamHandler` that writes to standard output. The resulting logger does
-    not propagate to the root logger, preventing duplicate log emission when
-    applications compose multiple logging configurations.
-
-    !!! danger
-
-        This function is deprecated in favor of [`setup_logging`][agentlightning.setup_logging].
-
-    Args:
-        level: Logging level applied both to the logger and the installed
-            handler. Defaults to `logging.INFO`.
-        name: Dotted path for the logger instance. Defaults to
-            `"agentlightning"`.
-
-    Returns:
-        Configured logger instance ready for immediate use.
-
-    Examples:
-        ```python
-        from agentlightning import configure_logger
-
-        logger = configure_logger(level=logging.INFO)
-        logger.info("agent-lightning is ready!")
-        ```
-    """
-    warnings.warn("This function is deprecated in favor of `setup_logging`.", DeprecationWarning, stacklevel=2)
-
-    return setup_module(level=level, name=name, console=True, color=True, propagate=False)
+__all__ = ["setup_logging"]
 
 
 DEFAULT_FORMAT = "%(asctime)s [%(levelname)s] (Process-%(process)d %(name)s)   %(message)s"
@@ -92,7 +57,7 @@ def _ensure_file_handler(
     logger.addHandler(fh)
 
 
-def setup(
+def setup_logging(
     level: int | str = "INFO",
     *,
     console: bool = True,
@@ -171,20 +136,20 @@ def setup(
     Examples:
         Basic setup:
 
-        >>> setup()
+        >>> setup_logging()
 
         Enabling debug mode with no color:
 
-        >>> setup(level="DEBUG", color=False)
+        >>> setup_logging(level="DEBUG", color=False)
 
         Overriding specific submodule levels:
 
-        >>> setup(submodule_levels={"agentlightning.io": "DEBUG"})
+        >>> setup_logging(submodule_levels={"agentlightning.io": "DEBUG"})
 
         Attaching an additional file handler:
 
         >>> fh = logging.FileHandler("app.log")
-        >>> setup(extra_handlers=[fh])
+        >>> setup_logging(extra_handlers=[fh])
     """
     # Ensure UTF-8 encoding on Windows consoles
     # Note: This change does not fully represent support for execution under the windows system.
@@ -193,7 +158,7 @@ def setup(
     if platform.system() == "Windows":
         os.environ["PYTHONUTF8"] = "1"
 
-    base_logger = setup_module(
+    base_logger = _setup_logger_namespace(
         level,
         name="agentlightning",
         console=console,
@@ -283,7 +248,7 @@ def setup(
         logging.captureWarnings(True)
 
 
-def setup_module(
+def _setup_logger_namespace(
     level: int | str = "INFO",
     *,
     name: str = "agentlightning",
@@ -292,17 +257,12 @@ def setup_module(
     propagate: bool = False,
     disable_existing_loggers: bool = False,
 ) -> logging.Logger:
-    """Initializes and returns the base logger for `agentlightning`.
+    """Initialize and return a logger namespace with Agent Lightning formatting.
 
     This function constructs and applies a `dictConfig` configuration for the
     logger hierarchy rooted at `name`. It supports either rich console
     formatting (via `RichHandler`) or plain text formatting, based on the
     `color` argument.
-
-    Unlike [`setup_logging`][agentlightning.setup_logging], this function configures only a single logger namespace
-    and does not attach extra handlers or submodule levels. It is primarily used
-    internally by [`setup_logging`][agentlightning.setup_logging] but is also suitable for direct integration in
-    custom logging workflows.
     """
     root_cfg: Dict[str, Any] = {
         "version": 1,

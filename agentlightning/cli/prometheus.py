@@ -14,7 +14,7 @@ from typing import Iterable
 from fastapi import FastAPI
 from prometheus_client import make_asgi_app  # pyright: ignore[reportUnknownVariableType]
 
-from agentlightning.logging import setup as setup_logging
+from agentlightning.logging import setup_logging
 from agentlightning.utils.metrics import get_prometheus_registry
 from agentlightning.utils.server_launcher import PythonServerLauncher, PythonServerLauncherArgs
 

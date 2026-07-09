@@ -13,11 +13,13 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, emit_object, emit_reward, operation, setup_logging
 from agentlightning.utils.otel import make_link_attributes
 from contrib.recipes.envs.prompt_builder import HistoryPromptBuilder
 
-logger = configure_logger(name=__name__, level=logging.ERROR)
+setup_logging(apply_to=[__name__])
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 
 class EnvAgent(LitAgent):

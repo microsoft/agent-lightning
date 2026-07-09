@@ -11,10 +11,10 @@ from typing import Any, Dict, List
 
 import pytest
 
-from agentlightning.logging import _to_level_value  # pyright: ignore[reportPrivateUsage]
 from agentlightning.logging import (
     DATE_FORMAT,
     DEFAULT_FORMAT,
+    setup_logging,
 )
 
 pytestmark = pytest.mark.utils
@@ -30,18 +30,18 @@ def _logging_worker(case: str, queue: Queue[Dict[str, Any]]) -> None:
 
     # Re-import inside the subprocess so everything is picklable & isolated
     from agentlightning.logging import (
-        setup,
-        setup_module,
+        setup_logging,
     )
 
-    if case == "setup_module_plain_console":
-        logger = setup_module(
+    if case == "setup_plain_console":
+        setup_logging(
             level="DEBUG",
-            name="agentlightning.test",
             console=True,
             color=False,
             propagate=False,
+            apply_to=["agentlightning.test"],
         )
+        logger = logging.getLogger("agentlightning.test")
 
         handlers = logger.handlers
         handler = handlers[0] if handlers else None
@@ -60,15 +60,16 @@ def _logging_worker(case: str, queue: Queue[Dict[str, Any]]) -> None:
             }
         )
 
-    elif case == "setup_module_color_rich":
+    elif case == "setup_color_rich":
         # Rich variant: color=True uses RichHandler
-        logger = setup_module(
+        setup_logging(
             level="INFO",
-            name="agentlightning.rich",
             console=True,
             color=True,
             propagate=False,
+            apply_to=["agentlightning.rich"],
         )
+        logger = logging.getLogger("agentlightning.rich")
         handlers = logger.handlers
         handler = handlers[0] if handlers else None
 
@@ -87,7 +88,7 @@ def _logging_worker(case: str, queue: Queue[Dict[str, Any]]) -> None:
         stream = io.StringIO()
         stream_handler = logging.StreamHandler(stream)
 
-        setup(
+        setup_logging(
             level="INFO",
             console=False,
             color=False,
@@ -139,7 +140,7 @@ def _logging_worker(case: str, queue: Queue[Dict[str, Any]]) -> None:
         stream = io.StringIO()
         extra_handler = logging.StreamHandler(stream)
 
-        setup(
+        setup_logging(
             level="WARNING",
             console=True,
             color=False,
@@ -172,11 +173,11 @@ def _logging_worker_files_string(queue: Queue[Dict[str, Any]], base_dir: str) ->
     import logging
     import os
 
-    from agentlightning.logging import setup
+    from agentlightning.logging import setup_logging
 
     log_path = os.path.join(base_dir, "logs", "agent.log")
 
-    setup(
+    setup_logging(
         level="INFO",
         console=False,
         color=False,
@@ -212,7 +213,7 @@ def _logging_worker_files_mapping(queue: Queue[Dict[str, Any]], base_dir: str) -
     import logging
     import os
 
-    from agentlightning.logging import setup
+    from agentlightning.logging import setup_logging
 
     base_log = os.path.join(base_dir, "agent.log")
     external_log = os.path.join(base_dir, "external.log")
@@ -226,7 +227,7 @@ def _logging_worker_files_mapping(queue: Queue[Dict[str, Any]], base_dir: str) -
         return [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
 
     # First setup call
-    setup(
+    setup_logging(
         level="DEBUG",
         console=False,
         color=False,
@@ -241,7 +242,7 @@ def _logging_worker_files_mapping(queue: Queue[Dict[str, Any]], base_dir: str) -
     ext_fh_first = file_handlers(ext_logger)
 
     # Second setup call with the same mapping should not add duplicate FileHandlers
-    setup(
+    setup_logging(
         level="DEBUG",
         console=False,
         color=False,
@@ -283,18 +284,13 @@ def _run_case(case: str) -> Dict[str, Any]:
     return result
 
 
-def test_to_level_value_int_and_str() -> None:
-    # direct, no multiprocessing needed
-    assert _to_level_value(logging.DEBUG) == logging.DEBUG
-    assert _to_level_value("info") == logging.INFO
-    assert _to_level_value("WARNING") == logging.WARNING
-
+def test_setup_logging_rejects_invalid_submodule_level() -> None:
     with pytest.raises(ValueError):
-        _to_level_value("not-a-level")
+        setup_logging(console=False, submodule_levels={"agentlightning.io": "not-a-level"})
 
 
-def test_setup_module_plain_console_spawn() -> None:
-    result = _run_case("setup_module_plain_console")
+def test_setup_plain_console_spawn() -> None:
+    result = _run_case("setup_plain_console")
 
     assert result["logger_name"] == "agentlightning.test"
     assert result["logger_level"] == logging.DEBUG
@@ -307,11 +303,11 @@ def test_setup_module_plain_console_spawn() -> None:
     assert result["datefmt"] == DATE_FORMAT
 
 
-def test_setup_module_color_rich_spawn() -> None:
+def test_setup_color_rich_spawn() -> None:
     # Only run this test if rich is installed
     pytest.importorskip("rich")
 
-    result = _run_case("setup_module_color_rich")
+    result = _run_case("setup_color_rich")
 
     assert result["logger_name"] == "agentlightning.rich"
     assert result["logger_level"] == logging.INFO

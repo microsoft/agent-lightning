@@ -9,13 +9,14 @@ import requests
 from add_instruction import add_chat_all_tips, add_chat_instruction
 from agl_envs import make_env_manager
 
-from agentlightning import LLM, NamedResources, Rollout, configure_logger, emit_reward, operation
+from agentlightning import LLM, NamedResources, Rollout, emit_reward, operation, setup_logging
 from agentlightning.utils.otel import make_link_attributes
 from contrib.agentlightning.contrib.agent.env_agent import EnvAgent
 from contrib.recipes.envs.prompt_builder import HistoryPromptBuilder
 
-configure_logger()
-logger = configure_logger(name=__name__, level=logging.ERROR)
+setup_logging(apply_to=[__name__])
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 
 def do_compress(text):
