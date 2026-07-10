@@ -538,6 +538,7 @@ class AgentLightningTrainer(RayPPOTrainer):
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
+                progress_bar.update(1)
 
                 if is_last_step:
                     pprint(f"Final validation metrics: {last_val_metrics}")
@@ -549,5 +550,4 @@ class AgentLightningTrainer(RayPPOTrainer):
                     pprint(f"Training finished at step {self.global_steps}.")
                     return
 
-                progress_bar.update(1)
                 self.global_steps += 1
