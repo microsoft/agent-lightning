@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from agentlightning.store import CollectionBasedLightningStore
 from agentlightning.store.base import UNSET, LightningStore
+from agentlightning.store.collection.base import BatchInsertError, DuplicatedPrimaryKeyError
 from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
@@ -1396,6 +1397,12 @@ async def test_add_many_spans_reports_inserted_duplicates_and_failures_precisely
         if any(span.name == "failed" for span in items):
             if len(items) > 1:
                 await original_insert([span for span in items if span.name != "failed"])
+                raise BatchInsertError(
+                    "simulated span write failure",
+                    inserted_indices=(0,),
+                    duplicate_indices=(),
+                    failed_indices=(1,),
+                )
             raise RuntimeError("simulated span write failure")
         await original_insert(items)
 
@@ -1411,6 +1418,55 @@ async def test_add_many_spans_reports_inserted_duplicates_and_failures_precisely
 
     with pytest.raises(RuntimeError, match="simulated span write failure"):
         await inmemory_store.add_span(build_span(4, "failed"))
+
+
+@pytest.mark.asyncio
+async def test_add_many_spans_uses_backend_duplicate_outcomes(
+    inmemory_store: InMemoryLightningStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempted = await inmemory_store.start_rollout(input={"origin": "concurrent-duplicate"})
+
+    def build_span(seed: int) -> Span:
+        trace_hex = f"{seed:032x}"
+        span_hex = f"{seed:016x}"
+        return Span(
+            rollout_id=attempted.rollout_id,
+            attempt_id=attempted.attempt.attempt_id,
+            sequence_id=seed,
+            trace_id=trace_hex,
+            span_id=span_hex,
+            parent_id=None,
+            name=f"span-{seed}",
+            status=TraceStatus(status_code="OK"),
+            attributes={},
+            events=[],
+            links=[],
+            start_time=None,
+            end_time=None,
+            context=SpanContext(trace_id=trace_hex, span_id=span_hex, is_remote=False, trace_state={}),
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        )
+
+    first = build_span(1)
+    concurrent_duplicate = build_span(2)
+    original_insert = inmemory_store.collections.spans.insert
+
+    async def insert_with_concurrent_duplicate(items: Sequence[Span]) -> None:
+        await original_insert(items)
+        raise DuplicatedPrimaryKeyError(
+            "concurrent duplicate",
+            inserted_indices=(0,),
+            duplicate_indices=(1,),
+        )
+
+    monkeypatch.setattr(inmemory_store.collections.spans, "insert", insert_with_concurrent_duplicate)
+
+    result = await inmemory_store.add_many_spans([first, concurrent_duplicate])
+
+    assert result.inserted == 1
+    assert result.duplicates == 1
+    assert result.failed == 0
 
 
 @pytest.mark.asyncio

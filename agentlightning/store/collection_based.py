@@ -72,7 +72,7 @@ from .base import (
     is_queuing,
 )
 from .collection import FilterOptions, LightningCollections
-from .collection.base import AtomicLabels, DuplicatedPrimaryKeyError
+from .collection.base import AtomicLabels, BatchInsertError, DuplicatedPrimaryKeyError
 from .utils import (
     LATENCY_BUCKETS,
     rollout_status_from_attempt,
@@ -1176,51 +1176,53 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if not pending:
                 return write_result, successful_spans
 
+            def outcomes_are_complete(*groups: Sequence[int]) -> bool:
+                indices = [index for group in groups for index in group]
+                return len(indices) == len(set(indices)) and set(indices) == set(range(len(pending)))
+
             try:
                 await collections.spans.insert(pending)
-            except DuplicatedPrimaryKeyError:
-                # A concurrent writer or an ordered bulk insert may have persisted
-                # only part of the batch. Confirm that prefix before retrying the rest.
-                existing_after = await query_existing([span.span_id for span in pending])
-                for span in pending:
-                    if span.span_id in existing_after:
-                        successful_spans.append(span)
-                        write_result.inserted += 1
-                        continue
-                    try:
-                        await collections.spans.insert([span])
-                    except DuplicatedPrimaryKeyError:
-                        write_result.duplicates += 1
-                    except Exception:
-                        if raise_on_failure:
-                            raise
-                        logger.exception(
-                            "Span write failed for rollout=%s, attempt=%s, span=%s.",
-                            span.rollout_id,
-                            span.attempt_id,
-                            span.span_id,
-                        )
-                        write_result.failed += 1
-                    else:
-                        successful_spans.append(span)
-                        write_result.inserted += 1
+            except DuplicatedPrimaryKeyError as exc:
+                if exc.inserted_indices is None or exc.duplicate_indices is None:
+                    if raise_on_failure:
+                        raise
+                    write_result.failed += len(pending)
+                    logger.exception("Span backend did not report per-item outcomes for a duplicate batch.")
+                elif not outcomes_are_complete(exc.inserted_indices, exc.duplicate_indices):
+                    if raise_on_failure:
+                        raise RuntimeError("Span backend returned incomplete duplicate-batch outcomes.") from exc
+                    write_result.failed += len(pending)
+                    logger.exception("Span backend returned incomplete duplicate-batch outcomes.")
+                else:
+                    successful_spans.extend(pending[index] for index in exc.inserted_indices)
+                    write_result.inserted += len(exc.inserted_indices)
+                    write_result.duplicates += len(exc.duplicate_indices)
+            except BatchInsertError as exc:
+                if not outcomes_are_complete(
+                    exc.inserted_indices,
+                    exc.duplicate_indices,
+                    exc.failed_indices,
+                ):
+                    if raise_on_failure:
+                        raise RuntimeError("Span backend returned incomplete batch outcomes.") from exc
+                    write_result.failed += len(pending)
+                    logger.exception("Span backend returned incomplete batch outcomes.")
+                else:
+                    successful_spans.extend(pending[index] for index in exc.inserted_indices)
+                    write_result.inserted += len(exc.inserted_indices)
+                    write_result.duplicates += len(exc.duplicate_indices)
+                    write_result.failed += len(exc.failed_indices)
+                    if raise_on_failure and exc.failed_indices:
+                        raise
             except Exception:
                 if raise_on_failure:
                     raise
-
-                # A backend can report a failed bulk request after accepting a
-                # prefix. Read it back so accepted spans are not reported failed.
-                existing_after = await query_existing([span.span_id for span in pending])
-                confirmed_ids = set(existing_after)
-                successful_spans.extend(span for span in pending if span.span_id in confirmed_ids)
-                write_result.inserted += len(confirmed_ids)
-                write_result.failed += len(pending) - len(confirmed_ids)
+                write_result.failed += len(pending)
                 logger.exception(
-                    "Span batch write failed for rollout=%s, attempt=%s (%d confirmed, %d failed).",
+                    "Span batch write failed for rollout=%s, attempt=%s (%d outcome(s) unknown).",
                     sample.rollout_id,
                     sample.attempt_id,
-                    len(confirmed_ids),
-                    len(pending) - len(confirmed_ids),
+                    len(pending),
                 )
             else:
                 successful_spans.extend(pending)

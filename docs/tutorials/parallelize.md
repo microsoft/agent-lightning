@@ -94,10 +94,9 @@ trainer = agl.Trainer(algorithm=algorithm, strategy=strategy)
 If you omit the strategy, the trainer defaults to `ClientServerExecutionStrategy(n_runners=trainer.n_runners)`. Pass an explicit client-server strategy to tweak ports and other settings:
 
 ```python
-strategy = agl.ClientServerExecutionStrategy(server_port=9999)
+strategy = agl.ClientServerExecutionStrategy(server_port=9999, n_runners=8)
 trainer = agl.Trainer(
     algorithm=algorithm,
-    n_runners=8,
     strategy=strategy,
 )
 ```
@@ -111,8 +110,8 @@ os.environ["AGL_SERVER_PORT"] = "10000"
 os.environ["AGL_CURRENT_ROLE"] = "algorithm"
 os.environ["AGL_MANAGED_STORE"] = "0"
 
-strategy = agl.ClientServerExecutionStrategy()
-trainer = agl.Trainer(algorithm=algorithm, n_runners=8, strategy=strategy)
+strategy = agl.ClientServerExecutionStrategy(n_runners=8)
+trainer = agl.Trainer(algorithm=algorithm, strategy=strategy)
 ```
 
 The resulting [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] picks up the port, role, and managed-store flag from the environment.

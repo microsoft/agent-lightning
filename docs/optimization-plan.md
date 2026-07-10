@@ -46,7 +46,7 @@
 | Agent rollout 返回值 | `RolloutResult = None | float | list[AgentSpanPayload]`；`AgentSpanPayload` 只包含 span 业务字段，不包含 `rollout_id`、`attempt_id`、`sequence_id`。 | 删除 OTEL `ReadableSpan`、已归属 store `Span` 和隐式 bool/int reward 自动转换路径；rollout/attempt/sequence 归属只由 `Runner` 和 `Tracer` 写入。 |
 | Span ownership | `Runner`/`Tracer` 拥有 `rollout_id`、`attempt_id`、`sequence_id`、`created_at` 等上下文字段；agent 不直接决定归属。 | 不存在跨 rollout 污染、重复写入和 sequence 冲突路径。 |
 | `SpanWriter` | 统一同步 callback 到 async store 的桥接；`LightningSpanProcessor` 和 `LLMProxy` exporter 都使用同一个写入 Interface。 | 写入 timeout、确认、失败日志和 shutdown 行为只有一处实现。 |
-| Store 批量写入 | 使用显式 `SpanWriteResult`，返回 `inserted`、`duplicates`、`failed`；不要求跨后端 all-or-nothing 事务。 | 正常路径保持 bulk 写入，异常后读回确认部分成功项；Runner/OTLP 等调用方必须处理 `failed`，不能静默继续。 |
+| Store 批量写入 | 使用显式 `SpanWriteResult`，返回 `inserted`、`duplicates`、`failed`；不要求跨后端 all-or-nothing 事务。 | 正常路径保持 bulk 写入；后端通过逐项索引报告部分成功、重复和失败，未知结果按失败处理，不能通过写后查询猜测归属；Runner/OTLP 等调用方必须处理 `failed`。 |
 | Store 角色模型 | `LightningStore` 是业务 Interface；local collection store、remote client、threaded wrapper 是 adapters；`LightningStoreServer` 是 has-a store 的 HTTP/lifecycle container。 | server 不再继承 `LightningStore`；`ClientServerExecutionStrategy` 可以负责启动和关闭 store server，但传给 `algorithm_bundle`、`runner_bundle`、proxy 的必须是纯 `LightningStore` facade，例如 `LightningStoreClient`，不能是 `LightningStoreServer` runtime 对象。 |
 
 ### 状态转移表

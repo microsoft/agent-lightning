@@ -153,8 +153,6 @@ class Trainer:
         """
         resolved_n_runners = 1 if n_runners is None else n_runners
 
-        self.n_runners = resolved_n_runners
-
         self.max_rollouts = max_rollouts
 
         self.tracer = self._make_tracer(tracer)
@@ -167,8 +165,19 @@ class Trainer:
 
         self.strategy = self._make_strategy(
             strategy,
-            n_runners=self.n_runners,
+            n_runners=resolved_n_runners,
         )
+
+        strategy_n_runners = getattr(self.strategy, "n_runners", None)
+        if isinstance(strategy_n_runners, int):
+            if n_runners is not None and strategy is not None and n_runners != strategy_n_runners:
+                raise ValueError(
+                    "n_runners is configured on both Trainer and the execution strategy with different values: "
+                    f"Trainer={n_runners}, strategy={strategy_n_runners}. Configure it in one place."
+                )
+            self.n_runners = strategy_n_runners
+        else:
+            self.n_runners = resolved_n_runners
 
         # The active store for the current execution context
         self.store = self._make_store(store, self.strategy)

@@ -361,6 +361,26 @@ async def test_textual_gradient_and_apply_edit_returns_new_prompt(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_textual_gradient_propagates_poml_render_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    create_mock = AsyncMock(return_value=make_completion("unused"))
+    apo = APO[Any](make_openai_client(create_mock))
+    monkeypatch.setattr(apo_module.random, "choice", lambda seq: seq[0])  # type: ignore
+
+    def fail_render(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+        _ = (args, kwargs)
+        raise ValueError("invalid POML template")
+
+    monkeypatch.setattr(apo_module.poml, "poml", fail_render)
+    prompt = apo._create_versioned_prompt(PromptTemplate(template="prompt", engine="f-string"))
+    rollouts = [RolloutResultForAPO(status="succeeded", final_reward=1.0, spans=[], messages=[])]
+
+    with pytest.raises(ValueError, match="invalid POML template"):
+        await apo.compute_textual_gradient(prompt, rollouts)
+
+    create_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_textual_gradient_and_apply_edit_returns_original_if_no_critique(monkeypatch: pytest.MonkeyPatch) -> None:
     # Mock OpenAI to return None content
     create_mock = AsyncMock(return_value=make_completion(None))

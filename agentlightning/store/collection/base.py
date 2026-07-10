@@ -112,7 +112,33 @@ def ensure_numeric(value: Any, *, description: str) -> TypeGuard[Real]:
 class DuplicatedPrimaryKeyError(ValueError):
     """Error raised when a duplicate key is encountered."""
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        inserted_indices: Sequence[int] | None = None,
+        duplicate_indices: Sequence[int] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.inserted_indices = tuple(inserted_indices) if inserted_indices is not None else None
+        self.duplicate_indices = tuple(duplicate_indices) if duplicate_indices is not None else None
+
+
+class BatchInsertError(RuntimeError):
+    """Bulk insert failure with backend-confirmed per-item outcomes."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        inserted_indices: Sequence[int],
+        duplicate_indices: Sequence[int],
+        failed_indices: Sequence[int],
+    ) -> None:
+        super().__init__(message)
+        self.inserted_indices = tuple(inserted_indices)
+        self.duplicate_indices = tuple(duplicate_indices)
+        self.failed_indices = tuple(failed_indices)
 
 
 class TrackedCollection:

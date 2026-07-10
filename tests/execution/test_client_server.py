@@ -964,11 +964,14 @@ def test_execute_role_runner_multi_raises_on_child_failure(store: LightningStore
         strat.execute(algorithm=_noop_algorithm, runner=_raise_in_runner, store=store)
 
 
-def test_execute_both_main_algorithm_cooperative_shutdown(store: LightningStore) -> None:
+def test_execute_both_main_algorithm_cooperative_shutdown(
+    store: LightningStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """
     Spawn runners, run algorithm in the main process.
     Algorithm sets stop_evt after a short delay to unwind the runners.
     """
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     port: int = _free_port()
 
     async def algo(store: LightningStore, event: ExecutionEvent) -> None:
@@ -980,8 +983,8 @@ def test_execute_both_main_algorithm_cooperative_shutdown(store: LightningStore)
         n_runners=2,
         server_host="127.0.0.1",
         server_port=port,
-        graceful_timeout=0.05,
-        terminate_timeout=0.05,
+        graceful_timeout=10.0,
+        terminate_timeout=1.0,
     )
     strat.execute(algorithm=algo, runner=_runner_wait_for_stop, store=store)
 
@@ -1170,6 +1173,21 @@ def test_execute_both_main_algo_abort_terminates_runner_that_ignores_stop(store:
 
     with pytest.raises(RuntimeError, match="algorithm abort"):
         strat.execute(algorithm=algo, runner=_runner_ignores_stop_forever, store=store)
+
+
+def test_execute_both_main_algorithm_times_out_stuck_runner_drain(store: LightningStore) -> None:
+    strat = ClientServerExecutionStrategy(
+        role="both",
+        main_process="algorithm",
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=_free_port(),
+        graceful_timeout=0.1,
+        terminate_timeout=0.1,
+    )
+
+    with pytest.raises(TimeoutError, match="Runner drain exceeded"):
+        strat.execute(algorithm=_noop_algorithm, runner=_runner_ignores_stop_forever, store=store)
 
 
 @pytest.mark.parametrize("main_process", ["algorithm", "runner"])

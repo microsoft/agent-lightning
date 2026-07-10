@@ -2,8 +2,10 @@
 
 from pathlib import Path
 
-import agentlightning.types.core as core
+import pytest
+from pydantic import ValidationError
 
+import agentlightning.types.core as core
 from agentlightning.types import AgentSpanPayload, RolloutResult, SpanWriteResult
 
 
@@ -14,7 +16,6 @@ def test_agent_span_payload_fields() -> None:
         attributes={"reward": 1.0},
         start_time=1.0,
         end_time=2.0,
-        events=[{"name": "tool_call", "data": {"tool": "search"}}],
     )
 
     assert payload.name == "agent.step"
@@ -22,7 +23,18 @@ def test_agent_span_payload_fields() -> None:
     assert payload.attributes == {"reward": 1.0}
     assert payload.start_time == 1.0
     assert payload.end_time == 2.0
-    assert payload.events == [{"name": "tool_call", "data": {"tool": "search"}}]
+
+
+def test_agent_span_payload_rejects_unsupported_fields() -> None:
+    with pytest.raises(ValidationError, match="events"):
+        AgentSpanPayload.model_validate(
+            {
+                "name": "agent.step",
+                "status": {"status_code": "OK"},
+                "attributes": {},
+                "events": [{"name": "tool_call"}],
+            }
+        )
 
 
 def test_span_write_result_schema_defaults() -> None:

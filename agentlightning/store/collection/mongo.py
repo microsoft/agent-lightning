@@ -62,6 +62,7 @@ from agentlightning.types import (
 from .base import (
     AtomicLabels,
     AtomicMode,
+    BatchInsertError,
     Collection,
     DuplicatedPrimaryKeyError,
     KeyValue,
@@ -563,15 +564,36 @@ class MongoBasedCollection(Collection[T_model]):
 
         try:
             async with self.tracking_context("insert.insert_many", self._collection_name):
-                await collection.insert_many(docs, session=self._session)
+                await collection.insert_many(docs, ordered=False, session=self._session)
         except DuplicateKeyError as exc:
-            # In case the DB enforces uniqueness via index, normalize to ValueError
+            if len(docs) == 1:
+                raise DuplicatedPrimaryKeyError(
+                    "Duplicated primary key(s) while inserting items",
+                    inserted_indices=(),
+                    duplicate_indices=(0,),
+                ) from exc
             raise DuplicatedPrimaryKeyError("Duplicated primary key(s) while inserting items") from exc
         except BulkWriteError as exc:
             write_errors = exc.details.get("writeErrors", [])
-            if write_errors and write_errors[0].get("code") == 11000:
-                raise DuplicatedPrimaryKeyError("Duplicated primary key(s) while inserting items") from exc
-            raise
+            write_concern_errors = exc.details.get("writeConcernErrors", [])
+            if not write_errors or write_concern_errors:
+                raise
+            error_indices = {int(error["index"]) for error in write_errors}
+            duplicate_indices = {int(error["index"]) for error in write_errors if error.get("code") == 11000}
+            failed_indices = error_indices - duplicate_indices
+            inserted_indices = set(range(len(docs))) - error_indices
+            if duplicate_indices and not failed_indices:
+                raise DuplicatedPrimaryKeyError(
+                    "Duplicated primary key(s) while inserting items",
+                    inserted_indices=sorted(inserted_indices),
+                    duplicate_indices=sorted(duplicate_indices),
+                ) from exc
+            raise BatchInsertError(
+                "Bulk insert failed for one or more items",
+                inserted_indices=sorted(inserted_indices),
+                duplicate_indices=sorted(duplicate_indices),
+                failed_indices=sorted(failed_indices),
+            ) from exc
 
     @tracked("update")
     async def update(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:

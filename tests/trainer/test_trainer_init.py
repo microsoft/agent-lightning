@@ -42,7 +42,7 @@ def test_trainer_with_shared_memory_strategy_instance() -> None:
 def test_trainer_with_shared_memory_strategy_main_thread() -> None:
     """Test trainer initialization with an explicit strategy allowing n_runners > 1."""
     algorithm = agl.Baseline()
-    strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", managed_store=False)
+    strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", n_runners=8, managed_store=False)
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
@@ -53,23 +53,29 @@ def test_trainer_with_shared_memory_strategy_main_thread() -> None:
     assert strategy.managed_store is False
 
 
-def test_trainer_with_initialized_strategy_keeps_strategy_configuration() -> None:
-    """Test that Trainer does not rewrite an initialized strategy."""
+def test_trainer_rejects_conflicting_runner_counts() -> None:
+    """Runner parallelism must have one unambiguous source of truth."""
     algorithm = agl.Baseline()
     strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", n_runners=4)
-    trainer = agl.Trainer(
-        algorithm=algorithm,
-        n_runners=8,
-        strategy=strategy,
-    )
-    assert trainer.strategy is strategy
-    assert trainer.strategy.n_runners == 4  # type: ignore
+    with pytest.raises(ValueError, match="Configure it in one place"):
+        agl.Trainer(
+            algorithm=algorithm,
+            n_runners=8,
+            strategy=strategy,
+        )
+
+
+def test_trainer_uses_explicit_strategy_runner_count() -> None:
+    strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", n_runners=4)
+    trainer = agl.Trainer(algorithm=agl.Baseline(), strategy=strategy)
+
+    assert trainer.n_runners == 4
 
 
 def test_trainer_with_client_server_strategy_instance() -> None:
     """Test trainer initialization with an explicit client-server strategy."""
     algorithm = agl.Baseline()
-    strategy = agl.ClientServerExecutionStrategy(server_port=9999)
+    strategy = agl.ClientServerExecutionStrategy(server_port=9999, n_runners=8)
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
@@ -90,7 +96,7 @@ def test_trainer_with_env_vars_for_execution_strategy(monkeypatch: pytest.Monkey
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
-        strategy=agl.ClientServerExecutionStrategy(),
+        strategy=agl.ClientServerExecutionStrategy(n_runners=8),
     )
     assert isinstance(trainer.strategy, agl.ClientServerExecutionStrategy)
     assert trainer.strategy.server_port == 10000

@@ -447,7 +447,14 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
 
                     async def drain_runners() -> None:
                         stop_evt.set()
-                        await asyncio.gather(*(asyncio.to_thread(process.join) for process in processes))
+                        alive = await asyncio.to_thread(
+                            self._join_until_deadline,
+                            processes,
+                            self.graceful_timeout,
+                        )
+                        if alive:
+                            names = ", ".join(process.name or str(process.pid) for process in alive)
+                            raise TimeoutError(f"Runner drain exceeded {self.graceful_timeout:.1f}s: {names}")
 
                     try:
                         logger.info("Running algorithm...")

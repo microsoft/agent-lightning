@@ -655,6 +655,27 @@ class ListBasedCollection(Collection[T]):
             seen_keys.add(key_values)
             prepared.append(item)
 
+        duplicate_indices: List[int] = []
+        for index, item in enumerate(prepared):
+            key_values = self._extract_primary_key_values(item)
+            try:
+                parent, final_key = self._locate_node(key_values, create_missing=False)
+            except KeyError:
+                continue
+            if final_key in parent:
+                duplicate_indices.append(index)
+
+        if duplicate_indices:
+            duplicate_index_set = set(duplicate_indices)
+            inserted_indices = [index for index in range(len(prepared)) if index not in duplicate_index_set]
+            for index in inserted_indices:
+                self._mutate_single(prepared[index], mode="insert")
+            raise DuplicatedPrimaryKeyError(
+                "One or more items already exist",
+                inserted_indices=inserted_indices,
+                duplicate_indices=duplicate_indices,
+            )
+
         for item in prepared:
             self._mutate_single(item, mode="insert")
 

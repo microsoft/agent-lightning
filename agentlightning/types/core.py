@@ -26,7 +26,7 @@ from typing import (
     overload,
 )
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .tracer import Span
 
@@ -86,12 +86,13 @@ class AgentSpanPayload(BaseModel):
     ownership (rollout/attempt/sequence) when persisting.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     status: Dict[str, Any]
     attributes: Dict[str, Any]
     start_time: Optional[float] = None
     end_time: Optional[float] = None
-    events: List[Dict[str, Any]] = Field(default_factory=lambda: cast(List[Dict[str, Any]], []))
 
 
 RunConfig = Dict[str, Any]
