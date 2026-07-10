@@ -358,6 +358,22 @@ async def test_step_emits_reward_for_float_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_process_float_result_includes_persisted_reward() -> None:
+    runner, store, _ = await setup_runner(HeartbeatAgent())
+    attempted = await store.start_rollout(input={"prompt": "hello"}, mode="val")
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted,
+            0.75,
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert find_final_reward(result_spans) == 0.75
+    assert len(result_spans) == 1
+
+
+@pytest.mark.asyncio
 async def test_step_rejects_bool_result() -> None:
     class BoolRewardAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> bool:

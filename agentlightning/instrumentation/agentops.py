@@ -14,6 +14,7 @@ from agentops.sdk.exporters import AuthenticatedOTLPExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics.export import MetricExportResult
+from opentelemetry.trace import Tracer
 
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
@@ -27,7 +28,118 @@ __all__ = [
 # Module-level storage for originals
 _original_handle_chat_attributes: Callable[..., Any] | None = None
 _original_handle_response: Callable[..., Any] | None = None
+_original_openai_custom_wrap: Callable[..., Any] | None = None
 _agentops_service_enabled = False
+
+_Wrapper = Callable[..., Any]
+_WrapperFactory = Callable[[Tracer], _Wrapper]
+_wrapt = cast(Any, import_module("wrapt"))
+wrap_function_wrapper = cast(Callable[[str, str, _Wrapper], Any], _wrapt.wrap_function_wrapper)
+
+
+def _module_available(module_name: str) -> bool:
+    try:
+        import_module(module_name)
+    except ModuleNotFoundError:
+        return False
+    return True
+
+
+def _wrap_agentops_openai_streaming(instrumentor: object, **kwargs: object) -> None:
+    """Install AgentOps streaming wrappers supported by the active OpenAI SDK."""
+    _ = kwargs
+    from agentops.instrumentation.providers.openai.utils import is_openai_v1
+
+    stream_wrapper_module = cast(
+        Any,
+        import_module("agentops.instrumentation.providers.openai.stream_wrapper"),
+    )
+    chat_completion_stream_wrapper = cast(
+        _WrapperFactory,
+        stream_wrapper_module.chat_completion_stream_wrapper,
+    )
+    async_chat_completion_stream_wrapper = cast(
+        _WrapperFactory,
+        stream_wrapper_module.async_chat_completion_stream_wrapper,
+    )
+    responses_stream_wrapper = cast(
+        _WrapperFactory,
+        stream_wrapper_module.responses_stream_wrapper,
+    )
+    async_responses_stream_wrapper = cast(
+        _WrapperFactory,
+        stream_wrapper_module.async_responses_stream_wrapper,
+    )
+
+    tracer = cast(Tracer | None, getattr(instrumentor, "_tracer", None))
+    if not is_openai_v1() or tracer is None:
+        return
+
+    wrappers: list[tuple[str, str, _WrapperFactory]] = [
+        (
+            "openai.resources.chat.completions",
+            "Completions.create",
+            chat_completion_stream_wrapper,
+        ),
+        (
+            "openai.resources.chat.completions",
+            "AsyncCompletions.create",
+            async_chat_completion_stream_wrapper,
+        ),
+        (
+            "openai.resources.responses",
+            "Responses.create",
+            responses_stream_wrapper,
+        ),
+        (
+            "openai.resources.responses",
+            "AsyncResponses.create",
+            async_responses_stream_wrapper,
+        ),
+    ]
+    beta_module = "openai.resources.beta.chat.completions"
+    if _module_available(beta_module):
+        wrappers.extend(
+            [
+                (beta_module, "Completions.parse", chat_completion_stream_wrapper),
+                (beta_module, "AsyncCompletions.parse", async_chat_completion_stream_wrapper),
+            ]
+        )
+    else:
+        logger.debug("OpenAI beta chat completions are unavailable; skipping AgentOps beta streaming wrappers.")
+
+    for module_name, target, wrapper_factory in wrappers:
+        if not _module_available(module_name):
+            logger.debug("OpenAI module %s is unavailable; skipping AgentOps wrapper %s.", module_name, target)
+            continue
+        wrap_function_wrapper(module_name, target, wrapper_factory(tracer))
+
+
+def _patch_agentops_openai_streaming() -> None:
+    """Replace AgentOps 0.4.x's all-or-nothing OpenAI streaming setup."""
+    global _original_openai_custom_wrap
+    if _original_openai_custom_wrap is not None:
+        return
+    try:
+        instrumentor_module = import_module("agentops.instrumentation.providers.openai.instrumentor")
+    except ModuleNotFoundError:
+        logger.debug("AgentOps OpenAI instrumentor does not expose the 0.4.x streaming setup.")
+        return
+    instrumentor_cls = cast(Any, instrumentor_module).OpenaiInstrumentor
+    if not hasattr(instrumentor_cls, "_custom_wrap"):
+        return
+    _original_openai_custom_wrap = instrumentor_cls._custom_wrap
+    instrumentor_cls._custom_wrap = _wrap_agentops_openai_streaming
+
+
+def _unpatch_agentops_openai_streaming() -> None:
+    global _original_openai_custom_wrap
+    if _original_openai_custom_wrap is None:
+        return
+    instrumentor_module = import_module("agentops.instrumentation.providers.openai.instrumentor")
+    instrumentor_cls = cast(Any, instrumentor_module).OpenaiInstrumentor
+    instrumentor_cls._custom_wrap = _original_openai_custom_wrap
+    _original_openai_custom_wrap = None
 
 
 def enable_agentops_service(enabled: bool = True) -> None:
@@ -223,6 +335,7 @@ def instrument_agentops():
     Automatically detects and uses the appropriate patching method based on the installed agentops version.
     """
     _patch_exporters()
+    _patch_agentops_openai_streaming()
 
     # Try newest version first (tested for 0.4.16)
     try:
@@ -244,6 +357,7 @@ def instrument_agentops():
 def uninstrument_agentops():
     """Uninstrument agentops to stop capturing token IDs."""
     _unpatch_exporters()
+    _unpatch_agentops_openai_streaming()
 
     try:
         _unpatch_new_agentops()

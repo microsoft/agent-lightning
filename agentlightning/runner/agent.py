@@ -382,7 +382,10 @@ class LitAgentRunner(Runner[T_task]):
                 attempt_id=rollout.attempt.attempt_id,
                 sequence_id=sequence_id,
             )
-            await store.add_span(reward_span)
+            stored_reward_span = await store.add_span(reward_span)
+            if stored_reward_span is None:
+                raise RuntimeError("Failed to persist the rollout reward span.")
+            trace_spans.append(stored_reward_span)
             result_recognized = True
 
         # Case 2: result is a list
