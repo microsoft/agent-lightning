@@ -16,8 +16,6 @@
 
 ::: agentlightning.RolloutMode
 
-::: agentlightning.GenericResponse
-
 ::: agentlightning.ParallelWorkerBase
 
 ::: agentlightning.Dataset
@@ -85,8 +83,6 @@
 ::: agentlightning.Resource
 
 ::: agentlightning.Span
-
-::: agentlightning.SpanAttributeNames
 
 ::: agentlightning.SpanLike
 

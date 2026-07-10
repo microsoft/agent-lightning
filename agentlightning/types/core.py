@@ -48,7 +48,6 @@ __all__ = [
     "SpanWriteResult",
     "SpanWriter",
     "RolloutMode",
-    "GenericResponse",
     "ParallelWorkerBase",
     "Dataset",
     "AttemptStatus",
@@ -288,24 +287,6 @@ class Worker(BaseModel):
 
 TaskInput = Any
 """Task input type. Accepts arbitrary payloads."""
-
-
-class GenericResponse(BaseModel):
-    """Generic server response used by compatibility endpoints.
-
-    !!! warning "Deprecated"
-        This response is no longer used by the new
-        [`LightningStore`][agentlightning.LightningStore] APIs.
-
-    Attributes:
-        status: Status string describing the result of the request.
-        message: Optional human readable explanation.
-        data: Arbitrary payload serialized as JSON.
-    """
-
-    status: str = "success"
-    message: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
 
 
 class ParallelWorkerBase:

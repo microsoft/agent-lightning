@@ -2,9 +2,11 @@
 
 """Tests for LitAgent interface boundaries."""
 
-import pytest
-from typing import Any, Dict
+from typing import Any, Callable, Dict, cast
 
+import pytest
+
+import agentlightning.litagent.litagent as litagent_module
 from agentlightning.litagent import LitAgent
 from agentlightning.types import NamedResources, Rollout
 
@@ -36,8 +38,9 @@ def test_litagent_does_not_store_trained_agents_marker() -> None:
 
     assert not hasattr(agent, "trained_agents")
 
+    legacy_constructor = cast(Callable[..., _BoundaryAgent], _BoundaryAgent)
     with pytest.raises(TypeError, match="__init__"):
-        _BoundaryAgent(trained_agents="legacy")
+        legacy_constructor(trained_agents="legacy")
 
 
 def test_litagent_no_legacy_rollout_lifecycle_methods() -> None:
@@ -46,3 +49,8 @@ def test_litagent_no_legacy_rollout_lifecycle_methods() -> None:
 
     assert not hasattr(agent, "on_rollout_start")
     assert not hasattr(agent, "on_rollout_end")
+
+
+def test_litagent_no_legacy_rollout_signature_detection() -> None:
+    """Legacy rollout signatures are no longer accepted by the runtime."""
+    assert not hasattr(litagent_module, "is_v0_1_rollout_api")

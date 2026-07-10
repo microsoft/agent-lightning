@@ -56,6 +56,32 @@ def _agl_reward_attrs(value: float):
     }
 
 
+def test_non_reward_span_cannot_assign_reward() -> None:
+    spans = [
+        _mk_span(
+            span_id="llm",
+            name="raw_gen_ai_request",
+            seq=1,
+            start=1,
+            end=2,
+            attrs=_raw_attrs_with_tokens([1], [2], response_id="response"),
+        ),
+        _mk_span(
+            span_id="not-reward",
+            name="application.event",
+            seq=2,
+            start=3,
+            end=4,
+            attrs={f"{LightningSpanAttributes.REWARD.value}.0.value": 1.0},
+        ),
+    ]
+
+    triplets = LlmProxyTraceToTriplet()(spans)
+
+    assert len(triplets) == 1
+    assert triplets[0].reward is None
+
+
 def test_sequence_matching_assigns_reward_to_latest_prior_llm():
     """
     Grounded in the provided sample:

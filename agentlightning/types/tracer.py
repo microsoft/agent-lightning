@@ -7,7 +7,6 @@ import time
 """Data models that mirror OpenTelemetry spans for Agent Lightning."""
 
 import json
-from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Protocol, Sequence, Union
 
 from opentelemetry import trace as trace_api
@@ -30,8 +29,6 @@ __all__ = [
     "Link",
     "OtelResource",
     "Span",
-    "SpanNames",
-    "SpanAttributeNames",
     "SpanLike",
     "StatusCode",
     "SpanCoreFields",
@@ -476,36 +473,6 @@ class Span(BaseModel):
             end_time=core.end_time,
             status=core.status,
         )
-
-
-class SpanNames(str, Enum):
-    """Enumerated span names recognised by Agent-lightning. Deprecated in favor of [semconv][agentlightning.semconv]."""
-
-    REWARD = "agentlightning.reward"
-    """The name of the reward span."""
-    MESSAGE = "agentlightning.message"
-    """The name of the message span."""
-    OBJECT = "agentlightning.object"
-    """The name of the object span."""
-    EXCEPTION = "agentlightning.exception"
-    """The name of the exception span."""
-    VIRTUAL = "agentlightning.virtual"
-    """The name of the virtual span. It represents derived spans without concrete operations."""
-    ROLLOUT_ID = "agentlightning.rollout_id"
-    """The name of the rollout ID."""
-    ATTEMPT_ID = "agentlightning.attempt_id"
-    """The name of the attempt ID."""
-    SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
-    """The name of the span sequence ID."""
-
-
-class SpanAttributeNames(str, Enum):
-    """Canonical attribute names written by Agent Lightning emitters. Deprecated in favor of [semconv][agentlightning.semconv]."""
-
-    MESSAGE = "message"
-    """The name of the message attribute."""
-    OBJECT = "object"
-    """The name of the object attribute."""
 
 
 SpanLike = Union[ReadableSpan, Span]

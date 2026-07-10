@@ -7,9 +7,8 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from agentlightning.adapter.triplet import RewardMatchPolicy, TracerTraceToTriplet, TraceTree
-from agentlightning.semconv import AGL_OPERATION, AGL_REWARD, LightningSpanAttributes
+from agentlightning.semconv import AGL_OPERATION, AGL_REWARD, AGL_VIRTUAL, LightningSpanAttributes
 from agentlightning.types import Span
-from agentlightning.types.tracer import SpanNames
 from agentlightning.utils.otel import filter_and_unflatten_attributes
 
 _SEQ = itertools.count()
@@ -231,7 +230,7 @@ def test_trace_tree_handles_missing_parent_and_empty_input():
     tree = TraceTree.from_spans([llm, orphan_child])
 
     assert tree.id == "ghost-parent"
-    assert tree.span.name == SpanNames.VIRTUAL.value
+    assert tree.span.name == AGL_VIRTUAL
     assert tree.span.rollout_id == orphan_child.rollout_id
     assert [child.id for child in tree.children] == ["child"]
     assert tree.children[0].children[0].id == "grandchild"

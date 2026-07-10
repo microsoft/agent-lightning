@@ -956,17 +956,6 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
             resp_ids = self._extract_choice_token_ids(attrs)
         return prompt_ids, resp_ids
 
-    def _maybe_reward_value(self, span: Span) -> Optional[float]:
-        """Parse reward from AGL reward spans."""
-        reward = get_reward_value(span)
-        if reward is not None:
-            return reward
-        reward_attr = span.attributes or {}
-        legacy_reward = reward_attr.get(f"{LightningSpanAttributes.REWARD.value}.0.value")
-        if isinstance(legacy_reward, (int, float, bool)):
-            return float(legacy_reward)
-        return None
-
     def _request_id_from_attrs(self, attrs: Dict[str, Any]) -> Optional[str]:
         rid = _attributes_get_multiple(attrs, list(LLM_PROXY_RESPONSE_ID_KEYS))
         return str(rid) if isinstance(rid, str) and rid else None
@@ -1033,7 +1022,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         # Collect rewards by sequence only.
         rewards: List[Tuple[int, Optional[float]]] = []
         for s in spans:
-            val = self._maybe_reward_value(s)
+            val = get_reward_value(s)
             if val is not None:
                 rewards.append((s.sequence_id, val))
 

@@ -4,9 +4,8 @@
 
 from __future__ import annotations
 
-import inspect
 import logging
-from typing import Any, Callable, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from agentlightning.types import NamedResources, Rollout, RolloutResult
 
@@ -17,21 +16,6 @@ T = TypeVar("T")
 __all__ = [
     "LitAgent",
 ]
-
-
-def is_v0_1_rollout_api(func: Callable[..., Any]) -> bool:
-    """Return `True` when the rollout function uses the deprecated v0.1 signature.
-
-    The helper inspects the callable's signature to detect whether a `rollout_id`
-    parameter is present, which indicates the legacy API.
-
-    Args:
-        func: Function to analyze.
-
-    Returns:
-        `True` if the callable exposes a `rollout_id` parameter.
-    """
-    return "rollout_id" in inspect.signature(func).parameters
 
 
 class LitAgent(Generic[T]):
