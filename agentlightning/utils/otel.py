@@ -96,7 +96,7 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
         active_span_processor_cls = active_span_processor.__class__.__name__
         for processor in active_span_processor._span_processors:
             if isinstance(processor, LightningSpanProcessor):
-                # The legacy case for tracers without OTLP support.
+                # Direct store writer path for tracers without OTLP support.
                 processors.append(f"{active_span_processor_cls} - {processor!r}")
             elif isinstance(processor, (SimpleSpanProcessor, BatchSpanProcessor)):
                 processor_cls = processor.__class__.__name__

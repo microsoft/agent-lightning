@@ -10,7 +10,7 @@ dependencies = [
   "gpustat",
   "setproctitle",
   "flask",
-  "agentops>=0.4.13",
+  "agentops>=0.4.21",
   "uvicorn",
   "fastapi",
   "aiohttp",
@@ -19,7 +19,7 @@ dependencies = [
   "opentelemetry-exporter-otlp>=1.35",
   "litellm[proxy]>=1.74",
   "pydantic>=2.11",
-  "openai",
+  "openai>=2.0.0",
   "rich",
   "portpicker",
   "gunicorn",
@@ -76,15 +76,6 @@ experiment = [
   "gdown",
 ]
 
-core-legacy = [
-  "agentops<=0.4.18",
-  "openai<2.0.0",
-]
-core-stable = [
-  "agentops>=0.4.21",
-  "openai>=2.0.0",
-]
-
 # For PyTorch.
 # CPU and GPU groups.
 torch-cpu = [
@@ -98,7 +89,6 @@ torch-cu128 = [
 
 # Training-heavy dependencies.
 torch-stable = [
-  {include-group = "core-stable"},
   # This can work for both CPU and GPU.
   "torch>=2.8.0",
   "torchvision>=0.23.0",
@@ -111,17 +101,6 @@ torch-stable = [
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]
-torch-legacy = [
-  {include-group = "core-legacy"},
-  # This can work for both CPU and GPU.
-  "torch==2.7.0",
-  "torchvision==0.22.0",
-  "transformers==4.53.3",
-  "tokenizers>=0.21,<0.22",
-  "vllm==0.9.2",
-  "litellm[proxy]==1.74.15",
-]
-
 # Specific vllm versions for compatibility testing or workarounds.
 # Use these when you need a pinned vllm version separate from torch groups.
 vllm-0-10-2 = [
@@ -142,14 +121,6 @@ torch-gpu-stable = [
   "tensordict>=0.9.1",
   "verl>=0.6.0",
 ]
-# Use this instead of --group torch-legacy --group torch-gpu
-torch-gpu-legacy = [
-  {include-group = "torch-legacy"},
-  {include-group = "torch-cu128"},
-  "flash-attn==2.8.1",
-  "verl==0.5.0",
-]
-
 # For the TRL/Unsloth example.
 trl = [
   # Only work with PyTorch 2.8.0+.
@@ -230,7 +201,6 @@ swebench = [
 ]
 
 # Summarize into large installable groups.
-# Note: langchain is excluded from agents to avoid conflicts with torch-legacy.
 # Use --group langchain explicitly when needed.
 agents = [
   {include-group = "autogen"},
@@ -245,26 +215,12 @@ agents = [
 required-version = ">=0.9.9"
 conflicts = [
   [
-    { group = "core-legacy" },
-    { group = "core-stable" },
-  ],
-  [
     { group = "torch-cpu" },
     { group = "torch-cu128" },
   ],
   [
-    { group = "torch-stable" },
-    { group = "torch-legacy" },
-  ],
-  [
     { group = "vllm-0-10-2" },
     { group = "vllm-0-11-0" },
-  ],
-  # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
-  # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0
-  [
-    { group = "langchain" },
-    { group = "torch-legacy" },
   ],
 ]
 environments = [

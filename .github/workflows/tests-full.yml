@@ -65,7 +65,7 @@ jobs:
             has-gpu: false
         env:
         - python-version: '3.10'
-          setup-script: 'legacy'
+          setup-script: 'stable'
         - python-version: '3.12'
           setup-script: 'stable'
         - python-version: '3.13'
@@ -93,21 +93,13 @@ jobs:
       # Don't install vllm/pytorch on CPU counterparts
       - name: Sync dependencies (latest, cpu)
         if: matrix.env.setup-script == 'latest' && !matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain
       - name: Sync dependencies (stable, gpu)
         if: matrix.env.setup-script == 'stable' && matrix.mark.has-gpu
         run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.env.setup-script }}
       - name: Sync dependencies (stable, cpu)
         if: matrix.env.setup-script == 'stable' && !matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group core-stable
-      # Don't install langchain for legacy dependency because it has conflicts with torch.
-      - name: Sync dependencies (legacy, gpu)
-        if: matrix.env.setup-script == 'legacy' && matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group torch-gpu-legacy
-      - name: Sync dependencies (legacy, cpu)
-        if: matrix.env.setup-script == 'legacy' && !matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group core-legacy
-
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain
       - name: Freeze dependencies
         run: |
           set -ex
@@ -145,7 +137,7 @@ jobs:
       # mongo, openai, gpu, all enabled by default
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests -m "${{ matrix.mark.pytest-mark }}${{ matrix.env.setup-script == 'legacy' && ' and not langchain' || '' }}"
+          uv run pytest -v --durations=0 tests -m "${{ matrix.mark.pytest-mark }}"
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/
@@ -166,7 +158,7 @@ jobs:
       matrix:
         include:
         - python-version: '3.10'
-          setup-script: 'legacy'
+          setup-script: 'stable'
         - python-version: '3.12'
           setup-script: 'stable'
         - python-version: '3.13'
@@ -191,10 +183,6 @@ jobs:
       - name: Sync dependencies (stable)
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script == 'stable'
-      # Don't install langchain for legacy dependency because it has conflicts with torch.
-      - name: Sync dependencies (legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
-        if: matrix.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex

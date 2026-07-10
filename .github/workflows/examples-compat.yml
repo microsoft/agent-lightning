@@ -34,7 +34,7 @@ jobs:
       matrix:
         include:
         - python-version: '3.10'
-          setup-script: 'legacy'
+          setup-script: 'stable'
         - python-version: '3.12'
           setup-script: 'stable'
       fail-fast: false

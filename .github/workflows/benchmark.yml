@@ -196,7 +196,7 @@ jobs:
           python-version: '3.12'
 
       - name: Sync dependencies
-        run: uv sync --frozen --extra mongo --group core-stable --group dev
+        run: uv sync --frozen --extra mongo --group dev
 
       - name: Check disk space
         run: df -h
@@ -380,7 +380,7 @@ jobs:
           python-version: '3.12'
 
       - name: Sync dependencies
-        run: uv sync --frozen --extra mongo --group core-stable --group dev
+        run: uv sync --frozen --extra mongo --group dev
 
       - name: Launch MongoDB
         if: ${{ matrix.backend.needs_mongo }}

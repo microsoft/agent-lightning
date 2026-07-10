@@ -35,7 +35,7 @@ jobs:
       matrix:
         include:
         - python-version: '3.10'
-          setup-script: 'legacy'
+          setup-script: 'stable'
         - python-version: '3.12'
           setup-script: 'stable'
         - python-version: '3.13'
@@ -55,12 +55,12 @@ jobs:
       - name: Sync dependencies (latest)
         run: |
           uv sync --frozen --no-default-groups --extra apo \
-            --group dev --group experiment --group agents --group core-stable
+            --group dev --group experiment --group agents
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
+      - name: Sync dependencies (stable)
         run: |
           uv sync --frozen --no-default-groups --extra apo \
-            --group dev --group experiment --group agents --group core-${{ matrix.setup-script }}
+            --group dev --group experiment --group agents
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |

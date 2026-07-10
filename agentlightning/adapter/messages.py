@@ -118,7 +118,7 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
         entries compatible with the OpenAI Functions fine-tuning format.
     """
 
-    # Import locally to avoid legacy OpenAI version type import errors
+    # Keep OpenAI-specific schema imports scoped to this conversion path.
     from openai.types.chat import (
         ChatCompletionAssistantMessageParam,
         ChatCompletionFunctionToolParam,

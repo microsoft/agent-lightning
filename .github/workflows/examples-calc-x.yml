@@ -34,7 +34,7 @@ jobs:
       matrix:
         include:
         - python-version: '3.10'
-          setup-script: 'legacy'
+          setup-script: 'stable'
         - python-version: '3.12'
           setup-script: 'stable'
         - python-version: '3.13'
@@ -60,7 +60,7 @@ jobs:
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
+      - name: Sync dependencies (stable)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
@@ -147,7 +147,7 @@ jobs:
       matrix:
         include:
         - python-version: '3.10'
-          setup-script: 'legacy'
+          setup-script: 'stable'
         - python-version: '3.12'
           setup-script: 'stable'
         - python-version: '3.13'
@@ -173,7 +173,7 @@ jobs:
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --extra weave --extra mongo --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
+      - name: Sync dependencies (stable)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --extra weave --extra mongo --group torch-gpu-${{ matrix.setup-script }}

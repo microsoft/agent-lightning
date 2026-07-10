@@ -157,7 +157,7 @@ jobs:
             pytest-mark: 'not store and not agentops and not weave and not llmproxy and not utils'
         env:
           - python-version: '3.10'
-            setup-script: 'legacy'
+            setup-script: 'stable'
           - python-version: '3.11'
             setup-script: 'stable'
           - python-version: '3.12'
@@ -179,10 +179,10 @@ jobs:
         run: uv lock --upgrade
         if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain
         if: matrix.env.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain --group core-${{ matrix.env.setup-script }}
+      - name: Sync dependencies (stable)
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain
         if: matrix.env.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
@@ -231,7 +231,7 @@ jobs:
           enable-cache: true
           python-version: '3.12'
       - name: Sync Python dependencies
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Run vitest
