@@ -40,11 +40,9 @@ __all__ = [
 
 
 def _ensure_numeric_reward(reward: object) -> float:
-    if isinstance(reward, (int, bool)):
-        return float(reward)
     if isinstance(reward, float):
         return reward
-    raise TypeError(f"Reward must be a number, got: {type(reward)}")
+    raise TypeError(f"Reward must be a float, got: {type(reward)}")
 
 
 class RewardDimension(TypedDict):
@@ -55,7 +53,7 @@ class RewardDimension(TypedDict):
 
 
 def emit_reward(
-    reward: float | Dict[str, Any],
+    reward: float | Dict[str, float],
     *,
     primary_key: str | None = None,
     attributes: Dict[str, Any] | None = None,
@@ -79,8 +77,7 @@ def emit_reward(
         >>> emit_reward(0.7, attributes=make_tag_attributes(["fast", "reliable"]))
 
     Args:
-        reward: Numeric reward to record. Integers and booleans are converted to
-            floating point numbers for consistency.
+        reward: Floating point reward to record.
             Use a dictionary to represent a multi-dimensional reward.
         attributes: Other optional span attributes.
         propagate: Whether to propagate the span to exporters automatically.
@@ -91,14 +88,7 @@ def emit_reward(
     logger.debug(f"Emitting reward: {reward}")
     reward_dimensions: List[RewardDimension] = []
     if isinstance(reward, dict):
-        reward_dict: Dict[str, float] = {}
-        for k, v in reward.items():
-            if isinstance(v, (int, bool)):
-                reward_dict[k] = float(v)
-            elif isinstance(v, float):
-                reward_dict[k] = v
-            else:
-                raise ValueError(f"Reward value must be a number, got: {type(v)} for key {k}")
+        reward_dict = {key: _ensure_numeric_reward(value) for key, value in reward.items()}
         if primary_key is None:
             raise ValueError("When emitting a multi-dimensional reward as a dict, primary_key must be provided.")
         if primary_key not in reward_dict:
@@ -108,10 +98,7 @@ def emit_reward(
             if k != primary_key:
                 reward_dimensions.append(RewardDimension(name=k, value=v))
     else:
-        if isinstance(reward, (int, bool)):
-            reward = float(reward)
-        else:
-            reward = _ensure_numeric_reward(reward)
+        reward = _ensure_numeric_reward(reward)
         reward_dimensions.append(RewardDimension(name="primary", value=reward))
 
     return emit_annotation(

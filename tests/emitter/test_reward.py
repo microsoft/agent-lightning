@@ -2,13 +2,19 @@
 
 import importlib
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, cast
+from typing import Any, Callable, Dict, Optional, cast
 
 import pytest
 
 reward_module = importlib.import_module("agentlightning.emitter.reward")
-from agentlightning.emitter.reward import emit_reward, get_rewards_from_span
-from agentlightning.emitter.reward import find_final_reward, find_reward_spans, get_reward_value, is_reward_span
+from agentlightning.emitter.reward import (
+    emit_reward,
+    find_final_reward,
+    find_reward_spans,
+    get_reward_value,
+    get_rewards_from_span,
+    is_reward_span,
+)
 from agentlightning.semconv import (
     AGL_ANNOTATION,
     AGL_OPERATION,
@@ -16,7 +22,7 @@ from agentlightning.semconv import (
     LightningSpanAttributes,
     RewardPydanticModel,
 )
-from agentlightning.types import SpanLike
+from agentlightning.types import SpanCoreFields, SpanLike
 from agentlightning.utils.otel import make_link_attributes, make_tag_attributes
 
 
@@ -208,24 +214,12 @@ def test_find_final_reward_returns_none_when_no_reward() -> None:
     assert find_final_reward(spans) is None
 
 
-def test_emit_reward_scalar_converts_to_primary_dimension(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: Dict[str, Any] = {}
-    sentinel_span = object()
+@pytest.mark.parametrize("reward", [2, True])
+def test_emit_reward_rejects_non_float_scalar(reward: object) -> None:
+    dynamic_emit_reward = cast(Callable[..., SpanCoreFields], emit_reward)
 
-    def fake_emit_annotation(payload: Dict[str, Any], *, propagate: bool) -> object:
-        captured["payload"] = payload
-        captured["propagate"] = propagate
-        return sentinel_span
-
-    monkeypatch.setattr(reward_module, "emit_annotation", fake_emit_annotation)
-
-    result = emit_reward(2, attributes={"extra": "value"}, propagate=False)
-
-    assert result is sentinel_span
-    assert captured["propagate"] is False
-    rewards = captured["payload"][LightningSpanAttributes.REWARD.value]
-    assert rewards == [{"name": "primary", "value": 2.0}]
-    assert captured["payload"]["extra"] == "value"
+    with pytest.raises(TypeError, match="Reward must be a float"):
+        dynamic_emit_reward(reward)
 
 
 def test_emit_reward_dict_requires_primary_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,13 +242,16 @@ def test_emit_reward_dict_requires_primary_key(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(ValueError):
         emit_reward({"score": 0.8}, primary_key="missing")
 
-    with pytest.raises(ValueError):
-        emit_reward({"score": "bad"}, primary_key="score")
+    dynamic_emit_reward = cast(Callable[..., SpanCoreFields], emit_reward)
+    with pytest.raises(TypeError, match="Reward must be a float"):
+        dynamic_emit_reward({"score": "bad"}, primary_key="score")
 
 
 def test_emit_reward_rejects_non_numeric() -> None:
-    with pytest.raises(TypeError):
-        emit_reward("bad")  # type: ignore[arg-type]
+    dynamic_emit_reward = cast(Callable[..., SpanCoreFields], emit_reward)
+
+    with pytest.raises(TypeError, match="Reward must be a float"):
+        dynamic_emit_reward("bad")
 
 
 def test_get_rewards_from_span_roundtrip() -> None:
