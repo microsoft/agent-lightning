@@ -25,12 +25,19 @@ from agentlightning.types import (
 LOGGER_NAME = "agentlightning.algorithm.fast"
 
 
-def _context(store: InMemoryLightningStore, *, train_dataset: Any = None, val_dataset: Any = None) -> AlgorithmContext:
+def _context(
+    store: InMemoryLightningStore,
+    *,
+    train_dataset: Any = None,
+    val_dataset: Any = None,
+    adapter: TraceAdapter[Any] | None = None,
+) -> AlgorithmContext:
     return AlgorithmContext(
         store=store,
         event=ThreadingEvent(),
         train_dataset=train_dataset,
         val_dataset=val_dataset,
+        adapter=adapter,
     )
 
 
@@ -132,9 +139,7 @@ async def test_mock_algorithm_collects_rollout_logs(caplog: pytest.LogCaptureFix
     store = InMemoryLightningStore()
     await store.update_resources("default", _make_resources())
     algorithm = Baseline(polling_interval=0.01, span_verbosity="key_values")
-    algorithm.set_store(store)
     adapter = _AdapterStub()
-    algorithm.set_adapter(adapter)
 
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
 
@@ -144,7 +149,7 @@ async def test_mock_algorithm_collects_rollout_logs(caplog: pytest.LogCaptureFix
 
     runner_task = asyncio.create_task(_mock_runner(store=store, expected=expected_rollouts, artifacts=artifacts))
     try:
-        await algorithm.run(_context(store, train_dataset=train_dataset))
+        await algorithm.run(_context(store, train_dataset=train_dataset, adapter=adapter))
         await asyncio.wait_for(runner_task, timeout=2)
     finally:
         if not runner_task.done():
@@ -192,7 +197,6 @@ async def test_baseline_does_not_skip_samples_when_queue_full() -> None:
 
     # Use a small max_queue_length and fast polling to test queue full behavior
     algorithm = Baseline(polling_interval=0.01, max_queue_length=1)
-    algorithm.set_store(store)
 
     # Create a dataset with 5 samples
     train_dataset = [f"sample-{i}" for i in range(5)]

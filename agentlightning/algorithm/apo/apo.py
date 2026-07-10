@@ -37,6 +37,7 @@ import poml
 from openai import AsyncOpenAI
 from pydantic import TypeAdapter
 
+from agentlightning.adapter import TraceAdapter
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import Algorithm
 from agentlightning.algorithm.utils import batch_iter_over_dataset
@@ -237,7 +238,8 @@ class APO(Algorithm, Generic[T_task]):
         else:
             logger.log(level, message)
 
-    def get_seed_prompt_template(self) -> Tuple[str, PromptTemplate]:
+    @staticmethod
+    def _get_seed_prompt_template(initial_resources: NamedResources | None) -> Tuple[str, PromptTemplate]:
         """
         Extract the initial prompt template from the algorithm's resources.
 
@@ -247,18 +249,15 @@ class APO(Algorithm, Generic[T_task]):
         Raises:
             ValueError: If initial_resources is not set or no PromptTemplate is found.
         """
-        initial_resources = self.get_initial_resources()
         if initial_resources is None:
-            raise ValueError(
-                "initial_resources are not set for APO algorithm. "
-                "Use algorithm.set_initial_resources() to set initial resources or set it in Trainer()"
-            )
+            raise ValueError("APO requires initial_resources in AlgorithmContext.")
         for name, resource in initial_resources.items():
             if isinstance(resource, PromptTemplate):
                 return name, resource
         raise ValueError("No prompt template resource found in initial_resources")
 
-    def get_adapter(self) -> TraceToMessages:
+    @staticmethod
+    def _require_adapter(adapter: TraceAdapter[Any] | None) -> TraceToMessages:
         """
         Get the adapter for converting spans to messages.
 
@@ -268,7 +267,6 @@ class APO(Algorithm, Generic[T_task]):
         Raises:
             ValueError: If the adapter is not a TraceToMessages.
         """
-        adapter = super().get_adapter()
         if not isinstance(adapter, TraceToMessages):
             raise ValueError("Adapter must be a TraceToMessages for APO algorithm")
         return adapter
@@ -418,9 +416,10 @@ class APO(Algorithm, Generic[T_task]):
 
     async def get_rollout_results(
         self,
+        store: LightningStore,
+        adapter: TraceToMessages,
         rollout: List[Rollout],
         *,
-        store: Optional[LightningStore] = None,
         prefix: Optional[str] = None,
     ) -> List[RolloutResultForAPO]:
         """
@@ -435,10 +434,7 @@ class APO(Algorithm, Generic[T_task]):
         Returns:
             List of rollout results formatted for APO processing.
         """
-        if store is None:
-            store = self.get_store()
         rollout_results: List[RolloutResultForAPO] = []
-        adapter = self.get_adapter()
         for r in rollout:
             spans = await store.query_spans(r.rollout_id)
             messages = adapter.adapt(spans)
@@ -459,6 +455,8 @@ class APO(Algorithm, Generic[T_task]):
 
     async def evaluate_prompt_on_batch(
         self,
+        store: LightningStore,
+        adapter: TraceToMessages,
         prompt: VersionedPromptTemplate,
         resource_name: str,
         dataset: Sequence[T_task],
@@ -486,7 +484,6 @@ class APO(Algorithm, Generic[T_task]):
             A tuple of (rollout_results, average_reward) where rollout_results contains
             detailed information for each rollout and average_reward is the mean final reward.
         """
-        store = self.get_store()
         preview = prompt.prompt_template.template[:50]
         self._log(
             logging.INFO,
@@ -524,6 +521,8 @@ class APO(Algorithm, Generic[T_task]):
                 await asyncio.sleep(2.0)
 
         rollout_results = await self.get_rollout_results(
+            store,
+            adapter,
             finished,
             prefix=prefix,
         )
@@ -541,6 +540,7 @@ class APO(Algorithm, Generic[T_task]):
 
     def _initialize_beam(
         self,
+        initial_resources: NamedResources | None,
         train_dataset: Optional[Dataset[T_task]],
         val_dataset: Optional[Dataset[T_task]],
     ) -> Tuple[str, PromptTemplate, Iterator[Sequence[T_task]], Iterator[Sequence[T_task]]]:
@@ -557,7 +557,7 @@ class APO(Algorithm, Generic[T_task]):
         Raises:
             ValueError: If either dataset is None.
         """
-        resource_name, seed_prompt = self.get_seed_prompt_template()
+        resource_name, seed_prompt = self._get_seed_prompt_template(initial_resources)
 
         if train_dataset is None:
             raise ValueError("train_dataset is required for APO algorithm")
@@ -606,6 +606,8 @@ class APO(Algorithm, Generic[T_task]):
 
     async def _generate_candidate_prompts(
         self,
+        store: LightningStore,
+        adapter: TraceToMessages,
         parent_prompts: List[Tuple[int, VersionedPromptTemplate]],
         resource_name: str,
         grad_dataset_iterator: Iterator[Sequence[T_task]],
@@ -679,6 +681,8 @@ class APO(Algorithm, Generic[T_task]):
                 )
                 grad_samples = next(grad_dataset_iterator)
                 rollout_results, _ = await self.evaluate_prompt_on_batch(
+                    store,
+                    adapter,
                     prompt,
                     resource_name,
                     grad_samples,
@@ -718,6 +722,8 @@ class APO(Algorithm, Generic[T_task]):
 
     async def _evaluate_and_select_beam(
         self,
+        store: LightningStore,
+        adapter: TraceToMessages,
         candidates: List[VersionedPromptTemplate],
         resource_name: str,
         val_dataset_iterator: Iterator[Sequence[T_task]],
@@ -754,6 +760,8 @@ class APO(Algorithm, Generic[T_task]):
                 prompt_version=prompt.version,
             )
             _, score = await self.evaluate_prompt_on_batch(
+                store,
+                adapter,
                 prompt,
                 resource_name,
                 val_batch,
@@ -787,6 +795,8 @@ class APO(Algorithm, Generic[T_task]):
 
     async def _update_best_prompt(
         self,
+        store: LightningStore,
+        adapter: TraceToMessages,
         beam: List[VersionedPromptTemplate],
         resource_name: str,
         val_dataset: Dataset[T_task],
@@ -805,6 +815,8 @@ class APO(Algorithm, Generic[T_task]):
         best_prompt = beam[0]
         prefix = self._format_log_prefix(round_num=display_round, prompt_version=best_prompt.version)
         _, best_score = await self.evaluate_prompt_on_batch(
+            store,
+            adapter,
             best_prompt,
             resource_name,
             cast(Sequence[T_task], val_dataset),
@@ -858,12 +870,9 @@ class APO(Algorithm, Generic[T_task]):
         """
         store = context.store
         llm_proxy = context.llm_proxy
+        adapter = self._require_adapter(context.adapter)
         train_dataset = context.train_dataset
         val_dataset = context.val_dataset
-        if self._store is None:
-            self.set_store(store)
-        if context.adapter is not None:
-            self.set_adapter(context.adapter)
         managed_proxy = False
         if llm_proxy is not None and not llm_proxy.is_running():
             await llm_proxy.start()
@@ -872,6 +881,7 @@ class APO(Algorithm, Generic[T_task]):
         try:
             # Initialize beam search
             resource_name, seed_prompt, grad_iterator, val_iterator = self._initialize_beam(
+                context.initial_resources,
                 train_dataset,
                 val_dataset,
             )
@@ -896,6 +906,8 @@ class APO(Algorithm, Generic[T_task]):
                     prefix=seed_prefix,
                 )
                 _, seed_score = await self.evaluate_prompt_on_batch(
+                    store,
+                    adapter,
                     seed_versioned,
                     resource_name,
                     cast(Sequence[T_task], val_dataset),
@@ -926,17 +938,19 @@ class APO(Algorithm, Generic[T_task]):
 
                 # Generate new candidate prompts from parents
                 new_candidates = await self._generate_candidate_prompts(
-                    parent_prompts, resource_name, grad_iterator, rnd
+                    store, adapter, parent_prompts, resource_name, grad_iterator, rnd
                 )
 
                 # Combine existing beam with new candidates
                 all_candidates = [*beam, *new_candidates]
 
                 # Evaluate and select top-k prompts for next beam
-                beam = await self._evaluate_and_select_beam(all_candidates, resource_name, val_iterator, rnd)
+                beam = await self._evaluate_and_select_beam(
+                    store, adapter, all_candidates, resource_name, val_iterator, rnd
+                )
 
                 # Update historically best prompt if improved
-                await self._update_best_prompt(beam, resource_name, val_dataset, rnd)
+                await self._update_best_prompt(store, adapter, beam, resource_name, val_dataset, rnd)
         finally:
             if managed_proxy and llm_proxy is not None:
                 await llm_proxy.stop()

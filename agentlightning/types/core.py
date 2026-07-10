@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     from agentlightning.store.base import LightningStore
     from agentlightning.tracer.base import Tracer
 
+    from .resources import NamedResources
+
 __all__ = [
     "Triplet",
     "TaskInput",
@@ -109,7 +111,7 @@ class AlgorithmContext:
     event: "ExecutionEvent"
     adapter: Optional["TraceAdapter[Any]"] = None
     llm_proxy: Optional["LLMProxy"] = None
-    initial_resources: Optional[Dict[str, Any]] = None
+    initial_resources: Optional["NamedResources"] = None
     train_dataset: Optional[Dataset[Any]] = None
     val_dataset: Optional[Dataset[Any]] = None
     config: RunConfig = field(default_factory=lambda: cast(RunConfig, {}))

@@ -3,11 +3,12 @@
 """Test that @algo decorator preserves function executability."""
 
 import inspect
-from typing import Any, Optional
+from typing import Any, Callable, Optional, cast
 from unittest.mock import MagicMock
 
 import pytest
 
+from agentlightning.algorithm.base import Algorithm
 from agentlightning.algorithm.decorator import FunctionalAlgorithm, algo
 from agentlightning.execution.events import ThreadingEvent
 from agentlightning.store.base import LightningStore
@@ -61,7 +62,7 @@ def test_algorithm_returns_functional_algorithm_instance():
     """Test that @algo returns a FunctionalAlgorithm instance."""
     assert isinstance(sample_algorithm_func, FunctionalAlgorithm)
     assert hasattr(sample_algorithm_func, "run")
-    assert hasattr(sample_algorithm_func, "get_store")
+    assert not hasattr(sample_algorithm_func, "get_store")
 
 
 def test_algorithm_preserves_signature():
@@ -77,8 +78,9 @@ def test_algo_rejects_non_context_parameter_name() -> None:
         """Legacy style function with dataset-first parameters."""
         legacy_algorithm.called = True  # type: ignore[attr-defined]
 
+    invalid_decorator = cast(Callable[[Callable[[list[Any]], None]], Algorithm], algo)
     with pytest.raises(TypeError, match="must accept exactly one parameter named `context`"):
-        algo(legacy_algorithm)
+        invalid_decorator(legacy_algorithm)
 
 
 def test_algorithm_run_method():
@@ -158,16 +160,15 @@ async def test_async_algorithm_run_method():
 
 def test_algorithm_with_none_datasets():
     """Test that algorithm works with no datasets."""
+    observed: list[bool] = []
 
     @algo
     def nullable_algo(context: AlgorithmContext) -> None:
         """Algorithm with no datasets."""
-        nullable_algo.called_with_none = (
-            context.train_dataset is None and context.val_dataset is None
-        )  # type: ignore[attr-defined]
+        observed.append(context.train_dataset is None and context.val_dataset is None)
 
     nullable_algo.run(_context())
-    assert nullable_algo.called_with_none  # type: ignore[attr-defined]
+    assert observed == [True]
 
 
 def test_multiple_algorithm_instances():
@@ -195,22 +196,22 @@ def test_multiple_algorithm_instances():
     assert algo2.count == 1  # type: ignore[attr-defined]
 
 
-def test_algorithm_base_algorithm_methods():
-    """Test that Algorithm methods are available."""
+def test_algorithm_does_not_store_runtime_dependencies() -> None:
+    """Runtime dependencies are supplied exclusively through AlgorithmContext."""
 
     @algo
     def test_algo(context: AlgorithmContext) -> None:
         """Test algorithm."""
         pass
 
-    assert hasattr(test_algo, "set_llm_proxy")
-    assert hasattr(test_algo, "get_llm_proxy")
-    assert hasattr(test_algo, "set_adapter")
-    assert hasattr(test_algo, "get_adapter")
-    assert hasattr(test_algo, "set_store")
-    assert hasattr(test_algo, "get_store")
-    assert hasattr(test_algo, "get_initial_resources")
-    assert hasattr(test_algo, "set_initial_resources")
+    assert not hasattr(test_algo, "set_llm_proxy")
+    assert not hasattr(test_algo, "get_llm_proxy")
+    assert not hasattr(test_algo, "set_adapter")
+    assert not hasattr(test_algo, "get_adapter")
+    assert not hasattr(test_algo, "set_store")
+    assert not hasattr(test_algo, "get_store")
+    assert not hasattr(test_algo, "get_initial_resources")
+    assert not hasattr(test_algo, "set_initial_resources")
 
 
 def test_algorithm_no_longer_exposes_trainer_accessors() -> None:

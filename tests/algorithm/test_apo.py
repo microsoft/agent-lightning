@@ -15,6 +15,7 @@ from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, Versioned
 from agentlightning.emitter.reward import emit_reward
 from agentlightning.execution.events import ThreadingEvent
 from agentlightning.semconv import AGL_ANNOTATION
+from agentlightning.store.base import LightningStore
 from agentlightning.types import (
     AlgorithmContext,
     Dataset,
@@ -26,11 +27,18 @@ from agentlightning.types import (
 
 
 def _context(
-    *, train_dataset: Optional[Dataset[Any]] = None, val_dataset: Optional[Dataset[Any]] = None
+    *,
+    store: LightningStore | None = None,
+    adapter: TraceAdapter[Any] | None = None,
+    initial_resources: NamedResources | None = None,
+    train_dataset: Optional[Dataset[Any]] = None,
+    val_dataset: Optional[Dataset[Any]] = None,
 ) -> AlgorithmContext:
     return AlgorithmContext(
-        store=Mock(),  # type: ignore[arg-type]
+        store=store or Mock(spec=LightningStore),
         event=ThreadingEvent(),
+        adapter=adapter,
+        initial_resources=initial_resources,
         train_dataset=train_dataset,
         val_dataset=val_dataset,
     )
@@ -201,9 +209,7 @@ def test_get_seed_prompt_template_returns_prompt() -> None:
         "seed": prompt,
         "other": PromptTemplate(template="Other", engine="f-string"),
     }
-    apo.set_initial_resources(resources)
-
-    resource_name, seed_prompt = apo.get_seed_prompt_template()
+    resource_name, seed_prompt = apo._get_seed_prompt_template(resources)
 
     assert resource_name == "seed"
     assert seed_prompt is prompt
@@ -214,34 +220,31 @@ def test_get_seed_prompt_template_requires_resources() -> None:
     apo = APO[Any](client)
 
     with pytest.raises(ValueError):
-        apo.get_seed_prompt_template()
+        apo._get_seed_prompt_template(None)
 
 
 def test_get_seed_prompt_template_requires_prompt_resource() -> None:
     client = Mock(spec=AsyncOpenAI)
     apo = APO[Any](client)
-    apo.set_initial_resources({})
 
     with pytest.raises(ValueError):
-        apo.get_seed_prompt_template()
+        apo._get_seed_prompt_template({})
 
 
 def test_get_adapter_returns_trace_messages_adapter() -> None:
     client = Mock(spec=AsyncOpenAI)
     apo = APO[Any](client)
     adapter = DummyTraceMessagesAdapter()
-    apo.set_adapter(adapter)
 
-    assert apo.get_adapter() is adapter
+    assert apo._require_adapter(adapter) is adapter
 
 
 def test_get_adapter_requires_trace_messages_adapter() -> None:
     client = Mock(spec=AsyncOpenAI)
     apo = APO[Any](client)
-    apo.set_adapter(WrongAdapter())
 
     with pytest.raises(ValueError):
-        apo.get_adapter()
+        apo._require_adapter(WrongAdapter())
 
 
 def test_get_best_prompt_requires_history() -> None:
@@ -408,8 +411,6 @@ async def test_get_rollout_results_adapts_spans() -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI))
     store = DummyStore()
     adapter = DummyTraceMessagesAdapter()
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
 
     rollout = Rollout(
         rollout_id="r-1",
@@ -422,7 +423,7 @@ async def test_get_rollout_results_adapts_spans() -> None:
     span2 = make_reward_span("r-1", "attempt", 2.0, sequence_id=2)
     store.query_spans_map["r-1"] = [span1, span2]
 
-    results = await apo.get_rollout_results([rollout])
+    results = await apo.get_rollout_results(cast(LightningStore, store), adapter, [rollout])
 
     assert len(results) == 1
     # Verify final reward is correctly extracted
@@ -450,8 +451,6 @@ async def test_evaluate_prompt_on_batch_runs_rollouts() -> None:
     apo = APO[Any](client, rollout_batch_timeout=100.0)
     store = DummyStore()
     adapter = DummyTraceMessagesAdapter()
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
 
     dataset = [{"task": 1}, {"task": 2}]
 
@@ -481,7 +480,9 @@ async def test_evaluate_prompt_on_batch_runs_rollouts() -> None:
     prompt_template = PromptTemplate(template="test prompt", engine="f-string")
     versioned_prompt = apo._create_versioned_prompt(prompt_template)
 
-    rollout_results, average = await apo.evaluate_prompt_on_batch(versioned_prompt, "seed", dataset, mode="train")
+    rollout_results, average = await apo.evaluate_prompt_on_batch(
+        cast(LightningStore, store), adapter, versioned_prompt, "seed", dataset, mode="train"
+    )
 
     # Verify results
     assert len(rollout_results) == 2
@@ -520,13 +521,14 @@ def test_initialize_beam_sets_history(monkeypatch: pytest.MonkeyPatch) -> None:
     client = Mock(spec=AsyncOpenAI)
     apo = APO[Any](client, gradient_batch_size=2, val_batch_size=1)
     prompt = PromptTemplate(template="Seed", engine="f-string")
-    apo.set_initial_resources({"seed": prompt})
     monkeypatch.setattr(apo_module.random, "shuffle", lambda seq: None)  # type: ignore
 
     train_dataset: Sequence[Dict[str, str]] = [{"x": "1"}, {"x": "2"}]
     val_dataset: Sequence[Dict[str, str]] = [{"y": "value"}]
 
-    resource_name, seed_prompt, grad_iter, val_iter = apo._initialize_beam(train_dataset, val_dataset)  # type: ignore
+    resource_name, seed_prompt, grad_iter, val_iter = apo._initialize_beam(
+        {"seed": prompt}, train_dataset, val_dataset  # type: ignore[arg-type]
+    )
 
     assert resource_name == "seed"
     assert seed_prompt is prompt
@@ -538,18 +540,18 @@ def test_initialize_beam_sets_history(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_initialize_beam_requires_train_dataset() -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI))
-    apo.set_initial_resources({"seed": PromptTemplate(template="Seed", engine="f-string")})
+    resources = {"seed": PromptTemplate(template="Seed", engine="f-string")}
 
     with pytest.raises(ValueError):
-        apo._initialize_beam(None, [])  # type: ignore
+        apo._initialize_beam(resources, None, [])  # type: ignore
 
 
 def test_initialize_beam_requires_val_dataset() -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI))
-    apo.set_initial_resources({"seed": PromptTemplate(template="Seed", engine="f-string")})
+    resources = {"seed": PromptTemplate(template="Seed", engine="f-string")}
 
     with pytest.raises(ValueError):
-        apo._initialize_beam([], None)  # type: ignore
+        apo._initialize_beam(resources, [], None)  # type: ignore
 
 
 def test_sample_parent_prompts_replicates_when_beam_too_small(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -583,8 +585,6 @@ async def test_generate_candidate_prompts_creates_branch_factor_children() -> No
     apo = APO[Any](client, branch_factor=2)
     store = DummyStore()
     adapter = DummyTraceMessagesAdapter()
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
 
     parent_prompt = apo._create_versioned_prompt(PromptTemplate(template="Seed", engine="f-string"))
     grad_batches: Iterator[Sequence[Dict[str, Any]]] = iter(
@@ -617,7 +617,9 @@ async def test_generate_candidate_prompts_creates_branch_factor_children() -> No
 
     apo.textual_gradient_and_apply_edit = AsyncMock(side_effect=edit_side_effect)
 
-    candidates = await apo._generate_candidate_prompts([(0, parent_prompt)], "seed", grad_batches, round_num=0)
+    candidates = await apo._generate_candidate_prompts(
+        cast(LightningStore, store), adapter, [(0, parent_prompt)], "seed", grad_batches, round_num=0
+    )
 
     # Verify correct number of candidates generated
     assert len(candidates) == apo.branch_factor
@@ -641,10 +643,7 @@ async def test_generate_candidate_prompts_skips_failed_generations() -> None:
     client = Mock(spec=AsyncOpenAI)
     apo = APO[Any](client, branch_factor=3)
     store = DummyStore()
-    # Keep strong reference to prevent garbage collection since APO uses weakref
-    apo._test_adapter = adapter = DummyTraceMessagesAdapter()  # type: ignore
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
+    adapter = DummyTraceMessagesAdapter()
 
     parent_prompt = apo._create_versioned_prompt(PromptTemplate(template="Seed", engine="f-string"))
     grad_batches: Iterator[Sequence[Dict[str, Any]]] = iter([[{"task": f"t{i}"}] for i in range(3)])
@@ -676,7 +675,9 @@ async def test_generate_candidate_prompts_skips_failed_generations() -> None:
 
     apo.textual_gradient_and_apply_edit = AsyncMock(side_effect=edit_side_effect)
 
-    candidates = await apo._generate_candidate_prompts([(0, parent_prompt)], "seed", grad_batches, round_num=0)
+    candidates = await apo._generate_candidate_prompts(
+        cast(LightningStore, store), adapter, [(0, parent_prompt)], "seed", grad_batches, round_num=0
+    )
 
     # Should only have 2 candidates (one failed)
     assert len(candidates) == 2
@@ -696,6 +697,8 @@ async def test_evaluate_and_select_beam_sorts_by_score() -> None:
     scores = {"A": 1.0, "B": 0.2, "C": 2.0}
 
     async def evaluate(
+        store: LightningStore,
+        adapter: TraceToMessages,
         prompt: VersionedPromptTemplate,
         resource_name: str,
         dataset: Sequence[Dict[str, Any]],
@@ -708,7 +711,9 @@ async def test_evaluate_and_select_beam_sorts_by_score() -> None:
 
     val_iterator: Iterator[Sequence[Dict[str, Any]]] = iter([[{"task": "val"}]])
 
-    selected = await apo._evaluate_and_select_beam(candidates, "seed", val_iterator, round_num=0)
+    selected = await apo._evaluate_and_select_beam(
+        Mock(spec=LightningStore), DummyTraceMessagesAdapter(), candidates, "seed", val_iterator, round_num=0
+    )
 
     assert [prompt.prompt_template.template for prompt in selected] == ["C", "A"]
 
@@ -724,7 +729,9 @@ async def test_evaluate_and_select_beam_raises_on_empty_candidates() -> None:
     val_iterator: Iterator[Sequence[Dict[str, Any]]] = iter([[{"task": "val"}]])
 
     with pytest.raises(ValueError, match="No beam candidates any more"):
-        await apo._evaluate_and_select_beam(candidates, "seed", val_iterator, round_num=0)
+        await apo._evaluate_and_select_beam(
+            Mock(spec=LightningStore), DummyTraceMessagesAdapter(), candidates, "seed", val_iterator, round_num=0
+        )
 
 
 @pytest.mark.asyncio
@@ -737,7 +744,14 @@ async def test_update_best_prompt_updates_history() -> None:
     apo._history_best_version = old_versioned.version
     apo.evaluate_prompt_on_batch = AsyncMock(return_value=([], 1.2))  # type: ignore[assignment]
 
-    await apo._update_best_prompt([new_versioned], "seed", [{"task": "val"}], round_num=0)  # type: ignore
+    await apo._update_best_prompt(
+        Mock(spec=LightningStore),
+        DummyTraceMessagesAdapter(),
+        [new_versioned],
+        "seed",
+        [{"task": "val"}],  # type: ignore[arg-type]
+        round_num=0,
+    )
 
     assert apo._history_best_prompt is new_versioned.prompt_template
     assert apo._history_best_score == pytest.approx(1.2)  # type: ignore
@@ -754,7 +768,14 @@ async def test_update_best_prompt_keeps_history_when_not_improved() -> None:
     apo._history_best_version = old_versioned.version
     apo.evaluate_prompt_on_batch = AsyncMock(return_value=([], 1.5))  # type: ignore[assignment]
 
-    await apo._update_best_prompt([new_versioned], "seed", [{"task": "val"}], round_num=0)  # type: ignore
+    await apo._update_best_prompt(
+        Mock(spec=LightningStore),
+        DummyTraceMessagesAdapter(),
+        [new_versioned],
+        "seed",
+        [{"task": "val"}],  # type: ignore[arg-type]
+        round_num=0,
+    )
 
     assert apo._history_best_prompt is old_versioned.prompt_template
     assert apo._history_best_score == pytest.approx(2.0)  # type: ignore
@@ -783,12 +804,9 @@ async def test_run_performs_initial_validation_when_enabled(monkeypatch: pytest.
         run_initial_validation=True,
     )
     seed_prompt = PromptTemplate(template="Seed", engine="f-string")
-    apo.set_initial_resources({"seed": seed_prompt})
 
     store = DummyStore()
-    apo._test_adapter = adapter = DummyTraceMessagesAdapter()  # type: ignore
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
+    adapter = DummyTraceMessagesAdapter()
 
     # Set up initial validation rollout
     store.query_spans_map["rollout-0"] = [make_reward_span("rollout-0", "attempt", 0.75, sequence_id=1)]
@@ -807,7 +825,15 @@ async def test_run_performs_initial_validation_when_enabled(monkeypatch: pytest.
     monkeypatch.setattr(apo_module.random, "shuffle", lambda seq: None)  # type: ignore
 
     val_dataset = [{"task": "val"}]
-    await apo.run(_context(train_dataset=[{"task": "train"}], val_dataset=val_dataset))
+    await apo.run(
+        _context(
+            store=cast(LightningStore, store),
+            adapter=adapter,
+            initial_resources={"seed": seed_prompt},
+            train_dataset=[{"task": "train"}],
+            val_dataset=val_dataset,
+        )
+    )
 
     # Verify initial validation was performed
     assert apo._history_best_prompt is seed_prompt
@@ -834,12 +860,9 @@ async def test_run_skips_initial_validation_when_disabled(monkeypatch: pytest.Mo
         run_initial_validation=False,  # Disable initial validation
     )
     seed_prompt = PromptTemplate(template="Seed", engine="f-string")
-    apo.set_initial_resources({"seed": seed_prompt})
 
     store = DummyStore()
-    apo._test_adapter = adapter = DummyTraceMessagesAdapter()  # type: ignore
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
+    adapter = DummyTraceMessagesAdapter()
 
     # Set up spans for rollouts (train + val for candidates + final val)
     rollout_rewards = [0.4, 0.5, 0.6, 1.1]
@@ -864,7 +887,15 @@ async def test_run_skips_initial_validation_when_disabled(monkeypatch: pytest.Mo
     train_dataset = [{"task": "train"}]
     val_dataset = [{"task": "val"}]
 
-    await apo.run(_context(train_dataset=train_dataset, val_dataset=val_dataset))
+    await apo.run(
+        _context(
+            store=cast(LightningStore, store),
+            adapter=adapter,
+            initial_resources={"seed": seed_prompt},
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+        )
+    )
 
     # Verify best prompt was updated through normal optimization (not initial validation)
     best_prompt = apo.get_best_prompt()
@@ -893,13 +924,9 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
         run_initial_validation=False,  # Skip initial validation for this test
     )
     seed_prompt = PromptTemplate(template="Seed", engine="f-string")
-    apo.set_initial_resources({"seed": seed_prompt})
 
     store = DummyStore()
-    # Keep strong reference to prevent garbage collection since APO uses weakref
-    apo._test_adapter = adapter = DummyTraceMessagesAdapter()  # type: ignore
-    apo.set_store(store)  # type: ignore
-    apo.set_adapter(adapter)
+    adapter = DummyTraceMessagesAdapter()
 
     # Set up spans for all expected rollouts
     # For 1 round with beam_width=1, branch_factor=1, run_initial_validation=False, we expect:
@@ -928,7 +955,15 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
     train_dataset = [{"task": "train"}]
     val_dataset = [{"task": "val"}]
 
-    await apo.run(_context(train_dataset=train_dataset, val_dataset=val_dataset))
+    await apo.run(
+        _context(
+            store=cast(LightningStore, store),
+            adapter=adapter,
+            initial_resources={"seed": seed_prompt},
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+        )
+    )
 
     # Verify best prompt was updated
     best_prompt = apo.get_best_prompt()

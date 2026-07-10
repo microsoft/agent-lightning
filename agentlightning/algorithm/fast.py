@@ -7,7 +7,9 @@ import logging
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
-from agentlightning.types import AlgorithmContext, Attempt, Dataset, Rollout, RolloutStatus, Span
+from agentlightning.adapter import TraceAdapter
+from agentlightning.store.base import LightningStore
+from agentlightning.types import AlgorithmContext, Attempt, Rollout, RolloutStatus, Span
 
 from .base import Algorithm
 
@@ -101,10 +103,13 @@ class Baseline(FastAlgorithm):
             msg += f"Attribute keys: {list(span.attributes.keys())}"
         return msg
 
-    async def _handle_rollout_finish(self, rollout: Rollout) -> None:
+    async def _handle_rollout_finish(
+        self,
+        store: LightningStore,
+        adapter: TraceAdapter[Any] | None,
+        rollout: Rollout,
+    ) -> None:
         """Log attempt metadata and emit adapted traces when a rollout ends."""
-        store = self.get_store()
-
         rollout_id = rollout.rollout_id
         rollout_end_time = rollout.end_time or asyncio.get_event_loop().time()
         logger.info(
@@ -127,36 +132,18 @@ class Baseline(FastAlgorithm):
                 if self.span_verbosity != "none":
                     logger.info(self._span_to_string(rollout.rollout_id, attempt, span))
 
-        # Attempts to adapt the spans using the adapter if provided
-        try:
-            adapter = self.get_adapter()
-        except ValueError:
-            logger.warning("No adapter set for MockAlgorithm. Skipping trace adaptation.")
-            adapter = None
         if adapter is not None:
             spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
             transformed_data = adapter.adapt(spans)
             logger.info(f"[Rollout {rollout_id}] Adapted data: {transformed_data}")
 
-    async def _enqueue_rollouts(
-        self, dataset: Dataset[Any], train_indices: List[int], val_indices: List[int], resources_id: str
+    async def _harvest_rollout_spans(
+        self,
+        store: LightningStore,
+        adapter: TraceAdapter[Any] | None,
+        rollout_id: str,
     ) -> None:
-        """Submit rollouts while respecting the maximum queue length."""
-        store = self.get_store()
-
-        for index in train_indices + val_indices:
-            queuing_rollouts = await store.query_rollouts(status_in=["queuing", "requeuing"])
-            if len(queuing_rollouts) <= 1:
-                # Only enqueue a new rollout when there is at most 1 rollout in the queue.
-                sample = dataset[index]
-                mode = "train" if index in train_indices else "val"
-                rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
-                logger.info(f"[Rollout {rollout.rollout_id}] Enqueued in {mode} mode with sample: {sample}")
-            await asyncio.sleep(self.polling_interval)
-
-    async def _harvest_rollout_spans(self, rollout_id: str):
         """Poll rollout status updates until completion and log transitions."""
-        store = self.get_store()
         last_status: Optional[RolloutStatus] = None
 
         while True:
@@ -164,7 +151,7 @@ class Baseline(FastAlgorithm):
             if rollout is not None:
                 if rollout.status in ["succeeded", "failed", "cancelled"]:
                     # Rollout is finished, log all the data.
-                    await self._handle_rollout_finish(rollout)
+                    await self._handle_rollout_finish(store, adapter, rollout)
                     # We are done here.
                     self._finished_rollout_count += 1
                     logger.info(f"Finished {self._finished_rollout_count} rollouts.")
@@ -190,6 +177,7 @@ class Baseline(FastAlgorithm):
         store = context.store
         train_dataset = context.train_dataset
         val_dataset = context.val_dataset
+        adapter = context.adapter
         llm_proxy = context.llm_proxy
         managed_proxy = False
         if llm_proxy is not None and not llm_proxy.is_running():
@@ -213,7 +201,7 @@ class Baseline(FastAlgorithm):
             logger.debug(f"Val indices: {val_indices}")
 
             # Currently we only supports a single resource update at the start.
-            initial_resources = self.get_initial_resources()
+            initial_resources = context.initial_resources
             if initial_resources is not None:
                 resource_update = await store.update_resources("default", initial_resources)
                 resources_id = resource_update.resources_id
@@ -236,7 +224,9 @@ class Baseline(FastAlgorithm):
                             sample = concatenated_dataset[index]
                             mode = "train" if index in train_indices else "val"
                             rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
-                            harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
+                            harvest_tasks.append(
+                                asyncio.create_task(self._harvest_rollout_spans(store, adapter, rollout.rollout_id))
+                            )
                             logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
                             break
                         else:

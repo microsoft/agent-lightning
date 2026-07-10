@@ -364,17 +364,12 @@ class Trainer:
     ) -> None:
         """Internal entry point executed by the strategy for the algorithm role.
 
-        This coroutine is scheduled inside the strategy's process/thread and is responsible
-        for binding algorithm dependencies (store, adapter, initial resources, proxy) before
-        invoking [`Algorithm.run`][agentlightning.Algorithm.run].
+        This coroutine is scheduled inside the strategy's process/thread. It packages the
+        runtime dependencies into one immutable [`AlgorithmContext`][agentlightning.AlgorithmContext]
+        and passes that context to [`Algorithm.run`][agentlightning.Algorithm.run].
         """
-        algorithm.set_store(store)
-        algorithm.set_adapter(self.adapter)
-        if self.initial_resources is not None:
-            algorithm.set_initial_resources(self.initial_resources)
         if self.llm_proxy is not None:
             self.llm_proxy.set_store(store)
-            algorithm.set_llm_proxy(self.llm_proxy)
 
         context = AlgorithmContext(
             store=store,

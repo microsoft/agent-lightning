@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 from collections.abc import Callable
-from typing import Awaitable, Generic, Literal, TypeVar, Union, overload
+from typing import Awaitable, Generic, Literal, TypeVar, Union, cast, overload
 
 from agentlightning.types import AlgorithmContext
 
@@ -46,7 +46,7 @@ class FunctionalAlgorithm(Algorithm, Generic[AF]):
         self._is_async = inspect.iscoroutinefunction(algorithm_func)
 
         # Copy function metadata to preserve behavior expected by callers.
-        functools.update_wrapper(self, algorithm_func)
+        functools.update_wrapper(cast(AlgorithmFunc, self), algorithm_func)
 
     def is_async(self) -> bool:
         return self._is_async
@@ -55,8 +55,14 @@ class FunctionalAlgorithm(Algorithm, Generic[AF]):
         """Execute the wrapped function with the provided context."""
         return self._algorithm_func(context)
 
+    @overload
+    def __call__(self: "FunctionalAlgorithm[Literal[True]]", context: AlgorithmContext) -> Awaitable[None]: ...
+
+    @overload
+    def __call__(self: "FunctionalAlgorithm[Literal[False]]", context: AlgorithmContext) -> None: ...
+
     def __call__(self, context: AlgorithmContext) -> Union[None, Awaitable[None]]:
-        return self.run(context)
+        return self._algorithm_func(context)
 
 
 @overload

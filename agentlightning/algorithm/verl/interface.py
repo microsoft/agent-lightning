@@ -6,7 +6,6 @@ from importlib import import_module
 from typing import Any, Callable, Optional, Type, cast
 
 from agentlightning.algorithm.base import Algorithm
-from agentlightning.store.base import LightningStore
 from agentlightning.types import AlgorithmContext
 
 
@@ -154,9 +153,7 @@ class VERL(Algorithm):
             ValueError: If required dependencies such as the store, LLM proxy,
                 or adapter are missing for V1 execution mode.
         """
-        store = cast(Optional[LightningStore], context.store)
-        if store is None:
-            raise ValueError("VERL execution requires a store and does not support v0 fallback mode.")
+        store = context.store
 
         from agentlightning.verl.daemon import AgentModeDaemon
         from agentlightning.verl.trainer import AgentLightningTrainer
