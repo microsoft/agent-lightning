@@ -240,7 +240,7 @@ In the example above, there are at least three agents—`write_query`, `rewrite_
 
 ## Dry-Run the Pipeline with [`Trainer.dev`][agentlightning.Trainer.dev]
 
-Before committing hours of GPU time, you can **dry-run** the agent with [`Trainer.dev()`][agentlightning.Trainer.dev]. This method swaps in the lightweight [`Baseline`][agentlightning.Baseline] algorithm, enqueues up to ten tasks, and prints every span emitted by the agent. Because it uses the same runner stack as full training, it’s ideal for verifying database connections and LangGraph control flow.
+Before committing hours of GPU time, you can **dry-run** the agent with [`Trainer.dev()`][agentlightning.Trainer.dev]. When no algorithm is configured, `Trainer` uses the lightweight [`Baseline`][agentlightning.Baseline] algorithm. It enqueues the provided tasks and prints every span emitted by the agent. Because it uses the same runner stack as full training, it’s ideal for verifying database connections and LangGraph control flow.
 
 To begin, the agent needs a valid OpenAI-compatible endpoint since VERL is not active in this mode. You can use OpenAI’s official API or your own local LLM endpoint. Wrap it as follows:
 
@@ -261,7 +261,7 @@ Then, call [`trainer.dev(...)`][agentlightning.Trainer.dev] with a small number 
 
 ```python
 dev_data = pd.read_parquet("data/test_dev_500.parquet").to_dict("records")[:10]
-trainer.dev(agent, dev_dataset=dev_data)
+trainer.dev(agent, train_dataset=dev_data)
 ```
 
 Run this in a Python session or adapt your script to include a `--dev` flag. Once the spans appear healthy and the rewards are non-zero, switch back to [`trainer.fit(...)`][agentlightning.Trainer.fit] for full RL training. See the [debugging tutorial](../tutorials/debug.md) for more tips on how to debug the agent.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import multiprocessing
 import signal
 import socket
@@ -200,7 +201,11 @@ def test_execute_algorithm_managed_store_starts_server(
         seen_store.append(store)
         event.set()
 
-    asyncio.run(strat._execute_algorithm(algo, store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    async def drain_runners() -> None:
+        assert created[0].started is True
+        assert created[0].stopped is False
+
+    asyncio.run(strat.execute_algorithm_bundle(algo, store, DummyEvt(), drain_runners=drain_runners))
 
     assert len(created) == 1
     server = created[0]
@@ -230,7 +235,7 @@ def test_execute_algorithm_unmanaged_uses_provided_store(
         seen["store"] = store
         event.set()
 
-    asyncio.run(strat._execute_algorithm(algo, store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    asyncio.run(strat.execute_algorithm_bundle(algo, store, DummyEvt()))
 
     assert seen["store"] is store
 
@@ -260,7 +265,7 @@ def test_execute_runner_managed_creates_and_closes_client(monkeypatch: pytest.Mo
         event.set()
 
     dummy_store = DummyLightningStore({})
-    asyncio.run(strat._execute_runner(runner, 0, dummy_store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    asyncio.run(strat.execute_runner_bundle(runner, 0, dummy_store, DummyEvt()))
 
     client = seen["store"]
     assert isinstance(client, RecordingClient)
@@ -276,7 +281,7 @@ def test_execute_runner_unmanaged_requires_store() -> None:
 
     # When managed_store=False, a store must be provided via the store parameter
     provided_store = DummyLightningStore({})
-    asyncio.run(strat._execute_runner(runner, 0, provided_store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    asyncio.run(strat.execute_runner_bundle(runner, 0, provided_store, DummyEvt()))
 
 
 def test_execute_runner_unmanaged_uses_provided_store() -> None:
@@ -296,7 +301,7 @@ def test_execute_runner_unmanaged_uses_provided_store() -> None:
         seen["store"] = store
         event.set()
 
-    asyncio.run(strat._execute_runner(runner, 1, provided, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    asyncio.run(strat.execute_runner_bundle(runner, 1, provided, DummyEvt()))
 
     assert seen["store"] is provided
     assert provided.close_calls == 0
@@ -311,6 +316,28 @@ async def _noop_algorithm(store: LightningStore, event: ExecutionEvent) -> None:
     _ = store  # explicitly acknowledge unused parameter
     await asyncio.sleep(0)
     assert not event.is_set()
+
+
+def _noop_process() -> None:
+    return None
+
+
+async def _algorithm_waits_for_stop(store: LightningStore, event: ExecutionEvent) -> None:
+    _ = store
+    while not event.is_set():
+        await asyncio.sleep(0.005)
+
+
+async def _algorithm_writes_marker(
+    store: LightningStore,
+    event: ExecutionEvent,
+    *,
+    marker_path: str,
+) -> None:
+    _ = store
+    await asyncio.sleep(0.5)
+    Path(marker_path).write_text("done")
+    event.set()
 
 
 async def _algo_calls_store_enqueue(store: LightningStore, event: ExecutionEvent) -> None:
@@ -463,7 +490,7 @@ def test_join_until_deadline_includes_alive_process() -> None:
 def test_join_until_deadline_excludes_finished_process() -> None:
     strat = ClientServerExecutionStrategy(role="runner", server_port=_free_port())
     ctx = get_context()
-    p: Process = ctx.Process(target=lambda: None, name="done")
+    p: Process = ctx.Process(target=_noop_process, name="done")
     p.start()
     p.join()
     alive: List[Process] = strat._join_until_deadline([p], timeout=0.05)  # pyright: ignore[reportPrivateUsage]
@@ -692,9 +719,7 @@ def test_execute_algorithm_success_invokes_store(store: DummyLightningStore) -> 
         terminate_timeout=0.05,
     )
     # Should run and stop the real HTTP server, while delegating to underlying store.
-    asyncio.run(
-        strat._execute_algorithm(_algo_calls_store_enqueue, store, DummyEvt())  # pyright: ignore[reportPrivateUsage]
-    )
+    asyncio.run(strat.execute_algorithm_bundle(_algo_calls_store_enqueue, store, DummyEvt()))
     # The DummyLightningStore should have recorded the delegated call.
     recorded: List[RecordedCall] = store.calls
     assert any(name == "enqueue_rollout" for name, _, _ in recorded)
@@ -712,7 +737,7 @@ def test_execute_algorithm_sets_stop_on_exception_and_propagates(store: Lightnin
     )
     evt: DummyEvt = DummyEvt()
     with pytest.raises(RuntimeError, match="algo boom"):
-        asyncio.run(strat._execute_algorithm(_raise_in_algorithm, store, evt))  # pyright: ignore[reportPrivateUsage]
+        asyncio.run(strat.execute_algorithm_bundle(_raise_in_algorithm, store, evt))
     assert evt.is_set()
 
 
@@ -728,7 +753,7 @@ def test_execute_algorithm_keyboardinterrupt_sets_stop_and_propagates(store: Lig
     )
     evt: DummyEvt = DummyEvt()
     with pytest.raises(KeyboardInterrupt):
-        asyncio.run(strat._execute_algorithm(_kbint_in_algorithm, store, evt))  # pyright: ignore[reportPrivateUsage]
+        asyncio.run(strat.execute_algorithm_bundle(_kbint_in_algorithm, store, evt))
     assert evt.is_set()
 
 
@@ -750,11 +775,7 @@ def test_execute_runner_success_closes_client() -> None:
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
         dummy_store = DummyLightningStore({})
-        asyncio.run(
-            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _noop_runner, worker_id=0, store=dummy_store, stop_evt=DummyEvt()
-            )
-        )
+        asyncio.run(strat.execute_runner_bundle(_noop_runner, worker_id=0, store=dummy_store, stop_evt=DummyEvt()))
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
 
@@ -781,11 +802,7 @@ def test_execute_runner_exception_sets_stop_and_closes_client() -> None:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
         dummy_store = DummyLightningStore({})
         with pytest.raises(RuntimeError, match="runner boom"):
-            asyncio.run(
-                strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                    _raise_in_runner, worker_id=7, store=dummy_store, stop_evt=evt
-                )
-            )
+            asyncio.run(strat.execute_runner_bundle(_raise_in_runner, worker_id=7, store=dummy_store, stop_evt=evt))
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
 
@@ -805,11 +822,7 @@ def test_execute_runner_keyboardinterrupt_sets_stop_and_propagates() -> None:
     evt: DummyEvt = DummyEvt()
     dummy_store = DummyLightningStore({})
     with pytest.raises(KeyboardInterrupt):
-        asyncio.run(
-            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _kbint_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
-            )
-        )
+        asyncio.run(strat.execute_runner_bundle(_kbint_in_runner, worker_id=0, store=dummy_store, stop_evt=evt))
     assert evt.is_set()
 
 
@@ -825,11 +838,7 @@ def test_execute_runner_distinguishes_timeout_error() -> None:
     evt: DummyEvt = DummyEvt()
     dummy_store = DummyLightningStore({})
     with pytest.raises(TimeoutError, match="runner timeout"):
-        asyncio.run(
-            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _timeout_error_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
-            )
-        )
+        asyncio.run(strat.execute_runner_bundle(_timeout_error_in_runner, worker_id=0, store=dummy_store, stop_evt=evt))
     assert evt.is_set()
 
 
@@ -848,9 +857,7 @@ def test_spawn_runners_creates_processes_and_they_exit_on_event() -> None:
     def runner_sync() -> None:
         dummy_store = DummyLightningStore({})
         asyncio.run(
-            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _runner_wait_for_stop, worker_id=0, store=dummy_store, stop_evt=stop_evt
-            )
+            strat.execute_runner_bundle(_runner_wait_for_stop, worker_id=0, store=dummy_store, stop_evt=stop_evt)
         )
 
     procs: List[Process] = []
@@ -883,9 +890,11 @@ def test_spawn_algorithm_process_creates_and_runs(store: LightningStore) -> None
     )
     ctx = get_context()
     stop_evt: ExecutionEvent = MpEvent()
+    runner_drained_evt: ExecutionEvent = MpEvent()
+    runner_drained_evt.set()
 
     p: Process = strat._spawn_algorithm_process(  # pyright: ignore[reportPrivateUsage]
-        _noop_algorithm, store, stop_evt, ctx=ctx
+        _noop_algorithm, store, stop_evt, runner_drained_evt, ctx=ctx
     )
     try:
         p.join(timeout=4.0)
@@ -990,12 +999,6 @@ def test_execute_both_main_runner_debug_cooperative_shutdown(store: LightningSto
         await asyncio.sleep(0.05)
         event.set()
 
-    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
-        _ = store
-        t0: float = time.monotonic()
-        while not event.is_set() and time.monotonic() - t0 < 1.0:
-            await asyncio.sleep(0.005)
-
     strat = ClientServerExecutionStrategy(
         role="both",
         main_process="runner",
@@ -1006,7 +1009,7 @@ def test_execute_both_main_runner_debug_cooperative_shutdown(store: LightningSto
         graceful_timeout=5.0,
         terminate_timeout=5.0,
     )
-    strat.execute(algorithm=algo, runner=runner, store=store)
+    strat.execute(algorithm=_algorithm_waits_for_stop, runner=runner, store=store)
 
 
 def test_execute_algorithm_exception_bubbles_and_shuts_down(store: LightningStore) -> None:
@@ -1124,13 +1127,6 @@ def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStor
             # Runner completes quickly
             await asyncio.sleep(0.01)
 
-        async def algo(store: LightningStore, event: ExecutionEvent) -> None:
-            _ = store
-            # Algorithm takes longer and should complete fully
-            await asyncio.sleep(0.5)
-            marker_file.write_text("done")
-            event.set()
-
         strat = ClientServerExecutionStrategy(
             role="both",
             main_process="runner",
@@ -1140,7 +1136,8 @@ def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStor
             graceful_timeout=0.05,
             terminate_timeout=0.05,
         )
-        strat.execute(algorithm=algo, runner=runner, store=store)
+        algorithm = functools.partial(_algorithm_writes_marker, marker_path=str(marker_file))
+        strat.execute(algorithm=algorithm, runner=runner, store=store)
 
         # Verify the algorithm completed by checking the marker file exists
         assert marker_file.exists()
@@ -1150,10 +1147,10 @@ def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStor
             marker_file.unlink()
 
 
-def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> None:
+def test_execute_both_main_algo_abort_terminates_runner_that_ignores_stop(store: LightningStore) -> None:
     """
-    When main_process='algorithm' and runners ignore stop, the algorithm
-    setting stop_evt should trigger shutdown that forcefully terminates runners.
+    An algorithm failure uses the abort path and forcefully terminates runners
+    that cannot stop cooperatively.
     """
     port: int = _free_port()
     strat = ClientServerExecutionStrategy(
@@ -1167,11 +1164,11 @@ def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> No
     )
 
     async def algo(store: LightningStore, event: ExecutionEvent) -> None:
-        _ = store
+        _ = (store, event)
         await asyncio.sleep(0.1)
+        raise RuntimeError("algorithm abort")
 
-    # Should complete without hanging despite runners ignoring signals
-    with pytest.raises(RuntimeError, match="Subprocesses failed"):
+    with pytest.raises(RuntimeError, match="algorithm abort"):
         strat.execute(algorithm=algo, runner=_runner_ignores_stop_forever, store=store)
 
 

@@ -282,6 +282,31 @@ def test_execute_main_algorithm_normal_stop_sets_event(store: DummyLightningStor
     assert finished_a == ["algo"]
 
 
+def test_execute_main_algorithm_waits_for_claimed_runner_work(store: DummyLightningStore) -> None:
+    finished: List[str] = []
+    strat = SharedMemoryExecutionStrategy(
+        n_runners=1,
+        main_thread="algorithm",
+        graceful_delay=0.01,
+        join_timeout=0.02,
+    )
+
+    async def algorithm(store: LightningStore, event: ExecutionEvent) -> None:
+        _ = (store, event)
+        await asyncio.sleep(0.01)
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        _ = (store, worker_id)
+        while not event.is_set():
+            await asyncio.sleep(0.001)
+        await asyncio.sleep(0.05)
+        finished.append("runner")
+
+    strat.execute(algorithm, runner, store)
+
+    assert finished == ["runner"]
+
+
 def test_execute_main_runner_waits_for_algorithm_natural_finish(store: DummyLightningStore):
     # Policy: when main_thread='runner' and runner finishes, do NOT set stop; wait for algo to finish.
     started_r: List[int] = []

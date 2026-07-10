@@ -23,7 +23,8 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
     Stop Model:
 
     - All bundles share one [`ThreadingEvent`][agentlightning.ThreadingEvent]
-      named `stop_evt`.
+      named `stop_evt` for graceful shutdown. The strategy keeps a separate
+      internal abort event for exceptions and interrupts.
     - Only the main thread receives `KeyboardInterrupt`. When Ctrl+C occurs we
       set `stop_evt`.
     - Any exception raised inside a bundle sets `stop_evt` so other threads can
@@ -164,6 +165,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         store: LightningStore,
         stop_evt: ExecutionEvent,
         thread_exceptions: Optional[SimpleQueue[BaseException]],
+        abort_evt: Optional[ExecutionEvent] = None,
     ) -> None:
         try:
             asyncio.run(self._run_until_completed_or_canceled(algorithm(store, stop_evt), stop_evt))
@@ -174,7 +176,10 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             if thread_exceptions is not None:
                 thread_exceptions.put(exc)
             stop_evt.set()
-            raise
+            if abort_evt is not None:
+                abort_evt.set()
+            if thread_exceptions is None:
+                raise
 
     def _run_runner(
         self,
@@ -183,9 +188,11 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         worker_id: int,
         stop_evt: ExecutionEvent,
         thread_exceptions: Optional[SimpleQueue[BaseException]],
+        abort_evt: Optional[ExecutionEvent] = None,
     ) -> None:
         try:
-            asyncio.run(self._run_until_completed_or_canceled(runner(store, worker_id, stop_evt), stop_evt))
+            cancellation_evt = abort_evt if abort_evt is not None else stop_evt
+            asyncio.run(self._run_until_completed_or_canceled(runner(store, worker_id, stop_evt), cancellation_evt))
         except asyncio.CancelledError:
             logger.info("Runner bundle (worker_id=%s) canceled due to stop signal.", worker_id)
         except BaseException as exc:
@@ -193,7 +200,10 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             if thread_exceptions is not None:
                 thread_exceptions.put(exc)
             stop_evt.set()
-            raise
+            if abort_evt is not None:
+                abort_evt.set()
+            if thread_exceptions is None:
+                raise
 
     def execute(self, algorithm: AlgorithmBundle, runner: RunnerBundle, store: LightningStore) -> None:
         logger.info(
@@ -204,6 +214,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
 
         # Create stop event and thread-safe store.
         stop_evt = ThreadingEvent()
+        abort_evt = ThreadingEvent()
         if self.managed_store:
             thread_safe_store = LightningStoreThreaded(store)
         else:
@@ -226,13 +237,13 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                     thread = make_thread(
                         name=f"runner-{i}",
                         target=self._run_runner,
-                        args=(runner, thread_safe_store, i, stop_evt, thread_exceptions),
+                        args=(runner, thread_safe_store, i, stop_evt, thread_exceptions, abort_evt),
                     )
                     threads.append(thread)
 
                 # Ctrl+C here raises KeyboardInterrupt on this stack.
                 # Main thread doesn't need to collect exceptions.
-                self._run_algorithm(algorithm, thread_safe_store, stop_evt, None)
+                self._run_algorithm(algorithm, thread_safe_store, stop_evt, None, abort_evt)
 
                 # If algo finishes naturally, request runners to stop.
                 stop_evt.set()
@@ -242,13 +253,13 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                 thread = make_thread(
                     name="algorithm",
                     target=self._run_algorithm,
-                    args=(algorithm, thread_safe_store, stop_evt, thread_exceptions),
+                    args=(algorithm, thread_safe_store, stop_evt, thread_exceptions, abort_evt),
                 )
                 threads.append(thread)
 
                 # Ctrl+C here raises KeyboardInterrupt on this stack.
                 # Main thread doesn't need to collect exceptions.
-                self._run_runner(runner, thread_safe_store, 0, stop_evt, None)
+                self._run_runner(runner, thread_safe_store, 0, stop_evt, None, abort_evt)
 
                 # If runner finishes naturally, WAIT FOR ALGORITHM TO FINISH.
                 thread.join()
@@ -259,11 +270,13 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         except KeyboardInterrupt:
             logger.warning("KeyboardInterrupt received on main thread; initiating cooperative shutdown...")
             stop_evt.set()
+            abort_evt.set()
         finally:
-            # Attempt a clean join; if some threads don't comply, log and move on.
+            # Normal completion waits for claimed work to drain. Abort paths retain
+            # the bounded join because work may no longer be able to finish cleanly.
             for t in threads:
                 logger.debug("Joining thread %s...", t.name)
-                t.join(timeout=self.join_timeout)
+                t.join(timeout=self.join_timeout if abort_evt.is_set() else None)
 
             alive = [t.name for t in threads if t.is_alive()]
             if alive:

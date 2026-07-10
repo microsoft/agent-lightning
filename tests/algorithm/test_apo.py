@@ -12,24 +12,22 @@ import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, VersionedPromptTemplate, batch_iter_over_dataset
+from agentlightning.emitter.reward import emit_reward
 from agentlightning.execution.events import ThreadingEvent
 from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.types import (
     AlgorithmContext,
     Dataset,
     NamedResources,
-)
-from agentlightning.types import OtelResource as SpanResource
-from agentlightning.types import (
     PromptTemplate,
     Rollout,
     Span,
-    SpanContext,
-    TraceStatus,
 )
 
 
-def _context(*, train_dataset: Optional[Dataset[Any]] = None, val_dataset: Optional[Dataset[Any]] = None) -> AlgorithmContext:
+def _context(
+    *, train_dataset: Optional[Dataset[Any]] = None, val_dataset: Optional[Dataset[Any]] = None
+) -> AlgorithmContext:
     return AlgorithmContext(
         store=Mock(),  # type: ignore[arg-type]
         event=ThreadingEvent(),
@@ -122,25 +120,11 @@ def make_openai_client(create_mock: AsyncMock) -> Mock:
 
 
 def make_reward_span(rollout_id: str, attempt_id: str, reward: float, sequence_id: int) -> Span:
-    hex_id = f"{sequence_id:032x}"
-    span_hex = f"{sequence_id:016x}"
-    return Span(
+    return Span.from_core_fields(
+        emit_reward(reward, propagate=False),
         rollout_id=rollout_id,
         attempt_id=attempt_id,
         sequence_id=sequence_id,
-        trace_id=hex_id,
-        span_id=span_hex,
-        parent_id=None,
-        name=AGL_ANNOTATION,
-        status=TraceStatus(status_code="OK"),
-        attributes={"reward": reward},
-        events=[],
-        links=[],
-        start_time=None,
-        end_time=None,
-        context=SpanContext(trace_id=hex_id, span_id=span_hex, is_remote=False, trace_state={}),
-        parent=None,
-        resource=SpanResource(attributes={}, schema_url=""),
     )
 
 
@@ -436,8 +420,8 @@ async def test_get_rollout_results_adapts_spans() -> None:
     assert len(results[0]["spans"]) == 2
     assert results[0]["spans"][0]["rollout_id"] == "r-1"
     assert results[0]["spans"][0]["name"] == AGL_ANNOTATION
-    assert results[0]["spans"][0]["attributes"]["reward"] == 1.0
-    assert results[0]["spans"][1]["attributes"]["reward"] == 2.0
+    assert results[0]["spans"][0]["attributes"]["agentlightning.reward.0.value"] == 1.0
+    assert results[0]["spans"][1]["attributes"]["agentlightning.reward.0.value"] == 2.0
 
 
 @pytest.mark.asyncio

@@ -7,11 +7,9 @@ import logging
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
-from agentlightning.types import Attempt, Dataset, Rollout, RolloutStatus, Span
+from agentlightning.types import AlgorithmContext, Attempt, Dataset, Rollout, RolloutStatus, Span
 
 from .base import Algorithm
-from agentlightning.types import AlgorithmContext
-
 
 logger = logging.getLogger(__name__)
 
@@ -202,14 +200,13 @@ class Baseline(FastAlgorithm):
             train_dataset_length = len(train_dataset) if train_dataset is not None else 0
             val_dataset_length = len(val_dataset) if val_dataset is not None else 0
             if train_dataset_length == 0 and val_dataset_length == 0:
-                logger.error(
-                    "MockAlgorithm requires at least one dataset. Provide train_dataset or val_dataset before running."
+                raise ValueError(
+                    "Baseline requires at least one dataset. Provide train_dataset or val_dataset before running."
                 )
-                return
 
-            concatenated_dataset = [train_dataset[i] for i in range(train_dataset_length) if train_dataset is not None] + [
-                val_dataset[i] for i in range(val_dataset_length) if val_dataset is not None
-            ]
+            concatenated_dataset = [
+                train_dataset[i] for i in range(train_dataset_length) if train_dataset is not None
+            ] + [val_dataset[i] for i in range(val_dataset_length) if val_dataset is not None]
             train_indices = list(range(0, train_dataset_length))
             val_indices = list(range(train_dataset_length, train_dataset_length + val_dataset_length))
             logger.debug(f"Train indices: {train_indices}")
@@ -240,9 +237,7 @@ class Baseline(FastAlgorithm):
                             mode = "train" if index in train_indices else "val"
                             rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
                             harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
-                            logger.info(
-                                f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}"
-                            )
+                            logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
                             break
                         else:
                             # Sleep a bit and try again later.

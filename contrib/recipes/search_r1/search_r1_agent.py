@@ -203,7 +203,7 @@ def debug_search_r1_agent():
     print("Debug data:", df)
 
     trainer = Trainer(
-        n_workers=1,
+        n_runners=1,
         initial_resources={
             "main_llm": LLM(
                 endpoint=os.environ["OPENAI_API_BASE"],

@@ -7,7 +7,7 @@ import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple, cast
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -16,9 +16,9 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.trace import SpanContext, TraceFlags, TraceState
 from opentelemetry.trace.status import Status, StatusCode
 
+from agentlightning.emitter.reward import emit_reward, find_final_reward
 from agentlightning.execution.events import ExecutionEvent, ThreadingEvent
 from agentlightning.litagent import LitAgent
-from agentlightning.emitter.reward import emit_reward, find_final_reward
 from agentlightning.runner import LitAgentRunner
 from agentlightning.runner.base import Runner
 from agentlightning.semconv import AGL_ANNOTATION
@@ -26,13 +26,15 @@ from agentlightning.store.base import UNSET, LightningStore, Unset
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import (
-    AgentSpanPayload,
     LLM,
+    AgentSpanPayload,
     Hook,
     NamedResources,
     PromptTemplate,
     Rollout,
+    RolloutResult,
     Span,
+    SpanWriteResult,
     Worker,
 )
 
@@ -229,7 +231,7 @@ async def setup_runner(
     max_rollouts: Optional[int] = None,
     poll_interval: float = 0.01,
     hooks: Sequence[Hook] = (),
-    rollout_execution_policy: Literal["inline", "thread", "process"] = "inline",
+    rollout_execution_policy: Literal["inline", "thread", "process"] = "thread",
 ) -> tuple[LitAgentRunner[Any], InMemoryLightningStore, DummyTracer]:
     tracer = tracer or DummyTracer()
     store = InMemoryLightningStore()
@@ -430,12 +432,15 @@ async def test_post_process_rejects_readable_spans() -> None:
     agent = HeartbeatAgent()
     runner, store, _ = await setup_runner(agent)
     attempted_rollout = await store.start_rollout(input={"task": "payload"}, mode="val")
-    spans = [create_readable_span("rejected-span")]
+    spans = cast(RolloutResult, [create_readable_span("rejected-span")])
 
     with pytest.raises(ValueError, match="list of AgentSpanPayload"):
-        await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
-            attempted_rollout, spans
-        )
+        await runner._post_process_rollout_result(attempted_rollout, spans)  # pyright: ignore[reportPrivateUsage]
+
+    next_sequence_id = await store.get_next_span_sequence_id(
+        attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id
+    )
+    assert next_sequence_id == 1
 
     teardown_runner(runner)
 
@@ -527,10 +532,8 @@ async def test_step_handles_non_llm_resource() -> None:
 @pytest.mark.asyncio
 async def test_step_rejects_readable_span_list() -> None:
     class ReadableSpanAgent(LitAgent[Dict[str, Any]]):
-        def validation_rollout(
-            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
-        ) -> List[ReadableSpan]:
-            return [create_readable_span(f"trace-{i}", {"idx": i}) for i in range(2)]
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> RolloutResult:
+            return cast(RolloutResult, [create_readable_span(f"trace-{i}", {"idx": i}) for i in range(2)])
 
     agent = ReadableSpanAgent()
     runner, store, _ = await setup_runner(agent)
@@ -541,6 +544,36 @@ async def test_step_rejects_readable_span_list() -> None:
         teardown_runner(runner)
     rollouts = await store.query_rollouts()
     assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_step_fails_when_rollout_spans_are_not_persisted(monkeypatch: pytest.MonkeyPatch) -> None:
+    class SpanAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> RolloutResult:
+            return [
+                AgentSpanPayload(
+                    name="result",
+                    status={"status_code": "OK"},
+                    attributes={"task": task["task"]},
+                )
+            ]
+
+    runner, store, _ = await setup_runner(SpanAgent())
+
+    async def fail_batch(spans: Sequence[Span]) -> SpanWriteResult:
+        return SpanWriteResult(failed=len(spans))
+
+    monkeypatch.setattr(store, "add_many_spans", fail_batch)
+
+    try:
+        with pytest.raises(RuntimeError, match="Failed to persist 1 of 1 rollout span"):
+            await runner.step({"task": "payload"}, mode="val")
+    finally:
+        teardown_runner(runner)
+
+    rollouts = await store.query_rollouts()
     attempts = await store.query_attempts(rollouts[0].rollout_id)
     assert attempts[-1].status == "failed"
 
@@ -715,7 +748,7 @@ async def test_training_rollout_sync_used() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_rollout_thread_policy_keeps_event_loop_responsive() -> None:
+async def test_default_sync_rollout_policy_keeps_event_loop_responsive() -> None:
     class BlockingAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
             _ = (task, resources, rollout)
@@ -723,7 +756,7 @@ async def test_sync_rollout_thread_policy_keeps_event_loop_responsive() -> None:
             return 0.25
 
     agent = BlockingAgent()
-    runner, _, _ = await setup_runner(agent, rollout_execution_policy="thread")
+    runner, _, _ = await setup_runner(agent)
     ticks = 0
     done = False
 
@@ -783,7 +816,9 @@ async def test_step_handles_agent_exception_marks_attempt_failed() -> None:
 @pytest.mark.asyncio
 async def test_step_impl_cancelled_marks_cancelled_and_raises() -> None:
     class CancellableAgent(LitAgent[Dict[str, Any]]):
-        async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+        async def validation_rollout_async(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> float:
             await asyncio.sleep(10)
             return 0.0
 
@@ -791,7 +826,8 @@ async def test_step_impl_cancelled_marks_cancelled_and_raises() -> None:
     runner, store, _ = await setup_runner(agent)
 
     attempted_rollout = await store.start_rollout(input={"task": "cancel"}, mode="val")
-    task = asyncio.create_task(runner._step_impl(attempted_rollout, raise_on_exception=False))  # pyright: ignore[reportPrivateUsage]
+    step = runner._step_impl(attempted_rollout, raise_on_exception=False)  # pyright: ignore[reportPrivateUsage]
+    task = asyncio.create_task(step)
 
     try:
         await asyncio.sleep(0.05)
@@ -830,7 +866,9 @@ async def test_step_with_presignalled_event_does_not_create_rollout() -> None:
 @pytest.mark.asyncio
 async def test_step_event_cancels_async_rollout_and_marks_cancelled() -> None:
     class CancellableAgent(LitAgent[Dict[str, Any]]):
-        async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+        async def validation_rollout_async(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> float:
             _ = (task, resources, rollout)
             await asyncio.sleep(10)
             return 0.0
@@ -854,7 +892,7 @@ async def test_step_event_cancels_async_rollout_and_marks_cancelled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_step_event_cancels_thread_policy_rollout() -> None:
+async def test_step_event_waits_for_thread_rollout_and_records_real_result() -> None:
     class BlockingAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
             _ = (task, resources, rollout)
@@ -868,15 +906,15 @@ async def test_step_event_cancels_thread_policy_rollout() -> None:
     try:
         await asyncio.sleep(0.05)
         event.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        result = await task
     finally:
         teardown_runner(runner)
 
-    assert time.monotonic() - start < 0.5
+    assert time.monotonic() - start >= 0.5
+    assert result.status == "succeeded"
     rollouts = await store.query_rollouts()
     assert len(rollouts) == 1
-    assert rollouts[0].status == "cancelled"
+    assert rollouts[0].status == "succeeded"
 
 
 @pytest.mark.asyncio

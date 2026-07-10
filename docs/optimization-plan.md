@@ -39,13 +39,14 @@
 
 | Interface | 决策 | 验收点 |
 | --- | --- | --- |
+| `Trainer.algorithm` | `Trainer` 始终持有具体 `Algorithm`；未显式提供时统一使用 `Baseline`。`None` 不再隐式表达 external algorithm 或 manual queue 生命周期。 | `fit()`/`dev()` 共用同一算法实例；默认 Baseline 缺少 dataset 时明确失败；外部 Store/Runner 拓扑由调用者通过 `Execution` 和 Store adapters 显式组合。 |
 | `AlgorithmContext` | 由 `Trainer` 构造并传给 `Algorithm.run(context)`；包含 `store`、`adapter`、`llm_proxy`、`initial_resources`、`train_dataset`、`val_dataset`、`event` 和运行配置。 | `Algorithm` 不再保存 trainer weakref，不再提供 `get_client()`，也不 import legacy client；协作式停止只通过 `context.event` 表达。 |
 | `@algo` decorator | `@algo` 是把函数适配到 `Algorithm` Interface 的 Adapter；新函数只接受 `context: AlgorithmContext`，不再按参数名隐式注入 `store`、`adapter`、dataset 等依赖。 | decorator 代码不再 inspect 任意参数名；示例算法从 `def f(*, store, train_dataset)` 改成 `def f(context)`。 |
 | Rollout/Attempt 状态机 | `RolloutStatus = queuing | preparing | running | succeeded | failed | cancelled | requeuing`；`AttemptStatus = preparing | running | succeeded | failed | cancelled | timeout | unresponsive`。 | `timeout` 和 `unresponsive` 只属于 attempt；`requeuing` 只属于 rollout；不存在 `queueing` 拼写。 |
 | Agent rollout 返回值 | `RolloutResult = None | float | list[AgentSpanPayload]`；`AgentSpanPayload` 只包含 span 业务字段，不包含 `rollout_id`、`attempt_id`、`sequence_id`。 | 删除 OTEL `ReadableSpan`、已归属 store `Span` 和隐式 bool/int reward 自动转换路径；rollout/attempt/sequence 归属只由 `Runner` 和 `Tracer` 写入。 |
 | Span ownership | `Runner`/`Tracer` 拥有 `rollout_id`、`attempt_id`、`sequence_id`、`created_at` 等上下文字段；agent 不直接决定归属。 | 不存在跨 rollout 污染、重复写入和 sequence 冲突路径。 |
 | `SpanWriter` | 统一同步 callback 到 async store 的桥接；`LightningSpanProcessor` 和 `LLMProxy` exporter 都使用同一个写入 Interface。 | 写入 timeout、确认、失败日志和 shutdown 行为只有一处实现。 |
-| Store 批量写入 | 使用显式 `SpanWriteResult`，返回 `inserted`、`duplicates`、`failed`；不要求跨后端 all-or-nothing 事务。 | 调用方能准确知道哪些 span 已写入，重复插入不靠猜测；Store Interface 的“原子性”改为“单次调用串行化且结果完整”。 |
+| Store 批量写入 | 使用显式 `SpanWriteResult`，返回 `inserted`、`duplicates`、`failed`；不要求跨后端 all-or-nothing 事务。 | 正常路径保持 bulk 写入，异常后读回确认部分成功项；Runner/OTLP 等调用方必须处理 `failed`，不能静默继续。 |
 | Store 角色模型 | `LightningStore` 是业务 Interface；local collection store、remote client、threaded wrapper 是 adapters；`LightningStoreServer` 是 has-a store 的 HTTP/lifecycle container。 | server 不再继承 `LightningStore`；`ClientServerExecutionStrategy` 可以负责启动和关闭 store server，但传给 `algorithm_bundle`、`runner_bundle`、proxy 的必须是纯 `LightningStore` facade，例如 `LightningStoreClient`，不能是 `LightningStoreServer` runtime 对象。 |
 
 ### 状态转移表
@@ -59,7 +60,9 @@
 | agent 正常完成 | `succeeded` | `succeeded` | 终态；不会再 retry。 |
 | agent 抛异常 | `failed` | `requeuing` 或 `failed` | attempts 未耗尽且 retry policy 允许 `failed` 时 requeue，否则 failed。 |
 | 资源获取失败 | `failed` | `requeuing` 或 `failed` | 资源缺失发生在 attempt start 之后，必须给 attempt 明确失败终态。 |
-| cooperative cancel / shutdown | `cancelled` | `cancelled` | 已 start 的 attempt 不能写成 `succeeded`；未 dequeue 的 rollout 不变。 |
+| direct async step cancel | `cancelled` | `cancelled` | 仅取消可安全中止的 async rollout；抛出 `CancelledError`。 |
+| runner stop / algorithm complete | 保持真实终态 | 保持真实终态 | 停止领取新 rollout，已经 dequeue 的 attempt drain 到完成。 |
+| sync rollout stop request | 保持真实终态 | 保持真实终态 | Python 无法安全终止已经执行的同步工作；等待完成后按真实结果写入。 |
 | attempt timeout | `timeout` | `requeuing` 或 `failed` | timeout 只属于 attempt；rollout 根据 retry policy 决定是否 requeue。 |
 | worker unresponsive | `unresponsive` | `requeuing` 或 `failed` | watchdog 只结束当前 attempt；是否创建下一次 attempt 由 retry policy 决定。 |
 | no work | 无变化 | 无变化 | runner 没领取到 rollout 时不得写入状态。 |

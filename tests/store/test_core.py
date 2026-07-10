@@ -1354,6 +1354,66 @@ async def test_add_many_spans_handles_mixed_rollouts_and_attempts(store_fixture:
 
 
 @pytest.mark.asyncio
+async def test_add_many_spans_reports_inserted_duplicates_and_failures_precisely(
+    inmemory_store: InMemoryLightningStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempted = await inmemory_store.start_rollout(input={"origin": "precise-span-result"})
+    rollout_id = attempted.rollout_id
+    attempt_id = attempted.attempt.attempt_id
+
+    def build_span(seed: int, name: str) -> Span:
+        trace_hex = f"{seed:032x}"
+        span_hex = f"{seed:016x}"
+        return Span(
+            rollout_id=rollout_id,
+            attempt_id=attempt_id,
+            sequence_id=seed,
+            trace_id=trace_hex,
+            span_id=span_hex,
+            parent_id=None,
+            name=name,
+            status=TraceStatus(status_code="OK"),
+            attributes={},
+            events=[],
+            links=[],
+            start_time=None,
+            end_time=None,
+            context=SpanContext(trace_id=trace_hex, span_id=span_hex, is_remote=False, trace_state={}),
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        )
+
+    duplicate = build_span(1, "duplicate")
+    inserted = build_span(2, "inserted")
+    failed = build_span(3, "failed")
+    await inmemory_store.add_span(duplicate)
+
+    original_insert = inmemory_store.collections.spans.insert
+    insert_batch_sizes: list[int] = []
+
+    async def insert_with_failure(items: Sequence[Span]) -> None:
+        insert_batch_sizes.append(len(items))
+        if any(span.name == "failed" for span in items):
+            if len(items) > 1:
+                await original_insert([span for span in items if span.name != "failed"])
+            raise RuntimeError("simulated span write failure")
+        await original_insert(items)
+
+    monkeypatch.setattr(inmemory_store.collections.spans, "insert", insert_with_failure)
+
+    result = await inmemory_store.add_many_spans([inserted, duplicate, failed])
+
+    assert result.inserted == 1
+    assert result.duplicates == 1
+    assert result.failed == 1
+    assert result.inserted + result.duplicates + result.failed == 3
+    assert insert_batch_sizes[0] == 2
+
+    with pytest.raises(RuntimeError, match="simulated span write failure"):
+        await inmemory_store.add_span(build_span(4, "failed"))
+
+
+@pytest.mark.asyncio
 async def test_add_span_returns_none_on_duplicate(store_fixture: LightningStore) -> None:
     """Duplicate span IDs should return None instead of raising."""
     attempted = await store_fixture.start_rollout(input={"origin": "duplicate-span"})

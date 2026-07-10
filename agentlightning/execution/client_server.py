@@ -7,7 +7,7 @@ import os
 import signal
 import time
 from multiprocessing.context import BaseContext
-from typing import Callable, Iterable, Literal, cast
+from typing import Awaitable, Callable, Iterable, Literal, cast
 
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var, resolve_int_env_var, resolve_str_env_var
 from agentlightning.store.base import LightningStore
@@ -45,6 +45,7 @@ def _algorithm_process_entrypoint(
     algorithm: AlgorithmBundle,
     store: LightningStore,
     stop_evt: ExecutionEvent,
+    runner_drained_evt: ExecutionEvent,
 ) -> None:
     """Run an algorithm bundle from a child process.
 
@@ -52,7 +53,13 @@ def _algorithm_process_entrypoint(
     on macOS and Windows.
     """
     try:
-        asyncio.run(strategy.execute_algorithm_bundle(algorithm, store, stop_evt))
+
+        async def wait_for_runner() -> None:
+            stop_evt.set()
+            while not runner_drained_evt.is_set():
+                await asyncio.sleep(0.05)
+
+        asyncio.run(strategy.execute_algorithm_bundle(algorithm, store, stop_evt, drain_runners=wait_for_runner))
     except KeyboardInterrupt:
         logger.warning("Algorithm (asyncio.run) received KeyboardInterrupt; exiting gracefully")
     except BaseException as exc:
@@ -83,6 +90,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         in a child process. Store mutations remain isolated inside that process,
         so the original store instance passed to
         [execute()][agentlightning.ExecutionStrategy.execute] is not updated.
+
+    Graceful completion keeps the Store server alive while runners finish work
+    they have already claimed. Failures and interrupts bypass that drain and use
+    the abort escalation below.
 
     Abort Model (four-step escalation):
 
@@ -166,7 +177,12 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         self.allowed_exit_codes = tuple(allowed_exit_codes)
 
     async def execute_algorithm_bundle(
-        self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
+        self,
+        algorithm: AlgorithmBundle,
+        store: LightningStore,
+        stop_evt: ExecutionEvent,
+        *,
+        drain_runners: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         facade_store: LightningStore = store
         server: LightningStoreServer | None = None
@@ -183,6 +199,8 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 client_store = LightningStoreClient(server.endpoint)
                 facade_store = client_store
             await algorithm(facade_store, stop_evt)
+            if drain_runners is not None:
+                await drain_runners()
             logger.debug("Algorithm bundle completed successfully")
         except asyncio.CancelledError:
             logger.info("Algorithm received CancelledError; signaling stop event")
@@ -282,6 +300,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         algorithm: AlgorithmBundle,
         store: LightningStore,
         stop_evt: ExecutionEvent,
+        runner_drained_evt: ExecutionEvent,
         *,
         ctx: BaseContext,
     ) -> multiprocessing.Process:
@@ -290,7 +309,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         process_factory = cast(Callable[..., multiprocessing.Process], getattr(ctx, "Process"))
         process = process_factory(
             target=_algorithm_process_entrypoint,
-            args=(self, algorithm, store, stop_evt),
+            args=(self, algorithm, store, stop_evt, runner_drained_evt),
             name="algorithm",
         )
         process.start()
@@ -398,6 +417,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         # agree on the start method (fork/spawn/forkserver).
         ctx = multiprocessing.get_context()
         stop_evt = MultiprocessingEvent(ctx=ctx)
+        runner_drained_evt = MultiprocessingEvent(ctx=ctx)
         # Track spawned processes so we can enforce termination ordering and
         # surface non-zero exit codes back to the caller.
         processes: list[multiprocessing.Process] = []
@@ -424,9 +444,21 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 if self.main_process == "algorithm":
                     logger.info("Spawning runner processes...")
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
+
+                    async def drain_runners() -> None:
+                        stop_evt.set()
+                        await asyncio.gather(*(asyncio.to_thread(process.join) for process in processes))
+
                     try:
                         logger.info("Running algorithm...")
-                        asyncio.run(self.execute_algorithm_bundle(algorithm, store, stop_evt))
+                        asyncio.run(
+                            self.execute_algorithm_bundle(
+                                algorithm,
+                                store,
+                                stop_evt,
+                                drain_runners=drain_runners,
+                            )
+                        )
                     finally:
                         # Always request the runner side to unwind once the
                         # algorithm/server portion finishes (successfully or not).
@@ -436,7 +468,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                         raise ValueError("main_process='runner' requires n_runners to be 1")
 
                     logger.info("Spawning algorithm process...")
-                    algorithm_process = self._spawn_algorithm_process(algorithm, store, stop_evt, ctx=ctx)
+                    algorithm_process = self._spawn_algorithm_process(
+                        algorithm,
+                        store,
+                        stop_evt,
+                        runner_drained_evt,
+                        ctx=ctx,
+                    )
                     processes = [algorithm_process]
 
                     # Run the lone runner cooperatively in-process so users can
@@ -445,6 +483,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     # store must therefore be picklable when using spawn).
                     logger.info("Running runner...")
                     asyncio.run(self.execute_runner_bundle(runner, 0, store, stop_evt))
+                    runner_drained_evt.set()
 
                     # Wait for the algorithm process to finish.
                     algorithm_process.join()

@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -24,23 +24,21 @@ def _context_without_store() -> AlgorithmContext:
     )
 
 
-def test_verl_run_rejects_missing_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    """VERL.run must reject missing store and avoid calling run_ppo."""
-    mocked_run_ppo = MagicMock()
-    monkeypatch.setattr(verl_interface, "run_ppo", mocked_run_ppo)
-
-    algorithm = verl_interface.VERL(config={})
+def test_verl_run_rejects_missing_store() -> None:
+    """VERL.run must reject missing store before importing the optional runtime."""
+    algorithm = object.__new__(verl_interface.VERL)
 
     with pytest.raises(ValueError, match="does not support v0 fallback mode"):
         algorithm.run(_context_without_store())
 
-    mocked_run_ppo.assert_not_called()
-
 
 def test_run_ppo_rejects_missing_store() -> None:
     """run_ppo must reject missing store before starting Ray."""
+    verl_entrypoint = pytest.importorskip(
+        "agentlightning.verl.entrypoint", reason="VERL optional dependencies are not installed"
+    )
     with pytest.raises(ValueError, match="does not support v0 fallback mode"):
-        verl_interface.run_ppo(
+        verl_entrypoint.run_ppo(
             config=SimpleNamespace(),
             train_dataset=None,
             val_dataset=None,

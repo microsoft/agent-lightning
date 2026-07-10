@@ -193,7 +193,7 @@ class Trainer:
 
     @staticmethod
     def _make_algorithm(algorithm: Algorithm | None) -> Algorithm:
-        """Resolve the algorithm component, defaulting to Baseline for dev-mode dry runs."""
+        """Resolve the algorithm used by both fit and dev, defaulting to Baseline."""
         if algorithm is None:
             return Baseline()
         if not isinstance(cast("object", algorithm), Algorithm):

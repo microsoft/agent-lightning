@@ -1078,7 +1078,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         # Update the sequence ID to be synced with latest input span
         await self._sync_span_sequence_id(span.rollout_id, span.sequence_id)
-        insert_result = await self._add_many_spans_helper(span.rollout_id, span.attempt_id, [span])
+        insert_result = await self._add_many_spans_helper(
+            span.rollout_id, span.attempt_id, [span], raise_on_failure=True
+        )
         return span if insert_result.inserted > 0 else None
 
     @tracked("add_many_spans")
@@ -1125,59 +1127,122 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         span = Span.from_opentelemetry(
             readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
         )
-        ret = await self._add_many_spans_helper(rollout_id, attempt_id, [span])
+        ret = await self._add_many_spans_helper(rollout_id, attempt_id, [span], raise_on_failure=True)
         return span if ret.inserted > 0 else None
 
-    @tracked("_insert_spans_with_fallback")
-    async def _insert_spans_with_fallback(self, spans: Sequence[Span]) -> Tuple[SpanWriteResult, List[Span]]:
-        """Insert spans into the store. If the insert fails, fallback to inserting one by one."""
-
-        async def _add_span_fallback(collections: T_collections, span: Span) -> bool:
-            try:
-                await collections.spans.insert([span])
-                return True
-            except DuplicatedPrimaryKeyError:
-                logger.error(
-                    f"Duplicated span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
-                )
-                return False
-
+    @tracked("_insert_spans_precisely")
+    async def _insert_spans_precisely(
+        self, spans: Sequence[Span], *, raise_on_failure: bool
+    ) -> Tuple[SpanWriteResult, List[Span]]:
+        """Insert spans in bulk and reconcile partial writes when the bulk operation fails."""
         successful_spans: List[Span] = []
         write_result = SpanWriteResult()
-        try:
-            # This is not guarded by commit=True.
-            async with self.collections.atomic(
-                mode="w", snapshot=self._read_snapshot, commit=False, labels=["spans"]
-            ) as collections:
-                # FIXME: Part of the insertion might complete though the full operation fails.
-                # In that case, the "insert spans" return values might not be accurate.
-                await collections.spans.insert(spans)
-            successful_spans.extend(spans)
-            write_result.inserted = len(spans)
-        except DuplicatedPrimaryKeyError:
-            # There is a duplicate span, we warn it
-            # We fallback to adding the spans one by one
-            for span in spans:
-                async with self.collections.atomic(
-                    mode="w", snapshot=self._read_snapshot, labels=["spans"]
-                ) as collections:
-                    # No need to commit here, it will be simple atomic write operations
-                    if await _add_span_fallback(collections, span):
+
+        unique_spans: Dict[str, Span] = {}
+        for span in spans:
+            if span.span_id in unique_spans:
+                write_result.duplicates += 1
+            else:
+                unique_spans[span.span_id] = span
+
+        if not unique_spans:
+            return write_result, successful_spans
+
+        async with self.collections.atomic(mode="rw", snapshot=self._read_snapshot, labels=["spans"]) as collections:
+            sample = next(iter(unique_spans.values()))
+
+            async def query_existing(span_ids: Sequence[str]) -> Dict[str, Span]:
+                if not span_ids:
+                    return {}
+                existing = await collections.spans.query(
+                    {
+                        "rollout_id": {"exact": sample.rollout_id},
+                        "attempt_id": {"exact": sample.attempt_id},
+                        "span_id": {"within": list(span_ids)},
+                    }
+                )
+                return {span.span_id: span for span in existing}
+
+            existing_before = await query_existing(list(unique_spans))
+            write_result.duplicates += len(existing_before)
+            for span in existing_before.values():
+                logger.error(
+                    "Duplicated span added for rollout=%s, attempt=%s, span=%s. Skipping.",
+                    span.rollout_id,
+                    span.attempt_id,
+                    span.span_id,
+                )
+            pending = [span for span_id, span in unique_spans.items() if span_id not in existing_before]
+            if not pending:
+                return write_result, successful_spans
+
+            try:
+                await collections.spans.insert(pending)
+            except DuplicatedPrimaryKeyError:
+                # A concurrent writer or an ordered bulk insert may have persisted
+                # only part of the batch. Confirm that prefix before retrying the rest.
+                existing_after = await query_existing([span.span_id for span in pending])
+                for span in pending:
+                    if span.span_id in existing_after:
                         successful_spans.append(span)
                         write_result.inserted += 1
-                    else:
+                        continue
+                    try:
+                        await collections.spans.insert([span])
+                    except DuplicatedPrimaryKeyError:
                         write_result.duplicates += 1
+                    except Exception:
+                        if raise_on_failure:
+                            raise
+                        logger.exception(
+                            "Span write failed for rollout=%s, attempt=%s, span=%s.",
+                            span.rollout_id,
+                            span.attempt_id,
+                            span.span_id,
+                        )
+                        write_result.failed += 1
+                    else:
+                        successful_spans.append(span)
+                        write_result.inserted += 1
+            except Exception:
+                if raise_on_failure:
+                    raise
+
+                # A backend can report a failed bulk request after accepting a
+                # prefix. Read it back so accepted spans are not reported failed.
+                existing_after = await query_existing([span.span_id for span in pending])
+                confirmed_ids = set(existing_after)
+                successful_spans.extend(span for span in pending if span.span_id in confirmed_ids)
+                write_result.inserted += len(confirmed_ids)
+                write_result.failed += len(pending) - len(confirmed_ids)
+                logger.exception(
+                    "Span batch write failed for rollout=%s, attempt=%s (%d confirmed, %d failed).",
+                    sample.rollout_id,
+                    sample.attempt_id,
+                    len(confirmed_ids),
+                    len(pending) - len(confirmed_ids),
+                )
+            else:
+                successful_spans.extend(pending)
+                write_result.inserted += len(pending)
 
         return write_result, successful_spans
 
     @tracked("_add_many_spans_helper")
-    async def _add_many_spans_helper(self, rollout_id: str, attempt_id: str, spans: Sequence[Span]) -> SpanWriteResult:
+    async def _add_many_spans_helper(
+        self,
+        rollout_id: str,
+        attempt_id: str,
+        spans: Sequence[Span],
+        *,
+        raise_on_failure: bool = False,
+    ) -> SpanWriteResult:
         """Add many spans to the store. All spans must be for the same rollout and attempt.
 
         This method is divided into three parts:
 
         1. Verify the rollout and attempt exist;
-        2. Insert the spans in bulk; if insert fails, fallback to inserting one by one;
+        2. Insert the spans in bulk and reconcile partial backend failures;
         3. Update rollout and attempt status if necessary.
         """
 
@@ -1194,7 +1259,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if not current_attempt:
                 raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
 
-        write_result, successful_spans = await self._insert_spans_with_fallback(spans)
+        write_result, successful_spans = await self._insert_spans_precisely(spans, raise_on_failure=raise_on_failure)
         if successful_spans:
             await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 

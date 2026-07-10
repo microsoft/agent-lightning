@@ -10,11 +10,11 @@ import pytest
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.algorithm import Baseline
-from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.execution.events import ThreadingEvent
+from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import (
-    AlgorithmContext,
     LLM,
+    AlgorithmContext,
     NamedResources,
     OtelResource,
     Span,
@@ -40,6 +40,14 @@ class _AdapterStub(TraceAdapter[Dict[str, Any]]):
             "count": len(source),
             "attempt_ids": sorted({span.attempt_id for span in source}),
         }
+
+
+@pytest.mark.asyncio
+async def test_baseline_requires_at_least_one_dataset() -> None:
+    algorithm = Baseline()
+
+    with pytest.raises(ValueError, match="requires at least one dataset"):
+        await algorithm.run(_context(InMemoryLightningStore()))
 
 
 @dataclass

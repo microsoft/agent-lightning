@@ -28,6 +28,7 @@ from typing import (
     Optional,
     Sequence,
     TypeVar,
+    cast,
 )
 
 from agentlightning.emitter.reward import emit_reward, find_final_reward
@@ -35,6 +36,7 @@ from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import (
+    AgentSpanPayload,
     AttemptedRollout,
     Hook,
     NamedResources,
@@ -90,7 +92,7 @@ class LitAgentRunner(Runner[T_task]):
         interval_jitter: float = 0.5,
         heartbeat_launch_mode: Literal["asyncio", "thread"] = "thread",
         heartbeat_include_gpu: bool = False,
-        rollout_execution_policy: RolloutExecutionPolicy = "inline",
+        rollout_execution_policy: RolloutExecutionPolicy = "thread",
         rollout_process_workers: int = 1,
     ) -> None:
         """Initialize the agent runner.
@@ -110,8 +112,9 @@ class LitAgentRunner(Runner[T_task]):
             heartbeat_include_gpu: Whether to include GPU stats in heartbeat snapshots.
                 Querying GPU stats can be slow under load, so this is disabled by default.
             rollout_execution_policy: How synchronous rollout methods are executed.
-                `"inline"` preserves existing behavior and runs in the event loop.
-                `"thread"` uses `asyncio.to_thread` for blocking agents.
+                `"thread"` uses `asyncio.to_thread` and is the default so synchronous
+                agents do not block heartbeats or other runner tasks.
+                `"inline"` runs directly in the event loop.
                 `"process"` uses a process pool for pickleable agents and payloads.
             rollout_process_workers: Process pool size used when `rollout_execution_policy="process"`.
         """
@@ -392,6 +395,8 @@ class LitAgentRunner(Runner[T_task]):
                 trace_spans = []
                 result_recognized = True
             else:
+                if not all(isinstance(cast(object, span_payload), AgentSpanPayload) for span_payload in raw_result):
+                    raise ValueError("A rollout result must be a list of AgentSpanPayload values.")
                 sequence_ids = await store.get_many_span_sequence_ids(
                     [(rollout.rollout_id, rollout.attempt.attempt_id) for _ in range(len(raw_result))]
                 )
@@ -410,7 +415,11 @@ class LitAgentRunner(Runner[T_task]):
                     )
                     for span_payload, sequence_id in zip(raw_result, sequence_ids, strict=True)
                 ]
-                await store.add_many_spans(trace_spans)
+                write_result = await store.add_many_spans(trace_spans)
+                if write_result.failed:
+                    raise RuntimeError(
+                        f"Failed to persist {write_result.failed} of {len(trace_spans)} rollout span(s)."
+                    )
                 result_recognized = True
 
         if not result_recognized:
@@ -742,14 +751,11 @@ class LitAgentRunner(Runner[T_task]):
                         f"{self._log_prefix(rollout_id)} Starting sync rollout method "
                         f"with policy={self._rollout_execution_policy}."
                     )
-                    result = await self._await_with_event(
-                        self._execute_sync_rollout(
-                            rollout_method,
-                            next_rollout.input,
-                            resources=resources_update.resources,
-                            rollout=next_rollout,
-                        ),
-                        event,
+                    result = await self._execute_sync_rollout(
+                        rollout_method,
+                        next_rollout.input,
+                        resources=resources_update.resources,
+                        rollout=next_rollout,
                     )
                     logger.debug(f"{self._log_prefix(rollout_id)} Sync rollout method completed.")
 
@@ -844,7 +850,9 @@ class LitAgentRunner(Runner[T_task]):
                     return
 
                 # Execute the step
-                await self._step_impl(next_rollout, event=event)
+                # A stop request prevents new dequeue operations but does not cancel
+                # an attempt that this runner has already claimed.
+                await self._step_impl(next_rollout)
 
                 num_tasks_processed += 1
                 if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
@@ -878,9 +886,10 @@ class LitAgentRunner(Runner[T_task]):
                 If not provided, the latest resources from the store will be used.
             mode: Optional rollout mode ("train" or "validation"). If not provided,
                 the agent's default mode will be used.
-            event: Optional ExecutionEvent object to cancel this step cooperatively.
-                If already set, no rollout is created. If set while the rollout is
-                running, the attempt is marked `cancelled` and `CancelledError` is raised.
+            event: Optional ExecutionEvent object to cancel an asynchronous step
+                cooperatively. If already set, no rollout is created. Synchronous
+                work cannot be stopped safely once started, so it
+                completes and records its real result.
 
         Returns:
             The completed rollout.
