@@ -32,7 +32,7 @@ def _runner_process_entrypoint(
     on macOS and Windows.
     """
     try:
-        asyncio.run(strategy._execute_runner(runner, worker_id, store, stop_evt))
+        asyncio.run(strategy.execute_runner_bundle(runner, worker_id, store, stop_evt))
     except KeyboardInterrupt:
         logger.warning("Runner (asyncio) %s received KeyboardInterrupt; exiting gracefully", worker_id)
     except BaseException as exc:
@@ -52,7 +52,7 @@ def _algorithm_process_entrypoint(
     on macOS and Windows.
     """
     try:
-        asyncio.run(strategy._execute_algorithm(algorithm, store, stop_evt))
+        asyncio.run(strategy.execute_algorithm_bundle(algorithm, store, stop_evt))
     except KeyboardInterrupt:
         logger.warning("Algorithm (asyncio.run) received KeyboardInterrupt; exiting gracefully")
     except BaseException as exc:
@@ -165,7 +165,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         )
         self.allowed_exit_codes = tuple(allowed_exit_codes)
 
-    async def _execute_algorithm(
+    async def execute_algorithm_bundle(
         self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
     ) -> None:
         facade_store: LightningStore = store
@@ -213,7 +213,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 else:
                     logger.debug("LightningStore server shutdown completed")
 
-    async def _execute_runner(
+    async def execute_runner_bundle(
         self,
         runner: RunnerBundle,
         worker_id: int,
@@ -263,15 +263,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     ) -> list[multiprocessing.Process]:
         """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
+        process_factory = cast(Callable[..., multiprocessing.Process], getattr(ctx, "Process"))
 
         for i in range(self.n_runners):
-            process = cast(
-                multiprocessing.Process,
-                ctx.Process(
-                    target=_runner_process_entrypoint,
-                    args=(self, runner, i, store, stop_evt),
-                    name=f"runner-{i}",
-                ),  # type: ignore
+            process = process_factory(
+                target=_runner_process_entrypoint,
+                args=(self, runner, i, store, stop_evt),
+                name=f"runner-{i}",
             )
             process.start()
             logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)
@@ -289,13 +287,11 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     ) -> multiprocessing.Process:
         """Used when `main_process == "runner"`."""
 
-        process = cast(
-            multiprocessing.Process,
-            ctx.Process(
-                target=_algorithm_process_entrypoint,
-                args=(self, algorithm, store, stop_evt),
-                name="algorithm",
-            ),  # type: ignore
+        process_factory = cast(Callable[..., multiprocessing.Process], getattr(ctx, "Process"))
+        process = process_factory(
+            target=_algorithm_process_entrypoint,
+            args=(self, algorithm, store, stop_evt),
+            name="algorithm",
         )
         process.start()
         logger.debug("Spawned algorithm process %s (pid=%s)", process.name, process.pid)
@@ -412,11 +408,11 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         try:
             if self.role == "algorithm":
                 logger.info("Running algorithm solely...")
-                asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+                asyncio.run(self.execute_algorithm_bundle(algorithm, store, stop_evt))
             elif self.role == "runner":
                 if self.n_runners == 1:
                     logger.info("Running runner solely...")
-                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
+                    asyncio.run(self.execute_runner_bundle(runner, 0, store, stop_evt))
                 else:
                     logger.info("Spawning runner processes...")
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
@@ -430,7 +426,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     try:
                         logger.info("Running algorithm...")
-                        asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+                        asyncio.run(self.execute_algorithm_bundle(algorithm, store, stop_evt))
                     finally:
                         # Always request the runner side to unwind once the
                         # algorithm/server portion finishes (successfully or not).
@@ -448,7 +444,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     # the background process spawned above (the provided
                     # store must therefore be picklable when using spawn).
                     logger.info("Running runner...")
-                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
+                    asyncio.run(self.execute_runner_bundle(runner, 0, store, stop_evt))
 
                     # Wait for the algorithm process to finish.
                     algorithm_process.join()

@@ -5,7 +5,7 @@ import logging
 import threading
 from contextlib import suppress
 from queue import SimpleQueue
-from typing import Any, Awaitable, Callable, List, Literal, Optional, Tuple
+from typing import Any, Callable, Coroutine, List, Literal, Optional, Tuple
 
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
 from agentlightning.store.base import LightningStore
@@ -67,7 +67,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             LightningEnvVar.AGL_MANAGED_STORE, override=managed_store, fallback=True
         )
 
-    async def _run_until_completed_or_canceled(self, coro: Awaitable[Any], stop_evt: ExecutionEvent) -> Any:
+    async def _run_until_completed_or_canceled(self, coro: Coroutine[Any, Any, Any], stop_evt: ExecutionEvent) -> Any:
         """Run `coro` until it finishes or a cooperative stop is requested.
 
         Control flow:
@@ -85,7 +85,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         frequently; cooperative shutdown (checking `stop_evt` inside the
         bundle) remains the preferred approach.
         """
-        task: asyncio.Task[Any] = asyncio.create_task(coro)  # type: ignore
+        task = asyncio.create_task(coro)
         task_exception: Optional[BaseException] = None
 
         async def watcher() -> None:
@@ -101,7 +101,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             # Grace period: let a cooperative bundle exit on its own.
             try:
                 # At this point of waiting, the main task should already see the stop event.
-                await asyncio.wait_for(asyncio.shield(task), timeout=self.graceful_delay)  # type: ignore
+                await asyncio.wait_for(asyncio.shield(task), timeout=self.graceful_delay)
                 logger.debug("Bundle finished by itself during grace period.")
                 return  # bundle finished by itself during grace period
             except asyncio.TimeoutError:
@@ -123,9 +123,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         try:
             # We don't wait on FIRST_COMPLETED here, because we want the watcher
             # to be able to grant a grace window after stop_evt flips.
-            await asyncio.wait(
-                {task, watcher_task}, return_when=asyncio.FIRST_COMPLETED
-            )  # pyright: ignore[reportUnknownArgumentType]
+            await asyncio.wait({task, watcher_task}, return_when=asyncio.FIRST_COMPLETED)
         finally:
             # If the main task hasn't completed yet (e.g., watcher scheduled cancel),
             # finish the cancellation handshake.
@@ -145,7 +143,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             else:
                 # Task completed naturally; retrieve result.
                 try:
-                    result = await task  # type: ignore
+                    result = await task
                 except asyncio.CancelledError:
                     pass
                 except BaseException as exc:
@@ -158,7 +156,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         if task_exception is not None:
             raise task_exception
 
-        return result  # type: ignore
+        return result
 
     def _run_algorithm(
         self,

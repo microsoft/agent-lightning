@@ -10,7 +10,6 @@ from typing import Any, Callable, Generic, TypeVar
 
 from agentlightning.types import NamedResources, Rollout, RolloutResult
 
-
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -50,16 +49,11 @@ class LitAgent(Generic[T]):
 
         Override this method for customized async detection logic.
         """
-        return (
-            (
-                hasattr(self, "training_rollout_async")
-                and self.__class__.training_rollout_async is not LitAgent.training_rollout_async  # type: ignore
-            )
-            or (
-                hasattr(self, "validation_rollout_async")
-                and self.__class__.validation_rollout_async is not LitAgent.validation_rollout_async  # type: ignore
-            )
-            or (hasattr(self, "rollout_async") and self.__class__.rollout_async is not LitAgent.rollout_async)  # type: ignore
+        return any(
+            method_name in base.__dict__
+            for base in type(self).__mro__
+            if base is not LitAgent
+            for method_name in ("training_rollout_async", "validation_rollout_async", "rollout_async")
         )
 
     def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:

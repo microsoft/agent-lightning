@@ -5,7 +5,7 @@
 import json
 import logging
 import traceback
-from typing import Any, Dict, List, Sequence, Type, TypeVar, Union, cast
+from typing import Any, Dict, List, Mapping, Sequence, Type, TypeVar, Union, cast
 from warnings import filterwarnings
 
 import opentelemetry.trace as trace_api
@@ -24,6 +24,7 @@ from agentlightning.types import Attributes, AttributeValue, SpanLike
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
+_UNSET_TRACER_PROVIDER = object()
 
 __all__ = [
     "full_qualified_name",
@@ -49,7 +50,7 @@ T_SpanLike = TypeVar("T_SpanLike", bound=SpanLike)
 T_SpanProcessor = TypeVar("T_SpanProcessor", bound=SpanProcessor)
 
 
-def full_qualified_name(obj: type) -> str:
+def full_qualified_name(obj: type[Any]) -> str:
     if str(obj.__module__) == "builtins":
         return obj.__qualname__
     return f"{obj.__module__}.{obj.__qualname__}"
@@ -64,7 +65,7 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
     """
     from agentlightning.tracer.otel import LightningSpanProcessor
 
-    if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
+    if getattr(trace_api, "_TRACER_PROVIDER", _UNSET_TRACER_PROVIDER) is None:
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
     tracer_provider = otel_get_tracer_provider()
     if not isinstance(tracer_provider, TracerProviderImpl):
@@ -89,10 +90,11 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
         emitter_debug = logging.DEBUG >= logger_effective_level
 
     if emitter_debug:
-        active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
+        tracer_provider_api = cast(Any, tracer_provider)
+        active_span_processor = tracer_provider_api._active_span_processor
         processors: List[str] = []
         active_span_processor_cls = active_span_processor.__class__.__name__
-        for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+        for processor in active_span_processor._span_processors:
             if isinstance(processor, LightningSpanProcessor):
                 # The legacy case for tracers without OTLP support.
                 processors.append(f"{active_span_processor_cls} - {processor!r}")
@@ -103,7 +105,7 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
                     processors.append(f"{active_span_processor_cls} - {processor_cls} - {processor.span_exporter!r}")
                 elif isinstance(processor.span_exporter, OTLPSpanExporter):
                     # You need to be careful if the code goes into this path.
-                    endpoint = processor.span_exporter._endpoint  # pyright: ignore[reportPrivateUsage]
+                    endpoint = cast(Any, processor.span_exporter)._endpoint
                     processors.append(
                         f"{active_span_processor_cls} - {processor_cls} - "
                         f"{processor.span_exporter.__class__.__name__}(endpoint={endpoint!r})"
@@ -136,7 +138,8 @@ def get_span_processors(
         A list of span processors of the expected type.
     """
     processors: List[T_SpanProcessor] = []
-    for processor in tracer_provider._active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+    tracer_provider_api = cast(Any, tracer_provider)
+    for processor in tracer_provider_api._active_span_processor._span_processors:
         if isinstance(processor, expected_type):
             processors.append(processor)
     return processors
@@ -154,7 +157,7 @@ def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
     Raises:
         RuntimeError: If OpenTelemetry was not initialized before calling this helper.
     """
-    if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
+    if getattr(trace_api, "_TRACER_PROVIDER", _UNSET_TRACER_PROVIDER) is None:
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
 
     tracer_provider = get_tracer_provider(inspect=True)  # inspection is on by default
@@ -176,7 +179,7 @@ def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
             # We use an empty span processor to avoid emitting spans to the tracer
             SynchronousMultiSpanProcessor(),
             tracer_provider.id_generator,
-            InstrumentationInfo("agentlightning", "", ""),  # type: ignore
+            cast(Any, InstrumentationInfo)("agentlightning", "", ""),
             SpanLimits(),
             InstrumentationScope(
                 "agentlightning",
@@ -209,7 +212,7 @@ def extract_tags_from_attributes(attributes: Dict[str, Any]) -> List[str]:
     return TypeAdapter(List[str]).validate_python(maybe_tag_list)
 
 
-def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
+def make_link_attributes(links: Mapping[str, object]) -> Dict[str, Any]:
     """Convert a dictionary of links into flattened attributes for span linking.
 
     Links example:
@@ -223,7 +226,7 @@ def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
     """
     link_list: List[Dict[str, str]] = []
     for key, value in links.items():
-        if not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+        if not isinstance(value, str):
             raise ValueError(f"Link value must be a string, got {type(value)} for key '{key}'")
         link_list.append({LinkAttributes.KEY_MATCH.value: key, LinkAttributes.VALUE_MATCH.value: value})
     return flatten_attributes({LightningSpanAttributes.LINK.value: link_list}, expand_leaf_lists=True)
@@ -423,40 +426,43 @@ def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], Lis
 
         for part in parts[:-1]:
             # Ensure intermediate node is a dict
-            if part not in curr or not isinstance(curr[part], dict):
+            next_node = curr.get(part)
+            if not isinstance(next_node, dict):
                 curr[part] = {}
-            curr = curr[part]  # type: ignore[assignment]
+                next_node = curr[part]
+            curr = cast(Dict[str, Any], next_node)
 
         curr[parts[-1]] = value
 
     # 2) Recursively convert dicts-with-consecutive-numeric-keys into lists
-    def convert(node: Union[Dict[str, Any], List[Any]]) -> Union[Dict[str, Any], List[Any]]:
+    def convert(node: object) -> object:
         if isinstance(node, dict):
+            node_dict = cast(Dict[str, Any], node)
             # First convert children
-            for k, v in list(node.items()):
-                node[k] = convert(v)
+            for k, v in list(node_dict.items()):
+                node_dict[k] = convert(v)
 
-            if not node:
+            if not node_dict:
                 # empty dict stays dict
-                return node
+                return node_dict
 
             # Check if keys are all numeric strings
-            keys = list(node.keys())
-            if all(isinstance(k, str) and k.isdigit() for k in keys):  # pyright: ignore[reportUnnecessaryIsInstance]
+            keys = list(node_dict.keys())
+            if all(k.isdigit() for k in keys):
                 indices = sorted(int(k) for k in keys)
                 # Must be exactly 0..n-1
                 if indices == list(range(len(indices))):
-                    return [node[str(i)] for i in range(len(indices))]
+                    return [node_dict[str(i)] for i in range(len(indices))]
 
-            return node
+            return node_dict
 
-        if isinstance(node, list):  # pyright: ignore[reportUnnecessaryIsInstance]
-            return [convert(v) for v in node]
+        if isinstance(node, list):
+            node_list = cast(List[Any], node)
+            return [convert(v) for v in node_list]
 
-        # Keep as is
         return node
 
-    return convert(root)
+    return cast(Union[Dict[str, Any], List[Any]], convert(root))
 
 
 def sanitize_attribute_value(object: Any, force: bool = True) -> AttributeValue:

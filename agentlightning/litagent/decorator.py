@@ -95,9 +95,7 @@ PromptRolloutFunc = Union[
 
 
 class FunctionalLitAgentFunc(Protocol[T_contra]):
-    def __call__(
-        self, task: T_contra, *args: Any, **kwargs: Any
-    ) -> Union[RolloutResult, Awaitable[RolloutResult]]: ...
+    def __call__(self, task: T_contra, *args: Any, **kwargs: Any) -> Union[RolloutResult, Awaitable[RolloutResult]]: ...
 
 
 class FunctionalLitAgent(LitAgent[T]):
@@ -128,7 +126,7 @@ class FunctionalLitAgent(LitAgent[T]):
         self._sig = inspect.signature(rollout_func)
 
         # Copy function metadata to preserve type hints and other attributes
-        functools.update_wrapper(self, rollout_func)  # type: ignore
+        functools.update_wrapper(self, rollout_func)
 
     def _accepts_rollout(self) -> bool:
         return "rollout" in self._sig.parameters
@@ -141,7 +139,7 @@ class FunctionalLitAgent(LitAgent[T]):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Make the agent instance callable, preserving the original function behavior."""
-        return self._rollout_func(*args, **kwargs)  # type: ignore
+        return self._rollout_func(*args, **kwargs)
 
     def __reduce__(self) -> tuple[Any, tuple[str, str]]:
         """Restore module-level decorated agents by import path under spawn."""
@@ -168,7 +166,10 @@ class FunctionalLitAgent(LitAgent[T]):
             raise RuntimeError(f"{self._rollout_func} is asynchronous. Use rollout_async instead.")
 
         kwargs = self._get_kwargs(resources, rollout)
-        return self._rollout_func(task, **kwargs)  # type: ignore
+        result = self._rollout_func(task, **kwargs)
+        if inspect.isawaitable(result):
+            raise RuntimeError(f"{self._rollout_func} returned an awaitable. Use rollout_async instead.")
+        return result
 
     async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutResult:
         """Execute an asynchronous rollout using the wrapped function.
@@ -188,7 +189,10 @@ class FunctionalLitAgent(LitAgent[T]):
             raise RuntimeError(f"{self._rollout_func} is synchronous. Use rollout instead.")
 
         kwargs = self._get_kwargs(resources, rollout)
-        return await self._rollout_func(task, **kwargs)  # type: ignore
+        result = self._rollout_func(task, **kwargs)
+        if not inspect.isawaitable(result):
+            raise RuntimeError(f"{self._rollout_func} returned synchronously. Use rollout instead.")
+        return await result
 
     def _get_kwargs(self, resources: NamedResources, rollout: Rollout) -> Dict[str, Any]:
         """Prepare keyword arguments expected by the wrapped rollout function.

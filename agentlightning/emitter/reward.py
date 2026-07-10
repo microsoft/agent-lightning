@@ -39,6 +39,14 @@ __all__ = [
 ]
 
 
+def _ensure_numeric_reward(reward: object) -> float:
+    if isinstance(reward, (int, bool)):
+        return float(reward)
+    if isinstance(reward, float):
+        return reward
+    raise TypeError(f"Reward must be a number, got: {type(reward)}")
+
+
 class RewardDimension(TypedDict):
     """Type representing a single dimension in a multi-dimensional reward."""
 
@@ -102,8 +110,8 @@ def emit_reward(
     else:
         if isinstance(reward, (int, bool)):
             reward = float(reward)
-        elif not isinstance(reward, float):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError(f"Reward must be a number, got: {type(reward)}")
+        else:
+            reward = _ensure_numeric_reward(reward)
         reward_dimensions.append(RewardDimension(name="primary", value=reward))
 
     return emit_annotation(

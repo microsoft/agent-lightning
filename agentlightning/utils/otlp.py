@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gzip
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar, cast
 
 from fastapi import Request, Response
 from google.protobuf import json_format
@@ -298,7 +298,8 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
             # It means that the server supports OTLP endpoint.
             for span in spans:
                 # Override the resources so that the server knows where the request comes from.
-                span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
+                span_api = cast(Any, span)
+                span_api._resource = span_api._resource.merge(
                     Resource.create(
                         {
                             LightningResourceAttributes.ROLLOUT_ID.value: self._rollout_id,

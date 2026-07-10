@@ -6,7 +6,7 @@ import logging
 import os
 import threading
 from contextlib import asynccontextmanager, contextmanager
-from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional, cast
 
 import agentops
 import agentops.sdk.core
@@ -102,7 +102,7 @@ class AgentOpsTracer(OtelTracer):
         if self.agentops_managed:
             os.environ.setdefault("AGENTOPS_API_KEY", "dummy")
             if not agentops.get_client().initialized:
-                agentops.init(auto_start_session=False)  # type: ignore
+                cast(Any, agentops).init(auto_start_session=False)
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
                 logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized. Skip initialization.")
@@ -118,7 +118,7 @@ class AgentOpsTracer(OtelTracer):
             self._lightning_span_processor = span_processors[0]
         else:
             self._lightning_span_processor = LightningSpanProcessor()
-            self._get_tracer_provider().add_span_processor(self._lightning_span_processor)  # type: ignore
+            cast(Any, self._get_tracer_provider()).add_span_processor(self._lightning_span_processor)
 
     def teardown_worker(self, worker_id: int) -> None:
         super().teardown_worker(worker_id)
@@ -186,16 +186,16 @@ class AgentOpsTracer(OtelTracer):
     @contextmanager
     def _agentops_trace_context(self, rollout_id: Optional[str], attempt_id: Optional[str], kwargs: dict[str, Any]):
         trace = agentops.start_trace(**kwargs)
-        status = StatusCode.OK  # type: ignore
+        status = StatusCode.OK
         try:
             yield
         except Exception as e:
             # This will catch errors in user code.
-            status = StatusCode.ERROR  # type: ignore
+            status = StatusCode.ERROR
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}: {e}")
             raise  # should reraise the error here so that runner can handle it
         finally:
-            agentops.end_trace(trace, end_state=status)  # type: ignore
+            cast(Any, agentops).end_trace(trace, end_state=status)
 
     def get_langchain_handler(self, tags: List[str] | None = None) -> LangchainCallbackHandler:
         """
@@ -236,13 +236,14 @@ class AgentOpsTracer(OtelTracer):
                     "AgentOps might not work properly."
                 )
 
-            if not isinstance(instance.provider, TracerProviderImpl):  # type: ignore
+            provider = cast(object, getattr(instance, "provider"))
+            if not isinstance(provider, TracerProviderImpl):
                 raise RuntimeError("Unsupported TracerProvider type for AgentOps instrumentation.")
 
-            self._tracer_provider = instance.provider
+            self._tracer_provider = provider
             return self._tracer_provider
         except AttributeError:
             # old versions
-            instance = TracingCore.get_instance()  # type: ignore
-            self._tracer_provider = instance._provider  # type: ignore
-            return self._tracer_provider  # type: ignore
+            instance = cast(Any, TracingCore).get_instance()
+            self._tracer_provider = cast(TracerProviderImpl, instance._provider)
+            return self._tracer_provider

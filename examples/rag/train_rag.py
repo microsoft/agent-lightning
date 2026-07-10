@@ -14,7 +14,7 @@ import os
 import uuid
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 from rag_agent import RAGAgent  # Make sure to import your RAGAgent class
@@ -22,7 +22,7 @@ from rag_agent import RAGAgent  # Make sure to import your RAGAgent class
 import agentlightning as agl
 
 # Base configuration (default configuration, can be overridden)
-RL_TRAINING_CONFIG: Dict[str, Any] = {
+RL_TRAINING_CONFIG: dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",  # Use GRPO algorithm
         "use_kl_in_reward": False,
@@ -86,24 +86,24 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
 }
 
 
-def config_train_fast() -> Dict[str, Any]:
+def config_train_fast() -> dict[str, Any]:
     """Fast training configuration for CI/testing"""
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     random_suffix = uuid.uuid4().hex[:8]
-    EXPERIMENT_NAME = f"rag_fast_{timestamp}_{random_suffix}"
+    experiment_name = f"rag_fast_{timestamp}_{random_suffix}"
 
-    PROJECT_NAME = "AgentLightningCI"
+    project_name = "AgentLightningCI"
 
-    # Simulate writing to $GITHUB_OUTPUT if it’s set
+    # Simulate writing to $GITHUB_OUTPUT if it's set
     github_output = os.getenv("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as f:
-            f.write(f"project_name={PROJECT_NAME}\n")
-            f.write(f"run_name={EXPERIMENT_NAME}\n")
+            f.write(f"project_name={project_name}\n")
+            f.write(f"run_name={experiment_name}\n")
 
         print("Set environment variables:")
-        print(f"PROJECT_NAME={PROJECT_NAME}")
-        print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
+        print(f"PROJECT_NAME={project_name}")
+        print(f"EXPERIMENT_NAME={experiment_name}")
 
     config = deepcopy(RL_TRAINING_CONFIG)
 
@@ -111,13 +111,13 @@ def config_train_fast() -> Dict[str, Any]:
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
     config["trainer"]["total_epochs"] = 2
     config["trainer"]["test_freq"] = 5
-    config["trainer"]["experiment_name"] = EXPERIMENT_NAME
-    config["trainer"]["project_name"] = PROJECT_NAME
+    config["trainer"]["experiment_name"] = experiment_name
+    config["trainer"]["project_name"] = project_name
     config["trainer"]["logger"] = ["console", "wandb"]
     return config
 
 
-def config_train_single_gpu() -> Dict[str, Any]:
+def config_train_single_gpu() -> dict[str, Any]:
     """Single GPU training optimized configuration (optimized for 24GB GPU memory)"""
 
     config = deepcopy(RL_TRAINING_CONFIG)
@@ -138,7 +138,7 @@ def config_train_single_gpu() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
+def train(config: dict[str, Any], active_agent: str | None) -> None:
     """Train the RAG agent with the given configuration."""
 
     # 1. Instantiate your Agent
@@ -149,7 +149,8 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 
     # 3. Initialize Trainer
     # n_runners=4 means 4 concurrent rollout runners (can be reduced if insufficient memory, or managed internally by VERL)
-    trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
+    adapter = agl.TracerTraceToTriplet(agent_match=active_agent)
+    trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter=adapter)
 
     # 4. Load data
     # NOTE: Fill in the path to your previously converted parquet file here
@@ -159,8 +160,8 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     val_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
 
     # Keep the rest of the code unchanged
-    train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
-    val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
+    train_data: list[dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
+    val_data: list[dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
 
     # 5. Start training
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)

@@ -10,6 +10,7 @@ import re
 import weakref
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
+from importlib import import_module
 from typing import (
     Any,
     AsyncIterator,
@@ -21,13 +22,7 @@ from typing import (
     cast,
 )
 
-import weave
 from opentelemetry.semconv.attributes import exception_attributes
-from weave.trace.call import Call
-from weave.trace.settings import UserSettings
-from weave.trace.weave_client import WeaveClient
-from weave.trace_server import trace_server_interface as tsi
-from weave.wandb_interface.context import set_wandb_api_context
 
 from agentlightning.instrumentation.weave import InMemoryWeaveTraceServer, instrument_weave, uninstrument_weave
 from agentlightning.semconv import LightningResourceAttributes, LightningSpanAttributes
@@ -53,6 +48,14 @@ from agentlightning.utils.otel import (
 from .base import Tracer, with_active_tracer_context
 
 logger = logging.getLogger(__name__)
+
+weave: Any = import_module("weave")
+UserSettings: Any = getattr(import_module("weave.trace.settings"), "UserSettings")
+tsi: Any = import_module("weave.trace_server.trace_server_interface")
+set_wandb_api_context: Callable[..., Any] = getattr(
+    import_module("weave.wandb_interface.context"),
+    "set_wandb_api_context",
+)
 
 
 def op_name_to_func_name(op_name: str) -> str:
@@ -80,7 +83,7 @@ def get_timestamp_or_throw(date: Optional[datetime], field_name: str) -> float:
 class WeaveSpanRecordingContext(SpanRecordingContext):
     """Universal interface for recording operations on a Weave call."""
 
-    def __init__(self, call: Call) -> None:
+    def __init__(self, call: Any) -> None:
         self._call = call
 
     def record_exception(self, exception: BaseException) -> None:
@@ -132,9 +135,12 @@ class WeaveSpanRecordingContext(SpanRecordingContext):
                 and not key.startswith(LightningSpanAttributes.OPERATION_OUTPUT.value + ".")
                 and not key == LightningSpanAttributes.OPERATION_NAME.value
             ):
-                if self._call.summary is None:
-                    self._call.summary = {}
-                self._call.summary[key] = value
+                summary_value = getattr(self._call, "summary", None)
+                if summary_value is None:
+                    summary_value = {}
+                    setattr(self._call, "summary", summary_value)
+                summary = cast(Dict[str, Any], summary_value)
+                summary[key] = value
 
     def record_status(self, status_code: StatusCode, description: Optional[str] = None) -> None:
         if status_code == "ERROR":
@@ -167,7 +173,7 @@ class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
     def __init__(
         self,
         partial_call_callback: Callable[[Dict[str, Any]], None],
-        complete_call_callback: Callable[[tsi.CallSchema], None],
+        complete_call_callback: Callable[[Any], None],
     ):
         super().__init__()
         self.partial_call_callback = partial_call_callback
@@ -187,7 +193,7 @@ class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
             else:
                 logger.error(f"Call {call_id} not found in partial_calls or calls")
 
-    def call_start(self, req: tsi.CallStartReq) -> tsi.CallStartRes:
+    def call_start(self, req: Any) -> Any:
         try:
             ret = super().call_start(req)
             self.trigger_callbacks(ret.id)
@@ -196,7 +202,7 @@ class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
             logger.exception(f"Error calling call_start: {req}", exc_info=True)
             raise
 
-    def call_end(self, req: tsi.CallEndReq) -> tsi.CallEndRes:
+    def call_end(self, req: Any) -> Any:
         try:
             ret = super().call_end(req)
             self.trigger_callbacks(req.end.id)
@@ -225,7 +231,7 @@ class WeaveTracer(Tracer):
         self,
         *,
         project_name: str | None = None,
-        weave_user_settings: UserSettings | None = None,
+        weave_user_settings: Any | None = None,
         instrument_managed: bool = True,
     ):
         """Initialize a WeaveTracer instance.
@@ -246,7 +252,7 @@ class WeaveTracer(Tracer):
         )
 
         self._default_sequence_counter: int = 0
-        self._calls: Dict[str, tsi.CallSchema] = {}  # call_id -> call
+        self._calls: Dict[str, Any] = {}  # call_id -> call
         self._spans: List[Span] = []  # spans in the current trace
         self._rollout_id: Optional[str] = None
         self._attempt_id: Optional[str] = None
@@ -364,17 +370,15 @@ class WeaveTracer(Tracer):
 
         try:
             # Create a new trace call object in Weave
-            trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
-                op=arg_op, inputs=arg_inputs
-            )
+            trace_call = weave_client.create_call(op=arg_op, inputs=arg_inputs)
 
             try:
                 yield trace_call
                 # Finish trace even if no exception
-                weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+                weave_client.finish_call(trace_call)
             except Exception as exc:
                 # Finish trace and log any exception
-                weave_client.finish_call(trace_call, exception=exc)  # pyright: ignore[reportUnknownMemberType]
+                weave_client.finish_call(trace_call, exception=exc)
                 logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={exc}")
                 raise
 
@@ -400,13 +404,13 @@ class WeaveTracer(Tracer):
         if timestamp is not None:
             logger.warning("Weave doesn't support customizing the start time of a call. Timestamp is ignored.")
         weave_client = self._get_weave_client()
-        trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
+        trace_call = weave_client.create_call(
             op=name,
             attributes=attributes,
             inputs={},
         )
         # Immediately finish the call
-        weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+        weave_client.finish_call(trace_call)
         # We don't wait for the call to be propagated to the server.
         start_time = trace_call.started_at.timestamp() if trace_call.started_at else None
         end_time = trace_call.ended_at.timestamp() if trace_call.ended_at else None
@@ -436,7 +440,7 @@ class WeaveTracer(Tracer):
         if end_time is not None:
             logger.warning("Weave doesn't support customizing the end time of a call. Timestamp is ignored.")
         weave_client = self._get_weave_client()
-        trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
+        trace_call = weave_client.create_call(
             op=name,
             attributes=attributes,
             inputs={},
@@ -448,7 +452,7 @@ class WeaveTracer(Tracer):
             recording_context.record_exception(exc)
             raise
         finally:
-            weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+            weave_client.finish_call(trace_call)
 
     async def _init_trace_context(self) -> None:
         """Initialize the trace context."""
@@ -458,7 +462,7 @@ class WeaveTracer(Tracer):
         self._complete_call_futures.clear()
         self._loop = weakref.ref(asyncio.get_running_loop())
 
-    def _get_weave_client(self) -> WeaveClient:
+    def _get_weave_client(self) -> Any:
         """Get the Weave client."""
         weave_client = weave.get_client()
         if not weave_client:
@@ -513,7 +517,7 @@ class WeaveTracer(Tracer):
         except Exception as exc:
             logger.exception(f"Error creating call start task: {exc}", exc_info=True)
 
-    def complete_call_callback(self, call: tsi.CallSchema) -> None:
+    def complete_call_callback(self, call: Any) -> None:
         try:
             loop, is_current_loop = self._ensure_loop()
             if is_current_loop:
@@ -548,7 +552,7 @@ class WeaveTracer(Tracer):
         sequence_id = await self._get_next_sequence_id()
         return sequence_id
 
-    async def complete_call_handler(self, call: tsi.CallSchema) -> None:
+    async def complete_call_handler(self, call: Any) -> None:
         """Handler called when a Weave Call finishes.
 
         Converts the call (including nested children) into spans and stores them in LightningStore.
@@ -579,7 +583,7 @@ class WeaveTracer(Tracer):
 
     async def convert_call_to_span(
         self,
-        call: tsi.CallSchema,
+        call: Any,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
         sequence_id: Optional[int] = None,

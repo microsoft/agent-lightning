@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from __future__ import annotations
-
 """Typed representations of tunable resources shared between Agent Lightning components."""
+
+from __future__ import annotations
 
 import inspect
 import logging
@@ -73,7 +73,7 @@ class ProxyLLM(LLM):
     endpoint so that downstream services can attribute requests correctly.
     """
 
-    resource_type: Literal["proxy_llm"] = "proxy_llm"  # type: ignore
+    resource_type: Literal["proxy_llm"] = "proxy_llm"  # pyright: ignore[reportIncompatibleVariableOverride]
     _initialized: bool = False
 
     def model_post_init(self, __context: Any) -> None:

@@ -42,7 +42,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from config import config_fast, config_qwen
 from generate_tasks import generate_tasks, load_human_instructions
@@ -81,7 +81,7 @@ def auto_generate_tasks(
     max_tasks: int | None = None,
     shuffle: bool = True,
     seed: int = 42,
-) -> list[Dict[str, Any]] | None:
+) -> list[dict[str, Any]] | None:
     """Auto-generate tasks from WebShop human instruction data if available.
 
     Args:
@@ -103,7 +103,7 @@ def auto_generate_tasks(
     return tasks
 
 
-class ExternalRunnerAgent(LitAgent[Dict[str, Any]]):
+class ExternalRunnerAgent(LitAgent[dict[str, Any]]):
     """Placeholder agent that satisfies the Trainer API for external runner mode.
 
     In external runner mode (n_runners=0), the actual agent logic executes outside
@@ -115,7 +115,7 @@ class ExternalRunnerAgent(LitAgent[Dict[str, Any]]):
     it indicates a configuration error (likely n_runners > 0 when it should be 0).
     """
 
-    def rollout(self, task: Dict[str, Any], resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def rollout(self, task: dict[str, Any], resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Raise an error - external runners handle actual execution.
 
         Raises:
@@ -137,9 +137,9 @@ logger = logging.getLogger(__name__)
 
 
 def train(
-    config: Dict[str, Any],
-    tasks: List[Dict[str, Any]],
-    val_tasks: Optional[List[Dict[str, Any]]] = None,
+    config: dict[str, Any],
+    tasks: list[dict[str, Any]],
+    val_tasks: list[dict[str, Any]] | None = None,
 ) -> None:
     """Run training with external runner mode.
 
@@ -164,7 +164,7 @@ def train(
         n_runners=0,  # External runner mode
         algorithm=algorithm,
         adapter=adapter,
-        strategy={"type": "cs", "main_process": "algorithm", "server_host": "0.0.0.0"},
+        strategy=agl.ClientServerExecutionStrategy(main_process="algorithm", server_host="0.0.0.0"),
     )
 
     # Placeholder agent - actual execution happens in external TypeScript runners

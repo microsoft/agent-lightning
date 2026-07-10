@@ -1,18 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-# pyright: reportUnknownVariableType=false
-# pyright: reportUnknownMemberType=false
-# pyright: reportUnknownArgumentType=false
-
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Type
-
-import hydra
-import ray
-from ray.actor import ActorClass
-from verl.trainer.main_ppo import create_rl_sampler
-from verl.trainer.ppo.reward import load_reward_manager
+from importlib import import_module
+from typing import TYPE_CHECKING, Any, Callable, Type, cast
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.llm_proxy import LLMProxy
@@ -25,6 +16,11 @@ if TYPE_CHECKING:
     from .daemon import AgentModeDaemon
     from .trainer import AgentLightningTrainer
 
+hydra: Any = import_module("hydra")
+ray: Any = import_module("ray")
+create_rl_sampler: Callable[..., Any] = getattr(import_module("verl.trainer.main_ppo"), "create_rl_sampler")
+load_reward_manager: Callable[..., Any] = getattr(import_module("verl.trainer.ppo.reward"), "load_reward_manager")
+
 __all__ = [
     "main",
     "run_ppo",
@@ -32,8 +28,11 @@ __all__ = [
 ]
 
 
-@hydra.main(config_path="pkg://agentlightning/verl", config_name="config", version_base=None)
-def main(config: Any):
+def _import_attr(module_name: str, attr_name: str) -> Any:
+    return getattr(import_module(module_name), attr_name)
+
+
+def _main(config: Any):
     from .daemon import AgentModeDaemon
     from .trainer import AgentLightningTrainer
 
@@ -47,6 +46,13 @@ def main(config: Any):
         trainer_cls=AgentLightningTrainer,
         daemon_cls=AgentModeDaemon,
     )
+
+
+main: Callable[[], Any] = hydra.main(
+    config_path="pkg://agentlightning/verl",
+    config_name="config",
+    version_base=None,
+)(_main)
 
 
 def run_ppo(
@@ -79,7 +85,7 @@ def run_ppo(
 
     runner = TaskRunner.remote()
     ray.get(
-        runner.run.remote(  # type: ignore
+        runner.run.remote(
             config=config,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
@@ -92,8 +98,7 @@ def run_ppo(
     )
 
 
-@ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
-class TaskRunner:
+class _TaskRunner:
     def run(
         self,
         config: Any,
@@ -108,17 +113,18 @@ class TaskRunner:
         # print initial config
         from pprint import pprint
 
-        from omegaconf import OmegaConf
-        from verl.utils.fs import copy_to_local
+        omega_conf = _import_attr("omegaconf", "OmegaConf")
+        copy_to_local = _import_attr("verl.utils.fs", "copy_to_local")
 
-        pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
-        OmegaConf.resolve(config)
+        pprint(omega_conf.to_container(config, resolve=True))  # resolve=True will eval symbol values
+        omega_conf.resolve(config)
 
         # download the checkpoint from hdfs
         local_path = copy_to_local(config.actor_rollout_ref.model.path)
 
         # instantiate tokenizer
-        from verl.utils.tokenizer import hf_processor, hf_tokenizer
+        hf_processor = _import_attr("verl.utils.tokenizer", "hf_processor")
+        hf_tokenizer = _import_attr("verl.utils.tokenizer", "hf_tokenizer")
 
         trust_remote_code = config.data.get("trust_remote_code", False)
         tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
@@ -127,40 +133,41 @@ class TaskRunner:
         # define worker classes
         if config.actor_rollout_ref.actor.strategy in ["fsdp", "fsdp2"]:
             assert config.critic.strategy in ["fsdp", "fsdp2"]
-            from verl.single_controller.ray import RayWorkerGroup
-            from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker, CriticWorker
+            ray_worker_group_cls = _import_attr("verl.single_controller.ray", "RayWorkerGroup")
+            fsdp_workers = import_module("verl.workers.fsdp_workers")
+            actor_rollout_ref_worker = getattr(fsdp_workers, "ActorRolloutRefWorker")
+            async_actor_rollout_ref_worker = getattr(fsdp_workers, "AsyncActorRolloutRefWorker")
+            critic_worker = getattr(fsdp_workers, "CriticWorker")
 
             actor_rollout_cls = (
-                AsyncActorRolloutRefWorker
+                async_actor_rollout_ref_worker
                 if config.actor_rollout_ref.rollout.mode == "async"
-                else ActorRolloutRefWorker
+                else actor_rollout_ref_worker
             )
-            ray_worker_group_cls = RayWorkerGroup
 
         elif config.actor_rollout_ref.actor.strategy == "megatron":
             assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
-            # FIXME: This import is outdated
-            from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup  # type: ignore
-            from verl.workers.megatron_workers import ActorRolloutRefWorker, CriticWorker
-
-            actor_rollout_cls = ActorRolloutRefWorker
-            ray_worker_group_cls = NVMegatronRayWorkerGroup
+            megatron_module = import_module("verl.single_controller.ray.megatron")
+            megatron_workers = import_module("verl.workers.megatron_workers")
+            actor_rollout_cls = getattr(megatron_workers, "ActorRolloutRefWorker")
+            critic_worker = getattr(megatron_workers, "CriticWorker")
+            ray_worker_group_cls = getattr(megatron_module, "NVMegatronRayWorkerGroup")
 
         else:
             raise NotImplementedError
 
-        from verl.trainer.ppo.ray_trainer import ResourcePoolManager
+        resource_pool_manager_cls = _import_attr("verl.trainer.ppo.ray_trainer", "ResourcePoolManager")
 
         try:
             # verl >= 0.6.0
-            from verl.trainer.ppo.utils import Role
+            role = _import_attr("verl.trainer.ppo.utils", "Role")
         except ImportError:
             # Fallback for verl <= 0.5.0
-            from verl.trainer.ppo.ray_trainer import Role  # type: ignore
+            role = _import_attr("verl.trainer.ppo.ray_trainer", "Role")
 
-        role_worker_mapping: dict[Role, ActorClass[Any]] = {
-            Role.ActorRollout: ray.remote(actor_rollout_cls),
-            Role.Critic: ray.remote(CriticWorker),
+        role_worker_mapping: dict[Any, Any] = {
+            role.ActorRollout: ray.remote(actor_rollout_cls),
+            role.Critic: ray.remote(critic_worker),
         }
 
         global_pool_id = "global_pool"
@@ -168,8 +175,8 @@ class TaskRunner:
             global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
         }
         mapping = {
-            Role.ActorRollout: global_pool_id,
-            Role.Critic: global_pool_id,
+            role.ActorRollout: global_pool_id,
+            role.Critic: global_pool_id,
         }
 
         # we should adopt a multi-source reward function here
@@ -180,18 +187,18 @@ class TaskRunner:
         # - The reward type depends on the tag of the data
         if config.reward_model.enable:
             if config.reward_model.strategy in ["fsdp", "fsdp2"]:
-                from verl.workers.fsdp_workers import RewardModelWorker
+                reward_model_worker = _import_attr("verl.workers.fsdp_workers", "RewardModelWorker")
             elif config.reward_model.strategy == "megatron":
-                from verl.workers.megatron_workers import RewardModelWorker
+                reward_model_worker = _import_attr("verl.workers.megatron_workers", "RewardModelWorker")
             else:
                 raise NotImplementedError
-            role_worker_mapping[Role.RewardModel] = ray.remote(RewardModelWorker)
-            mapping[Role.RewardModel] = global_pool_id
+            role_worker_mapping[role.RewardModel] = ray.remote(reward_model_worker)
+            mapping[role.RewardModel] = global_pool_id
 
         # use reference model
         if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
-            role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
-            mapping[Role.RefPolicy] = global_pool_id
+            role_worker_mapping[role.RefPolicy] = ray.remote(actor_rollout_cls)
+            mapping[role.RefPolicy] = global_pool_id
 
         reward_fn = load_reward_manager(
             config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {})
@@ -199,9 +206,9 @@ class TaskRunner:
         val_reward_fn = load_reward_manager(
             config, tokenizer, num_examine=1, **config.reward_model.get("reward_kwargs", {})
         )
-        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
+        resource_pool_manager = resource_pool_manager_cls(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
-        from verl.utils.dataset.rl_dataset import collate_fn
+        collate_fn = _import_attr("verl.utils.dataset.rl_dataset", "collate_fn")
 
         # Use our special dataset
         if train_dataset is None:
@@ -225,26 +232,32 @@ class TaskRunner:
             val_dataset = LoadedDataset(val_dataset)
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
-        trainer = trainer_cls(
-            config=config,
-            tokenizer=tokenizer,
-            processor=processor,
-            role_worker_mapping=role_worker_mapping,
-            resource_pool_manager=resource_pool_manager,
-            ray_worker_group_cls=ray_worker_group_cls,
-            reward_fn=reward_fn,
-            val_reward_fn=val_reward_fn,
-            train_dataset=train_dataset,
-            val_dataset=val_dataset,
-            collate_fn=collate_fn,
-            train_sampler=train_sampler,
-            store=store,
-            llm_proxy=llm_proxy,
-            adapter=adapter,
-            daemon_cls=daemon_cls,
+        trainer = cast(
+            Any,
+            trainer_cls(
+                config=config,
+                tokenizer=tokenizer,
+                processor=processor,
+                role_worker_mapping=role_worker_mapping,
+                resource_pool_manager=resource_pool_manager,
+                ray_worker_group_cls=ray_worker_group_cls,
+                reward_fn=reward_fn,
+                val_reward_fn=val_reward_fn,
+                train_dataset=train_dataset,
+                val_dataset=val_dataset,
+                collate_fn=collate_fn,
+                train_sampler=train_sampler,
+                store=store,
+                llm_proxy=llm_proxy,
+                adapter=adapter,
+                daemon_cls=daemon_cls,
+            ),
         )
         trainer.init_workers()
         trainer.fit()
+
+
+TaskRunner: Any = ray.remote(num_cpus=1)(_TaskRunner)  # please make sure main_task is not scheduled on head
 
 
 if __name__ == "__main__":

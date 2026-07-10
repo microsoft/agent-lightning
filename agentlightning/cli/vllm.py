@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from importlib import import_module
+from typing import Any, Callable, Iterable, cast
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     import sys
 
-    from vllm.entrypoints.cli.main import main as vllm_main
-
     from agentlightning.instrumentation.vllm import instrument_vllm
 
+    vllm_main = cast(Callable[[], Any], getattr(import_module("vllm.entrypoints.cli.main"), "main"))
     instrument_vllm()
     if argv is not None:
         original_argv = sys.argv

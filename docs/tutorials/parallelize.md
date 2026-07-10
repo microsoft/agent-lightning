@@ -64,41 +64,41 @@ An **execution strategy** then decides where those bundles are placed (threads v
 
 By default, the trainer builds an [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] if you do not provide one. Because that store has no locking or cross-process transport, the execution strategy is the component that wraps it in thread-safe or HTTP-safe facades ([`LightningStoreThreaded`][agentlightning.LightningStoreThreaded], [`LightningStoreServer`][agentlightning.LightningStoreServer]) before handing it to bundles. For a deeper look at these facades, see [Understanding the Store](../deep-dive/store.md) and [Birds' Eye View](../deep-dive/birds-eye-view.md).
 
-Agent-lightning provides two built-in execution strategies: [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] and [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]. You can pass a string alias, a configuration dictionary, or a pre-built strategy instance:
+Agent-lightning provides two built-in execution strategies: [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] and [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]. Construct the strategy explicitly before passing it to the trainer:
 
 ```python
 import agentlightning as agl
 
 algorithm = agl.Baseline()
 
-# Short alias for the shared-memory strategy.
 # Because the runner lives on the main thread in this mode,
 # n_runners must be 1 unless you move the algorithm to the main thread.
-trainer = agl.Trainer(algorithm=algorithm, n_runners=1, strategy="shm")
+strategy = agl.SharedMemoryExecutionStrategy()
+trainer = agl.Trainer(algorithm=algorithm, n_runners=1, strategy=strategy)
 
-# Dict with overrides; keep the algorithm on the main thread so multiple runner threads can spawn.
-# Specifying `n_runners` inside strategy is equivalent to passing `n_runners` to the trainer.
+# Keep the algorithm on the main thread so multiple runner threads can spawn.
+strategy = agl.SharedMemoryExecutionStrategy(
+    n_runners=8,
+    main_thread="algorithm",
+)
 trainer = agl.Trainer(
     algorithm=algorithm,
-    strategy={
-        "type": "shm",
-        "n_runners": 8,
-        "main_thread": "algorithm",
-    },
+    strategy=strategy,
 )
 
-# Pass an existing strategy instance – Trainer respects the strategy's own `n_runners`.
+# Trainer respects the strategy's own `n_runners`.
 strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", n_runners=4)
 trainer = agl.Trainer(algorithm=algorithm, strategy=strategy)
 ```
 
-If you omit the strategy, the trainer defaults to `ClientServerExecutionStrategy(n_runners=trainer.n_runners)`. You can still re-specify the client-server strategy through aliases or configuration to tweak ports and other settings:
+If you omit the strategy, the trainer defaults to `ClientServerExecutionStrategy(n_runners=trainer.n_runners)`. Pass an explicit client-server strategy to tweak ports and other settings:
 
 ```python
+strategy = agl.ClientServerExecutionStrategy(server_port=9999)
 trainer = agl.Trainer(
     algorithm=algorithm,
     n_runners=8,
-    strategy={"type": "cs", "server_port": 9999},
+    strategy=strategy,
 )
 ```
 
@@ -111,27 +111,29 @@ os.environ["AGL_SERVER_PORT"] = "10000"
 os.environ["AGL_CURRENT_ROLE"] = "algorithm"
 os.environ["AGL_MANAGED_STORE"] = "0"
 
-trainer = agl.Trainer(algorithm=algorithm, n_runners=8, strategy="cs")
+strategy = agl.ClientServerExecutionStrategy()
+trainer = agl.Trainer(algorithm=algorithm, n_runners=8, strategy=strategy)
 ```
 
 The resulting [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] picks up the port, role, and managed-store flag from the environment.
 
 !!! tip
 
-    The same configuration patterns apply to other trainer components. For example,
+    The same explicit construction pattern applies to other trainer components. For example,
     ```python
     trainer = agl.Trainer(algorithm=algorithm, tracer=agl.OtelTracer())
     ```
     wires in a custom tracer, while
     ```python
-    trainer = agl.Trainer(algorithm=algorithm, adapter="agentlightning.adapter.TraceToMessages")
+    trainer = agl.Trainer(algorithm=algorithm, adapter=agl.TraceToMessages())
     ```
-    swaps in a different adapter. Passing a dict lets you tweak the init parameters of defaults without naming the class explicitly:
+    swaps in a different adapter. Configure adapter constructor parameters directly:
 
     ```python
+    adapter = agl.TracerTraceToTriplet(agent_match="plan_agent", repair_hierarchy=False)
     trainer = agl.Trainer(
         algorithm=algorithm,
-        adapter={"agent_match": "plan_agent", "repair_hierarchy": False},
+        adapter=adapter,
     )
     ```
 
@@ -154,12 +156,11 @@ You can override server placement or ports, and whether to automatically wrap th
 trainer = agl.Trainer(
     algorithm=algorithm,
     n_runners=1,
-    strategy={
-        "type": "cs",
-        "server_host": "0.0.0.0",
-        "server_port": 9999,
-        "main_process": "runner",
-    },
+    strategy=agl.ClientServerExecutionStrategy(
+        server_host="0.0.0.0",
+        server_port=9999,
+        main_process="runner",
+    ),
 )
 ```
 
@@ -211,7 +212,7 @@ Sample configuration:
 ```python
 trainer = agl.Trainer(
     algorithm=algorithm,
-    strategy="shm",
+    strategy=agl.SharedMemoryExecutionStrategy(),
 )
 ```
 

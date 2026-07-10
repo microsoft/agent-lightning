@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any, AsyncGenerator, Awaitable, Iterator, List, Optional
+from typing import Any, AsyncGenerator, Coroutine, Iterator, List, Optional, cast
 
 import opentelemetry.trace as trace_api
 from opentelemetry.instrumentation.utils import suppress_instrumentation
@@ -19,13 +19,14 @@ from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
 from agentlightning.types import Attributes, Span, SpanCoreFields, SpanRecordingContext, StatusCode, TraceStatus
 from agentlightning.types.tracer import convert_timestamp
-from agentlightning.utils.async_store_span_writer import AsyncStoreSpanWriter, STORE_WRITE_TIMEOUT_SECONDS
+from agentlightning.utils.async_store_span_writer import STORE_WRITE_TIMEOUT_SECONDS, AsyncStoreSpanWriter
 from agentlightning.utils.otel import get_tracer_provider
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer, with_active_tracer_context
 
 logger = logging.getLogger(__name__)
+
 
 def to_otel_status_code(status_code: StatusCode) -> trace_api.StatusCode:
     if status_code == "UNSET":
@@ -237,10 +238,11 @@ class OtelTracer(Tracer):
 
     def _enable_native_otlp_exporter(self, store: LightningStore, rollout_id: str, attempt_id: str):
         tracer_provider = self._get_tracer_provider()
-        active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
+        tracer_provider_api = cast(Any, tracer_provider)
+        active_span_processor = tracer_provider_api._active_span_processor
 
         # Override the resources so that the server knows where the request comes from.
-        tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
+        tracer_provider_api._resource = tracer_provider_api._resource.merge(
             Resource.create(
                 {
                     LightningResourceAttributes.ROLLOUT_ID.value: rollout_id,
@@ -250,7 +252,7 @@ class OtelTracer(Tracer):
         )
         instrumented = False
         candidates: List[str] = []
-        for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+        for processor in active_span_processor._span_processors:
             if isinstance(processor, LightningSpanProcessor):
                 # We don't need the LightningSpanProcessor any more.
                 logger.debug("LightningSpanProcessor already present in TracerProvider, disabling it.")
@@ -277,8 +279,9 @@ class OtelTracer(Tracer):
 
     def _disable_native_otlp_exporter(self):
         tracer_provider = self._get_tracer_provider()
-        active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
-        tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
+        tracer_provider_api = cast(Any, tracer_provider)
+        active_span_processor = tracer_provider_api._active_span_processor
+        tracer_provider_api._resource = tracer_provider_api._resource.merge(
             Resource.create(
                 {
                     LightningResourceAttributes.ROLLOUT_ID.value: "",
@@ -286,7 +289,7 @@ class OtelTracer(Tracer):
                 }
             )
         )  # reset resource
-        for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+        for processor in active_span_processor._span_processors:
             if isinstance(processor, LightningSpanProcessor):
                 # We will be in need of the LightningSpanProcessor again.
                 logger.debug("Enabling LightningSpanProcessor in TracerProvider.")
@@ -315,7 +318,9 @@ class LightningSpanProcessor(SpanProcessor):
         self._lock = threading.Lock()
 
         # private asyncio loop writer
-        self._loop_writer = AsyncStoreSpanWriter(thread_name="otel-loop", clear_on_fork=False, startup_timeout=30.0, shutdown_timeout=5.0)
+        self._loop_writer = AsyncStoreSpanWriter(
+            thread_name="otel-loop", clear_on_fork=False, startup_timeout=30.0, shutdown_timeout=5.0
+        )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
 
@@ -367,7 +372,7 @@ class LightningSpanProcessor(SpanProcessor):
         self._rollout_id = None
         self._attempt_id = None
 
-    def _await_in_loop(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
+    def _await_in_loop(self, coro: Coroutine[object, object, Any], timeout: Optional[float] = None) -> Any:
         return self._loop_writer.run_in_loop(coro, timeout=timeout)
 
     def shutdown(self) -> None:
@@ -388,22 +393,20 @@ class LightningSpanProcessor(SpanProcessor):
         """
         return self._spans
 
-    def with_context(self, store: LightningStore, rollout_id: str, attempt_id: str):
+    @contextmanager
+    def with_context(
+        self, store: LightningStore, rollout_id: str, attempt_id: str
+    ) -> Iterator["LightningSpanProcessor"]:
         # simple context manager without nesting into asyncio
-        class _Ctx:
-            def __enter__(_):  # type: ignore
-                # Use _ instead of self to avoid shadowing the instance method.
-                with self._lock:
-                    self._store, self._rollout_id, self._attempt_id = store, rollout_id, attempt_id
-                    self._last_trace = None
-                    self._spans = []
-                return self
-
-            def __exit__(_, exc_type, exc, tb):  # type: ignore
-                with self._lock:
-                    self._store = self._rollout_id = self._attempt_id = None
-
-        return _Ctx()
+        with self._lock:
+            self._store, self._rollout_id, self._attempt_id = store, rollout_id, attempt_id
+            self._last_trace = None
+            self._spans = []
+        try:
+            yield self
+        finally:
+            with self._lock:
+                self._store = self._rollout_id = self._attempt_id = None
 
     def on_end(self, span: ReadableSpan) -> None:
         """

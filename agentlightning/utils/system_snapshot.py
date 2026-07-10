@@ -6,10 +6,10 @@ import platform
 import socket
 from contextlib import suppress
 from datetime import datetime
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, Iterable, List, cast
 
 import psutil
-from gpustat import GPUStat, GPUStatCollection
+from gpustat import GPUStatCollection
 
 
 def system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
@@ -49,15 +49,16 @@ def system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
     gpus: List[Dict[str, Any]] = []
     if include_gpu:
         with suppress(Exception):
-            for g in GPUStatCollection.new_query().gpus:  # type: ignore
-                g = cast(GPUStat, g)
+            gpu_query = cast(Any, GPUStatCollection).new_query()
+            gpu_stats = cast(Iterable[object], gpu_query.gpus)
+            for g in gpu_stats:
                 gpus.append(
                     {
-                        "gpu": g.name,  # type: ignore
-                        "util_pct": g.utilization,
-                        "mem_used_mb": g.memory_used,
-                        "mem_total_mb": g.memory_total,
-                        "temp_c": g.temperature,
+                        "gpu": getattr(g, "name"),
+                        "util_pct": getattr(g, "utilization"),
+                        "mem_used_mb": getattr(g, "memory_used"),
+                        "mem_total_mb": getattr(g, "memory_total"),
+                        "temp_c": getattr(g, "temperature"),
                     }
                 )
 

@@ -5,14 +5,10 @@ import socket
 import threading
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
-import torch
-from tensordict import TensorDict
-from verl import DataProto
+from importlib import import_module
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from agentlightning import NamedResources
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
@@ -21,6 +17,11 @@ from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Triplet
 from agentlightning.verl.trajectory import aggregate_trajectory_traces, ids_startswith, log_mismatch_detail
+
+np: Any = import_module("numpy")
+torch: Any = import_module("torch")
+TensorDict: Any = getattr(import_module("tensordict"), "TensorDict")
+DataProto: Any = getattr(import_module("verl"), "DataProto")
 
 __all__ = [
     "AgentModeDaemon",
@@ -113,6 +114,13 @@ def _safe_ratio(numerator: int, denominator: int) -> float:
     return numerator / denominator if denominator else 0.0
 
 
+def _get_bool_config(config: Mapping[str, Any], key: str, default: bool = False) -> bool:
+    value = config.get(key, default)
+    if not isinstance(value, bool):
+        raise TypeError(f"trace_aggregator.{key} must be a bool.")
+    return value
+
+
 def _find_available_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
@@ -131,11 +139,13 @@ def _to_native(obj: Any) -> Any:
 
     # 3) Dict-like -> dict
     if isinstance(obj, Mapping):
-        return {_to_native(k): _to_native(v) for k, v in obj.items()}  # type: ignore
+        mapping = cast(Mapping[Any, Any], obj)
+        return {_to_native(k): _to_native(v) for k, v in mapping.items()}
 
     # 4) Lists/Tuples/Sets -> list
     if isinstance(obj, (list, tuple, set)):
-        return [_to_native(x) for x in obj]  # type: ignore
+        values = cast(Iterable[Any], obj)
+        return [_to_native(x) for x in values]
 
     # 5) Anything else: leave as-is
     return obj
@@ -159,14 +169,14 @@ class AgentModeDaemon:
         tokenizer: Any,
         mini_batch_size: int,
         pad_token_id: int,
-        reward_fillna_value: float = 0.0,
+        reward_fillna_value: float | None = 0.0,
         llm_timeout_seconds: float = 1200.0,
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
         processor: Any = None,
         image_base_dir: Optional[str] = None,
-        trace_aggregator: Dict[str, Any] = {"level": "transition"},
+        trace_aggregator: Dict[str, Any] | None = None,
     ):
         if store is None:
             raise ValueError("VERL v1 execution requires a store instance.")
@@ -201,7 +211,7 @@ class AgentModeDaemon:
         self.processor = processor
         self.reward_fillna_value = reward_fillna_value
         self.image_base_dir = image_base_dir
-        self.trace_aggregator = trace_aggregator
+        self.trace_aggregator = {"level": "transition"} if trace_aggregator is None else trace_aggregator
 
         # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
         self._use_mrope = self._is_mrope_model()
@@ -240,18 +250,18 @@ class AgentModeDaemon:
             raise ValueError(f"Relative path '{path}' requires 'image_base_dir' to be set.")
         return os.path.join(self.image_base_dir, path)
 
-    def _get_image_grid_thw(self, image_urls: List[str]) -> Optional[torch.Tensor]:
+    def _get_image_grid_thw(self, image_urls: List[str]) -> Any | None:
         """Compute image_grid_thw from image URLs for M-RoPE computation.
 
         Args:
             image_urls: List of image URLs extracted from triplet prompt payload.
                 URLs can be http(s):// URLs or file:// URIs, or data: URIs.
         """
-        from PIL import Image
-        from verl.utils.dataset.vision_utils import process_image  # pyright: ignore[reportUnknownVariableType]
-
         if self.processor is None or not image_urls:
             return None
+
+        image_module = import_module("PIL.Image")
+        process_image: Any = getattr(import_module("verl.utils.dataset.vision_utils"), "process_image")
 
         def to_image_uri(url: str) -> str:
             # Already a proper URI (http, https, file, data)
@@ -261,24 +271,24 @@ class AgentModeDaemon:
             resolved = self._resolve_image_path(url)
             return f"file://{resolved}"
 
-        images: List[Image.Image] = [process_image({"image": to_image_uri(url)}) for url in image_urls]
+        images = [process_image({"image": to_image_uri(url)}) for url in image_urls]
+        if not all(isinstance(image, image_module.Image) for image in images):
+            raise TypeError("process_image must return PIL Image instances.")
         model_inputs = self.processor(text=["dummy"], images=images, return_tensors="pt")
         return model_inputs.get("image_grid_thw")
 
     def _compute_mrope_position_ids(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        image_grid_thw: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        input_ids: Any,
+        attention_mask: Any,
+        image_grid_thw: Any | None = None,
+    ) -> Any:
         """Compute 4D position_ids for M-RoPE models."""
-        from typing import Callable
-
-        get_rope_index: Callable[..., torch.Tensor]
         if "Qwen3VL" in self.processor.__class__.__name__:
-            from verl.models.transformers.qwen3_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+            module_name = "verl.models.transformers.qwen3_vl"
         else:
-            from verl.models.transformers.qwen2_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+            module_name = "verl.models.transformers.qwen2_vl"
+        get_rope_index: Any = getattr(import_module(module_name), "get_rope_index")
 
         vision_pos = get_rope_index(
             self.processor, input_ids=input_ids, image_grid_thw=image_grid_thw, attention_mask=attention_mask
@@ -368,13 +378,14 @@ class AgentModeDaemon:
 
         # Enqueue all the tasks in a single batch
         rollouts = await self.store.enqueue_many_rollouts(enqueue_rollout_requests)
-        self._task_id_to_original_sample.update(
-            {
-                # Recover the original data and store it for later use.
-                rollout.rollout_id: data_id_to_original_sample[rollout.metadata["data_id"]]  # type: ignore[index]
-                for rollout in rollouts
-            }
-        )
+        for rollout in rollouts:
+            metadata = rollout.metadata
+            if metadata is None or "data_id" not in metadata:
+                raise ValueError(f"Rollout {rollout.rollout_id} is missing required metadata field 'data_id'.")
+            data_id = metadata["data_id"]
+            if not isinstance(data_id, str):
+                raise TypeError(f"Rollout {rollout.rollout_id} metadata field 'data_id' must be a string.")
+            self._task_id_to_original_sample[rollout.rollout_id] = data_id_to_original_sample[data_id]
         self._total_tasks_queued += len(rollouts)
 
     def set_up_data_and_server(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
@@ -404,7 +415,7 @@ class AgentModeDaemon:
 
     async def _build_completed_rollout(self, rollout: Rollout) -> _CompletedRollout:
         """Build completion payload and validate rollout/spans from v1 store representation."""
-        spans: List[Any] = []
+        spans: Sequence[Any] = []
         triplets: List[Triplet] = []
         deadline = asyncio.get_running_loop().time() + _TRACE_READY_TIMEOUT_SECONDS
         while True:
@@ -564,8 +575,8 @@ class AgentModeDaemon:
         return metric_dict
 
     def get_train_data_batch(
-        self, max_prompt_length: int, max_response_length: int, device: torch.device, global_steps: int
-    ):
+        self, max_prompt_length: int, max_response_length: int, device: Any, global_steps: int
+    ) -> tuple[Any, Dict[str, Any]]:
         """
         Processes completed rollouts to generate a training data batch.
 
@@ -628,8 +639,14 @@ class AgentModeDaemon:
         rollout_id_list: List[str] = []
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
-        image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
+        image_grid_thw_list: List[Any | None] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
+        response_mask_list: List[List[int]] = []
+        response_per_turn_list: List[int] = []
+        unmerged_count = 0
+        template_mismatch_count = 0
+        retoken_mismatch_count = 0
+        others_mismatch_count = 0
 
         if self.trace_aggregator.get("level", "transition") == "transition":
             for rollout_id, sample_info in finished_id_to_sample_info.items():
@@ -674,17 +691,12 @@ class AgentModeDaemon:
         elif self.trace_aggregator.get("level", "transition") == "trajectory":
             assert not self._use_mrope, "M-RoPE is not supported in trajectory level yet."
 
-            response_mask_list: List[List[int]] = []
-            response_per_turn_list: List[int] = []
-            unmerged_count: int = 0
-            template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
-
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 merged_traces, aggregate_stats = aggregate_trajectory_traces(
                     sample_info["trace_list"],
                     max_prompt_length=max_prompt_length,
                     tokenizer=self.tokenizer,
-                    debug=self.trace_aggregator.get("debug", False),
+                    debug=_get_bool_config(self.trace_aggregator, "debug"),
                     global_steps=global_steps,
                     rollout_id=rollout_id,
                     mismatch_log_dir=self.trace_aggregator.get("mismatch_log_dir", None),
@@ -743,7 +755,9 @@ class AgentModeDaemon:
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
         response_mask = (
-            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.get("level", "transition") == "trajectory" else None  # type: ignore
+            torch.LongTensor(response_mask_list).to(device)
+            if self.trace_aggregator.get("level", "transition") == "trajectory"
+            else None
         )
 
         # Concatenate prompts and responses to form the full sequence
@@ -753,7 +767,7 @@ class AgentModeDaemon:
         # Compute position_ids - use mrope for Qwen2-VL, standard 2D otherwise
         if self._use_mrope:
             # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
-            position_ids_list: list[torch.Tensor] = []
+            position_ids_list: list[Any] = []
             for i in range(n_transition):
                 pos_ids = self._compute_mrope_position_ids(
                     input_ids=batch_seq[i],
@@ -786,23 +800,20 @@ class AgentModeDaemon:
         token_level_scores = token_level_scores[:, -max_response_length:]
 
         # Form the final batch using TensorDict
-        batch = TensorDict(
-            {
-                "prompts": batch_input_ids,
-                "responses": batch_response_ids,
-                "input_ids": batch_seq,  # here input_ids become the whole sentences
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-                "is_drop_mask": is_drop_mask,
-                "token_level_scores": token_level_scores.contiguous(),
-                **(
-                    {"response_mask": response_mask}
-                    if self.trace_aggregator.get("level", "transition") == "trajectory"
-                    else {}
-                ),
-            },  # type: ignore
-            batch_size=n_transition,
-        )
+        batch_items: Dict[str, Any] = {
+            "prompts": batch_input_ids,
+            "responses": batch_response_ids,
+            "input_ids": batch_seq,  # here input_ids become the whole sentences
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "is_drop_mask": is_drop_mask,
+            "token_level_scores": token_level_scores.contiguous(),
+        }
+        if self.trace_aggregator.get("level", "transition") == "trajectory":
+            if response_mask is None:
+                raise RuntimeError("response_mask is required for trajectory-level aggregation.")
+            batch_items["response_mask"] = response_mask
+        batch = TensorDict(batch_items, batch_size=n_transition)
         data_proto = DataProto(batch=batch)
 
         data_metrics = {
@@ -815,41 +826,37 @@ class AgentModeDaemon:
             # log data, only for debug testing
             **(
                 {
-                    "training/n_unmerged_rollouts": unmerged_count,  # type: ignore
-                    "training/n_triplets_by_turn": len(response_per_turn_list),  # type: ignore
-                    "training/avg_response_length_by_turn": _safe_mean(response_per_turn_list),  # type: ignore
-                    "training/max_response_length_by_turn": max(response_per_turn_list, default=0),  # type: ignore
-                    "training/min_response_length_by_turn": min(response_per_turn_list, default=0),  # type: ignore
+                    "training/n_unmerged_rollouts": unmerged_count,
+                    "training/n_triplets_by_turn": len(response_per_turn_list),
+                    "training/avg_response_length_by_turn": _safe_mean(response_per_turn_list),
+                    "training/max_response_length_by_turn": max(response_per_turn_list, default=0),
+                    "training/min_response_length_by_turn": min(response_per_turn_list, default=0),
                 }
                 if self.trace_aggregator.get("level", "transition") == "trajectory"
                 else {}
             ),
             **(
                 {
-                    "training/template_mismatch_triplets": template_mismatch_count,  # type: ignore
-                    "training/retoken_mismatch_triplets": retoken_mismatch_count,  # type: ignore
-                    "training/others_mismatch_triplets": others_mismatch_count,  # type: ignore
+                    "training/template_mismatch_triplets": template_mismatch_count,
+                    "training/retoken_mismatch_triplets": retoken_mismatch_count,
+                    "training/others_mismatch_triplets": others_mismatch_count,
                     "training/template_mismatch_ratio": _safe_ratio(
                         template_mismatch_count, len(response_per_turn_list)
-                    ),  # type: ignore
-                    "training/retoken_mismatch_ratio": _safe_ratio(
-                        retoken_mismatch_count, len(response_per_turn_list)
-                    ),  # type: ignore
-                    "training/others_mismatch_ratio": _safe_ratio(
-                        others_mismatch_count, len(response_per_turn_list)
-                    ),  # type: ignore
+                    ),
+                    "training/retoken_mismatch_ratio": _safe_ratio(retoken_mismatch_count, len(response_per_turn_list)),
+                    "training/others_mismatch_ratio": _safe_ratio(others_mismatch_count, len(response_per_turn_list)),
                 }
                 if self.trace_aggregator.get("level", "transition") == "trajectory"
-                and self.trace_aggregator.get("debug", False)
+                and _get_bool_config(self.trace_aggregator, "debug")
                 else {}
             ),
         }
 
         # Add non-tensor data for advantage calculation and logging
-        data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
-        data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
+        data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)
+        data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)
         if self.trace_aggregator.get("level", "transition") == "transition":
-            data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+            data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)
 
         return data_proto, data_metrics
 
@@ -865,7 +872,7 @@ class AgentModeDaemon:
 
     def _fillna_reward(self, rollout: _CompletedRollout):
         if rollout.final_reward is None:
-            if self.reward_fillna_value is not None:  # type: ignore
+            if self.reward_fillna_value is not None:
                 final_reward = self.reward_fillna_value
             else:
                 raise ValueError(f"Reward is None for rollout {rollout.rollout_id}, please check the reward function.")

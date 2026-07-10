@@ -16,7 +16,6 @@ from typing import (
     List,
     Literal,
     Mapping,
-    MutableMapping,
     Optional,
     Sequence,
     Tuple,
@@ -73,6 +72,13 @@ ListBasedCollectionItemType = Union[
 MutationMode = Literal["insert", "update", "upsert", "delete"]
 
 
+def _contains_value(container: object, expected: object) -> bool:
+    try:
+        return expected in cast(Iterable[object], container)
+    except TypeError:
+        return False
+
+
 def _item_matches_filters(
     item: object,
     filters: Optional[FilterMap],
@@ -118,10 +124,7 @@ def _item_matches_filters(
                 all_conditions_match.append(item_value == expected)
 
             elif op_name == "within":
-                try:
-                    all_conditions_match.append(item_value in expected)  # type: ignore[arg-type]
-                except TypeError:
-                    all_conditions_match.append(False)
+                all_conditions_match.append(_contains_value(expected, item_value))
 
             elif op_name == "contains":
                 if item_value is None:
@@ -130,10 +133,7 @@ def _item_matches_filters(
                     all_conditions_match.append(expected in item_value)
                 else:
                     # Fallback: treat as generic iterable containment.
-                    try:
-                        all_conditions_match.append(expected in item_value)  # type: ignore[arg-type]
-                    except TypeError:
-                        all_conditions_match.append(False)
+                    all_conditions_match.append(_contains_value(item_value, expected))
             else:
                 raise ValueError(f"Unsupported filter operator '{op_name}' for field '{field_name}'")
 
@@ -269,7 +269,7 @@ class ListBasedCollection(Collection[T]):
         self,
         key_values: Sequence[Any],
         create_missing: bool,
-    ) -> Tuple[MutableMapping[Any, Any], Any]:
+    ) -> Tuple[Dict[Any, Any], Any]:
         """Locate the parent mapping and final key for an item path.
 
         Args:
@@ -286,22 +286,22 @@ class ListBasedCollection(Collection[T]):
         if not key_values:
             raise ValueError("key_values must be non-empty")
 
-        current: MutableMapping[Any, Any] = self._items
+        current: Dict[Any, Any] = self._items
         for idx, value in enumerate(key_values):
             is_last = idx == len(key_values) - 1
             if is_last:
                 # At the final level, current[value] is the item (or will be).
-                return current, value  # type: ignore
+                return current, value
 
             # Intermediate level: current[value] must be a dict.
             if value not in current:
                 if not create_missing:
                     raise KeyError(f"Path does not exist for given primary keys: {self._render_key_values(key_values)}")
                 current[value] = {}
-            next_node = current[value]  # type: ignore
+            next_node = current[value]
             if not isinstance(next_node, dict):
-                raise ValueError(f"Internal structure corrupted: expected dict, got {type(next_node)!r}")  # type: ignore
-            current = next_node  # type: ignore
+                raise ValueError(f"Internal structure corrupted: expected dict, got {type(next_node)!r}")
+            current = cast(Dict[Any, Any], next_node)
 
         # We should always return inside the loop.
         raise RuntimeError("Unreachable")
@@ -390,6 +390,38 @@ class ListBasedCollection(Collection[T]):
         else:
             raise ValueError(f"Unknown mutation mode: {mode}")
 
+    def _count_items(self, root: Mapping[Any, Any]) -> int:
+        count = 0
+        stack: List[Mapping[Any, Any]] = [root]
+        while stack:
+            node = stack.pop()
+            for value in node.values():
+                if isinstance(value, self._item_type):
+                    count += 1
+                elif isinstance(value, dict):
+                    stack.append(cast(Mapping[Any, Any], value))
+                else:
+                    raise ValueError(
+                        f"Internal structure corrupted: expected dict or {self._item_type.__name__}, "
+                        f"got {type(value)!r}"
+                    )
+        return count
+
+    def remove_root(self, key: Any) -> None:
+        """Remove all items grouped under the first primary-key value."""
+        removed = self._items.pop(key, None)
+        if removed is None:
+            return
+        if isinstance(removed, self._item_type):
+            self._size -= 1
+            return
+        if isinstance(removed, dict):
+            self._size -= self._count_items(cast(Mapping[Any, Any], removed))
+            return
+        raise ValueError(
+            f"Internal structure corrupted: expected dict or {self._item_type.__name__}, got {type(removed)!r}"
+        )
+
     def _iter_items(
         self,
         root: Optional[Mapping[Any, Any]] = None,
@@ -411,7 +443,7 @@ class ListBasedCollection(Collection[T]):
                     if _item_matches_filters(value, filters, filter_logic, must_filters):
                         yield value
                 elif isinstance(value, dict):
-                    stack.append(value)  # type: ignore
+                    stack.append(cast(Mapping[Any, Any], value))
                 else:
                     raise ValueError(
                         f"Internal structure corrupted: expected dict or {self._item_type.__name__}, "
@@ -441,7 +473,7 @@ class ListBasedCollection(Collection[T]):
             # combined_ops are: [{"exact": value}, {"within": [...]}, ...]
             combined_ops: List[FilterField] = []
             for source in prefix_sources:
-                field_ops = source.get(pk)  # type: ignore[union-attr]
+                field_ops = source.get(pk)
                 if field_ops:
                     combined_ops.append(field_ops)
             if not combined_ops:
@@ -493,7 +525,7 @@ class ListBasedCollection(Collection[T]):
                 subtree = parent.get(final_key)
                 if isinstance(subtree, dict):
                     return self._iter_items(
-                        subtree,  # type: ignore
+                        cast(Mapping[Any, Any], subtree),
                         filters=filters,
                         must_filters=must_filters,
                         filter_logic=filter_logic,
@@ -909,7 +941,7 @@ class InMemoryLightningCollections(LightningCollections):
 
         Uses private API for efficiency.
         """
-        self._spans._items.pop(rollout_id, [])  # pyright: ignore[reportPrivateUsage]
+        self._spans.remove_root(rollout_id)
 
 
 class _LoopAwareAsyncLock:

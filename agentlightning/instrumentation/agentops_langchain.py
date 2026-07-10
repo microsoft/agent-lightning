@@ -14,18 +14,20 @@ __all__ = [
 ]
 
 
-def on_chain_start(self: Any, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
+def on_chain_start(self: Any, serialized: Dict[str, Any] | None, inputs: Dict[str, Any], **kwargs: Any) -> None:
     if "name" in kwargs:
-        if serialized is None:  # type: ignore
+        if serialized is None:
             serialized = {}
         serialized = serialized.copy()
         serialized["name"] = kwargs["name"]
     if "run_id" in kwargs:
-        if serialized is None:  # type: ignore
+        if serialized is None:
             serialized = {}
         serialized = serialized.copy()
         if "id" not in serialized:
             serialized["id"] = kwargs["run_id"]
+    if serialized is None:
+        serialized = {}
     return original_on_chain_start(self, serialized, inputs, **kwargs)
 
 

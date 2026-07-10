@@ -360,8 +360,6 @@ class MongoBasedCollection(Collection[T_model]):
             raise ValueError("primary_keys must be non-empty")
         self._primary_keys = list(primary_keys)
 
-        if not issubclass(item_type, BaseModel):  # type: ignore
-            raise ValueError(f"item_type must be a subclass of BaseModel, got {item_type.__name__}")
         self._item_type = item_type
 
     @property
@@ -464,7 +462,7 @@ class MongoBasedCollection(Collection[T_model]):
         if not item_type_has_id:
             raw = {k: v for k, v in raw.items() if k != "_id"}
         # Convert Mongo document to Pydantic model
-        return self._item_type.model_validate(raw)  # type: ignore[arg-type]
+        return self._item_type.model_validate(dict(raw))
 
     @tracked("query")
     async def query(
@@ -594,7 +592,7 @@ class MongoBasedCollection(Collection[T_model]):
             # Branch 1: Full Replace
             if update_fields is None:
                 async with self.tracking_context("update.find_one_and_replace", self._collection_name):
-                    updated_doc = await collection.find_one_and_replace(
+                    updated_doc: Mapping[str, Any] | None = await collection.find_one_and_replace(
                         filter=pk_filter,
                         replacement=doc,
                         session=self._session,
@@ -613,7 +611,7 @@ class MongoBasedCollection(Collection[T_model]):
                     )
 
             # Validation and Reconstruction
-            if updated_doc is None:  # type: ignore
+            if updated_doc is None:
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
             # Re-instantiate the model from the raw MongoDB dictionary.
@@ -655,7 +653,7 @@ class MongoBasedCollection(Collection[T_model]):
                 update_spec["$set"] = update_subset
 
             async with self.tracking_context("upsert.find_one_and_update", self._collection_name):
-                result_doc = await collection.find_one_and_update(
+                result_doc: Mapping[str, Any] | None = await collection.find_one_and_update(
                     filter=pk_filter,
                     update=update_spec,
                     upsert=True,
@@ -663,7 +661,7 @@ class MongoBasedCollection(Collection[T_model]):
                     return_document=ReturnDocument.AFTER,
                 )
 
-            if result_doc is None:  # pyright: ignore[reportUnnecessaryComparison]
+            if result_doc is None:
                 raise RuntimeError(f"Upsert resulted in no document for filter: {pk_filter}")
 
             # Because upsert=True, result_doc is guaranteed to be not None
@@ -808,7 +806,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         # Atomic claim loop using find_one_and_update
         for _ in range(limit):
             async with self.tracking_context("dequeue.find_one_and_update", self.collection_name):
-                doc = await collection.find_one_and_update(
+                doc: Mapping[str, Any] | None = await collection.find_one_and_update(
                     {
                         "partition_id": self._partition_id,
                         "consumed": False,
@@ -818,7 +816,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
                     return_document=True,
                     session=self._session,
                 )
-            if doc is None:  # type: ignore
+            if doc is None:
                 # No more items to dequeue
                 break
 
@@ -999,7 +997,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         encoded_amount = self._value_adapter.dump_python(amount, mode="python")
         try:
             async with self.tracking_context("inc.find_one_and_update", self.collection_name):
-                doc = await collection.find_one_and_update(
+                doc: Mapping[str, Any] | None = await collection.find_one_and_update(
                     {
                         "partition_id": self._partition_id,
                         "key": encoded_key,
@@ -1015,7 +1013,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             if exc.code == 14 or "Cannot apply $inc" in str(exc):
                 raise TypeError(f"value for key {key!r} is not numeric") from exc
             raise
-        if doc is None:  # type: ignore
+        if doc is None:
             raise RuntimeError("Failed to increment value; MongoDB did not return a document")
         raw_value = doc["value"]
         return self._value_adapter.validate_python(raw_value)
@@ -1028,7 +1026,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         encoded_value = self._value_adapter.dump_python(value, mode="python")
         try:
             async with self.tracking_context("chmax.find_one_and_update", self.collection_name):
-                doc = await collection.find_one_and_update(
+                doc: Mapping[str, Any] | None = await collection.find_one_and_update(
                     {
                         "partition_id": self._partition_id,
                         "key": encoded_key,
@@ -1044,7 +1042,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             if exc.code == 14 or "Cannot apply $max" in str(exc):
                 raise TypeError(f"value for key {key!r} is not numeric") from exc
             raise
-        if doc is None:  # type: ignore
+        if doc is None:
             raise RuntimeError("Failed to update value; MongoDB did not return a document")
         raw_value = doc["value"]
         return self._value_adapter.validate_python(raw_value)
@@ -1060,7 +1058,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             },
             session=self._session,
         )
-        if doc is None:  # type: ignore
+        if doc is None:
             return default
 
         raw_value = doc["value"]

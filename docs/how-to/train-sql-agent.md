@@ -224,7 +224,7 @@ algorithm = agl.VERL(verl_config)
 trainer = agl.Trainer(
     n_runners=10,
     algorithm=algorithm,
-    adapter={"agent_match": active_agent},
+    adapter=agl.TracerTraceToTriplet(agent_match=active_agent),
 )
 train_data = pd.read_parquet("data/train_spider.parquet").to_dict("records")
 val_data = pd.read_parquet("data/test_dev_500.parquet").to_dict("records")

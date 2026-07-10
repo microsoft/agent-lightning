@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeGuard, Union, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
@@ -25,6 +25,15 @@ TRACER_TOKEN_IDS_KEYS = {
     "prompt": ("prompt_token_ids",),
     "response": ("response_token_ids",),
 }
+
+
+def _is_int_sequence(value: Sequence[Any]) -> TypeGuard[Sequence[int]]:
+    return all(isinstance(item, int) for item in value)
+
+
+def _is_any_mapping(value: object) -> TypeGuard[Dict[str, Any]]:
+    return isinstance(value, dict)
+
 
 TRACER_RESPONSE_ID_KEYS = ("gen_ai.response.id", f"{LightningSpanAttributes.OPERATION_OUTPUT.value}.id")
 
@@ -145,11 +154,11 @@ class TraceTree:
         self.children = children or []
 
     @property
-    def start_time(self):
+    def start_time(self) -> Optional[float]:
         return self.span.start_time
 
     @property
-    def end_time(self):
+    def end_time(self) -> Optional[float]:
         return self.span.end_time
 
     def find_id(self, id: str) -> "TraceTree | None":
@@ -178,7 +187,7 @@ class TraceTree:
         """
         import graphviz
 
-        dot = graphviz.Digraph(comment="Trace Tree")
+        dot = cast(Any, graphviz.Digraph(comment="Trace Tree"))
 
         should_visit_cache: Dict[str, bool] = {}
 
@@ -206,14 +215,14 @@ class TraceTree:
             vis_name = node.id[-8:] + " (" + node.span.name + ")"
             if agent_name is not None:
                 vis_name += " [" + agent_name + "]"
-            dot.node(node.id, vis_name)  # type: ignore
+            dot.node(node.id, vis_name)
             for child in node.children:
                 if visit(child):
-                    dot.edge(node.id, child.id)  # type: ignore
+                    dot.edge(node.id, child.id)
             return True
 
         visit(self)
-        dot.render(filename, format="png", cleanup=True)  # type: ignore
+        dot.render(filename, format="png", cleanup=True)
 
     def names_tuple(self) -> Tuple[str, List[Any]]:
         """Return the span name alongside nested child names.
@@ -350,8 +359,6 @@ class TraceTree:
             Agent name extracted from known attributes, otherwise `None`.
         """
         attributes = self.span.attributes
-        if attributes is None:  # type: ignore
-            return None
 
         # Case 1: OpenAI Agent SDK
         agent_name = cast(Optional[str], attributes.get("agent.name"))
@@ -412,7 +419,7 @@ class TraceTree:
             `True` when the span payload describes a reward, otherwise `False`.
         """
         maybe_reward = self.maybe_reward_dict()
-        if maybe_reward and maybe_reward.get("type") == "reward":  # type: ignore
+        if maybe_reward and maybe_reward.get("type") == "reward":
             return True
 
         # Agent-lightning 0.3+
@@ -471,8 +478,8 @@ class TraceTree:
             ):
                 is_llm_call = False
 
-            if is_llm_call:
-                llm_calls.append((self, within_matching_subtree))  # type: ignore
+            if is_llm_call and within_matching_subtree is not None:
+                llm_calls.append((self, within_matching_subtree))
                 if existing_llm_call_response_ids is None:
                     existing_llm_call_response_ids = set()
                 if response_id is not None:
@@ -537,10 +544,17 @@ class TraceTree:
                     continue
                 if node is self:
                     continue
-                if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:  # type: ignore
-                    duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time  # type: ignore
+                if (
+                    node.start_time is None
+                    or node.end_time is None
+                    or repair_node.start_time is None
+                    or repair_node.end_time is None
+                ):
+                    continue
+                if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:
+                    duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time
                     if duration_delta > 0 and duration_delta < closest_duration:
-                        closest_duration = duration_delta  # type: ignore
+                        closest_duration = duration_delta
                         closest_parent = node
 
             # Repair the hierarchy
@@ -563,18 +577,18 @@ class TraceTree:
         rewards: dict[str, Optional[float]] = {}
 
         if reward_match == RewardMatchPolicy.FIRST_OCCURRENCE:
-            time_sorted: List[TraceTree] = cast(List[TraceTree], sorted(self.traverse(), key=lambda x: x.start_time))  # type: ignore
-            assign_to: List[Tuple[str, int]] = []  # type: ignore
+            time_sorted = sorted(self.traverse(), key=lambda x: x.start_time or 0.0)
+            assign_to: List[Tuple[str, float]] = []
             for item in time_sorted:
-                if item.id in llm_call_ids:
-                    assign_to.append((item.id, item.end_time))  # type: ignore
+                if item.id in llm_call_ids and item.end_time is not None:
+                    assign_to.append((item.id, item.end_time))
 
                 # get reward
                 agentops_output = item.maybe_reward_dict()
                 if agentops_output and agentops_output.get("type") == "reward":
                     for assign_to_id, assign_to_end_time in reversed(assign_to):
                         # This reward happens before the end of the LLM call.
-                        if assign_to_end_time > item.start_time:  # type: ignore
+                        if item.start_time is None or assign_to_end_time > item.start_time:
                             continue
                         # Ok, we found someone to assign to
                         if assign_to_id in rewards:
@@ -585,15 +599,15 @@ class TraceTree:
 
         elif reward_match == RewardMatchPolicy.FIRST_SIBLING:
             for item in self.traverse():
-                assign_to: List[Tuple[str, int]] = []
+                assign_to: List[Tuple[str, float]] = []
                 for child in item.children:
-                    if child.id in llm_call_ids:
-                        assign_to.append((child.id, child.end_time))  # type: ignore
+                    if child.id in llm_call_ids and child.end_time is not None:
+                        assign_to.append((child.id, child.end_time))
 
                     agentops_output = child.maybe_reward_dict()
                     if agentops_output and agentops_output.get("type") == "reward":
                         for assign_to_id, assign_to_end_time in reversed(assign_to):
-                            if assign_to_end_time > child.start_time:  # type: ignore
+                            if child.start_time is None or assign_to_end_time > child.start_time:
                                 # This reward happens before the end of the LLM call.
                                 continue
                             if assign_to_id in rewards:
@@ -618,25 +632,19 @@ class TraceTree:
             message_entries = cast(List[Any], prompt_raw_content)
         elif isinstance(prompt_raw_content, dict):
             # Common when the attributes expand to {"0": {...}, "prompt_filter_results": ...}
-            numeric_keys = [
-                key
-                for key in cast(Dict[str, Any], prompt_raw_content).keys()
-                if isinstance(key, str) and key.isdigit()  # pyright: ignore[reportUnnecessaryIsInstance]
-            ]
+            prompt_dict = cast(Dict[str, Any], prompt_raw_content)
+            numeric_keys = [key for key in prompt_dict if key.isdigit()]
             if numeric_keys:
                 for key in sorted(numeric_keys, key=int):
-                    message_entries.append(prompt_raw_content[key])
+                    message_entries.append(prompt_dict[key])
             else:
-                message_entries = [prompt_raw_content]
+                message_entries = [prompt_dict]
         else:
             return []
 
         image_urls: List[str] = []
-        for message in cast(List[Dict[str, Any]], message_entries):
-            if (
-                not isinstance(message, dict)  # pyright: ignore[reportUnnecessaryIsInstance]
-                or "content" not in message
-            ):
+        for message in message_entries:
+            if not _is_any_mapping(message) or "content" not in message:
                 continue
             content = message["content"]
             if isinstance(content, str):
@@ -646,15 +654,17 @@ class TraceTree:
                     logger.debug(f"Failed to parse message content as JSON: {content}")
                     continue
             if isinstance(content, list):
-                for content_part in cast(List[Dict[str, Any]], content):
-                    if not isinstance(content_part, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
+                content_parts = cast(List[Any], content)
+                for content_part in content_parts:
+                    if not _is_any_mapping(content_part):
                         continue
                     if content_part.get("type") == "image_url":
-                        image_url_dict = cast(Dict[str, Any], content_part.get("image_url"))
-                        if not isinstance(image_url_dict, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
+                        image_url_dict = content_part.get("image_url")
+                        if not _is_any_mapping(image_url_dict):
                             continue
-                        if "url" in image_url_dict:
-                            image_urls.append(image_url_dict["url"])
+                        image_url = image_url_dict.get("url")
+                        if isinstance(image_url, str):
+                            image_urls.append(image_url)
         return image_urls
 
     def span_to_triplet(self, span: Span, agent_name: str) -> Triplet:
@@ -663,28 +673,14 @@ class TraceTree:
         Subclass can override this method to add more fields to the triplet,
         such as chat messages and tool calls.
         """
-        prompt_token_ids = (
-            _attributes_get_ids_multiple(
-                span.attributes, list(TRACER_TOKEN_IDS_KEYS["prompt"])
-            )
-            or []
-        )
+        prompt_token_ids = _attributes_get_ids_multiple(span.attributes, list(TRACER_TOKEN_IDS_KEYS["prompt"])) or []
         response_token_ids = (
-            _attributes_get_ids_multiple(
-                span.attributes, list(TRACER_TOKEN_IDS_KEYS["response"])
-            )
-            or []
+            _attributes_get_ids_multiple(span.attributes, list(TRACER_TOKEN_IDS_KEYS["response"])) or []
         )
 
-        response_id = _attributes_get_multiple(
-            span.attributes, list(TRACER_RESPONSE_ID_KEYS)
-        )
-        request_metadata = _attributes_unflatten_multiple(
-            span.attributes, list(TRACER_REQUEST_KEY_PREFIXES)
-        )
-        response_metadata = _attributes_unflatten_multiple(
-            span.attributes, list(TRACER_RESPONSE_KEY_PREFIXES)
-        )
+        response_id = _attributes_get_multiple(span.attributes, list(TRACER_RESPONSE_ID_KEYS))
+        request_metadata = _attributes_unflatten_multiple(span.attributes, list(TRACER_REQUEST_KEY_PREFIXES))
+        response_metadata = _attributes_unflatten_multiple(span.attributes, list(TRACER_RESPONSE_KEY_PREFIXES))
         # Special handling for operation output messages: messages are handled separately.
         if isinstance(request_metadata, dict):
             request_metadata.pop("messages", None)
@@ -693,18 +689,14 @@ class TraceTree:
             response_metadata.pop("prompt_token_ids", None)
             response_metadata.pop("response_token_ids", None)
 
-        prompt_raw_content = _attributes_unflatten_multiple(
-            span.attributes, list(TRACER_PROMPT_KEY_PREFIXES)
-        )
-        completion_raw_content = _attributes_unflatten_multiple(
-            span.attributes, list(TRACER_COMPLETION_KEY_PREFIXES)
-        )
+        prompt_raw_content = _attributes_unflatten_multiple(span.attributes, list(TRACER_PROMPT_KEY_PREFIXES))
+        completion_raw_content = _attributes_unflatten_multiple(span.attributes, list(TRACER_COMPLETION_KEY_PREFIXES))
         image_urls = self.extract_prompt_image_urls(prompt_raw_content)
         prompt_payload = {"token_ids": prompt_token_ids, "raw_content": prompt_raw_content, "image_urls": image_urls}
         response_payload = {"token_ids": response_token_ids, "raw_content": completion_raw_content}
 
         # FIXME: logprob doesn't support Weave tracer yet.
-        logprobs_content = span.attributes.get("logprobs.content", None)  # type: ignore
+        logprobs_content = span.attributes.get("logprobs.content", None)
         if isinstance(logprobs_content, str):
             logprobs_content = json.loads(logprobs_content)
             response_payload["logprobs"] = logprobs_content
@@ -847,7 +839,7 @@ class TracerTraceToTriplet(TraceToTripletBase):
         trace_tree.visualize(filename, interested_span_match=interested_span_match)
         return trace_tree
 
-    def adapt(self, source: Union[Sequence[Span], Sequence[ReadableSpan]], /) -> List[Triplet]:  # type: ignore
+    def adapt(self, source: Union[Sequence[Span], Sequence[ReadableSpan]], /) -> List[Triplet]:
         """Convert tracer spans into [`Triplet`][agentlightning.Triplet] trajectories.
 
         Args:
@@ -905,17 +897,19 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
 
     def _as_token_ids(self, value: Any) -> List[int]:
         """Normalize token ids from list[int], tuple[int], or first element of list[list[int]]."""
-        value = self._literal_eval_maybe(value)
-        if isinstance(value, tuple):
-            value = list(value)
-        if not isinstance(value, list):
+        parsed = self._literal_eval_maybe(value)
+        if isinstance(parsed, tuple):
+            values = cast(Sequence[Any], parsed)
+        elif isinstance(parsed, list):
+            values = cast(Sequence[Any], parsed)
+        else:
             return []
-        if all(isinstance(x, int) for x in value):
-            return cast(List[int], value)
-        if value and isinstance(value[0], (list, tuple)):
-            first = list(cast(Sequence[Any], value[0]))
-            if all(isinstance(x, int) for x in first):
-                return cast(List[int], first)
+        if _is_int_sequence(values):
+            return list(values)
+        if values and isinstance(values[0], (list, tuple)):
+            first = cast(Sequence[Any], values[0])
+            if _is_int_sequence(first):
+                return list(first)
         return []
 
     def _first_token_ids(self, attrs: Dict[str, Any], keys: Sequence[str]) -> List[int]:
@@ -930,14 +924,15 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         choices = self._literal_eval_maybe(choices)
         if not (isinstance(choices, list) and choices):
             return []
-        cand = cast(Any, choices[0])
-        if not isinstance(cand, dict):
+        choices_list = cast(List[Any], choices)
+        candidate = choices_list[0]
+        if not _is_any_mapping(candidate):
             return []
-        token_ids = self._as_token_ids(cand.get("token_ids"))
+        token_ids = self._as_token_ids(candidate.get("token_ids"))
         if token_ids:
             return token_ids
-        provider_fields = cand.get("provider_specific_fields")
-        if isinstance(provider_fields, dict):
+        provider_fields = candidate.get("provider_specific_fields")
+        if _is_any_mapping(provider_fields):
             return self._as_token_ids(provider_fields.get("token_ids"))
         return []
 
@@ -976,7 +971,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         rid = _attributes_get_multiple(attrs, list(LLM_PROXY_RESPONSE_ID_KEYS))
         return str(rid) if isinstance(rid, str) and rid else None
 
-    def adapt(self, source: Sequence[Span], /) -> List[Triplet]:  # type: ignore
+    def adapt(self, source: Sequence[Span], /) -> List[Triplet]:
         """Convert LLM Proxy spans into [`Triplet`][agentlightning.Triplet] trajectories.
 
         Args:

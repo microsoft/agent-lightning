@@ -18,7 +18,8 @@ import os
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+from importlib import import_module
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, cast
 
 import aiologic
 
@@ -755,7 +756,7 @@ class PrometheusMetricsBackend(MetricsBackend):
             ImportError: If prometheus_client is not installed.
         """
         try:
-            import prometheus_client  # type: ignore
+            import_module("prometheus_client")
         except ImportError:
             raise ImportError(
                 "prometheus_client is not installed. Please either install it or use ConsoleMetricsBackend instead."
@@ -1019,7 +1020,7 @@ def shutdown_metrics(server: Any = None, worker: Any = None, *args: Any, **kwarg
                 pid = worker.pid
             else:
                 pid = os.getpid()
-            multiprocess.mark_process_dead(pid, path.name)  # type: ignore
+            cast(Any, multiprocess).mark_process_dead(pid, path.name)
             logger.debug("Marked Prometheus metrics for process %d as dead", pid)
         except Exception as e:
             logger.error("Error during metrics cleanup: %s", str(e))

@@ -12,6 +12,12 @@ from agentlightning.utils.otel import flatten_attributes, format_exception_attri
 logger = logging.getLogger(__name__)
 
 
+def _ensure_exception(exception: object) -> BaseException:
+    if not isinstance(exception, BaseException):
+        raise TypeError(f"Expected a BaseException instance, got: {type(exception)}.")
+    return exception
+
+
 def emit_exception(
     exception: BaseException, attributes: Optional[Dict[str, Any]] = None, propagate: bool = True
 ) -> None:
@@ -30,8 +36,7 @@ def emit_exception(
         The helper validates its input. If a non-exception value is provided,
         a TypeError is raised to indicate a programming mistake.
     """
-    if not isinstance(exception, BaseException):  # type: ignore
-        raise TypeError(f"Expected a BaseException instance, got: {type(exception)}.")
+    exception = _ensure_exception(exception)
     span_attributes = format_exception_attributes(exception)
 
     if attributes:

@@ -98,14 +98,14 @@ class GunicornApp(BaseApplication):
     def __init__(self, app: FastAPI, options: Dict[str, Any]):
         self.application = app
         self.options = options
-        super().__init__()  # type: ignore
+        super().__init__()
 
     def load_config(self):
-        cfg = self.cfg
-        valid_keys = cfg.settings.keys()  # type: ignore
+        cfg = cast(Any, self.cfg)
+        valid_keys = cfg.settings.keys()
         for k, v in (self.options or {}).items():
             if k in valid_keys and v is not None:
-                cfg.set(k, v)  # type: ignore
+                cfg.set(k, v)
 
     def load(self):
         return self.application
@@ -440,16 +440,17 @@ def run_gunicorn(
     def _watchdog() -> None:
         start = time.time()
         deadline = start + timeout
+        arbiter_api = cast(Any, arbiter)
 
         # First, wait for arbiter.workers to get populated
-        while time.time() < deadline and not arbiter.WORKERS:  # type: ignore
+        while time.time() < deadline and not arbiter_api.WORKERS:
             # If arbiter died early, abort quickly.
             if runtime_error is not None:
                 logger.error("Gunicorn arbiter exited during startup. Watchdog exiting.")
                 return
             time.sleep(0.1)
 
-        if not arbiter.WORKERS:  # type: ignore
+        if not arbiter_api.WORKERS:
             elapsed_time = time.time() - start
             logger.error("Gunicorn workers did not start within %.2f seconds.", elapsed_time)
             if runtime_error is None:
@@ -465,7 +466,7 @@ def run_gunicorn(
                 logger.info("Halting Gunicorn arbiter.")
                 # Ask arbiter to stop if it's still alive.
                 # It will make the watchdog exit too.
-                arbiter.signal(signal.SIGTERM, inspect.currentframe())  # type: ignore
+                arbiter_api.signal(signal.SIGTERM, inspect.currentframe())
             else:
                 # Timeout case: arbiter has thrown an exception.
                 logger.error("Gunicorn arbiter exited during startup. Watchdog exiting.")
@@ -521,7 +522,7 @@ def run_gunicorn(
                 )
                 logger.info("Halting Gunicorn arbiter.")
                 # Ask arbiter to stop if it's still alive.
-                arbiter.signal(signal.SIGTERM, inspect.currentframe())  # type: ignore
+                arbiter_api.signal(signal.SIGTERM, inspect.currentframe())
             else:
                 # If arbiter has thrown an exception, report it.
                 logger.error("Gunicorn arbiter exited during health check. Watchdog exiting.")
@@ -789,7 +790,7 @@ class PythonServerLauncher:
                     self._access_host = self._ensure_host()
             else:
                 self._access_host = self.args.access_host
-        return self._access_host  # type: ignore
+        return self._access_host
 
     def _create_uvicorn_server(self) -> uvicorn.Server:
         config = uvicorn.Config(
@@ -926,8 +927,8 @@ class PythonServerLauncher:
 
         # Gunicorn path when n_workers > 1
         if self.args.n_workers > 1:
-            logger.info(f"Starting Gunicorn server...")
-            options = {
+            logger.info("Starting Gunicorn server...")
+            options: Dict[str, Any] = {
                 "bind": f"{host}:{port}",
                 "workers": int(self.args.n_workers),
                 "worker_class": "uvicorn_worker.UvicornWorker",
@@ -942,7 +943,7 @@ class PythonServerLauncher:
             if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
                 from agentlightning.utils.metrics import shutdown_metrics
 
-                options["child_exit"] = shutdown_metrics  # type: ignore
+                options["child_exit"] = shutdown_metrics
 
             self._gunicorn_app = GunicornApp(self.app, options)
 

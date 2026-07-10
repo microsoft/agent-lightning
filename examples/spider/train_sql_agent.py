@@ -24,14 +24,14 @@ import argparse
 import os
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pandas as pd
 from sql_agent import LitSQLAgent
 
 import agentlightning as agl
 
-RL_TRAINING_CONFIG: Dict[str, Any] = {
+RL_TRAINING_CONFIG: dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
         "use_kl_in_reward": False,
@@ -97,26 +97,26 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
 }
 
 
-def config_train_fast() -> Dict[str, Any]:
+def config_train_fast() -> dict[str, Any]:
     """A fast training run for CI testing purposes."""
 
     # `EXPERIMENT_NAME="spider_$(date +%Y%m%d%H%M%S)"`
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    EXPERIMENT_NAME = f"spider_{timestamp}"
+    experiment_name = f"spider_{timestamp}"
 
     # `PROJECT_NAME=AgentLightningCI`
-    PROJECT_NAME = "AgentLightningCI"
+    project_name = "AgentLightningCI"
 
-    # Simulate writing to $GITHUB_OUTPUT if it’s set
+    # Simulate writing to $GITHUB_OUTPUT if it's set
     github_output = os.getenv("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as f:
-            f.write(f"project_name={PROJECT_NAME}\n")
-            f.write(f"run_name={EXPERIMENT_NAME}\n")
+            f.write(f"project_name={project_name}\n")
+            f.write(f"run_name={experiment_name}\n")
 
-    print("Set environment variables:")
-    print(f"PROJECT_NAME={PROJECT_NAME}")
-    print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
+        print("Set environment variables:")
+        print(f"PROJECT_NAME={project_name}")
+        print(f"EXPERIMENT_NAME={experiment_name}")
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
@@ -124,20 +124,20 @@ def config_train_fast() -> Dict[str, Any]:
     config["data"]["val_files"] = "data/test_dev.parquet"
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
-    config["trainer"]["experiment_name"] = EXPERIMENT_NAME
-    config["trainer"]["project_name"] = PROJECT_NAME
+    config["trainer"]["experiment_name"] = experiment_name
+    config["trainer"]["project_name"] = project_name
     config["trainer"]["test_freq"] = 1
     return config
 
 
-def config_train_qwen() -> Dict[str, Any]:
+def config_train_qwen() -> dict[str, Any]:
     """A configuration for training with Qwen-2.5B."""
 
     config = deepcopy(RL_TRAINING_CONFIG)
     return config
 
 
-def config_train_npu() -> Dict[str, Any]:
+def config_train_npu() -> dict[str, Any]:
     """A configuration for training with NPU."""
 
     config = deepcopy(RL_TRAINING_CONFIG)
@@ -151,7 +151,7 @@ def config_train_npu() -> Dict[str, Any]:
     return config
 
 
-def config_train_llama() -> Dict[str, Any]:
+def config_train_llama() -> dict[str, Any]:
     """A configuration for training with LLaMA-3.2-1B-Instruct.
 
     You will need a `HF_TOKEN` set to run with this config.
@@ -164,12 +164,13 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
+def train(config: dict[str, Any], active_agent: str | None) -> None:
     """Train the SQL agent with the given configuration."""
 
     agent = LitSQLAgent()
     algorithm = agl.VERL(config)
-    trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
+    adapter = agl.TracerTraceToTriplet(agent_match=active_agent)
+    trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter=adapter)
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import agentlightning as agl
 from agentlightning.litagent import LitAgent
-from agentlightning.trainer.registry import ExecutionStrategyRegistry
 
 
 class _NoopAgent(LitAgent[object]):
@@ -26,41 +27,35 @@ def test_trainer_with_predefined_tracer() -> None:
     assert isinstance(trainer.runner.tracer, agl.OtelTracer)
 
 
-def test_trainer_with_strategy_alias_shm() -> None:
-    """Test trainer initialization with strategy alias 'shm'."""
+def test_trainer_with_shared_memory_strategy_instance() -> None:
+    """Test trainer initialization with an explicit shared-memory strategy."""
     algorithm = agl.Baseline()
-    # Use strategy alias "shm"
+    strategy = agl.SharedMemoryExecutionStrategy()
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=1,  # n_runners must be 1 here
-        strategy="shm",
+        strategy=strategy,
     )
-    assert isinstance(trainer.strategy, agl.SharedMemoryExecutionStrategy)
+    assert trainer.strategy is strategy
 
 
-def test_trainer_with_strategy_dict_main_thread() -> None:
-    """Test trainer initialization with strategy dict allowing n_runners > 1."""
+def test_trainer_with_shared_memory_strategy_main_thread() -> None:
+    """Test trainer initialization with an explicit strategy allowing n_runners > 1."""
     algorithm = agl.Baseline()
-    # Use dict. Now n_runners can be >1 because algorithm is on the main thread
+    strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", managed_store=False)
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
-        strategy={"type": "shm", "main_thread": "algorithm", "managed_store": False},
+        strategy=strategy,
     )
-    assert isinstance(trainer.strategy, agl.SharedMemoryExecutionStrategy)
-    assert trainer.strategy.main_thread == "algorithm"
-    assert trainer.strategy.managed_store is False
+    assert trainer.strategy is strategy
+    assert strategy.main_thread == "algorithm"
+    assert strategy.managed_store is False
 
 
-def test_trainer_strategy_registry_does_not_include_ipc() -> None:
-    """IPC alias remains removed until an inter-process strategy is implemented."""
-    assert "ipc" not in ExecutionStrategyRegistry
-
-
-def test_trainer_with_initialized_strategy_ignores_n_runners() -> None:
-    """Test that n_runners is ignored when strategy is already initialized."""
+def test_trainer_with_initialized_strategy_keeps_strategy_configuration() -> None:
+    """Test that Trainer does not rewrite an initialized strategy."""
     algorithm = agl.Baseline()
-    # n_runners is ignored in the trainer because strategy has been initialized with n_runners=4
     strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", n_runners=4)
     trainer = agl.Trainer(
         algorithm=algorithm,
@@ -71,61 +66,17 @@ def test_trainer_with_initialized_strategy_ignores_n_runners() -> None:
     assert trainer.strategy.n_runners == 4  # type: ignore
 
 
-def test_trainer_with_client_server_strategy_dict() -> None:
-    """Test trainer initialization with client-server strategy dict."""
+def test_trainer_with_client_server_strategy_instance() -> None:
+    """Test trainer initialization with an explicit client-server strategy."""
     algorithm = agl.Baseline()
-    # By default, strategy is client-server, but you can also use a string alias to specify it again
+    strategy = agl.ClientServerExecutionStrategy(server_port=9999)
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
-        strategy={
-            # This line is optional
-            "type": "cs",
-            "server_port": 9999,
-        },
-    )
-    assert isinstance(trainer.strategy, agl.ClientServerExecutionStrategy)
-    assert trainer.strategy.server_port == 9999
-
-
-def test_trainer_port_forwarded_to_client_server_strategy() -> None:
-    """Test that the top-level port argument configures the client-server strategy."""
-    trainer = agl.Trainer(
-        algorithm=agl.Baseline(),
-        n_runners=4,
-        port=8081,
-    )
-
-    assert isinstance(trainer.strategy, agl.ClientServerExecutionStrategy)
-    assert trainer.strategy.server_port == 8081
-
-
-def test_trainer_port_ignored_for_non_client_server_strategy() -> None:
-    """Test that port has no effect when using a non client-server strategy."""
-    trainer = agl.Trainer(
-        algorithm=agl.Baseline(),
-        n_runners=1,
-        port=8082,
-        strategy="shm",
-    )
-
-    assert isinstance(trainer.strategy, agl.SharedMemoryExecutionStrategy)
-    assert not hasattr(trainer.strategy, "server_port")
-
-
-def test_trainer_port_overrides_existing_client_server_strategy() -> None:
-    """Test that provided port overrides an initialized client-server strategy."""
-    strategy = agl.ClientServerExecutionStrategy(server_port=9000)
-
-    trainer = agl.Trainer(
-        algorithm=agl.Baseline(),
-        n_runners=1,
         strategy=strategy,
-        port=9100,
     )
-
     assert trainer.strategy is strategy
-    assert trainer.strategy.server_port == 9100  # type: ignore
+    assert strategy.server_port == 9999
 
 
 def test_trainer_with_env_vars_for_execution_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -139,8 +90,7 @@ def test_trainer_with_env_vars_for_execution_strategy(monkeypatch: pytest.Monkey
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
-        # This line is optional
-        strategy="cs",
+        strategy=agl.ClientServerExecutionStrategy(),
     )
     assert isinstance(trainer.strategy, agl.ClientServerExecutionStrategy)
     assert trainer.strategy.server_port == 10000
@@ -148,25 +98,47 @@ def test_trainer_with_env_vars_for_execution_strategy(monkeypatch: pytest.Monkey
     assert trainer.strategy.managed_store is False
 
 
-def test_trainer_with_string_adapter() -> None:
-    """Test trainer initialization with adapter specified as string."""
+def test_trainer_with_adapter_instance() -> None:
+    """Test trainer initialization with an explicit adapter instance."""
     algorithm = agl.Baseline()
-    trainer = agl.Trainer(algorithm=algorithm, n_runners=8, adapter="agentlightning.adapter.TraceToMessages")
+    adapter = agl.TraceToMessages()
+    trainer = agl.Trainer(algorithm=algorithm, n_runners=8, adapter=adapter)
     assert isinstance(trainer.adapter, agl.TraceToMessages)
+    assert trainer.adapter is adapter
 
 
-def test_trainer_with_adapter_dict_no_type() -> None:
-    """Test trainer initialization with adapter dict without type field."""
+def test_trainer_with_tracer_triplet_adapter_instance() -> None:
+    """Test trainer initialization with an explicit triplet adapter instance."""
     algorithm = agl.Baseline()
-    # If it's a dict and type is not provided, it will use the default class
+    adapter = agl.TracerTraceToTriplet(agent_match="plan_agent", repair_hierarchy=False)
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=8,
-        adapter={"agent_match": "plan_agent", "repair_hierarchy": False},
+        adapter=adapter,
     )
-    assert isinstance(trainer.adapter, agl.TracerTraceToTriplet)
-    assert trainer.adapter.agent_match == "plan_agent"
-    assert trainer.adapter.repair_hierarchy is False
+    assert trainer.adapter is adapter
+    assert adapter.agent_match == "plan_agent"
+    assert adapter.repair_hierarchy is False
+
+
+def test_trainer_rejects_dynamic_component_specs() -> None:
+    """Trainer accepts component instances only; dynamic config belongs outside the core API."""
+    strategy_alias: Any = "shm"
+    strategy_config: Any = {"type": "shm"}
+    adapter_path: Any = "agentlightning.adapter.TraceToMessages"
+    adapter_config: Any = {"agent_match": "plan_agent"}
+
+    with pytest.raises(TypeError, match="strategy must be an instance of ExecutionStrategy"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, strategy=strategy_alias)
+
+    with pytest.raises(TypeError, match="strategy must be an instance of ExecutionStrategy"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, strategy=strategy_config)
+
+    with pytest.raises(TypeError, match="adapter must be an instance of TraceAdapter"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, adapter=adapter_path)
+
+    with pytest.raises(TypeError, match="adapter must be an instance of TraceAdapter"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, adapter=adapter_config)
 
 
 def test_trainer_no_longer_has_fit_v0() -> None:
@@ -180,6 +152,13 @@ def test_trainer_fit_rejects_string_dataset() -> None:
 
     with pytest.raises(TypeError, match="no longer accepts string"):
         trainer.fit(_NoopAgent(), train_dataset="http://localhost:8080")
+
+
+def test_trainer_defaults_to_baseline_algorithm() -> None:
+    """Trainer creates a default Baseline algorithm when none is provided."""
+    trainer = agl.Trainer(n_runners=1)
+
+    assert isinstance(trainer.algorithm, agl.Baseline)
 
 
 def test_trainer_rejects_legacy_constructor_args() -> None:
@@ -198,3 +177,6 @@ def test_trainer_rejects_legacy_constructor_args() -> None:
 
     with pytest.raises(TypeError, match="got an unexpected keyword argument 'dev'"):
         agl.Trainer(algorithm=agl.Baseline(), n_runners=1, dev=True)  # type: ignore[misc]
+
+    with pytest.raises(TypeError, match="got an unexpected keyword argument 'port'"):
+        agl.Trainer(algorithm=agl.Baseline(), n_runners=1, port=4747)  # type: ignore[misc]

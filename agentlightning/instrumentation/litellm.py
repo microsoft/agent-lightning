@@ -8,7 +8,8 @@ It seems that LiteLLM owns its own telemetry from their own entrance
 [Related documentation](https://docs.litellm.ai/docs/observability/agentops_integration).
 """
 
-from typing import Any, Optional
+from collections.abc import Callable
+from typing import Any, Optional, cast
 
 from litellm.integrations.opentelemetry import OpenTelemetry
 
@@ -17,7 +18,7 @@ __all__ = [
     "uninstrument_litellm",
 ]
 
-original_set_attributes = OpenTelemetry.set_attributes  # type: ignore
+original_set_attributes = cast(Callable[..., None], cast(Any, OpenTelemetry).set_attributes)
 
 
 def patched_set_attributes(self: Any, span: Any, kwargs: Any, response_obj: Optional[Any]):

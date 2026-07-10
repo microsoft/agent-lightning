@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Type, cast
-
-from hydra import compose, initialize
-from omegaconf import OmegaConf
+from importlib import import_module
+from typing import Any, Callable, Optional, Type, cast
 
 from agentlightning.algorithm.base import Algorithm
+from agentlightning.store.base import LightningStore
 from agentlightning.types import AlgorithmContext
-from agentlightning.verl.entrypoint import run_ppo  # type: ignore
-
-if TYPE_CHECKING:
-    from agentlightning.verl.daemon import AgentModeDaemon
-    from agentlightning.verl.trainer import AgentLightningTrainer
-    from agentlightning.store.base import LightningStore
 
 
 class VERL(Algorithm):
@@ -125,20 +118,25 @@ class VERL(Algorithm):
     def __init__(
         self,
         config: dict[str, Any],
-        trainer_cls: Optional[Type[AgentLightningTrainer]] = None,
-        daemon_cls: Optional[Type[AgentModeDaemon]] = None,
+        trainer_cls: Optional[Type[Any]] = None,
+        daemon_cls: Optional[Type[Any]] = None,
     ):
         super().__init__()
+
+        hydra = import_module("hydra")
+        omega_conf = getattr(import_module("omegaconf"), "OmegaConf")
+        initialize = cast(Callable[..., Any], getattr(hydra, "initialize"))
+        compose = cast(Callable[..., Any], getattr(hydra, "compose"))
 
         # Compose the base config exactly like your decorator:
         with initialize(version_base=None, config_path="pkg://agentlightning/verl"):
             base_cfg = compose(config_name="config")
 
         # Merge your dict overrides
-        override_conf = OmegaConf.create(config)
+        override_conf = omega_conf.create(config)
         # Allow adding new fields
-        OmegaConf.set_struct(base_cfg, False)
-        self.config = OmegaConf.merge(base_cfg, override_conf)
+        omega_conf.set_struct(base_cfg, False)
+        self.config = omega_conf.merge(base_cfg, override_conf)
         self.trainer_cls = trainer_cls
         self.daemon_cls = daemon_cls
 
@@ -159,7 +157,8 @@ class VERL(Algorithm):
         from agentlightning.verl.daemon import AgentModeDaemon
         from agentlightning.verl.trainer import AgentLightningTrainer
 
-        store = cast(Optional["LightningStore"], context.store)
+        run_ppo = cast(Callable[..., None], getattr(import_module("agentlightning.verl.entrypoint"), "run_ppo"))
+        store = cast(Optional[LightningStore], context.store)
         if store is None:
             raise ValueError("VERL execution requires a store and does not support v0 fallback mode.")
 

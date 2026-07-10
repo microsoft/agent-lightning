@@ -2,8 +2,6 @@
 
 ::: agentlightning.Trainer
 
-::: agentlightning.build_component
-
 ## Execution Strategy
 
 ::: agentlightning.ExecutionStrategy

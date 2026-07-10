@@ -36,8 +36,8 @@ if TYPE_CHECKING:
     from agentlightning.litagent import LitAgent
     from agentlightning.llm_proxy import LLMProxy
     from agentlightning.runner.base import Runner
-    from agentlightning.tracer.base import Tracer
     from agentlightning.store.base import LightningStore
+    from agentlightning.tracer.base import Tracer
 
 __all__ = [
     "Triplet",
@@ -529,7 +529,7 @@ class PaginatedResult(BaseModel, Sequence[T_item]):
     # Overriding __iter__ enables list(paginated_result) to work as expected,
     # but changes Pydantic's default dict iteration behavior (which would otherwise
     # iterate over field names).
-    def __iter__(self) -> Iterator[T_item]:  # type: ignore
+    def __iter__(self) -> Iterator[T_item]:  # pyright: ignore[reportIncompatibleMethodOverride]
         return iter(self.items)
 
     def __repr__(self) -> str:

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, no_type_check
+from importlib import import_module
+from typing import Any, Callable, cast, no_type_check
 
 import requests
 from agentops.client.api import V3Client, V4Client
@@ -50,24 +51,28 @@ def _patch_exporters():
     import agentops.client.api
     import agentops.sdk.core
 
-    agentops.sdk.core.AuthenticatedOTLPExporter = BypassableAuthenticatedOTLPExporter  # type: ignore
-    agentops.sdk.core.OTLPMetricExporter = BypassableOTLPMetricExporter
-    if hasattr(agentops.sdk.core, "OTLPSpanExporter"):
-        agentops.sdk.core.OTLPSpanExporter = BypassableOTLPSpanExporter  # type: ignore
-    agentops.client.api.V3Client = BypassableV3Client
-    agentops.client.api.V4Client = BypassableV4Client
+    sdk_core = cast(Any, agentops.sdk.core)
+    client_api = cast(Any, agentops.client.api)
+    sdk_core.AuthenticatedOTLPExporter = BypassableAuthenticatedOTLPExporter
+    sdk_core.OTLPMetricExporter = BypassableOTLPMetricExporter
+    if hasattr(sdk_core, "OTLPSpanExporter"):
+        sdk_core.OTLPSpanExporter = BypassableOTLPSpanExporter
+    client_api.V3Client = BypassableV3Client
+    client_api.V4Client = BypassableV4Client
 
 
 def _unpatch_exporters():
     import agentops.client.api
     import agentops.sdk.core
 
-    agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter  # type: ignore
-    agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
-    if hasattr(agentops.sdk.core, "OTLPSpanExporter"):
-        agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter  # type: ignore
-    agentops.client.api.V3Client = V3Client
-    agentops.client.api.V4Client = V4Client
+    sdk_core = cast(Any, agentops.sdk.core)
+    client_api = cast(Any, agentops.client.api)
+    sdk_core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter
+    sdk_core.OTLPMetricExporter = OTLPMetricExporter
+    if hasattr(sdk_core, "OTLPSpanExporter"):
+        sdk_core.OTLPSpanExporter = OTLPSpanExporter
+    client_api.V3Client = V3Client
+    client_api.V4Client = V4Client
 
 
 def _unwrap_legacy_response(response: Any) -> Any:
@@ -79,7 +84,6 @@ def _unwrap_legacy_response(response: Any) -> Any:
 def _patch_new_agentops():
     import agentops.instrumentation.providers.openai.stream_wrapper
     import agentops.instrumentation.providers.openai.wrappers.chat
-    from agentops.instrumentation.providers.openai.wrappers.chat import handle_chat_attributes  # type: ignore
 
     global _original_handle_chat_attributes
 
@@ -87,10 +91,11 @@ def _patch_new_agentops():
         logger.warning("AgentOps already patched. Skipping.")
         return True
 
-    _original_handle_chat_attributes = handle_chat_attributes  # type: ignore
+    chat_wrappers = cast(Any, agentops.instrumentation.providers.openai.wrappers.chat)
+    _original_handle_chat_attributes = cast(Callable[..., Any], chat_wrappers.handle_chat_attributes)
 
     @no_type_check
-    def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None, **kws):  # type: ignore
+    def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None, **kws):
         attributes = _original_handle_chat_attributes(args=args, kwargs=kwargs, return_value=return_value, **kws)
 
         # In some cases, response is a openai._legacy_response.LegacyAPIResponse (e.g., LiteLLM, or LangChain),
@@ -169,40 +174,45 @@ def _unpatch_new_agentops():
 
 
 def _patch_old_agentops():
-    import opentelemetry.instrumentation.openai.shared.chat_wrappers  # type: ignore
-    from opentelemetry.instrumentation.openai.shared.chat_wrappers import _handle_response, dont_throw  # type: ignore
+    chat_wrappers = cast(Any, import_module("opentelemetry.instrumentation.openai.shared.chat_wrappers"))
+    _handle_response = cast(Callable[..., Any], chat_wrappers._handle_response)
+    dont_throw = cast(Callable[[Callable[..., Any]], Callable[..., Any]], chat_wrappers.dont_throw)
 
     global _original_handle_response
-    _original_handle_response = _handle_response  # type: ignore
+    _original_handle_response = _handle_response
 
-    @dont_throw  # type: ignore
-    def _handle_response_with_tokens(response, span, *args, **kwargs):  # type: ignore
-        _original_handle_response(response, span, *args, **kwargs)  # type: ignore
-        if hasattr(response, "prompt_token_ids"):  # type: ignore
-            span.set_attribute("prompt_token_ids", list(response.prompt_token_ids))  # type: ignore
-        if hasattr(response, "response_token_ids"):  # type: ignore
-            span.set_attribute("response_token_ids", list(response.response_token_ids[0]))  # type: ignore
+    @dont_throw
+    def _handle_response_with_tokens(response: Any, span: Any, *args: Any, **kwargs: Any) -> None:
+        if _original_handle_response is not None:
+            _original_handle_response(response, span, *args, **kwargs)
+        if hasattr(response, "prompt_token_ids"):
+            span.set_attribute("prompt_token_ids", list(response.prompt_token_ids))
+        if hasattr(response, "response_token_ids"):
+            span.set_attribute("response_token_ids", list(response.response_token_ids[0]))
 
         # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
-        if hasattr(response, "http_response") and hasattr(response.http_response, "json"):  # type: ignore
-            json_data = response.http_response.json()  # type: ignore
+        if hasattr(response, "http_response") and hasattr(response.http_response, "json"):
+            json_data = response.http_response.json()
             if isinstance(json_data, dict):
-                if "prompt_token_ids" in json_data:
-                    span.set_attribute("prompt_token_ids", list(json_data["prompt_token_ids"]))  # type: ignore
-                if "response_token_ids" in json_data:
-                    span.set_attribute("response_token_ids", list(json_data["response_token_ids"][0]))  # type: ignore
+                json_payload = cast(dict[str, Any], json_data)
+                prompt_token_ids = json_payload.get("prompt_token_ids")
+                if prompt_token_ids is not None:
+                    span.set_attribute("prompt_token_ids", list(prompt_token_ids))
+                response_token_ids = json_payload.get("response_token_ids")
+                if response_token_ids is not None:
+                    span.set_attribute("response_token_ids", list(response_token_ids[0]))
 
-    opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _handle_response_with_tokens  # type: ignore
+    chat_wrappers._handle_response = _handle_response_with_tokens
     logger.info("Patched earlier version of agentops using _handle_response")
     return True
 
 
 def _unpatch_old_agentops():
-    import opentelemetry.instrumentation.openai.shared.chat_wrappers  # type: ignore
+    chat_wrappers = cast(Any, import_module("opentelemetry.instrumentation.openai.shared.chat_wrappers"))
 
     global _original_handle_response
     if _original_handle_response is not None:
-        opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _original_handle_response  # type: ignore
+        chat_wrappers._handle_response = _original_handle_response
         _original_handle_response = None
         logger.info("Unpatched earlier version of agentops using _handle_response")
 
@@ -264,7 +274,7 @@ class BypassableOTLPMetricExporter(OTLPMetricExporter):
 
     def export(self, *args: Any, **kwargs: Any) -> MetricExportResult:
         if _agentops_service_enabled:
-            return super().export(*args, **kwargs)  # type: ignore[reportUnknownMemberType]
+            return cast(MetricExportResult, cast(Any, super()).export(*args, **kwargs))
         else:
             logger.debug("SwitchableOTLPMetricExporter is switched off, skipping export.")
             return MetricExportResult.SUCCESS
@@ -289,9 +299,11 @@ class BypassableV3Client(V3Client):
     """
 
     # Temporary synchronous override of fetch_auth_token for mock purposes.
-    def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:  # type: ignore[override]
+    def fetch_auth_token(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, *args: Any, **kwargs: Any
+    ) -> AuthTokenResponse:
         if _agentops_service_enabled:
-            return super().fetch_auth_token(*args, **kwargs)  # type: ignore[override]
+            return cast(AuthTokenResponse, cast(Any, super()).fetch_auth_token(*args, **kwargs))
         else:
             logger.debug("SwitchableV3Client is switched off, skipping fetch_auth_token request.")
             return AuthTokenResponse(token="dummy", project_id="dummy")

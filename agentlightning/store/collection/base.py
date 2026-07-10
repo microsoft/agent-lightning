@@ -161,7 +161,10 @@ class TrackedCollection:
                 raise
             finally:
                 elapsed = time.perf_counter() - start_time
-                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                tracker = self.tracker
+                if tracker is None:
+                    return
+                await tracker.inc_counter(
                     "agl.collections.total",
                     labels={
                         "store_pubmeth": public_store_method,
@@ -172,7 +175,7 @@ class TrackedCollection:
                         **self.extra_tracking_labels,
                     },
                 )
-                await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                await tracker.observe_histogram(
                     "agl.collections.latency",
                     value=elapsed,
                     labels={
@@ -528,7 +531,7 @@ def merge_must_filters(target: MutableMapping[str, FilterField], definition: Any
     if isinstance(definition, Mapping):
         entries.append(cast(Mapping[str, FilterField], definition))
     elif isinstance(definition, Sequence) and not isinstance(definition, (str, bytes)):
-        for entry in definition:  # type: ignore
+        for entry in cast(Sequence[Any], definition):
             if not isinstance(entry, Mapping):
                 raise TypeError("Each `_must` entry must be a mapping of field names to operators")
             entries.append(cast(Mapping[str, FilterField], entry))
@@ -566,7 +569,9 @@ def normalize_filter_options(
         if field_name == "_must":
             merge_must_filters(must_filters, ops)
             continue
-        normalized[field_name] = cast(FilterField, dict(ops))  # type: ignore
+        if not isinstance(ops, Mapping):
+            raise TypeError(f"Filter operators for field '{field_name}' must be a mapping")
+        normalized[field_name] = cast(FilterField, dict(ops))
 
     return (normalized or None, must_filters or None, aggregate)
 

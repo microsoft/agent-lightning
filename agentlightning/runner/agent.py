@@ -22,26 +22,25 @@ from typing import (
     Any,
     Awaitable,
     Callable,
+    Coroutine,
     List,
     Literal,
     Optional,
     Sequence,
     TypeVar,
-    cast,
 )
 
-from agentlightning.litagent import LitAgent
 from agentlightning.emitter.reward import emit_reward, find_final_reward
+from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import (
-    AgentSpanPayload,
     AttemptedRollout,
     Hook,
     NamedResources,
     Rollout,
-    RolloutResult,
     RolloutMode,
+    RolloutResult,
     Span,
     SpanCoreFields,
     TraceStatus,
@@ -302,7 +301,7 @@ class LitAgentRunner(Runner[T_task]):
         return await loop.run_in_executor(self._get_rollout_process_pool(), call)
 
     async def _await_with_event(
-        self, awaitable: Awaitable[RolloutResult], event: Optional[ExecutionEvent]
+        self, awaitable: Coroutine[Any, Any, RolloutResult], event: Optional[ExecutionEvent]
     ) -> RolloutResult:
         if event is None:
             return await awaitable
@@ -345,9 +344,7 @@ class LitAgentRunner(Runner[T_task]):
                 if propagate:
                     raise
 
-    async def _post_process_rollout_result(
-        self, rollout: AttemptedRollout, raw_result: RolloutResult
-    ) -> List[Span]:
+    async def _post_process_rollout_result(self, rollout: AttemptedRollout, raw_result: RolloutResult) -> List[Span]:
         """Standardizes the agent's return value and report what's needed to report to the store.
 
         Args:
@@ -387,18 +384,25 @@ class LitAgentRunner(Runner[T_task]):
 
         # Case 2: result is a list
         if isinstance(raw_result, list):
-            if len(raw_result) > 0 and all(isinstance(t, AgentSpanPayload) for t in raw_result):
+            if len(raw_result) == 0:
+                logger.warning(
+                    f"{self._log_prefix(rollout.rollout_id)} The rollout returns an empty list. "
+                    "Please check your rollout implementation."
+                )
+                trace_spans = []
+                result_recognized = True
+            else:
                 sequence_ids = await store.get_many_span_sequence_ids(
                     [(rollout.rollout_id, rollout.attempt.attempt_id) for _ in range(len(raw_result))]
                 )
                 trace_spans = [
                     Span.from_core_fields(
                         SpanCoreFields(
-                            name=cast(AgentSpanPayload, span_payload).name,
-                            status=TraceStatus(**cast(AgentSpanPayload, span_payload).status),
-                            attributes=cast(AgentSpanPayload, span_payload).attributes,
-                            start_time=cast(AgentSpanPayload, span_payload).start_time,
-                            end_time=cast(AgentSpanPayload, span_payload).end_time,
+                            name=span_payload.name,
+                            status=TraceStatus(**span_payload.status),
+                            attributes=span_payload.attributes,
+                            start_time=span_payload.start_time,
+                            end_time=span_payload.end_time,
                         ),
                         rollout_id=rollout.rollout_id,
                         attempt_id=rollout.attempt.attempt_id,
@@ -408,22 +412,6 @@ class LitAgentRunner(Runner[T_task]):
                 ]
                 await store.add_many_spans(trace_spans)
                 result_recognized = True
-
-            # Left over cases for list
-            elif len(raw_result) == 0:
-                logger.warning(
-                    f"{self._log_prefix(rollout.rollout_id)} The rollout returns an empty list. "
-                    "Please check your rollout implementation."
-                )
-                trace_spans = []
-                result_recognized = True
-
-            else:
-                types = [type(t).__name__ for t in raw_result][:10]
-                raise ValueError(
-                    f"Invalid raw result type. It's expected to be a list of AgentSpanPayload, "
-                    f"but got: {', '.join(types)}..."
-                )
 
         if not result_recognized:
             raise TypeError(
@@ -706,7 +694,9 @@ class LitAgentRunner(Runner[T_task]):
             try:
                 await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
             except Exception:
-                logger.exception(f"{self._log_prefix(rollout_id)} Exception during update_attempt for missing resources.")
+                logger.exception(
+                    f"{self._log_prefix(rollout_id)} Exception during update_attempt for missing resources."
+                )
             if raise_on_exception:
                 raise error
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")

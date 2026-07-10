@@ -73,7 +73,11 @@ from .base import (
 )
 from .collection import FilterOptions, LightningCollections
 from .collection.base import AtomicLabels, DuplicatedPrimaryKeyError
-from .utils import LATENCY_BUCKETS, rollout_status_from_attempt, scan_unhealthy_rollouts
+from .utils import (
+    LATENCY_BUCKETS,
+    rollout_status_from_attempt,
+)
+from .utils import scan_unhealthy_rollouts as find_unhealthy_rollout_updates
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 T_model = TypeVar("T_model", bound=BaseModel)
@@ -113,7 +117,7 @@ def _with_collections_execute(labels: Sequence[AtomicLabels]):
             return await self.collections.execute(
                 callback,
                 mode="rw",  # Read-write all enabled.
-                snapshot=self._read_snapshot,  # pyright: ignore[reportPrivateUsage]
+                snapshot=self.read_snapshot,
                 commit=True,  # Enable committing.
                 labels=labels,
             )
@@ -143,7 +147,8 @@ def tracked(name: str):
                 priv_token = _current_private_store_method.set(name)
 
             try:
-                if self._tracker is None:  # pyright: ignore[reportPrivateUsage]
+                tracker = self.tracker
+                if tracker is None:
                     # Skip the tracking because tracking is not configured
                     return await func(self, *args, **kwargs)
 
@@ -156,11 +161,11 @@ def tracked(name: str):
                     raise
                 finally:
                     elapsed = time.perf_counter() - start_time
-                    await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                    await tracker.inc_counter(
                         "agl.store.total",
                         labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status},
                     )
-                    await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                    await tracker.observe_histogram(
                         "agl.store.latency",
                         value=elapsed,
                         labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status},
@@ -187,19 +192,19 @@ def healthcheck_before(func: T_callable) -> T_callable:
     @functools.wraps(func)
     async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
         # Check if healthcheck is already running to prevent recursion
-        if getattr(self, "_healthcheck_running", False):
+        if self.healthcheck_running:
             # Skip healthcheck if already running
             return await func(self, *args, **kwargs)
 
         # Set flag to prevent recursive healthcheck calls
         # This flag is not asyncio/thread-safe, but it doesn't matter
-        self._healthcheck_running = True  # type: ignore
+        self.healthcheck_running = True
         try:
             # The following methods should live inside one lock.
-            await self._scan_for_unhealthy_rollouts()  # pyright: ignore[reportPrivateUsage]
+            await self.scan_unhealthy_rollouts()
         finally:
             # Always clear the flag, even if healthcheck fails
-            self._healthcheck_running = False  # type: ignore
+            self.healthcheck_running = False
 
         # Execute the original method
         # This should be outside the lock.
@@ -242,6 +247,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             It's isolated for each store instance if there are multiple worker replicas.
     """
 
+    healthcheck_running: bool
+
     def __init__(
         self,
         collections: T_collections,
@@ -258,6 +265,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         # Control scan debounce to avoid overloading the store.
         self._scan_debounce_seconds = scan_debounce_seconds
+        self.healthcheck_running = False
         last_scan_time = self._launch_time
         if self._scan_debounce_seconds > 0:
             # Allow the first scan immediately after instantiation
@@ -287,6 +295,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 buckets=LATENCY_BUCKETS,
                 group_level=1,
             )
+
+    @property
+    def read_snapshot(self) -> bool:
+        """Whether read operations should use collection snapshots."""
+        return self._read_snapshot
+
+    @property
+    def tracker(self) -> MetricsBackend | None:
+        """Metrics tracker configured for this store."""
+        return self._tracker
 
     async def statistics(self) -> LightningStoreStatistics:
         """Return the statistics of the store."""
@@ -1153,9 +1171,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return write_result, successful_spans
 
     @tracked("_add_many_spans_helper")
-    async def _add_many_spans_helper(
-        self, rollout_id: str, attempt_id: str, spans: Sequence[Span]
-    ) -> SpanWriteResult:
+    async def _add_many_spans_helper(self, rollout_id: str, attempt_id: str, spans: Sequence[Span]) -> SpanWriteResult:
         """Add many spans to the store. All spans must be for the same rollout and attempt.
 
         This method is divided into three parts:
@@ -1526,14 +1542,15 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         for rollout, updated_fields in rollouts:
             # Sometimes "end_time" is set but it's not really updated.
             if "end_time" in updated_fields and is_finished(rollout):
-                if self._tracker is not None:
+                tracker = self.tracker
+                if tracker is not None:
                     labels = {
                         "status": rollout.status,
                         "mode": rollout.mode if rollout.mode is not None else "unknown",
                     }
                     duration = cast(float, rollout.end_time) - rollout.start_time
-                    await self._tracker.inc_counter("agl.rollouts.total", labels=labels)
-                    await self._tracker.observe_histogram(
+                    await tracker.inc_counter("agl.rollouts.total", labels=labels)
+                    await tracker.observe_histogram(
                         "agl.rollouts.duration",
                         value=duration,
                         labels=labels,
@@ -1707,8 +1724,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return running_attempted_rollouts
 
-    @tracked("_scan_for_unhealthy_rollouts")
-    async def _scan_for_unhealthy_rollouts(self) -> None:
+    @tracked("scan_unhealthy_rollouts")
+    async def scan_unhealthy_rollouts(self) -> None:
         """Perform healthcheck against all running rollouts in the store."""
         if not await self._should_scan_for_unhealthy_rollouts():
             return
@@ -1754,7 +1771,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         running_rollouts = await self._unlocked_get_running_rollouts(collections)
 
-        candidate_updates = await scan_unhealthy_rollouts(running_rollouts)
+        candidate_updates = await find_unhealthy_rollout_updates(running_rollouts)
         if not candidate_updates:
             return [], []
 
@@ -1771,9 +1788,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return rollouts, attempts
 
 
-# _scan_for_unhealthy_rollouts is somehow standalone and automatically invoked.
 COLLECTION_STORE_PUBLIC_METHODS = frozenset(
-    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["_scan_for_unhealthy_rollouts"]
+    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["scan_unhealthy_rollouts"]
 )
 
 COLLECTION_STORE_ALL_METHODS = frozenset([name for name in CollectionBasedLightningStore.__dict__])

@@ -1,26 +1,22 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import importlib
 import warnings
 
-AGENTOPS_INSTALLED: bool = False
-AGENTOPS_LANGCHAIN_INSTALLED: bool = False
-LITELLM_INSTALLED: bool = False
+
+def _is_module_available(module_name: str) -> bool:
+    try:
+        importlib.import_module(f"{__name__}.{module_name}")
+    except ImportError:
+        return False
+    return True
+
+
+AGENTOPS_INSTALLED: bool = _is_module_available("agentops")
+AGENTOPS_LANGCHAIN_INSTALLED: bool = _is_module_available("agentops_langchain")
+LITELLM_INSTALLED: bool = _is_module_available("litellm")
 VLLM_INSTALLED: bool = False
 WEAVE_INSTALLED: bool = False
-
-try:
-    from . import agentops  # type: ignore
-
-    AGENTOPS_INSTALLED = True  # type: ignore
-except ImportError:
-    pass
-
-try:
-    from . import litellm  # type: ignore
-
-    LITELLM_INSTALLED = True  # type: ignore
-except ImportError:
-    pass
 
 # MAGIC! DO NOT TOUCH THIS!
 # vllm import will cause reward tracing function to fail and produce nothing.
@@ -30,14 +26,6 @@ except ImportError:
 #     VLLM_INSTALLED = True
 # except ImportError:
 #     pass
-
-
-try:
-    from . import agentops_langchain  # type: ignore
-
-    AGENTOPS_LANGCHAIN_INSTALLED = True  # type: ignore
-except ImportError:
-    pass
 
 
 def instrument_all():

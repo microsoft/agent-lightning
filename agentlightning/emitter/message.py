@@ -12,6 +12,12 @@ from agentlightning.utils.otel import flatten_attributes, sanitize_attributes
 logger = logging.getLogger(__name__)
 
 
+def _ensure_message(message: object) -> str:
+    if not isinstance(message, str):
+        raise TypeError(f"Message must be a string or list of strings, got: {type(message)}.")
+    return message
+
+
 def emit_message(message: str, attributes: Optional[Dict[str, Any]] = None, propagate: bool = True) -> None:
     """Emit a textual message as an OpenTelemetry span.
 
@@ -26,8 +32,7 @@ def emit_message(message: str, attributes: Optional[Dict[str, Any]] = None, prop
         OpenTelemetry distinguishes between logs and spans. Emitting the message as a
         span keeps all Agent Lightning telemetry in a single data store for analysis.
     """
-    if not isinstance(message, str):  # type: ignore
-        raise TypeError(f"Message must be a string or list of strings, got: {type(message)}.")
+    message = _ensure_message(message)
 
     if propagate:
         tracer = get_active_tracer()

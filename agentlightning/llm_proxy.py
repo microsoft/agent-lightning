@@ -11,8 +11,10 @@ import re
 import tempfile
 import threading
 import time
-from contextvars import ContextVar
+from collections.abc import Mapping as MappingABC
+from collections.abc import Sequence as SequenceABC
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from typing import (
     Any,
@@ -35,11 +37,11 @@ from typing import (
 import litellm
 import opentelemetry.trace as trace_api
 import yaml
-from fastapi import Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
-from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
+from litellm.proxy import proxy_server as litellm_proxy_server
 from litellm.types.utils import CallTypes
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
@@ -50,7 +52,7 @@ from starlette.types import Scope
 
 from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.types import LLM, ProxyLLM
-from agentlightning.utils.async_store_span_writer import AsyncStoreSpanWriter, STORE_WRITE_TIMEOUT_SECONDS
+from agentlightning.utils.async_store_span_writer import STORE_WRITE_TIMEOUT_SECONDS, AsyncStoreSpanWriter
 from agentlightning.utils.server_launcher import (
     LaunchMode,
     PythonServerLauncher,
@@ -61,11 +63,14 @@ from agentlightning.utils.server_launcher import (
 from .store.base import LightningStore
 
 logger = logging.getLogger(__name__)
+_UNSET_TRACER_PROVIDER = object()
 
 _ROLLOUT_ID_ATTR = "agentlightning.rollout_id"
 _ATTEMPT_ID_ATTR = "agentlightning.attempt_id"
 _SEQUENCE_ID_ATTR = "agentlightning.sequence_id"
 _CURRENT_ROLLOUT_HEADERS: ContextVar[Dict[str, str]] = ContextVar("agentlightning_llm_proxy_headers", default={})
+app: FastAPI = cast(FastAPI, cast(Any, litellm_proxy_server).app)
+save_worker_config = cast(Callable[..., Any], cast(Any, litellm_proxy_server).save_worker_config)
 
 __all__ = [
     "LLMProxy",
@@ -133,7 +138,7 @@ def _reset_litellm_logging_worker() -> None:
         from litellm.litellm_core_utils import logging_worker as litellm_logging_worker
 
         litellm_logging_worker.GLOBAL_LOGGING_WORKER = litellm_logging_worker.LoggingWorker()
-        litellm_utils.GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER  # type: ignore[reportAttributeAccessIssue]
+        cast(Any, litellm_utils).GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER
     except Exception:  # pragma: no cover - best-effort hygiene
         logger.warning("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
 
@@ -148,30 +153,32 @@ def _reset_litellm_logging_callback_manager() -> None:
     """
 
     try:
-        litellm.logging_callback_manager._reset_all_callbacks()  # pyright: ignore[reportPrivateUsage]
+        cast(Any, litellm.logging_callback_manager)._reset_all_callbacks()
     except Exception:  # pragma: no cover - best-effort hygiene
         logger.warning("Unable to reset LiteLLM logging callback manager.", exc_info=True)
 
 
-def _headers_get(headers: Any, key: str) -> Optional[str]:
+def _headers_get(headers: object, key: str) -> Optional[str]:
     key_lower = key.lower()
 
-    if hasattr(headers, "get"):
-        value = headers.get(key) or headers.get(key_lower)
+    if isinstance(headers, MappingABC):
+        header_mapping = cast(MappingABC[object, object], headers)
+        value = header_mapping.get(key) or header_mapping.get(key_lower)
         if value is not None:
             return str(value)
-
-    if isinstance(headers, dict):
-        items = headers.items()
-    elif isinstance(headers, (list, tuple)):
-        items = headers
+        items: Iterable[object] = header_mapping.items()
+    elif isinstance(headers, SequenceABC) and not isinstance(headers, (str, bytes)):
+        items = cast(SequenceABC[object], headers)
     else:
         return None
 
     for item in items:
-        if not isinstance(item, (list, tuple)) or len(item) != 2:
+        if not isinstance(item, SequenceABC) or isinstance(item, (str, bytes)):
             continue
-        header_key, value = item
+        header_item = cast(SequenceABC[object], item)
+        if len(header_item) != 2:
+            continue
+        header_key, value = header_item
         if isinstance(header_key, bytes):
             header_key = header_key.decode()
         if isinstance(value, bytes):
@@ -208,7 +215,7 @@ def _set_readable_span_attribute(span: ReadableSpan, key: str, value: str) -> No
         return
     attributes = dict(span.attributes or {})
     attributes[key] = value
-    span._attributes = attributes  # pyright: ignore[reportPrivateUsage]
+    cast(Any, span)._attributes = attributes
 
 
 def _set_readable_span_rollout_attributes(span: ReadableSpan, headers: Dict[str, str]) -> None:
@@ -346,14 +353,15 @@ class LightningSpanExporter(SpanExporter):
         with self._ensure_lock():
             for span in spans:
                 self._buffer.append(span)
-            default_endpoint = self._otlp_exporter._endpoint  # pyright: ignore[reportPrivateUsage]
+            otlp_exporter = cast(Any, self._otlp_exporter)
+            default_endpoint = otlp_exporter._endpoint
             try:
                 self._maybe_flush()
             except Exception as e:
                 logger.exception("Export flush failed: %s", e)
                 return SpanExportResult.FAILURE
             finally:
-                self._otlp_exporter._endpoint = default_endpoint  # pyright: ignore[reportPrivateUsage]
+                otlp_exporter._endpoint = default_endpoint
 
         return SpanExportResult.SUCCESS
 
@@ -388,7 +396,7 @@ class LightningSpanExporter(SpanExporter):
             # If the store supports OTLP endpoint, use it.
             if store.capabilities.get("otlp_traces", False):
                 otlp_traces_endpoint = store.otlp_traces_endpoint()
-                self._otlp_exporter._endpoint = otlp_traces_endpoint  # pyright: ignore[reportPrivateUsage]
+                cast(Any, self._otlp_exporter)._endpoint = otlp_traces_endpoint
                 otlp_enabled = True
             else:
                 otlp_enabled = False
@@ -467,7 +475,8 @@ class LightningSpanExporter(SpanExporter):
             if otlp_enabled:
                 # If store has OTLP support, directly use OTLP exporter and export in batch
                 for span in subtree_spans:
-                    span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
+                    span_api = cast(Any, span)
+                    span_api._resource = span_api._resource.merge(
                         Resource.create(
                             {
                                 LightningResourceAttributes.ROLLOUT_ID.value: rollout_id,
@@ -567,7 +576,7 @@ class LightningOpenTelemetry(OpenTelemetry):
         if _check_tracer_provider():
             logger.error("Tracer is already initialized. OpenTelemetry may not work as expected.")
 
-        super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
+        cast(Any, super()).__init__(config=config)
 
     async def async_pre_call_deployment_hook(
         self, kwargs: Dict[str, Any], call_type: Optional[CallTypes] = None
@@ -577,7 +586,7 @@ class LightningOpenTelemetry(OpenTelemetry):
         """
         rollout_headers = _rollout_headers_from_headers(kwargs.get("headers", {})) or _CURRENT_ROLLOUT_HEADERS.get()
         if "metadata" not in kwargs or "litellm_parent_otel_span" not in kwargs["metadata"]:
-            parent_otel_span = self.create_litellm_proxy_request_started_span(  # type: ignore
+            parent_otel_span = cast(Any, self).create_litellm_proxy_request_started_span(
                 start_time=datetime.now(),
                 headers=kwargs.get("headers", {}),
             )
@@ -745,7 +754,7 @@ class StreamConversionMiddleware(BaseHTTPMiddleware):
 
         # Directly modify the request body
         # Creating a new request won't work because request is cached in the base class
-        request._body = modified_body  # type: ignore
+        cast(Any, request)._body = modified_body
 
         response = await call_next(request)
 
@@ -756,11 +765,11 @@ class StreamConversionMiddleware(BaseHTTPMiddleware):
                 if hasattr(response, "body_iterator"):
                     # Buffer body safely
                     body_chunks: List[bytes] = []
-                    async for chunk in response.body_iterator:  # type: ignore
-                        body_chunks.append(chunk)  # type: ignore
+                    async for chunk in cast(Any, response).body_iterator:
+                        body_chunks.append(cast(bytes, chunk))
                     buffered = b"".join(body_chunks)
                 else:
-                    buffered = response.body  # type: ignore
+                    buffered = cast(Any, response).body
 
                 data = json.loads(buffered or b"{}")
 
@@ -958,7 +967,7 @@ class StreamConversionMiddleware(BaseHTTPMiddleware):
         )
 
         # 2) stream textual content as small deltas
-        async def stream_content(text: str):
+        async def stream_content(text: str) -> AsyncGenerator[str, None]:
             if not text:
                 return
             # prefer splitting on spaces in ~20–40 char pieces
@@ -988,7 +997,7 @@ class StreamConversionMiddleware(BaseHTTPMiddleware):
                 # tiny pause helps some UIs animate smoothly; keep very small
                 await asyncio.sleep(0.0)
 
-        async for piece in stream_content(content):  # type: ignore[misc]
+        async for piece in stream_content(content):
             yield piece  # pass through the produced chunks
 
         # 3) stream tool_calls if present (id/name first, then arguments piecemeal)
@@ -1442,6 +1451,10 @@ _global_llm_proxy: Optional[LLMProxy] = None
 _callbacks_before_litellm_start: Optional[List[Any]] = None
 
 
+def _litellm_callbacks() -> List[Any]:
+    return cast(List[Any], cast(Any, litellm).callbacks)
+
+
 def get_active_llm_proxy() -> LLMProxy:
     """Get the current global LLMProxy instance.
 
@@ -1478,9 +1491,10 @@ def initialize_llm_callbacks(callback_classes: List[Type[CustomLogger]]) -> bool
     """
     global _callbacks_before_litellm_start
 
+    callbacks = _litellm_callbacks()
     if _callbacks_before_litellm_start is None:
-        litellm.callbacks.extend([cls() for cls in callback_classes])  # type: ignore
-        _callbacks_before_litellm_start = [*litellm.callbacks]  # type: ignore
+        callbacks.extend([cls() for cls in callback_classes])
+        _callbacks_before_litellm_start = [*callbacks]
         return True
 
     else:
@@ -1505,8 +1519,8 @@ def initialize_llm_callbacks(callback_classes: List[Type[CustomLogger]]) -> bool
             logger.debug("Global tracer provider is valid. Reusing existing OpenTelemetry callback.")
     # Otherwise, we just skip the check for opentelemetry and use the existing callback.
 
-    litellm.callbacks.clear()  # type: ignore
-    litellm.callbacks.extend(_callbacks_before_litellm_start)  # type: ignore
+    callbacks.clear()
+    callbacks.extend(_callbacks_before_litellm_start)
     return False
 
 
@@ -1518,9 +1532,6 @@ def _check_tracer_provider() -> bool:
     Returns:
         bool: True if the tracer provider is valid, else False.
     """
-    if (
-        hasattr(trace_api, "_TRACER_PROVIDER")
-        and trace_api._TRACER_PROVIDER is not None  # pyright: ignore[reportPrivateUsage]
-    ):
+    if getattr(trace_api, "_TRACER_PROVIDER", _UNSET_TRACER_PROVIDER) is not None:
         return True
     return False

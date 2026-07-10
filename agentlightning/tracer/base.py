@@ -5,13 +5,15 @@ from __future__ import annotations
 import functools
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, ContextManager, List, Optional, TypeVar
+from typing import Any, AsyncContextManager, Callable, ContextManager, List, Optional, Protocol, TypeVar
 
 from agentlightning.store.base import LightningStore
 from agentlightning.types import Attributes, ParallelWorkerBase, Span, SpanCoreFields, SpanRecordingContext, TraceStatus
 
-if TYPE_CHECKING:
-    from langchain_core.callbacks.base import BaseCallbackHandler  # type: ignore
+
+class BaseCallbackHandler(Protocol):
+    """Structural marker for optional LangChain callback handlers."""
+
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +144,7 @@ class Tracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
-    def get_langchain_handler(self) -> Optional[BaseCallbackHandler]:  # type: ignore
+    def get_langchain_handler(self) -> Optional[BaseCallbackHandler]:
         """Get a handler to install in langchain agent callback.
 
         Agents are expected to use this handler in their agents to enable tracing.

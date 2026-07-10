@@ -9,7 +9,8 @@ import random
 import sys
 import threading
 import time
-from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
+from collections.abc import Sequence
+from typing import Any, Literal, cast
 
 from rich.console import Console
 
@@ -75,7 +76,7 @@ def _start_timeout_guard(timeout_seconds: float) -> threading.Timer:
     return timer
 
 
-def generate_attributes() -> Dict[str, Any]:
+def generate_attributes() -> dict[str, Any]:
     return flatten_dict(
         random_dict(
             depth=(1, 3),
@@ -138,9 +139,9 @@ class AlgorithmBatch(agl.Algorithm):
         self,
         mode: Literal["batch", "batch_partial", "single"],
         total_tasks: int,
-        batch_size: Optional[int] = None,
-        remaining_tasks: Optional[int] = None,
-        concurrency: Optional[int] = None,
+        batch_size: int | None = None,
+        remaining_tasks: int | None = None,
+        concurrency: int | None = None,
     ):
         self.mode = mode
         self.total_tasks = total_tasks
@@ -148,9 +149,7 @@ class AlgorithmBatch(agl.Algorithm):
         self.remaining_tasks = remaining_tasks
         self.concurrency = concurrency
 
-    async def run(
-        self, train_dataset: Optional[agl.Dataset[Any]] = None, val_dataset: Optional[agl.Dataset[Any]] = None
-    ):
+    async def run(self, train_dataset: agl.Dataset[Any] | None = None, val_dataset: agl.Dataset[Any] | None = None):
         if self.mode == "batch":
             assert self.batch_size is not None
             await self.algorithm_batch(self.total_tasks, self.batch_size)
@@ -181,7 +180,7 @@ class AlgorithmBatch(agl.Algorithm):
         while submitted < total_tasks:
             print(f"Submitting batch {submitted} of {total_tasks}")
             batch_count = min(batch_size, total_tasks - submitted)
-            batch_rollouts: List[Tuple[str, str]] = []
+            batch_rollouts: list[tuple[str, str]] = []
             await store.add_resources(
                 {
                     "llm": agl.LLM(
@@ -197,7 +196,7 @@ class AlgorithmBatch(agl.Algorithm):
                 submitted += 1
 
             pending = {rollout_id: task_name for rollout_id, task_name in batch_rollouts}
-            completed_ids: Set[str] = set()
+            completed_ids: set[str] = set()
             tracker.record_progress()
             while len(completed_ids) < len(batch_rollouts):
                 finished_rollouts = await store.wait_for_rollouts(
@@ -233,7 +232,7 @@ class AlgorithmBatch(agl.Algorithm):
         tracker = RolloutProgressTracker()
         submitted = 0
         completed = 0
-        active_rollouts: Dict[str, str] = {}
+        active_rollouts: dict[str, str] = {}
 
         while completed < total_tasks:
             console.print(f"Completed {completed} of {total_tasks} rollouts")
@@ -291,7 +290,7 @@ class AlgorithmBatch(agl.Algorithm):
         store = self.get_store()
         semaphore = asyncio.Semaphore(concurrency)
         tracker = RolloutProgressTracker()
-        active_rollouts: Set[str] = set()
+        active_rollouts: set[str] = set()
         active_lock = asyncio.Lock()
 
         async def emit_progress(progress_made: bool) -> None:
@@ -340,7 +339,7 @@ class AlgorithmBatch(agl.Algorithm):
         await asyncio.gather(*all_tasks)
 
 
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark LightningStore implementations with synthetic rollouts.")
     parser.add_argument("--store-url", default="http://localhost:4747", help="Lightning Store endpoint base URL.")
     parser.add_argument(
@@ -383,7 +382,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return args
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     agl.setup_logging(
         "DEBUG" if args.debug else "INFO",
@@ -395,17 +394,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         trainer = agl.Trainer(
             store=store,
             algorithm=AlgorithmBatch(
-                mode=cast(Literal["batch", "batch_partial", "single"], args.mode),
+                mode=cast("Literal['batch', 'batch_partial', 'single']", args.mode),
                 total_tasks=args.total_tasks,
                 batch_size=args.batch_size,
                 remaining_tasks=args.remaining_tasks,
                 concurrency=args.concurrency,
             ),
             n_runners=args.n_runners,
-            strategy={
-                "type": "cs",
-                "managed_store": False,
-            },
+            strategy=agl.ClientServerExecutionStrategy(managed_store=False),
         )
         trainer.fit(make_agent(max_rounds=args.max_rounds, sleep_seconds=args.sleep_seconds))
     finally:

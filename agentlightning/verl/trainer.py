@@ -1,38 +1,13 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-# type: ignore
-
 from __future__ import annotations
 
 import random
 from contextlib import contextmanager
 from copy import deepcopy
+from importlib import import_module
 from pprint import pprint
-from typing import Dict, Tuple, Type
-
-import numpy as np
-import torch
-import verl
-from codetiming import Timer
-from omegaconf import OmegaConf
-from tqdm import tqdm
-from verl import DataProto
-from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
-from verl.trainer.ppo.core_algos import agg_loss
-from verl.trainer.ppo.metric_utils import (
-    _compute_response_info,
-    compute_throughout_metrics,
-    compute_timing_metrics,
-)
-from verl.trainer.ppo.ray_trainer import (
-    AdvantageEstimator,
-    RayPPOTrainer,
-    apply_kl_penalty,
-    compute_advantage,
-    compute_response_mask,
-)
-from verl.utils.metric import reduce_metrics
-from verl.utils.tracking import Tracking
+from typing import Any, Callable, Dict, Iterator, Type, cast
 
 from agentlightning.adapter import TraceAdapter, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy
@@ -45,8 +20,35 @@ __all__ = [
 ]
 
 
+def _import_attr(module_name: str, attr_name: str) -> Any:
+    return getattr(import_module(module_name), attr_name)
+
+
+torch: Any = import_module("torch")
+verl: Any = import_module("verl")
+Timer: Any = _import_attr("codetiming", "Timer")
+OmegaConf: Any = _import_attr("omegaconf", "OmegaConf")
+tqdm: Any = _import_attr("tqdm", "tqdm")
+DataProto: Any = _import_attr("verl", "DataProto")
+pad_dataproto_to_divisor: Any = _import_attr("verl.protocol", "pad_dataproto_to_divisor")
+unpad_dataproto: Any = _import_attr("verl.protocol", "unpad_dataproto")
+agg_loss: Any = _import_attr("verl.trainer.ppo.core_algos", "agg_loss")
+metric_utils: Any = import_module("verl.trainer.ppo.metric_utils")
+_compute_response_info: Any = getattr(metric_utils, "_compute_response_info")
+compute_throughout_metrics: Any = getattr(metric_utils, "compute_throughout_metrics")
+compute_timing_metrics: Any = getattr(metric_utils, "compute_timing_metrics")
+ray_trainer: Any = import_module("verl.trainer.ppo.ray_trainer")
+AdvantageEstimator: Any = getattr(ray_trainer, "AdvantageEstimator")
+RayPPOTrainer: Type[Any] = getattr(ray_trainer, "RayPPOTrainer")
+apply_kl_penalty: Any = getattr(ray_trainer, "apply_kl_penalty")
+compute_advantage: Any = getattr(ray_trainer, "compute_advantage")
+compute_response_mask: Any = getattr(ray_trainer, "compute_response_mask")
+reduce_metrics: Any = _import_attr("verl.utils.metric", "reduce_metrics")
+Tracking: Any = _import_attr("verl.utils.tracking", "Tracking")
+
+
 @contextmanager
-def _timer(name: str, timing_raw: Dict[str, float]):
+def _timer(name: str, timing_raw: Dict[str, float]) -> Iterator[None]:
     with Timer(name=name, logger=None) as timer:
         yield
     if name not in timing_raw:
@@ -62,7 +64,7 @@ def _timer(name: str, timing_raw: Dict[str, float]):
 #     (1) Dropping prompts that exceed the maximum allowed length.
 #     (2) Adjusting the batch size to be a multiple of the mini PPO size.
 # Different suffixes are used to label these two stages accordingly.
-def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str = "") -> Dict[str, Any]:
+def compute_data_metrics(batch: Any, use_critic: bool = True, suffix: str = "") -> Dict[str, Any]:
     """
     Computes various metrics from a batch of data for PPO training.
 
@@ -105,13 +107,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
     valid_adv = torch.masked_select(advantages, response_mask)
     valid_returns = torch.masked_select(returns, response_mask)
 
-    if use_critic:
-        values = batch.batch["values"]
-        valid_values = torch.masked_select(values, response_mask)
-        return_diff_var = torch.var(valid_returns - valid_values)
-        return_var = torch.var(valid_returns)
-
-    metrics = {
+    metrics: Dict[str, Any] = {
         # score
         "critic/score/mean" + suffix: torch.mean(sequence_score).detach().item(),
         "critic/score/max" + suffix: torch.max(sequence_score).detach().item(),
@@ -128,18 +124,6 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
         "critic/returns/mean" + suffix: torch.mean(valid_returns).detach().item(),
         "critic/returns/max" + suffix: torch.max(valid_returns).detach().item(),
         "critic/returns/min" + suffix: torch.min(valid_returns).detach().item(),
-        **(
-            {
-                # values
-                "critic/values/mean" + suffix: torch.mean(valid_values).detach().item(),
-                "critic/values/max" + suffix: torch.max(valid_values).detach().item(),
-                "critic/values/min" + suffix: torch.min(valid_values).detach().item(),
-                # vf explained var
-                "critic/vf_explained_var" + suffix: (1.0 - return_diff_var / (return_var + 1e-5)).detach().item(),
-            }
-            if use_critic
-            else {}
-        ),
         # response length
         "response_length/mean" + suffix: torch.mean(response_length).detach().item(),
         "response_length/max" + suffix: torch.max(response_length).detach().item(),
@@ -153,6 +137,21 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
         "prompt_length/clip_ratio"
         + suffix: torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
     }
+    if use_critic:
+        values = batch.batch["values"]
+        valid_values = torch.masked_select(values, response_mask)
+        return_diff_var = torch.var(valid_returns - valid_values)
+        return_var = torch.var(valid_returns)
+        metrics.update(
+            {
+                # values
+                "critic/values/mean" + suffix: torch.mean(valid_values).detach().item(),
+                "critic/values/max" + suffix: torch.max(valid_values).detach().item(),
+                "critic/values/min" + suffix: torch.min(valid_values).detach().item(),
+                # vf explained var
+                "critic/vf_explained_var" + suffix: (1.0 - return_diff_var / (return_var + 1e-5)).detach().item(),
+            }
+        )
     return metrics
 
 
@@ -177,17 +176,18 @@ class AgentLightningTrainer(RayPPOTrainer):
         self,
         store: LightningStore | None,
         llm_proxy: LLMProxy | None,
-        adapter: TraceAdapter | None,
+        adapter: TraceAdapter[Any] | None,
         daemon_cls: Type[AgentModeDaemon],
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
+        **kwargs: Any,
+    ) -> None:
+        base_init: Callable[..., None] = getattr(super(), "__init__")
+        base_init(**kwargs)
         self.store = store
         self.llm_proxy = llm_proxy
         self.adapter = adapter
         self.daemon_cls = daemon_cls
 
-    def _validate(self):
+    def _validate(self) -> Dict[str, Any]:
         assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
 
         test_data = next(iter(self.val_dataloader))
@@ -205,7 +205,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.async_rollout_manager.sleep()
         return test_metrics
 
-    def _compute_reference_log_prob(self, batch: DataProto) -> DataProto:
+    def _compute_reference_log_prob(self, batch: Any) -> Any:
         """Compute reference log probability using the correct worker based on LoRA configuration.
 
         In verl 0.6.0+, when LoRA is detected (indicated by ref_in_actor=True),
@@ -236,11 +236,11 @@ class AgentLightningTrainer(RayPPOTrainer):
             )
         return ref_worker.compute_ref_log_prob(batch)
 
-    def _train_step(self, batch_dict: dict) -> dict:
+    def _train_step(self, batch_dict: dict[str, Any]) -> dict[str, Any]:
         # Isolate in a separate method to automatically recycle the variables before validation.
-        batch: DataProto = DataProto.from_single_dict(batch_dict)
-        metrics = {}
-        timing_raw = {}
+        batch: Any = DataProto.from_single_dict(batch_dict)
+        metrics: Dict[str, Any] = {}
+        timing_raw: Dict[str, float] = {}
 
         with _timer("step", timing_raw):
 
@@ -254,7 +254,10 @@ class AgentLightningTrainer(RayPPOTrainer):
                     gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
                 )
                 self.agent_mode_daemon.run_until_all_finished()
-                batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
+                agent_mode_daemon = cast(Any, self.agent_mode_daemon)
+                next_batch: Any
+                agent_metrics_raw: Dict[str, Any]
+                next_batch, agent_metrics_raw = agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=(
                         self.config.agentlightning.trace_aggregator.trajectory_max_prompt_length
                         if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
@@ -268,6 +271,8 @@ class AgentLightningTrainer(RayPPOTrainer):
                     device=gen_batch.batch["fake_ids"].device,
                     global_steps=self.global_steps,
                 )
+                batch = next_batch
+                agent_metrics = agent_metrics_raw
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
                 self.async_rollout_manager.sleep()
@@ -435,7 +440,7 @@ class AgentLightningTrainer(RayPPOTrainer):
 
         return metrics
 
-    def fit(self):
+    def fit(self) -> None:
         logger = Tracking(
             project_name=self.config.trainer.project_name,
             experiment_name=self.config.trainer.experiment_name,
@@ -498,8 +503,8 @@ class AgentLightningTrainer(RayPPOTrainer):
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
-                metrics = {}
-                timing_raw = {}
+                metrics: Dict[str, Any] = {}
+                timing_raw: Dict[str, float] = {}
                 is_last_step = self.global_steps >= self.total_training_steps
 
                 # train step
@@ -512,7 +517,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                     and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0)
                 ):
                     with _timer("validate", timing_raw):
-                        val_metrics: dict = self._validate()
+                        val_metrics = self._validate()
                         if is_last_step:
                             last_val_metrics = val_metrics
                     metrics.update(val_metrics)
@@ -539,7 +544,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                     progress_bar.close()
 
                     # This exit logic is to ensure a robust CI.
-                    pprint(f"Flush the logger...")
+                    pprint("Flush the logger...")
                     del logger  # Make sure the loggers are flushed and closed properly
                     pprint(f"Training finished at step {self.global_steps}.")
                     return

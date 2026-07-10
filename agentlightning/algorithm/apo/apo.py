@@ -13,6 +13,7 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -34,6 +35,7 @@ from typing import (
 
 import poml
 from openai import AsyncOpenAI
+from pydantic import TypeAdapter
 
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import Algorithm
@@ -50,7 +52,8 @@ from agentlightning.types import (
 )
 
 if TYPE_CHECKING:
-    from agentlightning.llm_proxy import LLMProxy
+    from openai.types.chat import ChatCompletionMessageParam
+
     from agentlightning.store.base import LightningStore
 
 logger = logging.getLogger(__name__)
@@ -65,6 +68,10 @@ class RolloutResultForAPO(TypedDict):
     final_reward: Optional[float]
     spans: List[Dict[str, Any]]
     messages: List[Any]
+
+
+class _OpenAIChatPayload(TypedDict):
+    messages: List["ChatCompletionMessageParam"]
 
 
 @dataclass
@@ -205,9 +212,26 @@ class APO(Algorithm, Generic[T_task]):
         return f"[{' | '.join(parts)}]"
 
     @staticmethod
-    def _build_fallback_messages(role_prefix: str, prompt_template: str) -> List[Dict[str, str]]:
+    @staticmethod
+    def _validate_openai_messages(messages: object) -> List["ChatCompletionMessageParam"]:
+        from openai.types.chat import ChatCompletionMessageParam
+
+        return TypeAdapter(List[ChatCompletionMessageParam]).validate_python(messages)
+
+    @classmethod
+    def _build_fallback_messages(cls, role_prefix: str, prompt_template: str) -> List["ChatCompletionMessageParam"]:
         """Build a minimal OpenAI message payload when poml generation fails."""
-        return [{"role": "user", "content": f"{role_prefix}: {prompt_template}"}]
+        return cls._validate_openai_messages([{"role": "user", "content": f"{role_prefix}: {prompt_template}"}])
+
+    @classmethod
+    def _render_poml_chat_payload(cls, template: Path, context: Dict[str, Any]) -> _OpenAIChatPayload:
+        """Render a POML template into an OpenAI chat payload."""
+        render_poml = cast(Callable[..., object], cast(Any, poml).poml)
+        payload = render_poml(template, context=context, format="openai_chat")
+        if not isinstance(payload, dict) or "messages" not in payload:
+            raise ValueError("POML did not return an OpenAI chat payload with a 'messages' field.")
+        payload_dict = cast(Dict[str, object], payload)
+        return {"messages": cls._validate_openai_messages(payload_dict["messages"])}
 
     def _log(self, level: int, message: str, *, prefix: Optional[str] = None) -> None:
         """
@@ -308,13 +332,12 @@ class APO(Algorithm, Generic[T_task]):
         )
 
         try:
-            tg_msg = poml.poml(  # type: ignore
+            tg_msg = self._render_poml_chat_payload(
                 tg_template,
                 context={
                     "experiments": sampled_rollout_results,
                     "prompt_template": current_prompt.prompt_template.template,
                 },
-                format="openai_chat",
             )
         except Exception:
             tg_msg = {
@@ -329,7 +352,7 @@ class APO(Algorithm, Generic[T_task]):
         )
         critique_response = await self.async_openai_client.chat.completions.create(
             model=self.gradient_model,
-            messages=tg_msg["messages"],  # type: ignore
+            messages=tg_msg["messages"],
             temperature=self.diversity_temperature,
         )
         critique_text = critique_response.choices[0].message.content
@@ -385,13 +408,12 @@ class APO(Algorithm, Generic[T_task]):
             prefix=prefix,
         )
         try:
-            ae_msg = poml.poml(  # type: ignore
+            ae_msg = self._render_poml_chat_payload(
                 ae_template,
                 context={
                     "prompt_template": current_prompt.prompt_template.template,
                     "critique": critique_text,
                 },
-                format="openai_chat",
             )
         except Exception:
             ae_msg = {
@@ -402,7 +424,7 @@ class APO(Algorithm, Generic[T_task]):
 
         ae_response = await self.async_openai_client.chat.completions.create(
             model=self.apply_edit_model,
-            messages=ae_msg["messages"],  # type: ignore
+            messages=ae_msg["messages"],
             temperature=self.diversity_temperature,
         )
         new_prompt = ae_response.choices[0].message.content

@@ -14,7 +14,7 @@ import asyncio
 import logging
 import os
 import threading
-from typing import Any, Awaitable, Optional, TypeVar
+from typing import Coroutine, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +111,11 @@ class AsyncStoreSpanWriter:
             self._lock = threading.Lock()
         return self._lock
 
-    def run_in_loop(self, coro: Awaitable[T_co], *, timeout: Optional[float] = None) -> Optional[T_co]:
+    def run_in_loop(self, coro: Coroutine[object, object, T_co], *, timeout: Optional[float] = None) -> Optional[T_co]:
         """Submit a coroutine to the loop and wait for completion."""
         loop = self.ensure_loop()
         if threading.current_thread() is self._loop_thread:
-            loop.call_soon_threadsafe(asyncio.create_task, coro)  # type: ignore
+            loop.call_soon_threadsafe(asyncio.create_task, coro)
             return None
 
         future = asyncio.run_coroutine_threadsafe(coro, loop)
@@ -130,7 +130,7 @@ class AsyncStoreSpanWriter:
             if threading.current_thread() is self._loop_thread:
                 self._loop.stop()
             else:
-                self._loop.call_soon_threadsafe(self._loop.stop)  # type: ignore[arg-type]
+                self._loop.call_soon_threadsafe(self._loop.stop)
                 self._loop_thread.join(timeout=self._shutdown_timeout)
         except Exception:
             logger.exception("Error while shutting down async loop writer.")

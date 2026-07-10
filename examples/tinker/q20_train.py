@@ -44,7 +44,7 @@ from agl_tinker.env import AGLDatasetBuilder
 from agl_tinker.llm import create_llm_proxy
 from agl_tinker.train import Config
 from agl_tinker.train import main as entrypoint
-from crewai import LLM as CrewLLM
+from crewai import LLM as CrewLLM  # noqa: N811
 from q20_agent import AnswererResponse, SearchTool, TwentyQuestionsFlow
 from rich.console import Console
 
@@ -116,7 +116,7 @@ async def q20_agent(task: Q20Task, llm: agl.LLM, rollout: agl.Rollout) -> None:
 
     flow = TwentyQuestionsFlow(player_llm=player_llm, answer_llm=answer_llm, search_tool=search_tool)
     try:
-        await flow.kickoff_async(cast(Any, task))
+        await flow.kickoff_async(cast("Any", task))
         agl.emit_reward(1.0 if flow.state.correct else 0.0)
     except Exception:
         console.print(f"Error in q20_agent: {traceback.format_exc()}")
@@ -151,7 +151,7 @@ def dry_run(model: Literal["qwen4b", "qwen30b"]):
         sampled_csv = pd.read_csv("q20_nouns.csv").sample(n=4, random_state=42)  # type: ignore
         sampled_csv["search_enabled"] = False
         dataset = sampled_csv.to_dict(orient="records")  # type: ignore
-        trainer.dev(q20_agent, cast(agl.Dataset[Q20Task], dataset))
+        trainer.dev(q20_agent, cast("agl.Dataset[Q20Task]", dataset))
     finally:
         asyncio.run(llm_proxy.stop())
 
@@ -168,8 +168,8 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int, ci:
     raw_data["search_enabled"] = search
     train_data, test_data = raw_data[raw_data["split"] == "train"], raw_data[raw_data["split"] == "test"]  # type: ignore
 
-    train_dataset = cast(agl.Dataset[Q20Task], train_data.to_dict(orient="records"))  # type: ignore
-    test_dataset = cast(agl.Dataset[Q20Task], test_data.to_dict(orient="records"))  # type: ignore
+    train_dataset = cast("agl.Dataset[Q20Task]", train_data.to_dict(orient="records"))  # type: ignore
+    test_dataset = cast("agl.Dataset[Q20Task]", test_data.to_dict(orient="records"))  # type: ignore
 
     if model == "qwen4b":
         model_name = "Qwen/Qwen3-4B-Instruct-2507"
@@ -185,8 +185,8 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int, ci:
     llm_proxy_port = _find_available_port()
 
     if ci:
-        train_dataset = cast(agl.Dataset[Q20Task], train_dataset[:2])  # type: ignore
-        test_dataset = cast(agl.Dataset[Q20Task], test_dataset[:2])  # type: ignore
+        train_dataset = cast("agl.Dataset[Q20Task]", train_dataset[:2])  # type: ignore
+        test_dataset = cast("agl.Dataset[Q20Task]", test_dataset[:2])  # type: ignore
         group_size = 2
         batch_size = 2
         n_epochs = 1
@@ -309,8 +309,8 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
     raw_data["search_enabled"] = search
     train_data, test_data = raw_data[raw_data["split"] == "train"], raw_data[raw_data["split"] == "test"]  # type: ignore
 
-    train_dataset = cast(agl.Dataset[Q20Task], train_data.to_dict(orient="records"))  # type: ignore
-    test_dataset = cast(agl.Dataset[Q20Task], test_data.to_dict(orient="records"))  # type: ignore
+    train_dataset = cast("agl.Dataset[Q20Task]", train_data.to_dict(orient="records"))  # type: ignore
+    test_dataset = cast("agl.Dataset[Q20Task]", test_data.to_dict(orient="records"))  # type: ignore
 
     verl.run(train_dataset=train_dataset, val_dataset=test_dataset)
 
@@ -322,12 +322,11 @@ def runner(port: int = 4747, n_runners: int = 2):
         port: Port where the Agent-lightning store is running.
         n_runners: Number of parallel runners to spawn.
     """
-    # Run only the runners without algorithm
+    # Connect runner workers to the existing Agent-lightning store service.
     store = agl.LightningStoreClient(f"http://localhost:{port}")
     trainer = agl.Trainer(
-        algorithm=None,
         store=store,
-        strategy={"type": "cs", "managed_store": False, "n_runners": n_runners, "role": "runner"},
+        strategy=agl.ClientServerExecutionStrategy(managed_store=False, n_runners=n_runners, role="runner"),
     )
     trainer.fit(q20_agent)
 

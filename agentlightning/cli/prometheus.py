@@ -8,11 +8,11 @@ import argparse
 import asyncio
 import logging
 import os
+from importlib import import_module
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable, cast
 
 from fastapi import FastAPI
-from prometheus_client import make_asgi_app  # pyright: ignore[reportUnknownVariableType]
 
 from agentlightning.logging import setup_logging
 from agentlightning.utils.metrics import get_prometheus_registry
@@ -51,12 +51,15 @@ def create_prometheus_app(metrics_path: str = "/v1/prometheus") -> FastAPI:
         raise ValueError("metrics_path must not be '/'. Choose a sub-path such as /v1/prometheus.")
 
     app = FastAPI(title="Agent Lightning Prometheus exporter", docs_url=None, redoc_url=None)
-    metrics_app = make_asgi_app(registry=get_prometheus_registry())  # pyright: ignore[reportUnknownVariableType]
-    app.mount(normalized_path, metrics_app)  # pyright: ignore[reportUnknownArgumentType]
+    prometheus_client = import_module("prometheus_client")
+    make_asgi_app = cast(Callable[..., Any], getattr(prometheus_client, "make_asgi_app"))
+    app.mount(normalized_path, make_asgi_app(registry=get_prometheus_registry()))
 
     @app.get("/health")
-    async def healthcheck() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+    async def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
+
+    _registered_routes = (healthcheck,)
 
     return app
 
