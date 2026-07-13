@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide explains how to install **Agent-Lightning**. You can install it from **PyPI** (the Python Package Index) for general use or directly from the **source code** if you plan to contribute or need fine-grained control over dependencies.
+This guide explains how to install **Agent-Lightning**. Install the YanbiaoLab fork from GitHub, install an upstream release from **PyPI** (the Python Package Index), or install from a local checkout if you plan to contribute or need fine-grained control over dependencies.
 
 !!! info "Platform and Hardware Requirements"
     Agent-Lightning is officially supported on **Linux distributions** (Ubuntu 22.04 or later is recommended).
@@ -10,9 +10,19 @@ This guide explains how to install **Agent-Lightning**. You can install it from 
 
     A **GPU is optional**—you only need CUDA-capable hardware if you plan to fine-tune model weights or run GPU-accelerated workloads. CPU-only environments are fully supported for evaluation and inference.
 
-## Installing from PyPI
+## Installing the YanbiaoLab Fork
 
-The easiest way to get started is by installing Agent-Lightning directly from PyPI. This ensures you get the latest **stable release** of the package, tested for compatibility and reliability.
+Install the current `main` branch directly from GitHub:
+
+```bash
+pip install "agentlightning @ git+https://github.com/YanbiaoLab/agent-lightning.git@main"
+```
+
+For reproducible environments, replace `main` with a release tag or commit SHA.
+
+## Installing an Upstream Release from PyPI
+
+The `agentlightning` package on PyPI is published by the upstream project. It may not include changes maintained in this fork.
 
 ### Install the Stable Release
 
@@ -31,7 +41,7 @@ This installs or upgrades Agent-Lightning to the newest stable version.
 
 ### Install the Nightly Build (Latest Features)
 
-Agent-Lightning also publishes **nightly builds**, which contain the latest experimental features and improvements from the main branch. These are available via **Test PyPI**.
+The upstream project also publishes **nightly builds** to **Test PyPI**. These builds track upstream development and do not necessarily include changes from this fork.
 
 ```bash
 pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --pre agentlightning
@@ -112,7 +122,7 @@ Before proceeding, make sure `uv` is installed.
 ### Minimal Developer Installation
 
 ```bash
-git clone https://github.com/microsoft/agent-lightning
+git clone https://github.com/YanbiaoLab/agent-lightning
 cd agent-lightning
 uv sync --group dev
 ```

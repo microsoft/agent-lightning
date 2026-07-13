@@ -4,7 +4,7 @@ Agent Lightning gets better every time someone files a clear bug, polishes docs,
 
 ## Before You Start
 
-Agent-lightning is built by a small Microsoft Research team with limited reviewer hours and GPU budget. For any sizeable change (new algorithm, example, or API surface) please first discuss scope with us in [Discord](https://discord.gg/RYk7CdvDR7). Early alignment keeps your effort from being blocked late in the process.
+This repository is an independently maintained fork of [microsoft/agent-lightning](https://github.com/microsoft/agent-lightning). For any sizeable change (new algorithm, example, or API surface), first open an issue in the [YanbiaoLab repository](https://github.com/YanbiaoLab/agent-lightning/issues) to discuss scope. Early alignment keeps your effort from being blocked late in the process.
 
 ## Where You Can Help
 
@@ -28,7 +28,7 @@ Documentation improvements are the easiest way to get started. You can find more
 
 Bug fixes are the fastest way to get familiar with the codebase. To get started, you can:
 
-- Browse the ["help wanted"](https://github.com/microsoft/agent-lightning/labels/help%20wanted) and ["bug"](https://github.com/microsoft/agent-lightning/labels/bug) labels; drop a comment before you start so we can mark it as taken.
+- Browse the ["help wanted"](https://github.com/YanbiaoLab/agent-lightning/labels/help%20wanted) and ["bug"](https://github.com/YanbiaoLab/agent-lightning/labels/bug) labels; drop a comment before you start so we can mark it as taken.
 - For fresh bugs, open an issue with reproduction steps, logs, and expected behavior before submitting a fix.
 - Keep each pull request focused, ideally avoiding breaking API changes. Larger refactors should be discussed via RFC or maintainer sync.
 
@@ -114,12 +114,12 @@ Minimum tooling:
 - **uv** for dependency and virtual-environment management. Install it using the [official uv docs](https://docs.astral.sh/uv/getting-started/installation/).
 - **Git** configured with your GitHub credentials.
 
-Clone your fork and point `upstream` at the official repo:
+Clone your fork and point `upstream` at the YanbiaoLab repository:
 
 ```bash
 git clone git@github.com:<your-username>/agent-lightning.git
 cd agent-lightning
-git remote add upstream https://github.com/microsoft/agent-lightning.git
+git remote add upstream https://github.com/YanbiaoLab/agent-lightning.git
 ```
 
 Install the default development stack:
@@ -211,7 +211,7 @@ uv run --no-sync pytest -v
 uv run --no-sync pytest tests/path/to/test_file.py -k test_name
 ```
 
-**Optional/gated tests:** GPU-specific suites or API-dependent tests run automatically when the required hardware or environment variables (such as `OPENAI_API_KEY`) are present.
+**Optional/gated tests:** Run GPU-specific suites or API-dependent tests locally when the required hardware and credentials are available.
 
 **Static analysis:**
 
@@ -245,7 +245,7 @@ Before opening a PR, double-check the basics:
    ```bash
    git push origin <branch-name>
    ```
-2. Open a PR against `microsoft/agent-lightning:main`.
+2. Open a PR against `YanbiaoLab/agent-lightning:main`.
 3. Fill out the template with a concise summary, the commands/tests you ran, and linked issues (use `Fixes #123` syntax to auto-close).
 4. Include screenshots or logs if they clarify behavior.
 5. Address review feedback promptly. Follow-up tweaks work best as focused commits; `git commit --fixup` is handy for reviewer-suggested edits.

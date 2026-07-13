@@ -1,5 +1,11 @@
 # Responsible AI Transparency Documentation - Agent Lightning
 
+> **Fork notice:** This document was inherited from
+> [microsoft/agent-lightning](https://github.com/microsoft/agent-lightning) and records the upstream project's
+> evaluation and intended-use guidance. YanbiaoLab preserves it as safety context, but does not claim Microsoft
+> certification or endorsement for this independently maintained fork. Fork-specific concerns should be reported
+> through [YanbiaoLab's issue tracker](https://github.com/YanbiaoLab/agent-lightning/issues).
+
 ## OVERVIEW
 
 Agent Lightning is a flexible and extensible framework that enables seamless agent optimization for any existing agent framework. Agent optimization includes various data-driven techniques to customize the agent for better performance, including but not limited to model fine-tuning, prompt tuning, and model selection. And the agent frameworks refer to popular and easy-to-use agent developing frameworks such as OpenAI Agents SDK, Microsoft AutoGen, and LangChain.
@@ -65,7 +71,7 @@ It is the user’s responsibility to ensure that the use of Agent Lightning comp
 We use the MIT license.
 
 ## CONTACT
-We welcome feedback and collaboration from our audience. If you have suggestions, questions, or observe unexpected/offensive behavior in our technology, please contact us at agent-lightning@microsoft.com.
+For this fork, submit suggestions and questions through the [YanbiaoLab issue tracker](https://github.com/YanbiaoLab/agent-lightning/issues). Security-sensitive reports should follow the repository's [security policy](SECURITY.md). The upstream project can be contacted at agent-lightning@microsoft.com for upstream-specific matters.
 
 If the team receives reports of undesired behavior or identifies issues independently, we will update this repository with appropriate mitigations.
 

@@ -1,6 +1,5 @@
 # Tinker + Agent-lightning Integration
 
-[![tinker CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml)
 
 This example shows how to use [Tinker's reinforcement-learning infrastructure](https://tinker-docs.thinkingmachines.ai/) as a fine-tuning backend for agents written against Agent-lightning. You author the agent exactly the way you would for deployment, while the bridge code reconstructs Tinker-compatible trajectories from Agent-lightning traces.
 

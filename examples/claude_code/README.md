@@ -1,6 +1,5 @@
 # Training Claude Code with Agent-lightning
 
-[![claude-code CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-claude-code.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-claude-code.yml)
 
 This example shows how to wrap Anthropic's Claude Code experience with Agent-lightning instrumentation to solve SWE-bench tasks, collect spans/logs, and optionally convert those traces into HuggingFace datasets.
 
@@ -12,7 +11,7 @@ This example shows how to wrap Anthropic's Claude Code experience with Agent-lig
 
 ## Requirements
 
-First, install Agent-lightning following the [installation guide](https://microsoft.github.io/agent-lightning/stable/tutorials/installation/). Then install the SWE-bench harness plus utilities used by this example:
+First, install Agent-lightning following the [installation guide](https://yanbiaolab.github.io/agent-lightning/stable/tutorials/installation/). Then install the SWE-bench harness plus utilities used by this example:
 
 ```bash
 (uv) pip install swebench transformers datasets python-dotenv

@@ -2,7 +2,7 @@
 
 Agent Lightning is the absolute trainer to light up AI agents.
 
-[Join our Discord community](https://discord.gg/RYk7CdvDR7) to connect with other users and contributors.
+This documentation describes the independently maintained [YanbiaoLab fork](https://github.com/YanbiaoLab/agent-lightning) of [microsoft/agent-lightning](https://github.com/microsoft/agent-lightning). The fork is not maintained or endorsed by Microsoft. The upstream project hosts a [Discord community](https://discord.gg/RYk7CdvDR7) for Agent Lightning users and contributors.
 
 ## Features
 
@@ -56,4 +56,4 @@ If you find Agent Lightning useful in your research or projects, please cite our
 
 ## License
 
-See the [LICENSE](https://github.com/microsoft/agent-lightning/blob/main/LICENSE) file for details.
+See the [LICENSE](https://github.com/YanbiaoLab/agent-lightning/blob/main/LICENSE) file for details.

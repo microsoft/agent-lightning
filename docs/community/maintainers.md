@@ -1,6 +1,6 @@
 # Maintainer Guide
 
-This guide describes the day-to-day responsibilities for Agent Lightning maintainers—how to bump versions, run release ceremonies, interact with CI, and backport fixes safely.
+This guide describes the day-to-day responsibilities for Agent Lightning maintainers—how to bump versions, run releases, and keep the minimal CI and documentation automation healthy.
 
 ## Release Workflow
 
@@ -22,9 +22,9 @@ Agent Lightning uses a **bump-first** strategy. As soon as a release is publishe
 3. For a new minor or major release, create a stable branch from `main`:
     ```bash
     git checkout main
-    git pull upstream main
+    git pull origin main
     git checkout -b stable/v2.0.x  # adjust to the new series
-    git push upstream stable/v2.0.x
+    git push origin stable/v2.0.x
     ```
 
     All future changes to the stable branch must land via pull requests.
@@ -35,7 +35,7 @@ When it is time to publish the next version:
 
 1. **Draft release notes** in `docs/changelog.md`, collecting every notable change since the previous tag.
 2. **Open a release PR** targeting `main` (for minor/major) or the relevant stable branch (for patch releases). Use the title `[Release] vX.Y.Z`.
-3. **Run extended CI** by labeling the PR with `ci-all` and commenting `/ci`. Investigate and resolve any failures.
+3. **Run validation** through the pull request's `tests.yml` checks and the relevant local example smoke tests. Investigate and resolve any failures.
 4. **Merge the release PR** once notes are final and CI is green.
 5. **Tag the release** from the branch you just merged into:
 
@@ -45,42 +45,29 @@ When it is time to publish the next version:
 
     git pull
     git tag vX.Y.Z -m "Release vX.Y.Z"
-    git push upstream vX.Y.Z
+    git push origin vX.Y.Z
     ```
 
-    Pushing the tag publishes to PyPI and deploys the documentation.
+    Pushing the tag deploys the versioned documentation.
 
-6. **Publish the GitHub release** using the drafted notes, and confirm the docs site and PyPI listing reflect the new version.
+6. **Publish the GitHub release** using the drafted notes and confirm the documentation site reflects the new version. This repository does not publish a separate PyPI distribution; users install fork releases from Git tags.
 
-## Working with CI Labels and `/ci`
+## Repository Automation
 
-GPU suites and example end-to-end runs are opt-in. To trigger them on a pull request:
+The repository intentionally keeps only two GitHub Actions workflows:
 
-1. Apply the appropriate labels before issuing the command:
-    - `ci-all` for every repository-dispatch workflow.
-    - `ci-gpu` for GPU integration tests (`tests-full.yml`).
-    - `ci-apo`, `ci-calc-x`, `ci-spider`, `ci-unsloth`, `ci-compat` for the individual example pipelines.
-2. Comment `/ci` on the PR. The `issue-comment` workflow acknowledges the request and tracks job results inline.
-3. Remove the labels once you have the signal to avoid accidental re-runs.
+- `tests.yml` runs CPU tests, linting, documentation checks, and dashboard checks for pull requests and pushes to maintained branches. It can also be started manually.
+- `docs.yml` publishes versioned documentation from `main` and release tags.
 
-Use `/ci` whenever changes touch shared infrastructure, dependencies, or training loops that require coverage beyond the default PR checks.
+GPU, cloud-provider, benchmark, and example end-to-end tests are run locally or in purpose-built infrastructure when needed. Their smoke-test commands remain documented in the corresponding example README files.
 
-!!! note
+Backports to stable branches are performed manually with `git cherry-pick`, followed by the same pull request checks used for `main`.
 
-    `/ci` always executes the workflow definitions on the current `main` branch, then checks out the PR diff. If you need to test workflow modifications, push the changes to a branch in the upstream repo and run:
+## Repository Configuration
 
-    ```bash
-    gh workflow run examples-xxx.yml --ref your-branch-name
-    ```
+Configure the following GitHub repository settings:
 
-## Backporting Pull Requests
+- Enable GitHub Pages with GitHub Actions write access for versioned documentation.
+- Protect `main` and stable branches, require the relevant status checks, and enable private vulnerability reporting.
 
-Supported stable branches rely on automated backports:
-
-1. Identify the target branch (for example `stable/v0.2.x`).
-2. Before merging the original PR into `main`, add the matching `stable/<series>` label (e.g. `stable/v0.2.x`).
-3. The `backport.yml` workflow opens a follow-up PR named `backport/<original-number>/<target-branch>` authored by `agent-lightning-bot`.
-4. Review the generated PR, ensure CI is green, and merge into the stable branch.
-5. Resolve conflicts by pushing manual fixes to the backport branch and re-running `/ci` if required.
-
-Keep stable branches healthy by cherry-picking only critical fixes and ensuring documentation and example metadata stay aligned with each release line.
+Forks do not inherit branch protection, Pages settings, or repository labels from another repository. Configure those in GitHub before relying on the corresponding automation.

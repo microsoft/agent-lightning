@@ -10,10 +10,6 @@ on:
     branches: [ main, stable/**/* ]
   workflow_dispatch:
 
-  schedule:
-    # Every day at noon and midnight
-    - cron: '0 0,12 * * *'
-
 jobs:
 
   lint:

@@ -1,6 +1,5 @@
 # APO Example
 
-[![apo CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-apo.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-apo.yml)
 
 This example folder contains three complementary tutorials that demonstrate different aspects of Agent-Lightning. It's compatible with Agent-lightning v0.2 or later.
 

@@ -50,6 +50,13 @@ mongo = [
 [project.scripts]
 agl = "agentlightning.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/YanbiaoLab/agent-lightning"
+Documentation = "https://yanbiaolab.github.io/agent-lightning/"
+Repository = "https://github.com/YanbiaoLab/agent-lightning.git"
+Issues = "https://github.com/YanbiaoLab/agent-lightning/issues"
+Upstream = "https://github.com/microsoft/agent-lightning"
+
 [dependency-groups]
 dev = [
   "flake8",
