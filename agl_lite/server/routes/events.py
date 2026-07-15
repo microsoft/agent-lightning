@@ -99,8 +99,9 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     """Extract prompt_token_ids and response_token_ids from a model_request event.
 
     Non-streaming gateway responses use a dict shape with prompt_token_ids at
-    top level and token_ids per choice. Legacy raw-chunk format (list) is also
-    supported for backward compatibility.
+    top level for chat completions or per choice for completions, and token_ids
+    per choice. Legacy raw-chunk format (list) is also supported for backward
+    compatibility.
     """
     resp = data.get("response")
     prompt_token_ids: list[int] = []
@@ -111,6 +112,8 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
         prompt_token_ids = resp.get("prompt_token_ids", [])
         choices = resp.get("choices", [])
         if choices:
+            if not prompt_token_ids:
+                prompt_token_ids = choices[0].get("prompt_token_ids", [])
             response_token_ids = choices[0].get("token_ids", [])
             response_log_probs = _extract_choice_log_probs(choices[0])
     elif isinstance(resp, list):

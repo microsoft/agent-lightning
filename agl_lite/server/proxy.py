@@ -91,6 +91,7 @@ async def forward_request(
     client: httpx.AsyncClient,
     server: Model,
     body: dict[str, Any],
+    upstream_path: str = "chat/completions",
     rollout_id: str,
     attempt_id: str,
     pause_state: ProxyPauseState | None = None,
@@ -112,8 +113,8 @@ async def forward_request(
         if body.get("stream", False):
             raise HTTPException(status_code=400, detail="Streaming responses are not supported")
 
-        url = f"{server.endpoint.rstrip('/')}/chat/completions"
-        log.debug("Proxying request", rollout_id=rollout_id, model=server.model, path="chat/completions")
+        url = f"{server.endpoint.rstrip('/')}/{upstream_path}"
+        log.debug("Proxying request", rollout_id=rollout_id, model=server.model, path=upstream_path)
 
         started_at = time.perf_counter()
         response = await _send_upstream_with_retries(client=client, url=url, body=body)

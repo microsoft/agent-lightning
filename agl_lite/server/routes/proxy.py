@@ -26,12 +26,14 @@ def _get_pause_state(request: Request) -> ProxyPauseState:
 
 
 @router.post(
-    "/proxy/rollout/{rollout_id}/attempt/{attempt_id}/mode/{mode}/openai/v1/chat/completions",
+    "/proxy/rollout/{rollout_id}/attempt/{attempt_id}/mode/{mode}/openai/v1/{upstream_path:path}",
 )
-async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, request: Request) -> Response:
+async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, upstream_path: str, request: Request) -> Response:
     """LLM reverse proxy — forwards to model server, captures events."""
     if mode not in {"train", "val"}:
         raise HTTPException(status_code=404, detail=f"Unsupported proxy mode: {mode}")
+    if upstream_path not in {"chat/completions", "completions"}:
+        raise HTTPException(status_code=404, detail=f"Unsupported upstream path: {upstream_path}")
 
     # Validate rollout exists.
     if rollout_id not in _rollouts:
@@ -67,6 +69,7 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, request: Reques
         client=http_client,
         server=server,
         body=prepared_body,
+        upstream_path=upstream_path,
         rollout_id=rollout_id,
         attempt_id=attempt_id,
         pause_state=pause_state,
