@@ -484,9 +484,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                     self.async_rollout_manager.start_profile()
 
             gen_batch_output, agent_metrics = self._rollout(gen_batch, is_train=True)
-            print("AglLiteRayPPOTrainer: sleeping rollout replicas.")
-            self.checkpoint_manager.sleep_replicas()
-            print("AglLiteRayPPOTrainer: rollout replicas slept.")
             if curr_step_profile:
                 if has_llm_server_manager:
                     self.llm_server_manager.stop_profile()
@@ -553,6 +550,10 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         if len(batch) == 0:
             print("WARNING: no trainable batch after drop+floor; skipping this training step.")
             return None
+
+        print("AglLiteRayPPOTrainer: sleeping rollout replicas.")
+        self.checkpoint_manager.sleep_replicas()
+        print("AglLiteRayPPOTrainer: rollout replicas slept.")
 
         if self.config.trainer.balance_batch:
             self._balance_batch(batch, metrics=metrics)
