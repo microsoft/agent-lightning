@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import random
 import time
@@ -41,18 +42,21 @@ class ProxyRouter:
         self._train_temperature = float(default_proxy["train"]["temperature"])
         self._val_temperature = float(default_proxy["val"]["temperature"])
         self._include_log_probs = bool(default_proxy.get("include_log_probs", True))
-        self._rr_index: dict[str, int] = {}
 
     @property
     def model_name(self) -> str:
         return self._model_name
 
-    def select_server(self, model: str) -> Model:
-        pool = list(_models.get(model, {}).values())
-        if not pool:
+    def select_server(self, model: str, rollout_id: str) -> Model:
+        servers = _models.get(model, {})
+        if not servers:
             raise NoServersError(model)
-        index = self._rr_index.get(model, 0) % len(pool)
-        self._rr_index[model] = index + 1
+        # Sort by endpoint so the hash→server mapping is independent of dict
+        # insertion order. Hashing rollout_id pins each rollout to one endpoint,
+        # maximizing prefix-cache hits for its repeated requests.
+        pool = [servers[endpoint] for endpoint in sorted(servers)]
+        digest = hashlib.sha256(rollout_id.encode("utf-8")).digest()
+        index = int.from_bytes(digest[:8], "big") % len(pool)
         return pool[index]
 
     def prepare_body(self, body: dict[str, Any], mode: str) -> dict[str, Any]:

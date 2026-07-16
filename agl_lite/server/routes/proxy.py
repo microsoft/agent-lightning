@@ -58,7 +58,7 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, upstream_path: 
     # Select server.
     model_name = proxy_router.model_name
     try:
-        server = proxy_router.select_server(model_name)
+        server = proxy_router.select_server(model_name, rollout_id)
     except NoServersError:
         raise HTTPException(status_code=503, detail=f"No servers available for model '{model_name}'") from None
 

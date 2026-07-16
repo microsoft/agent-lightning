@@ -6,6 +6,9 @@ defaults:
   - ppo_trainer
   - _self_
 
+algorithm:
+  enable_rollout_level_advantage: true
+
 agentlightning:
   agl_base_url: http://localhost:8080
   agl_key: ""
@@ -17,6 +20,7 @@ agentlightning:
   k8s:
     job_template_path: null
   reward_fillna_value: 0.0
+  max_ppo_update_times: null
   trace_aggregator:
     level: trajectory # transition | trajectory
     trajectory_max_prompt_length: 2048

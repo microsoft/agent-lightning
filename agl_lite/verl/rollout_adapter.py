@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -11,9 +15,213 @@ from verl import DataProto
 
 from agl_lite.verl.agl_rollout_manager import CompletedRollout
 
+_TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
+_TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
+_ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
+_ROLLOUT_TRAJECTORY_ARTIFACT_TYPE = "rollout_trajectories"
+_VALIDATION_TRAJECTORY_ARTIFACT_TYPE = "validation_trajectories"
+_TRACE_MERGE_MISMATCH_COLUMNS = [
+    "global_steps",
+    "rollout_id",
+    "data_id",
+    "turn_index",
+    "template_mismatch",
+    "retoken_mismatch",
+    "others_mismatch",
+    "prompt_length",
+    "response_length",
+    "previous_trace_length",
+    "current_trace_length",
+    "previous_trace",
+    "current_trace",
+]
+_ROLLOUT_TRAJECTORY_COLUMNS = [
+    "global_steps",
+    "trajectory_artifact",
+    "trajectory_artifact_path",
+    "row_count",
+]
+
 
 def ids_startswith(full_ids: list[int], prefix_ids: list[int]) -> bool:
     return full_ids[: len(prefix_ids)] == prefix_ids
+
+
+def _decode_token_ids(tokenizer: Any | None, ids: list[int]) -> str:
+    if tokenizer is not None:
+        try:
+            text = tokenizer.decode(ids, skip_special_tokens=False)
+        except TypeError:
+            text = tokenizer.decode(ids)
+        except Exception:
+            text = " ".join(str(i) for i in ids)
+    else:
+        text = " ".join(str(i) for i in ids)
+    return text
+
+
+def _decode_trace_text(tokenizer: Any | None, ids: list[int]) -> str:
+    text = _decode_token_ids(tokenizer, ids)
+    if len(text) > _TRACE_MERGE_MISMATCH_TEXT_LIMIT:
+        truncated = len(text) - _TRACE_MERGE_MISMATCH_TEXT_LIMIT
+        return text[:_TRACE_MERGE_MISMATCH_TEXT_LIMIT] + f"\n...[truncated {truncated} chars]"
+    return text
+
+
+def _token_ids(value: Any) -> list[int]:
+    if isinstance(value, dict) and isinstance(value.get("token_ids"), list):
+        return value["token_ids"]
+    return []
+
+
+def _artifact_safe_name(value: Any) -> str:
+    text = str(value)
+    safe = "".join(char if char.isascii() and (char.isalnum() or char in {"-", "_", "."}) else "_" for char in text)
+    return safe or "unknown"
+
+
+def _rollout_trajectory_artifact_path(global_steps: int) -> str:
+    return f"step_{global_steps}/rollout_trajectories.jsonl.zip"
+
+
+def _validation_trajectory_artifact_path(global_steps: int) -> str:
+    return f"step_{global_steps}/validation_trajectories.jsonl.zip"
+
+
+def _rollout_trajectory_artifact_name(run: Any, global_steps: int) -> str:
+    run_id = _artifact_safe_name(getattr(run, "id", None) or "run")
+    return f"rollout-trajectories-{run_id}-step-{global_steps}"
+
+
+def _validation_trajectory_artifact_name(run: Any, global_steps: int) -> str:
+    run_id = _artifact_safe_name(getattr(run, "id", None) or "run")
+    return f"validation-trajectories-{run_id}-step-{global_steps}"
+
+
+def _build_compact_rollout_trajectory_records(
+    rollouts: list[CompletedRollout],
+    *,
+    tokenizer: Any | None,
+    reward_fillna_value: float,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    sorted_rollouts = sorted(rollouts, key=lambda rollout: (rollout.step, rollout.sample_idx_in_step))
+    for rollout in sorted_rollouts:
+        if limit is not None and len(records) >= limit:
+            break
+        if not rollout.triplets:
+            continue
+        last_triplet = rollout.triplets[-1]
+        records.append(
+            {
+                "rollout_id": rollout.rollout_id,
+                "reward": rollout.final_reward if rollout.final_reward is not None else reward_fillna_value,
+                "prompt": _decode_token_ids(tokenizer, _token_ids(last_triplet.prompt)),
+                "response": _decode_token_ids(tokenizer, _token_ids(last_triplet.response)),
+            }
+        )
+    return records
+
+
+def _build_zipped_jsonl(records: list[dict[str, Any]], jsonl_name: str) -> bytes:
+    jsonl_text = "".join(
+        json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr(jsonl_name, jsonl_text.encode("utf-8"))
+    return buffer.getvalue()
+
+
+def _upload_trace_merge_mismatches_to_wandb(rows: list[dict[str, Any]], global_steps: int) -> None:
+    if not rows:
+        return
+
+    try:
+        import wandb
+    except ImportError:
+        print("Warning: wandb is not installed; cannot upload trace merge mismatches.")
+        return
+
+    if getattr(wandb, "run", None) is None:
+        return
+
+    try:
+        table = wandb.Table(columns=_TRACE_MERGE_MISMATCH_COLUMNS)
+        for row in rows:
+            table.add_data(*(row.get(column) for column in _TRACE_MERGE_MISMATCH_COLUMNS))
+        wandb.log({"training/trace_merge_mismatches": table}, step=global_steps)
+    except Exception as exc:
+        print(f"Warning: failed to upload trace merge mismatches to wandb: {exc}")
+
+
+def _upload_compact_rollout_trajectories_to_wandb(
+    records: list[dict[str, Any]],
+    global_steps: int,
+    *,
+    artifact_name_builder: Callable[[Any, int], str],
+    artifact_type: str,
+    artifact_path: str,
+    jsonl_name: str,
+    table_key: str,
+    warning_label: str,
+) -> None:
+    if not records:
+        return
+
+    try:
+        import wandb
+    except ImportError:
+        print(f"Warning: wandb is not installed; cannot upload {warning_label}.")
+        return
+
+    run = getattr(wandb, "run", None)
+    if run is None:
+        return
+
+    try:
+        artifact_name = artifact_name_builder(run, global_steps)
+        artifact = wandb.Artifact(
+            name=artifact_name,
+            type=artifact_type,
+            metadata={"global_steps": global_steps, "row_count": len(records), "format": "jsonl.zip"},
+        )
+        with artifact.new_file(artifact_path, mode="wb") as trajectory_file:
+            trajectory_file.write(_build_zipped_jsonl(records, jsonl_name))
+        run.log_artifact(artifact)
+
+        table = wandb.Table(columns=_ROLLOUT_TRAJECTORY_COLUMNS)
+        table.add_data(global_steps, artifact_name, artifact_path, len(records))
+        wandb.log({table_key: table}, step=global_steps)
+    except Exception as exc:
+        print(f"Warning: failed to upload {warning_label} to wandb: {exc}")
+
+
+def _upload_rollout_trajectories_to_wandb(records: list[dict[str, Any]], global_steps: int) -> None:
+    _upload_compact_rollout_trajectories_to_wandb(
+        records,
+        global_steps,
+        artifact_name_builder=_rollout_trajectory_artifact_name,
+        artifact_type=_ROLLOUT_TRAJECTORY_ARTIFACT_TYPE,
+        artifact_path=_rollout_trajectory_artifact_path(global_steps),
+        jsonl_name="rollout_trajectories.jsonl",
+        table_key="training/rollout_trajectories",
+        warning_label="rollout trajectories",
+    )
+
+
+def _upload_validation_rollout_trajectories_to_wandb(records: list[dict[str, Any]], global_steps: int) -> None:
+    _upload_compact_rollout_trajectories_to_wandb(
+        records,
+        global_steps,
+        artifact_name_builder=_validation_trajectory_artifact_name,
+        artifact_type=_VALIDATION_TRAJECTORY_ARTIFACT_TYPE,
+        artifact_path=_validation_trajectory_artifact_path(global_steps),
+        jsonl_name="validation_trajectories.jsonl",
+        table_key="val/rollout_trajectories",
+        warning_label="validation rollout trajectories",
+    )
 
 
 def get_left_padded_ids_and_attention_mask(
@@ -50,6 +258,7 @@ class RolloutAdapter:
         pad_token_id: int,
         reward_fillna_value: float = 0.0,
         trace_aggregator_level: str = "transition",
+        tokenizer: Any | None = None,
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
@@ -57,8 +266,14 @@ class RolloutAdapter:
         self.pad_token_id = pad_token_id
         self.reward_fillna_value = reward_fillna_value
         self.trace_aggregator_level = trace_aggregator_level
+        self.tokenizer = tokenizer
 
-    def get_train_data_batch(self, completed_rollouts: list[CompletedRollout]) -> tuple[DataProto, dict[str, Any]]:
+    def get_train_data_batch(
+        self,
+        completed_rollouts: list[CompletedRollout],
+        *,
+        global_steps: int = 0,
+    ) -> tuple[DataProto, dict[str, Any]]:
         """Build a VERL training batch from completed rollouts."""
         level = self.trace_aggregator_level
         if level not in {"transition", "trajectory"}:
@@ -86,6 +301,7 @@ class RolloutAdapter:
         n_skipped_empty_training_rows = 0
         unmerged_count = 0
         response_len_per_turn_list: list[int] = []
+        merge_mismatch_rows: list[dict[str, Any]] = []
 
         def append_training_row(
             *,
@@ -207,6 +423,27 @@ class RolloutAdapter:
                         current_context = next_context
                         continue
 
+                    if len(merge_mismatch_rows) < _TRACE_MERGE_MISMATCH_WANDB_LIMIT:
+                        merge_mismatch_rows.append(
+                            {
+                                "global_steps": global_steps,
+                                "rollout_id": rollout.rollout_id,
+                                "data_id": rollout.data_id,
+                                "turn_index": turn_index,
+                                # The legacy adapter only has token-prefix diagnostics,
+                                # so classify the split as an "other" mismatch.
+                                "template_mismatch": False,
+                                "retoken_mismatch": False,
+                                "others_mismatch": True,
+                                "prompt_length": len(prompt_ids),
+                                "response_length": len(response_ids),
+                                "previous_trace_length": len(current_context),
+                                "current_trace_length": len(next_context),
+                                "previous_trace": _decode_trace_text(self.tokenizer, current_context),
+                                "current_trace": _decode_trace_text(self.tokenizer, next_context),
+                            }
+                        )
+
                     append_training_row(
                         rollout_id=rollout.rollout_id,
                         data_id=rollout.data_id,
@@ -240,6 +477,15 @@ class RolloutAdapter:
 
                 if merged_group_count > 1:
                     unmerged_count += 1
+
+        rollout_trajectory_records = _build_compact_rollout_trajectory_records(
+            sorted_rollouts,
+            tokenizer=self.tokenizer,
+            reward_fillna_value=self.reward_fillna_value,
+            limit=_ROLLOUT_TRAJECTORY_WANDB_LIMIT,
+        )
+        _upload_trace_merge_mismatches_to_wandb(merge_mismatch_rows, global_steps)
+        _upload_rollout_trajectories_to_wandb(rollout_trajectory_records, global_steps)
 
         n_sample = len(input_ids_list)
         if n_sample == 0:
@@ -312,10 +558,11 @@ class RolloutAdapter:
         }
         if level == "trajectory":
             data_metrics["training/n_unmerged_rollouts"] = unmerged_count
+            data_metrics["training/n_trace_merge_mismatch_rows"] = len(merge_mismatch_rows)
 
         return data_proto, data_metrics
 
-    def get_test_metrics(self, completed_rollouts: list[CompletedRollout]) -> dict[str, Any]:
+    def get_test_metrics(self, completed_rollouts: list[CompletedRollout], *, global_steps: int = 0) -> dict[str, Any]:
         """Build validation metrics from completed rollouts."""
         sample_stat_list: list[dict[str, Any]] = []
 
@@ -342,6 +589,13 @@ class RolloutAdapter:
         stats_w_trace = [stat for stat in sample_stat_list if "total_response_length" in stat]
         if not stats_w_trace:
             raise RuntimeError("get_test_metrics received zero completed rollouts with trace.")
+
+        validation_trajectory_records = _build_compact_rollout_trajectory_records(
+            completed_rollouts,
+            tokenizer=self.tokenizer,
+            reward_fillna_value=self.reward_fillna_value,
+        )
+        _upload_validation_rollout_trajectories_to_wandb(validation_trajectory_records, global_steps)
 
         return {
             "val/reward": float(np.mean([stat["reward"] for stat in sample_stat_list])),

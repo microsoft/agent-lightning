@@ -53,6 +53,12 @@ class EnqueuedRollout(BaseModel):
     sample_idx_in_step: int
     enqueue_time: float
     input: Any = None
+    # Server-authoritative timestamps captured while polling: when the rollout's
+    # pod first entered RUNNING and when it reached a terminal state. None until
+    # observed. running_at - enqueue_time exposes pod queue/startup wait when
+    # jobs are launched in CPU-limited batches.
+    running_at: float | None = None
+    finished_at: float | None = None
 
 
 class CompletedRollout(BaseModel):
@@ -64,6 +70,8 @@ class CompletedRollout(BaseModel):
     sample_idx_in_step: int
     enqueue_time: float
     input: Any = None
+    running_at: float | None = None
+    finished_at: float | None = None
     final_reward: float | None = None
     triplets: list[Triplet] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -167,18 +175,22 @@ class AglRolloutManagerBase:
         for address in server_addresses:
             endpoint = address if address.startswith("http") else f"http://{address}/v1"
             models.append(Model(model=self._model, endpoint=endpoint))
-        response = self.client.post(
-            "/api/models",
-            json=[model.model_dump(mode="json") for model in models],
-        )
-        response.raise_for_status()
+
+        # /api/models is an idempotent upsert by (model, endpoint), so retrying
+        # is safe rather than letting a transient failure crash the trainer.
+        payload = [model.model_dump(mode="json") for model in models]
+        response = self.client.post_with_retry("/api/models", json=payload)
         return [Model.model_validate(item) for item in response.json()]
 
     def delete_model(self) -> dict[str, Any]:
-        """Delete registered model endpoints."""
-        response = self.client.delete("/api/models")
-        response.raise_for_status()
-        return response.json()
+        """Delete registered model endpoints. Best-effort: ignore errors."""
+        try:
+            response = self.client.delete("/api/models")
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            print(f"RolloutManager: failed to delete models: {exc}")
+            return {}
 
     def _get_rollout(self, rollout_id: str) -> Rollout:
         response = self.client.get(f"/api/rollouts/{rollout_id}")
@@ -186,6 +198,34 @@ class AglRolloutManagerBase:
         payload = response.json()
         item = payload["rollout"] if isinstance(payload, dict) and "rollout" in payload else payload
         return Rollout.model_validate(item)
+
+    def _delete_rollout(self, rollout_id: str) -> None:
+        try:
+            self.client.delete(f"/api/rollouts/{rollout_id}")
+        except Exception as exc:
+            print(f"RolloutManager: failed to delete rollout {rollout_id}: {exc}")
+
+    @staticmethod
+    def _record_lifecycle_timestamps(enqueued_rollout: EnqueuedRollout, rollout: Rollout) -> None:
+        """Capture server-authoritative running/finished timestamps in place.
+
+        Pods are launched in CPU-limited batches, so a rollout can sit QUEUING
+        well after it was submitted; status.updated_at at the queuing->running
+        flip is the moment its pod actually started. We record it the first time
+        we observe RUNNING (or, if we polled too slowly and skipped straight to a
+        terminal state, the terminal updated_at) so running_at - enqueue_time
+        reflects the real queue/startup wait.
+        """
+        state = rollout.status.state
+        updated_at = rollout.status.updated_at
+        if enqueued_rollout.running_at is None and state in (
+            RolloutState.RUNNING,
+            RolloutState.SUCCEEDED,
+            RolloutState.FAILED,
+        ):
+            enqueued_rollout.running_at = updated_at
+        if state in TERMINAL_STATES:
+            enqueued_rollout.finished_at = updated_at
 
     def _get_events(self, rollout_id: str, *, event_type: str | None = None, format: str | None = None) -> list[Event]:
         params = {
@@ -224,11 +264,15 @@ class AglRolloutManagerBase:
                 )
                 if self._hooks is not None:
                     request = self._hooks.on_enqueue(request)
+                # Pre-assign the id (after the hook, so it can't be dropped) so
+                # the create POST is idempotent and can be retried safely.
+                rollout_id = uuid.uuid4().hex
+                request = request.model_copy(update={"rollout_id": rollout_id})
                 enqueued_rollouts.append(
                     EnqueuedRollout(
                         data_id=data_id,
                         input=request.input,
-                        rollout_id="",
+                        rollout_id=rollout_id,
                         step=self._step,
                         sample_idx_in_step=sample_idx,
                         enqueue_time=time.time(),
@@ -238,11 +282,12 @@ class AglRolloutManagerBase:
 
         if not rollout_requests:
             return []
-        response = self.client.post(
-            "/api/rollouts",
-            json=[request.model_dump(mode="json", exclude_none=True) for request in rollout_requests],
-        )
-        response.raise_for_status()
+
+        # Rollout ids are pre-assigned, so /api/rollouts is idempotent: a retry
+        # after a partial/failed create returns the existing rollouts instead of
+        # duplicating them. Retry rather than crash the trainer on a transient error.
+        payload = [request.model_dump(mode="json", exclude_none=True) for request in rollout_requests]
+        response = self.client.post_with_retry("/api/rollouts", json=payload)
         created = [Rollout.model_validate(item) for item in response.json()]
         assert len(created) == len(rollout_requests), (
             f"agl-lite returned {len(created)} rollouts, expected {len(rollout_requests)}"
@@ -328,6 +373,9 @@ class AglRolloutManagerBase:
             triplets[-1] = triplets[-1].model_copy(update={"reward": final_reward})
 
         metadata = rollout.metadata.model_dump()
+        finished_at = enqueued_rollout.finished_at
+        if finished_at is None:
+            finished_at = rollout.status.updated_at
         return CompletedRollout(
             rollout_id=enqueued_rollout.rollout_id,
             data_id=enqueued_rollout.data_id,
@@ -335,6 +383,8 @@ class AglRolloutManagerBase:
             sample_idx_in_step=enqueued_rollout.sample_idx_in_step,
             input=enqueued_rollout.input,
             enqueue_time=enqueued_rollout.enqueue_time,
+            running_at=enqueued_rollout.running_at,
+            finished_at=finished_at,
             final_reward=final_reward,
             triplets=triplets,
             metadata=metadata,
@@ -356,14 +406,22 @@ class AglRolloutManager(AglRolloutManagerBase):
         enqueued_rollouts = self._create_rollouts(data, is_train=is_train)
         pending_rollouts = list(enqueued_rollouts)
         completed_rollouts: list[CompletedRollout] = []
+        num_deleted = 0
         num_succeeded = 0
         num_failed = 0
 
         while len(completed_rollouts) < len(enqueued_rollouts):
+            # Delete the previous round's completed rollouts (and their events)
+            # before polling again, so server-side state stays bounded.
+            for completed_rollout in completed_rollouts[num_deleted:]:
+                self._delete_rollout(completed_rollout.rollout_id)
+            num_deleted = len(completed_rollouts)
+
             for enqueued_rollout in list(pending_rollouts):
                 rollout_id = enqueued_rollout.rollout_id
                 rollout = self._get_rollout(rollout_id)
                 state = rollout.status.state
+                self._record_lifecycle_timestamps(enqueued_rollout, rollout)
                 if state not in TERMINAL_STATES:
                     continue
 
@@ -384,6 +442,10 @@ class AglRolloutManager(AglRolloutManagerBase):
 
             if pending_rollouts:
                 time.sleep(self._poll_interval_seconds)
+
+        # Delete whatever completed in the final round.
+        for completed_rollout in completed_rollouts[num_deleted:]:
+            self._delete_rollout(completed_rollout.rollout_id)
 
         return completed_rollouts
 
@@ -431,6 +493,7 @@ class AglAsyncRolloutManager(AglRolloutManagerBase):
 
                     rollout = self._get_rollout(enqueued_rollout.rollout_id)
                     state = rollout.status.state
+                    self._record_lifecycle_timestamps(enqueued_rollout, rollout)
                     if state not in TERMINAL_STATES:
                         continue
 
@@ -452,6 +515,10 @@ class AglAsyncRolloutManager(AglRolloutManagerBase):
                         )
                         for enqueued_rollout in group
                     )
+                    # This group is done and won't be carried over, so free its
+                    # server-side rollout + event state now that we've read it.
+                    for enqueued_rollout in group:
+                        self._delete_rollout(enqueued_rollout.rollout_id)
                     if len(completed_group_keys) >= target_finished_group_num:
                         break
 

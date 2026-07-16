@@ -64,6 +64,29 @@ else
     uv pip install --python "$PYTHON_BIN" "verl==$VERL_VERSION"
 fi
 
+# flash-attn is built from source against torch's CUDA runtime. For cu130 the system
+# CUDA toolkit (often 12.x) is too old, so install a matching CUDA 13.0 pip toolchain
+# and point the build at it. Versions are pinned to 13.0.x so nvcc's version matches
+# torch's CUDART (13000); a mismatched minor (e.g. 13.3) trips cccl's compatibility
+# check ("CUDA compiler and CUDA toolkit headers are incompatible").
+if [ "$CUDA_VARIANT" = "cu130" ]; then
+    uv pip install --python "$PYTHON_BIN" \
+        "nvidia-cuda-nvcc>=13.0,<13.1" \
+        "nvidia-cuda-crt>=13.0,<13.1" \
+        "nvidia-nvvm>=13.0,<13.1" \
+        "nvidia-cuda-cccl>=13.0,<13.1" \
+        "nvidia-cuda-runtime>=13.0,<13.1"
+
+    CUDA_HOME="$("$PYTHON_BIN" -c 'import nvidia, os; print(os.path.join(list(nvidia.__path__)[0], "cu13"))')"
+    export CUDA_HOME
+    export PATH="$CUDA_HOME/bin:$PATH"
+    export LIBRARY_PATH="$CUDA_HOME/lib:${LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="$CUDA_HOME/lib:${LD_LIBRARY_PATH:-}"
+    export CPATH="$CUDA_HOME/include:${CPATH:-}"
+    ln -sf "$CUDA_HOME/lib/libcudart.so.13" "$CUDA_HOME/lib/libcudart.so"
+    export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0;8.6;8.9;9.0;10.0}"
+fi
+
 FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install --python "$PYTHON_BIN" \
     "flash-attn==$FLASH_ATTN_VERSION" \
     --force-reinstall \

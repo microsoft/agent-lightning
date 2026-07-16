@@ -11,6 +11,7 @@ from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from agl_lite.schemas import (
+    TERMINAL_STATES,
     VALID_TRANSITIONS,
     Rollout,
     RolloutConfig,
@@ -20,7 +21,7 @@ from agl_lite.schemas import (
     RolloutPatch,
     RolloutState,
 )
-from agl_lite.server.store import _events, _rollouts
+from agl_lite.server.store import _events, _rollouts, _terminal_order
 
 router = APIRouter(tags=["rollouts"])
 
@@ -30,6 +31,23 @@ class RolloutDetail(BaseModel):
 
     rollout: Rollout
     attempts: list[str]
+
+
+class TerminalRolloutItem(BaseModel):
+    """Lightweight projection of a terminal rollout (no input/config payload)."""
+
+    rollout_id: str
+    state: RolloutState
+    data_id: str
+    is_train: bool
+
+
+class TerminalRolloutsPage(BaseModel):
+    """A page of terminal rollouts plus the cursor to fetch the next page."""
+
+    items: list[TerminalRolloutItem]
+    next_after: int
+    total_terminal: int
 
 
 def _not_found(rollout_id: str) -> HTTPException:
@@ -74,11 +92,19 @@ def _list_attempts(rollout_id: str) -> list[str]:
 
 @router.post("/rollouts", status_code=201, response_model=list[Rollout])
 async def enqueue_rollouts(body: list[RolloutCreate]) -> list[Rollout]:
-    """Enqueue rollouts. Each item in the list is self-contained."""
+    """Enqueue rollouts. Each item in the list is self-contained.
+
+    If a request carries a `rollout_id` that already exists, the existing
+    rollout is returned unchanged (its events are left intact), making creation
+    idempotent so callers can pre-assign ids and retry safely.
+    """
     results: list[Rollout] = []
     for req in body:
+        if req.rollout_id is not None and req.rollout_id in _rollouts:
+            results.append(_rollouts[req.rollout_id])
+            continue
         now = time.time()
-        rollout_id = uuid.uuid4().hex
+        rollout_id = req.rollout_id or uuid.uuid4().hex
         metadata = _metadata_from_request(req)
         rollout = Rollout(
             rollout_id=rollout_id,
@@ -103,6 +129,44 @@ async def list_rollouts(
     states = set(state_in)
     matches = [rollout for rollout in _rollouts.values() if rollout.status.state in states]
     return matches[:limit]
+
+
+def _data_id_of(rollout: Rollout) -> str:
+    inp = rollout.input
+    if isinstance(inp, dict):
+        return str(inp.get("data_id") or inp.get("instance_id") or "")
+    return ""
+
+
+@router.get("/rollouts/terminal", response_model=TerminalRolloutsPage)
+async def list_terminal_rollouts(after: int = 0, limit: int = 1000) -> TerminalRolloutsPage:
+    """Cursor-paginate terminal rollouts in completion order (lightweight projection).
+
+    `after` is an index into the append-only completion log; pass back `next_after`
+    to fetch only rollouts that completed since the last call. Out-of-order
+    completions are never missed because the log is append-on-terminal-transition.
+    Returns only id/state/data_id/is_train — fetch events per rollout for details.
+    """
+    if after < 0:
+        after = 0
+    if limit < 1:
+        limit = 1
+    total = len(_terminal_order)
+    slice_ids = _terminal_order[after : after + limit]
+    items: list[TerminalRolloutItem] = []
+    for rid in slice_ids:
+        rollout = _rollouts.get(rid)
+        if rollout is None:
+            continue
+        items.append(
+            TerminalRolloutItem(
+                rollout_id=rid,
+                state=rollout.status.state,
+                data_id=_data_id_of(rollout),
+                is_train=rollout.is_train,
+            )
+        )
+    return TerminalRolloutsPage(items=items, next_after=after + len(slice_ids), total_terminal=total)
 
 
 @router.get("/rollouts/{rollout_id}", response_model=RolloutDetail)
@@ -141,6 +205,16 @@ async def patch_rollout(rollout_id: str, body: RolloutPatch) -> Rollout:
         }
     )
     _rollouts[rollout_id] = updated
+    if "state" in updates and updated_status.state in TERMINAL_STATES:
+        # One-way terminal transition (guarded above) => append exactly once.
+        _terminal_order.append(rollout_id)
     return updated
+
+
+@router.delete("/rollouts/{rollout_id}", status_code=204)
+async def delete_rollout(rollout_id: str) -> None:
+    """Delete a rollout and its events. Idempotent: missing id is a no-op."""
+    _rollouts.pop(rollout_id, None)
+    _events.pop(rollout_id, None)
 
 

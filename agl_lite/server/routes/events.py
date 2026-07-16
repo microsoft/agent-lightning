@@ -167,6 +167,24 @@ def _to_triplet_format(event: Event) -> Event:
     return event
 
 
+def _dedupe_model_requests_by_prompt_token_ids(events: list[Event]) -> list[Event]:
+    """Keep only the last model_request event for each prompt_token_ids key."""
+    last_index_by_prompt: dict[tuple[Any, ...], int] = {}
+    for index, event in enumerate(events):
+        if event.event_type != "model_request":
+            continue
+        prompt_token_ids = event.data.get("prompt_token_ids", [])
+        prompt_key = tuple(prompt_token_ids) if isinstance(prompt_token_ids, list) else ()
+        last_index_by_prompt[prompt_key] = index
+
+    last_indexes = set(last_index_by_prompt.values())
+    return [
+        event
+        for index, event in enumerate(events)
+        if event.event_type != "model_request" or index in last_indexes
+    ]
+
+
 @router.post("/rollouts/{rollout_id}/attempt/{attempt_id}/events", response_model=Event)
 async def post_event(rollout_id: str, body: EventCreate, attempt_id: str) -> Event:
     """Post an event for one rollout attempt."""
@@ -186,4 +204,5 @@ async def query_events(
     )
     if format == "triplet":
         events = [_to_triplet_format(e) for e in events]
+        events = _dedupe_model_requests_by_prompt_token_ids(events)
     return events

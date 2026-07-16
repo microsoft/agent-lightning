@@ -12,7 +12,7 @@ k8s_runner:
   namespace: default
   ttl_after_finished: 1200
   max_jobs_per_minute: 100
-  poll_interval: 10
+  poll_interval: 5
 
 local_runner:
   maximum_size: 50

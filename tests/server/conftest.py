@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agl_lite.server.app import create_app
-from agl_lite.server.store import _events, _models, _rollouts
+from agl_lite.server.store import _events, _models, _rollouts, _terminal_order
 
 AGL_KEY = "test-secret-key"
 MODEL_NAME = "test-model"
@@ -17,10 +17,12 @@ def clean_store():
     _rollouts.clear()
     _events.clear()
     _models.clear()
+    _terminal_order.clear()
     yield
     _rollouts.clear()
     _events.clear()
     _models.clear()
+    _terminal_order.clear()
 
 
 @pytest.fixture

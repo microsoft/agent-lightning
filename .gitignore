@@ -237,3 +237,11 @@ public/
 *.swp
 *.swo
 *~
+
+# Local example datasets
+examples/**/*dataset*.jsonl
+examples/**/subset*.jsonl
+examples/**/verified_*.jsonl
+
+# SWE-smith rollout stats
+examples/swe_smith/rollout_stats.json
