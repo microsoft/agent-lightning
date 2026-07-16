@@ -108,6 +108,7 @@ def verl_default_config() -> dict[str, Any]:
 def build_config(
     *,
     model: str | None = None,
+    api_type: str = "chat",
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
@@ -127,6 +128,15 @@ def build_config(
 
     if model:
         overrides["actor_rollout_ref"]["model"]["path"] = model
+    if api_type not in {"chat", "completion"}:
+        raise ValueError(f"Unsupported Search-R1 OpenAI API type: {api_type}")
+    if api_type == "completion":
+        overrides["agentlightning"]["local"]["agent_class"] = (
+            "examples.search_r1.agents.search_r1_agent:SearchR1CompletionAgent"
+        )
+        overrides["agentlightning"]["local"]["env_map"]["SEARCH_R1_TOKENIZER_MODEL"] = overrides[
+            "actor_rollout_ref"
+        ]["model"]["path"]
     if agl_base_url:
         overrides["agentlightning"]["agl_base_url"] = agl_base_url
     if agl_key is not None:
@@ -170,6 +180,7 @@ def train(
     train_file: str,
     val_file: str,
     model: str | None = None,
+    api_type: str = "chat",
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
@@ -193,6 +204,7 @@ def train(
 
     config = build_config(
         model=model,
+        api_type=api_type,
         agl_base_url=agl_base_url,
         agl_key=agl_key,
         run_name=run_name,
@@ -231,6 +243,12 @@ def main() -> None:
         help=f"HF model id or path (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
+        "--api-type",
+        choices=("chat", "completion"),
+        default="chat",
+        help="OpenAI-compatible API used by the local rollout agent",
+    )
+    parser.add_argument(
         "--agl-base-url",
         type=str,
         default="http://localhost:8080",
@@ -259,6 +277,7 @@ def main() -> None:
         train_file=args.train_file,
         val_file=args.val_file,
         model=args.model,
+        api_type=args.api_type,
         agl_base_url=args.agl_base_url,
         agl_key=args.agl_key,
         run_name=args.run_name,

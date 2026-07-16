@@ -170,6 +170,13 @@ For a short smoke configuration:
 examples/search_r1/run.sh --ci
 ```
 
+To run the token-in/token-out completion agent instead of the default chat
+agent:
+
+```bash
+examples/search_r1/run.sh --api-type completion
+```
+
 To use a different model while keeping the server proxy and trainer model in
 sync:
 
@@ -200,9 +207,15 @@ retrieval endpoint are already running:
 python examples/search_r1/train_search_r1_agent.py \
     --train-file examples/search_r1/data/train.parquet \
     --val-file examples/search_r1/data/test.parquet \
+  --api-type completion \
     --agl-base-url http://localhost:8080 \
     --agl-key dummy
 ```
+
+`--api-type chat` uses `SearchR1Agent`. `--api-type completion` uses
+`SearchR1CompletionAgent`, which sends token-id prompts through the completions
+API, appends untrimmed completion `token_ids` to the next prompt, and then
+appends tokenized retrieval feedback or invalid-action feedback when needed.
 
 The script accepts dotlist config overrides after known arguments, matching the
 `calc_x` style:
@@ -223,7 +236,12 @@ export SEARCH_R1_TOPK=3
 export SEARCH_R1_MAX_TURNS=4
 export SEARCH_R1_MAX_TOKENS=500
 export SEARCH_R1_TEMPERATURE=1.0
+export SEARCH_R1_TOKENIZER_MODEL=meta-llama/Llama-3.2-3B-Instruct  # completion agent only
 ```
+
+When `--api-type completion` is selected, `train_search_r1_agent.py` maps
+`SEARCH_R1_TOKENIZER_MODEL` to the configured VERL model path. Set the env var
+manually only when the tokenizer should differ from the training model.
 
 Dataset paths can be overridden without moving files:
 
