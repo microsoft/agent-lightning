@@ -1,0 +1,55 @@
+benchmark,optimizer,condition,nominal_budget,accuracy_mean,accuracy_sd,total_cost_mean,total_cost_sd
+SpreadsheetBench,Claude Code,skill,5,0.6379,0.0524,7.58,0.90
+SpreadsheetBench,Claude Code,skill,10,0.6775,0.0240,11.86,0.33
+SpreadsheetBench,Claude Code,skill,25,0.7170,0.0711,32.46,5.46
+SpreadsheetBench,Claude Code,no-skill,5,0.6823,0.0055,7.59,0.95
+SpreadsheetBench,Claude Code,no-skill,10,0.6942,0.0432,12.26,0.25
+SpreadsheetBench,Claude Code,no-skill,25,0.6894,0.0198,30.60,5.64
+SpreadsheetBench,Codex,skill,5,0.6547,0.0459,5.41,0.17
+SpreadsheetBench,Codex,skill,10,0.6463,0.0075,5.58,0.86
+SpreadsheetBench,Codex,skill,25,0.6295,0.0252,14.19,2.29
+SpreadsheetBench,Codex,no-skill,5,0.4149,0.2428,3.44,1.78
+SpreadsheetBench,Codex,no-skill,10,0.6859,0.0116,4.98,0.47
+SpreadsheetBench,Codex,no-skill,25,0.6523,0.0240,4.86,0.60
+SpreadsheetBench,Copilot,skill,5,0.6631,0.0205,5.55,0.69
+SpreadsheetBench,Copilot,skill,10,0.6930,0.0432,10.29,1.49
+SpreadsheetBench,Copilot,skill,25,0.6871,0.0312,10.61,6.64
+SpreadsheetBench,Copilot,no-skill,5,0.5168,0.2082,3.40,1.06
+SpreadsheetBench,Copilot,no-skill,10,0.6439,0.0288,3.87,0.34
+SpreadsheetBench,Copilot,no-skill,25,0.6847,0.0360,5.54,1.06
+OfficeQA,Claude Code,skill,5,0.5678,0.0387,10.42,1.59
+OfficeQA,Claude Code,skill,10,0.6260,0.0374,16.16,1.02
+OfficeQA,Claude Code,skill,25,0.6027,0.0470,27.05,1.62
+OfficeQA,Claude Code,no-skill,5,0.5969,0.0488,9.82,1.72
+OfficeQA,Claude Code,no-skill,10,0.5930,0.0174,14.55,2.43
+OfficeQA,Claude Code,no-skill,25,0.5717,0.0298,32.64,12.01
+OfficeQA,Codex,skill,5,0.4981,0.0298,7.69,0.21
+OfficeQA,Codex,skill,10,0.5407,0.0116,9.67,1.69
+OfficeQA,Codex,skill,25,0.5078,0.0287,14.09,1.10
+OfficeQA,Codex,no-skill,5,0.4961,0.0067,8.03,0.34
+OfficeQA,Codex,no-skill,10,0.5000,0.0058,7.64,0.58
+OfficeQA,Codex,no-skill,25,0.5213,0.0034,8.81,1.67
+OfficeQA,Copilot,skill,5,0.5155,0.0374,7.79,0.91
+OfficeQA,Copilot,skill,10,0.5368,0.0089,11.01,1.14
+OfficeQA,Copilot,skill,25,0.5116,0.0174,19.29,6.23
+OfficeQA,Copilot,no-skill,5,0.5465,0.0201,8.09,1.28
+OfficeQA,Copilot,no-skill,10,0.5116,0.0407,8.05,2.98
+OfficeQA,Copilot,no-skill,25,0.5310,0.0034,8.94,0.33
+ALFWorld,Claude Code,skill,5,0.9453,0.0456,7.37,1.81
+ALFWorld,Claude Code,skill,10,0.7313,0.4653,10.55,1.64
+ALFWorld,Claude Code,skill,25,0.9975,0.0043,20.14,8.47
+ALFWorld,Claude Code,no-skill,5,0.6468,0.5609,6.30,2.03
+ALFWorld,Claude Code,no-skill,10,1.0000,0.0000,11.08,1.55
+ALFWorld,Claude Code,no-skill,25,1.0000,0.0000,10.44,1.61
+ALFWorld,Codex,skill,5,0.9478,0.0712,3.82,1.21
+ALFWorld,Codex,skill,10,1.0000,0.0000,6.38,3.14
+ALFWorld,Codex,skill,25,0.9776,0.0388,8.13,4.42
+ALFWorld,Codex,no-skill,5,1.0000,0.0000,1.31,0.56
+ALFWorld,Codex,no-skill,10,1.0000,0.0000,1.98,1.41
+ALFWorld,Codex,no-skill,25,0.9328,0.0976,3.64,0.30
+ALFWorld,Copilot,skill,5,0.9279,0.1249,1.94,0.80
+ALFWorld,Copilot,skill,10,1.0000,0.0000,1.52,1.05
+ALFWorld,Copilot,skill,25,0.9975,0.0043,2.79,1.78
+ALFWorld,Copilot,no-skill,5,0.9975,0.0043,2.37,0.63
+ALFWorld,Copilot,no-skill,10,1.0000,0.0000,2.39,2.23
+ALFWorld,Copilot,no-skill,25,1.0000,0.0000,1.47,0.43

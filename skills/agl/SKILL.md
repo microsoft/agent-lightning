@@ -1,5 +1,5 @@
 ---
-name: agl-optimizer
+name: agl
 description: >-
   Provides the action space, tradeoffs, and evaluation context for improving an
   editable AI agent against a benchmark while preserving its deployment contract.

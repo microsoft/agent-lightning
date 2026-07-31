@@ -1,0 +1,33 @@
+name: Validate AGL Skill
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - '.github/workflows/skills.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - '.github/workflows/skills.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate Agent Skills and Claude plugin formats
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Validate Agent Skills format
+        run: uvx --from 'skills-ref==0.1.1' agentskills validate skills/agl
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Validate Claude Code plugin
+        run: npx --yes @anthropic-ai/claude-code@2.1.218 plugin validate skills/agl

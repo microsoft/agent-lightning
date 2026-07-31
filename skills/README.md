@@ -2,30 +2,36 @@
 
 Skills in the [Agent Skills](https://agentskills.io) format (`<name>/SKILL.md`), installable into any compatible agent.
 
-## agl-optimizer
+## agl
 
-Turns your coding agent into an **agent optimizer**: given an editable agent and a benchmark to hillclimb on, it improves the agent's accuracy, cost, and latency through focused, individually-measured edits — keeping only what moves the frontier. Developed in the [agl-skill harness](https://github.com/agent-lightning/agl-skill) and measured there against a no-skill control under a fair, leakage-free protocol.
+Turns your coding agent into an **agent optimizer**: given an editable agent and a benchmark to hillclimb on, it improves the agent's accuracy, cost, and latency through focused, individually-measured edits — keeping only what moves the frontier. It was measured against a no-skill control under a fair, leakage-free protocol.
 
-You provide the environment; the skill does the optimizing. Before invoking it, have ready: a working copy of the agent (keep the original pristine), labeled examples, a frozen eval command, and an objective + budget. See [here](https://github.com/agent-lightning/agl-skill/tree/main/targets) for examples.
+You provide the environment; the skill does the optimizing. Before invoking it, have ready: a working copy of the agent (keep the original pristine), labeled examples, a frozen eval command, and an objective + budget.
 
 ### Installation
 
-Claude Code users can alternatively install the packaged plugin, published from [agent-lightning/agl-skill](https://github.com/agent-lightning/agl-skill) to the community marketplace: `/plugin install agl-skill@claude-community` (the skill then appears as `/agl-skill:agl-optimizer`).
+Install the skill from this repository for Claude Code, Codex, or GitHub Copilot:
 
-Alternatively, install via GitHub:
 ```bash
-gh skill install microsoft/agent-lightning agl-optimizer --agent claude-code
-gh skill install microsoft/agent-lightning agl-optimizer --agent codex
-gh skill install microsoft/agent-lightning agl-optimizer --agent github-copilot
+gh skill install microsoft/agent-lightning agl --agent claude-code
+gh skill install microsoft/agent-lightning agl --agent codex
+gh skill install microsoft/agent-lightning agl --agent github-copilot
 ```
 
-or copy `agl-optimizer/` into your agent's skills folder (`~/.claude/skills/` for Claude Code, `~/.agents/skills/` for Codex, `~/.copilot/skills/` for Copilot).
+Claude Code users can alternatively install the packaged plugin from the community marketplace:
+
+```text
+/plugin marketplace add anthropics/claude-plugins-community
+/plugin install agl@claude-community
+```
+
+The `skills/agl/` directory is both the canonical Agent Skills package and the Claude Code plugin root, so both publication paths use the same `SKILL.md` without a copied or symlinked wrapper.
 
 ### Results
 
 **Main finding:** Coding-agent harnesses are already strong optimizers. The clearest opportunity is improving consistency while preserving their high average performance, rather than expecting large score gains.
 
-For context, these are the published GPT-5.4-mini direct-chat results from [SkillOpt](https://github.com/microsoft/SkillOpt) (Table 1):
+SkillOpt and the other non-agentic results are taken from the [SkillOpt paper](https://github.com/microsoft/SkillOpt) (Table 1); our agentic rows use the same splits and average all optimizers, budgets, and replicates.
 
 | Method | Spreadsheet (%) | OfficeQA (%) | ALFWorld (%) |
 | :--- | ---: | ---: | ---: |
@@ -35,20 +41,43 @@ For context, these are the published GPT-5.4-mini direct-chat results from [Skil
 | Trace2Skill | 40.7 | 20.9 | 82.8 |
 | TextGrad | 38.2 | 30.0 | 70.9 |
 | GEPA | 42.5 | 45.3 | 81.3 |
-| **SkillOpt** | **47.5** | **48.8** | **85.8** |
+| SkillOpt | 47.5 | 48.8 | 85.8 |
+| Agentic optimizer average, no skill | 62.9 | 54.1 | **95.3** |
+| **Agentic optimizer average, AGL** | **66.7** | **54.5** | 94.7 |
 
-Our evaluation uses a different protocol: Claude Code, Codex, and Copilot act as agentic optimizers that can edit the whole agent. Results are held-out test means pooled across \$5, \$10, and \$25 budgets (`n = 9`) and are shown as mean ± standard deviation. Higher is better; bold marks the better mean within each row.
+#### Accuracy by budget and optimizer
 
-| Benchmark (train/test) | Optimizer | agl-skill v9.7 (%) | No-skill control (%) | Change (pp) |
-| :--- | :--- | ---: | ---: | ---: |
-| SpreadsheetBench (120/280) | Claude Code | 67.8 ± 5.7 | **68.9** ± 2.5 | −1.1 |
-| SpreadsheetBench (120/280) | Codex | **64.4** ± 2.9 | 58.4 ± 17.7 | +5.9 |
-| SpreadsheetBench (120/280) | Copilot | **68.1** ± 3.2 | 61.5 ± 13.1 | +6.6 |
-| OfficeQA (50/172) | Claude Code | **59.9** ± 4.4 | 58.7 ± 3.2 | +1.2 |
-| OfficeQA (50/172) | Codex | **51.6** ± 2.9 | 50.6 ± 1.3 | +1.0 |
-| OfficeQA (50/172) | Copilot | 52.1 ± 2.4 | **53.0** ± 2.7 | −0.8 |
-| ALFWorld (3553/134) | Claude Code | **89.1** ± 26.4 | 88.2 ± 33.1 | +0.9 |
-| ALFWorld (3553/134) | Codex | 97.5 ± 4.7 | **97.8** ± 5.9 | −0.3 |
-| ALFWorld (3553/134) | Copilot | 97.5 ± 7.2 | **99.9** ± 0.3 | −2.4 |
+Each benchmark is split into the \$5, \$10, and \$25 nominal budgets. Within each budget, every optimizer's with-skill and no-skill held-out finale accuracies are shown side by side. Solid bars use the skill; hatched bars are no-skill controls.
 
-Because the two tables use different protocols and data splits, compare results within a table, not across tables. Full per-budget scores, cost breakdowns, and caveats are available in [RESULTS_V9_7.md](https://github.com/agent-lightning/agl-skill/blob/verifier-v8/RESULTS_V9_7.md).
+![SpreadsheetBench accuracy by budget and optimizer](assets/agl-spreadsheetbench-accuracy-bars.svg)
+
+![OfficeQA accuracy by budget and optimizer](assets/agl-officeqa-accuracy-bars.svg)
+
+![ALFWorld accuracy by budget and optimizer](assets/agl-alf-world-accuracy-bars.svg)
+
+
+#### \$5 budget snapshot
+
+| Benchmark (train/test) | Result | Accuracy (%) | Actual total cost |
+| :--- | :--- | ---: | ---: |
+| SpreadsheetBench (120/280) | Before optimizer | 25.66 ± 2.65 | \$1.51 ± 0.04 |
+|  | Claude Code with skill | 63.79 ± 5.24 | **\$7.58 ± 0.90** |
+|  | Claude Code without skill | **68.23 ± 0.55** | \$7.59 ± 0.95 |
+|  | Codex with skill | **65.47 ± 4.59** | \$5.41 ± 0.17 |
+|  | Codex without skill | 41.49 ± 24.28 | **\$3.44 ± 1.78** |
+|  | Copilot with skill | **66.31 ± 2.05** | \$5.55 ± 0.69 |
+|  | Copilot without skill | 51.68 ± 20.82 | **\$3.40 ± 1.06** |
+| OfficeQA (50/172) | Before optimizer | 31.78 ± 1.21 | \$2.78 ± 0.06 |
+|  | Claude Code with skill | 56.78 ± 3.87 | \$10.42 ± 1.59 |
+|  | Claude Code without skill | **59.69 ± 4.88** | **\$9.82 ± 1.72** |
+|  | Codex with skill | **49.81 ± 2.98** | **\$7.69 ± 0.21** |
+|  | Codex without skill | 49.61 ± 0.67 | \$8.03 ± 0.34 |
+|  | Copilot with skill | 51.55 ± 3.74 | **\$7.79 ± 0.91** |
+|  | Copilot without skill | **54.65 ± 2.01** | \$8.09 ± 1.28 |
+| ALFWorld (3553/134) | Before optimizer | 58.71 ± 1.56 | \$5.78 ± 0.17 |
+|  | Claude Code with skill | **94.53 ± 4.56** | \$7.37 ± 1.81 |
+|  | Claude Code without skill | 64.68 ± 56.09 | **\$6.30 ± 2.03** |
+|  | Codex with skill | 94.78 ± 7.12 | \$3.82 ± 1.21 |
+|  | Codex without skill | **100.00 ± 0.00** | **\$1.31 ± 0.56** |
+|  | Copilot with skill | 92.79 ± 12.49 | **\$1.94 ± 0.80** |
+|  | Copilot without skill | **99.75 ± 0.43** | \$2.37 ± 0.63 |
