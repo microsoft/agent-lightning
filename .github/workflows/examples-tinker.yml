@@ -41,10 +41,10 @@ jobs:
     steps:
       - name: Check disk space
         run: df -h
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
@@ -62,7 +62,7 @@ jobs:
           echo "UV_LOCKED=1" >> $GITHUB_ENV
           echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: dependencies-tinker-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt

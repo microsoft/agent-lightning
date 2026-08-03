@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Guardrail — allow only members/collaborators
         id: guard
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const allowed = ['MEMBER','OWNER','COLLABORATOR'];
@@ -39,7 +39,7 @@ jobs:
       - name: Trigger repository dispatch
         id: dispatch
         if: steps.guard.outputs.skip != 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const owner = context.repo.owner;
@@ -111,7 +111,7 @@ jobs:
       - name: Acknowledge in thread (optional)
         if: steps.guard.outputs.skip != 'true' && steps.dispatch.outputs.dispatched == 'true'
         id: ack
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           EVENT_TYPES: ${{ steps.dispatch.outputs.event_types }}
           CORRELATION_ID: ${{ steps.dispatch.outputs.correlation_id }}
@@ -138,7 +138,7 @@ jobs:
 
       - name: Notify missing ci label
         if: steps.guard.outputs.skip != 'true' && steps.dispatch.outputs.dispatched != 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -157,7 +157,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Track dispatched runs and update comment
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           CORRELATION_ID: ${{ needs.dispatch.outputs.correlation_id }}
           ACK_COMMENT_ID: ${{ needs.dispatch.outputs.ack_comment_id }}
