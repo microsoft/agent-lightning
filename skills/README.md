@@ -55,15 +55,15 @@ Each benchmark is split into the \$5, \$10, and \$25 nominal budgets. Within eac
 
 ![ALFWorld accuracy by budget and optimizer](assets/agl-alf-world-accuracy-bars.svg)
 
-#### Accuracy versus actual cost
+#### Accuracy versus optimize-stage cost
 
-Each line connects the \$5, \$10, and \$25 nominal budgets in that order. The x-axis is average actual total cost on a log scale, including optimizer calls, train/self-evaluation, and held-out finale generation.
+Each line connects the \$5, \$10, and \$25 nominal budgets in that order. The x-axis is average actual optimize-stage cost on a log scale, including optimizer calls and train/self-evaluation but excluding held-out finale generation.
 
-![SpreadsheetBench accuracy versus actual cost](assets/agl-spreadsheetbench-accuracy-log-cost.svg)
+![SpreadsheetBench accuracy versus optimize-stage cost](assets/agl-spreadsheetbench-accuracy-log-cost.svg)
 
-![OfficeQA accuracy versus actual cost](assets/agl-officeqa-accuracy-log-cost.svg)
+![OfficeQA accuracy versus optimize-stage cost](assets/agl-officeqa-accuracy-log-cost.svg)
 
-![ALFWorld accuracy versus actual cost](assets/agl-alf-world-accuracy-log-cost.svg)
+![ALFWorld accuracy versus optimize-stage cost](assets/agl-alf-world-accuracy-log-cost.svg)
 
 #### \$5 budget snapshot
 
