@@ -55,6 +55,15 @@ Each benchmark is split into the \$5, \$10, and \$25 nominal budgets. Within eac
 
 ![ALFWorld accuracy by budget and optimizer](assets/agl-alf-world-accuracy-bars.svg)
 
+#### Accuracy versus actual cost
+
+Each line connects the \$5, \$10, and \$25 nominal budgets in that order. The x-axis is average actual total cost on a log scale, including optimizer calls, train/self-evaluation, and held-out finale generation.
+
+![SpreadsheetBench accuracy versus actual cost](assets/agl-spreadsheetbench-accuracy-log-cost.svg)
+
+![OfficeQA accuracy versus actual cost](assets/agl-officeqa-accuracy-log-cost.svg)
+
+![ALFWorld accuracy versus actual cost](assets/agl-alf-world-accuracy-log-cost.svg)
 
 #### \$5 budget snapshot
 
@@ -81,3 +90,55 @@ Each benchmark is split into the \$5, \$10, and \$25 nominal budgets. Within eac
 |  | Codex without skill | **100.00 ± 0.00** | **\$1.31 ± 0.56** |
 |  | Copilot with skill | 92.79 ± 12.49 | **\$1.94 ± 0.80** |
 |  | Copilot without skill | **99.75 ± 0.43** | \$2.37 ± 0.63 |
+
+#### \$10 budget snapshot
+
+| Benchmark (train/test) | Result | Accuracy (%) | Actual total cost |
+| :--- | :--- | ---: | ---: |
+| SpreadsheetBench (120/280) | Before optimizer | 25.66 ± 2.65 | \$1.51 ± 0.04 |
+|  | Claude Code with skill | 67.75 ± 2.40 | **\$11.86 ± 0.33** |
+|  | Claude Code without skill | **69.42 ± 4.32** | \$12.26 ± 0.25 |
+|  | Codex with skill | 64.63 ± 0.75 | \$5.58 ± 0.86 |
+|  | Codex without skill | **68.59 ± 1.16** | **\$4.98 ± 0.47** |
+|  | Copilot with skill | **69.30 ± 4.32** | \$10.29 ± 1.49 |
+|  | Copilot without skill | 64.39 ± 2.88 | **\$3.87 ± 0.34** |
+| OfficeQA (50/172) | Before optimizer | 31.78 ± 1.21 | \$2.78 ± 0.06 |
+|  | Claude Code with skill | **62.60 ± 3.74** | \$16.16 ± 1.02 |
+|  | Claude Code without skill | 59.30 ± 1.74 | **\$14.55 ± 2.43** |
+|  | Codex with skill | **54.07 ± 1.16** | \$9.67 ± 1.69 |
+|  | Codex without skill | 50.00 ± 0.58 | **\$7.64 ± 0.58** |
+|  | Copilot with skill | **53.68 ± 0.89** | \$11.01 ± 1.14 |
+|  | Copilot without skill | 51.16 ± 4.07 | **\$8.05 ± 2.98** |
+| ALFWorld (3553/134) | Before optimizer | 58.71 ± 1.56 | \$5.78 ± 0.17 |
+|  | Claude Code with skill | 73.13 ± 46.53 | **\$10.55 ± 1.64** |
+|  | Claude Code without skill | **100.00 ± 0.00** | \$11.08 ± 1.55 |
+|  | Codex with skill | 100.00 ± 0.00 | \$6.38 ± 3.14 |
+|  | Codex without skill | 100.00 ± 0.00 | **\$1.98 ± 1.41** |
+|  | Copilot with skill | 100.00 ± 0.00 | **\$1.52 ± 1.05** |
+|  | Copilot without skill | 100.00 ± 0.00 | \$2.39 ± 2.23 |
+
+#### \$25 budget snapshot
+
+| Benchmark (train/test) | Result | Accuracy (%) | Actual total cost |
+| :--- | :--- | ---: | ---: |
+| SpreadsheetBench (120/280) | Before optimizer | 25.66 ± 2.65 | \$1.51 ± 0.04 |
+|  | Claude Code with skill | **71.70 ± 7.11** | \$32.46 ± 5.46 |
+|  | Claude Code without skill | 68.94 ± 1.98 | **\$30.60 ± 5.64** |
+|  | Codex with skill | 62.95 ± 2.52 | \$14.19 ± 2.29 |
+|  | Codex without skill | **65.23 ± 2.40** | **\$4.86 ± 0.60** |
+|  | Copilot with skill | **68.71 ± 3.12** | \$10.61 ± 6.64 |
+|  | Copilot without skill | 68.47 ± 3.60 | **\$5.54 ± 1.06** |
+| OfficeQA (50/172) | Before optimizer | 31.78 ± 1.21 | \$2.78 ± 0.06 |
+|  | Claude Code with skill | **60.27 ± 4.70** | **\$27.05 ± 1.62** |
+|  | Claude Code without skill | 57.17 ± 2.98 | \$32.64 ± 12.01 |
+|  | Codex with skill | 50.78 ± 2.87 | \$14.09 ± 1.10 |
+|  | Codex without skill | **52.13 ± 0.34** | **\$8.81 ± 1.67** |
+|  | Copilot with skill | 51.16 ± 1.74 | \$19.29 ± 6.23 |
+|  | Copilot without skill | **53.10 ± 0.34** | **\$8.94 ± 0.33** |
+| ALFWorld (3553/134) | Before optimizer | 58.71 ± 1.56 | \$5.78 ± 0.17 |
+|  | Claude Code with skill | 99.75 ± 0.43 | \$20.14 ± 8.47 |
+|  | Claude Code without skill | **100.00 ± 0.00** | **\$10.44 ± 1.61** |
+|  | Codex with skill | **97.76 ± 3.88** | \$8.13 ± 4.42 |
+|  | Codex without skill | 93.28 ± 9.76 | **\$3.64 ± 0.30** |
+|  | Copilot with skill | 99.75 ± 0.43 | \$2.79 ± 1.78 |
+|  | Copilot without skill | **100.00 ± 0.00** | **\$1.47 ± 0.43** |
