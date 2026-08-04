@@ -1,12 +1,12 @@
 ---
-name: agl
+name: agent-lightning
 description: >-
   Provides the action space, tradeoffs, and evaluation context for improving an
   editable AI agent against a benchmark while preserving its deployment contract.
   Use when optimizing agent accuracy, cost, latency, or reliability.
 ---
 
-# Agent Optimization
+# Agent Lightning
 
 Agent optimization is a search over interacting choices. The useful question is
 not which architecture is most sophisticated, but which change moves the requested

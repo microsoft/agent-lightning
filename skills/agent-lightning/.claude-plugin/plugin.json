@@ -1,6 +1,6 @@
 {
-  "name": "agl",
-  "displayName": "AGL",
+  "name": "agent-lightning",
+  "displayName": "Agent Lightning",
   "description": "Turns coding agents into agent optimizers that improve accuracy, cost, latency, and reliability against a benchmark.",
   "author": {
     "name": "Agent Lightning Team"

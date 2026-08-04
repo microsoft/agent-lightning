@@ -2,7 +2,7 @@
 
 Skills in the [Agent Skills](https://agentskills.io) format (`<name>/SKILL.md`), installable into any compatible agent.
 
-## agl
+## Agent Lightning
 
 Turns your coding agent into an **agent optimizer**: given an editable agent and a benchmark to hillclimb on, it improves the agent's accuracy, cost, and latency through focused, individually-measured edits — keeping only what moves the frontier. It was measured against a no-skill control under a fair, leakage-free protocol.
 
@@ -13,19 +13,19 @@ You provide the environment; the skill does the optimizing. Before invoking it, 
 Install the skill from this repository for Claude Code, Codex, or GitHub Copilot:
 
 ```bash
-gh skill install microsoft/agent-lightning agl --agent claude-code
-gh skill install microsoft/agent-lightning agl --agent codex
-gh skill install microsoft/agent-lightning agl --agent github-copilot
+gh skill install microsoft/agent-lightning agent-lightning --agent claude-code
+gh skill install microsoft/agent-lightning agent-lightning --agent codex
+gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
 ```
 
 Claude Code users can alternatively install the packaged plugin from the community marketplace:
 
 ```text
 /plugin marketplace add anthropics/claude-plugins-community
-/plugin install agl@claude-community
+/plugin install agent-lightning@claude-community
 ```
 
-The `skills/agl/` directory is both the canonical Agent Skills package and the Claude Code plugin root, so both publication paths use the same `SKILL.md` without a copied or symlinked wrapper.
+The `skills/agent-lightning/` directory is both the canonical Agent Skills package and the Claude Code plugin root, so both publication paths use the same `SKILL.md` without a copied or symlinked wrapper.
 
 ### Results
 
@@ -43,27 +43,27 @@ SkillOpt and the other non-agentic results are taken from the [SkillOpt paper](h
 | GEPA | 42.5 | 45.3 | 81.3 |
 | SkillOpt | 47.5 | 48.8 | 85.8 |
 | Agentic optimizer average, no skill | 62.9 | 54.1 | **95.3** |
-| **Agentic optimizer average, AGL** | **66.7** | **54.5** | 94.7 |
+| **Agentic optimizer average, Agent Lightning** | **66.7** | **54.5** | 94.7 |
 
 #### Accuracy by budget and optimizer
 
 Each benchmark is split into the \$5, \$10, and \$25 nominal budgets. Within each budget, every optimizer's with-skill and no-skill held-out finale accuracies are shown side by side. Solid bars use the skill; hatched bars are no-skill controls.
 
-![SpreadsheetBench accuracy by budget and optimizer](assets/agl-spreadsheetbench-accuracy-bars.svg)
+![SpreadsheetBench accuracy by budget and optimizer](assets/agent-lightning-spreadsheetbench-accuracy-bars.svg)
 
-![OfficeQA accuracy by budget and optimizer](assets/agl-officeqa-accuracy-bars.svg)
+![OfficeQA accuracy by budget and optimizer](assets/agent-lightning-officeqa-accuracy-bars.svg)
 
-![ALFWorld accuracy by budget and optimizer](assets/agl-alf-world-accuracy-bars.svg)
+![ALFWorld accuracy by budget and optimizer](assets/agent-lightning-alf-world-accuracy-bars.svg)
 
 #### Accuracy versus optimize-stage cost
 
 Each line connects the \$5, \$10, and \$25 nominal budgets in that order. The x-axis is average actual optimize-stage cost on a log scale, including optimizer calls and train/self-evaluation but excluding held-out finale generation.
 
-![SpreadsheetBench accuracy versus optimize-stage cost](assets/agl-spreadsheetbench-accuracy-log-cost.svg)
+![SpreadsheetBench accuracy versus optimize-stage cost](assets/agent-lightning-spreadsheetbench-accuracy-log-cost.svg)
 
-![OfficeQA accuracy versus optimize-stage cost](assets/agl-officeqa-accuracy-log-cost.svg)
+![OfficeQA accuracy versus optimize-stage cost](assets/agent-lightning-officeqa-accuracy-log-cost.svg)
 
-![ALFWorld accuracy versus optimize-stage cost](assets/agl-alf-world-accuracy-log-cost.svg)
+![ALFWorld accuracy versus optimize-stage cost](assets/agent-lightning-alf-world-accuracy-log-cost.svg)
 
 #### \$5 budget snapshot
 

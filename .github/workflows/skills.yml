@@ -1,4 +1,4 @@
-name: Validate AGL Skill
+name: Validate Agent Lightning Skill
 
 permissions:
   contents: read
@@ -25,9 +25,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
       - name: Validate Agent Skills format
-        run: uvx --from 'skills-ref==0.1.1' agentskills validate skills/agl
+        run: uvx --from 'skills-ref==0.1.1' agentskills validate skills/agent-lightning
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Validate Claude Code plugin
-        run: npx --yes @anthropic-ai/claude-code@2.1.218 plugin validate skills/agl
+        run: npx --yes @anthropic-ai/claude-code@2.1.218 plugin validate skills/agent-lightning
