@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import defaultdict
 from pprint import pprint
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 import torch
@@ -36,6 +36,7 @@ from agl_lite.hooks import RolloutHooks, load_hooks
 from .agl_rollout_manager import (
     AglAsyncRolloutManager,
     AglRolloutManager,
+    AglRolloutManagerBase,
     CompletedRollout,
     EnqueuedRollout,
 )
@@ -43,6 +44,8 @@ from .rollout_adapter import RolloutAdapter
 from .rollout_level_advantage import compute_rollout_level_advantage
 
 log = logging.getLogger(__name__)
+
+RolloutManagerT = TypeVar("RolloutManagerT", bound=AglRolloutManagerBase)
 
 
 def _batch_dict_len(batch: dict[str, Any] | None) -> int:
@@ -126,24 +129,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         )
         return self._agl_client
 
-    def _make_rollout_manager(self) -> AglRolloutManager:
+    def _make_rollout_manager(self, manager_cls: type[RolloutManagerT]) -> RolloutManagerT:
         al = self.config.agentlightning
-        return AglRolloutManager(
-            agl_base_url=al.agl_base_url,
-            agl_key=al.agl_key,
-            model=self.config.actor_rollout_ref.model.path,
-            step=self.global_steps,
-            train_rollout_n=self.config.actor_rollout_ref.rollout.n,
-            rollout_timeout_seconds=al.rollout_timeout_seconds,
-            hooks=self._ensure_hooks(),
-            local_agent_class=al.local.agent_class,
-            local_env_map=al.local.env_map,
-            k8s_job_template_path=al.k8s.job_template_path,
-        )
-
-    def _make_async_rollout_manager(self) -> AglAsyncRolloutManager:
-        al = self.config.agentlightning
-        return AglAsyncRolloutManager(
+        return manager_cls(
             agl_base_url=al.agl_base_url,
             agl_key=al.agl_key,
             model=self.config.actor_rollout_ref.model.path,
@@ -170,19 +158,13 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         await asyncio.gather(*[replica.resume_generation() for replica in self._rollout_replicas()])
 
     def _resume_gateway(self) -> None:
-        # /proxy/resume is idempotent (it only sets state.paused = False), so it
-        # is safe to retry rather than let a single transient failure crash the
-        # trainer mid-step.
+        # Resuming is idempotent and safe to retry.
         self._ensure_agl_client().post_with_retry("/proxy/resume")
 
     def _pause_and_drain_gateway(self, *, reason: str) -> dict[str, Any]:
         client = self._ensure_agl_client()
 
-        # /proxy/pause is idempotent (it only sets state.paused = True), so it is
-        # safe to retry. Use a generous 5min timeout: when the server is saturated
-        # with in-flight rollout requests the pause POST itself can be slow to get
-        # a connection, and the default client timeout is not always enough to
-        # wait for the drain to make headroom.
+        # Pausing is idempotent; allow five minutes when in-flight requests saturate the server.
         response = client.post_with_retry("/proxy/pause", json={"reason": reason}, timeout=300.0)
         paused_payload = response.json()
         inflight_on_pause = int(paused_payload.get("inflight", 0))
@@ -262,8 +244,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 totals.append(total)
 
         metrics: dict[str, Any] = {}
-        # rollout_lifecycle/step_N wandb Table disabled (per-rollout rows are
-        # large and slow to log); timing/rollout_* scalar aggregates are kept.
+        # Keep scalar timings; per-rollout W&B tables are too large and slow.
 
         def _agg(prefix: str, values: list[float]) -> None:
             if not values:
@@ -391,7 +372,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
         async_rollout_metrics: dict[str, Any] = {}
         if self.is_async and is_train:
-            rollout_manager = self._make_async_rollout_manager()
+            rollout_manager = self._make_rollout_manager(AglAsyncRolloutManager)
             rollout_manager.delete_model()
             rollout_manager.register_model(server_addresses)
             previous_carry_over_rollouts = list(self._carry_over_rollouts)
@@ -408,7 +389,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 new_carry_over_rollouts=new_carry_over_rollouts,
             )
         else:
-            rollout_manager = self._make_rollout_manager()
+            rollout_manager = self._make_rollout_manager(AglRolloutManager)
             rollout_manager.delete_model()
             rollout_manager.register_model(server_addresses)
             completed_rollouts = rollout_manager.enqueue_and_wait_until_completed(data_dict, is_train=is_train)
@@ -629,8 +610,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             else:
                 batch = compute_advantage(batch, **adv_kwargs)
 
-        # Count GRPO groups and zero-variance (zero-advantage) ones. Drop+floor
-        # already happened before adv; batch here is the trained set.
+        # Count GRPO groups and zero-advantage groups in the trained batch.
         metrics.update(_grpo_group_metrics(batch))
         metrics["critic/n_transition_after_dropping"] = len(batch)
         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
@@ -649,10 +629,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             self.checkpoint_manager.update_weights(self.global_steps)
 
         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
-        # Timing/throughput metrics are emitted by fit() AFTER the "step" timer
-        # closes, so timing_raw carries the total "step" duration (the marked_timer
-        # context manager only writes timing_raw["step"] on __exit__). Return the
-        # final batch so fit() can run those token-normalized computations.
+        # Return the batch so fit() can compute throughput after the step timer closes.
         return metrics, batch
 
     def fit(self):
@@ -670,11 +647,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self._train_dataloader_iter = None
         self._carry_over_rollouts = []
         self._load_checkpoint()
-        # Wake vLLM + push checkpoint weights so the first rollout/validation
-        # sees the loaded weights.
+        # Push loaded weights before the first rollout or validation.
         self.checkpoint_manager.update_weights(self.global_steps)
 
-        # perform validation before training
         if self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
@@ -685,7 +660,6 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
 
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
 
-        # start from step 1
         self.global_steps += 1
         self.epoch += 1
         last_val_metrics = None
@@ -711,10 +685,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 continue
             metrics, step_batch = result
 
-            # Emit timing/throughput here — outside the "step" timer — so timing_raw
-            # now contains the total "step" duration. compute_timing_metrics yields
-            # timing_s/step (+ per-module timing_s/*); compute_throughout_metrics
-            # yields perf/time_per_step + perf/throughput off timing_raw["step"].
+            # Compute timing and throughput after the step timer records its total duration.
             metrics.update(compute_timing_metrics(batch=step_batch, timing_raw=timing_raw))
             n_gpus = self.resource_pool_manager.get_n_gpus()
             if n_gpus > 0 and "step" in timing_raw:

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from agl_lite.schemas import RolloutConfig, RolloutCreate, RolloutK8sConfig
+from agl_lite.schemas import RolloutCreate
 
 if TYPE_CHECKING:
     from agl_lite.schemas import Rollout
@@ -19,20 +17,11 @@ class TraceWriter(Protocol):
 class RolloutHooks:
     """Base class for synchronous rollout lifecycle hooks."""
 
-    _job_template: str | None = None
-
     def on_startup(self, store: Any | None = None) -> None:
-        """Load hook state once after startup."""
-        job_template_path = os.environ.get("AGL_JOB_TEMPLATE")
-        if job_template_path:
-            self._job_template = Path(job_template_path).read_text()
+        """Initialize hook state once after startup."""
 
     def on_enqueue(self, request: RolloutCreate) -> RolloutCreate:
         """Transform a rollout request before it is persisted."""
-        if self._job_template is not None:
-            request.config = request.config or RolloutConfig()
-            request.config.k8s = request.config.k8s or RolloutK8sConfig()
-            request.config.k8s.job_template = self._job_template
         return request
 
     def on_succeeded(self, rollout: Rollout, events: dict[str, list[Any]], store: TraceWriter) -> None:

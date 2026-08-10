@@ -51,9 +51,7 @@ class ProxyRouter:
         servers = _models.get(model, {})
         if not servers:
             raise NoServersError(model)
-        # Sort by endpoint so the hash→server mapping is independent of dict
-        # insertion order. Hashing rollout_id pins each rollout to one endpoint,
-        # maximizing prefix-cache hits for its repeated requests.
+        # Stable ordering pins each rollout to one endpoint for prefix-cache reuse.
         pool = [servers[endpoint] for endpoint in sorted(servers)]
         digest = hashlib.sha256(rollout_id.encode("utf-8")).digest()
         index = int.from_bytes(digest[:8], "big") % len(pool)

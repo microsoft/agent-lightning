@@ -6,8 +6,6 @@ Customizations:
     2. Support pre-loaded in-memory datasets.
 """
 
-# VERL's PPO entrypoint helpers are imported from its runtime module because
-# they are not exposed as a stable public API.
 # pyright: reportPrivateImportUsage=false
 
 from __future__ import annotations

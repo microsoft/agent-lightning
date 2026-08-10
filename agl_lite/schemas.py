@@ -137,9 +137,7 @@ class RolloutCreate(BaseModel):
     is_train: bool = True
     config: RolloutConfig | None = None
     metadata: RolloutMetadata | dict[str, Any] | None = None
-    # Optional client-supplied id. When set, creation is idempotent: an existing
-    # rollout with this id is returned unchanged (events untouched) instead of a
-    # new one being created. Lets callers pre-assign ids and safely retry.
+    # A caller-supplied id makes rollout creation idempotent and safe to retry.
     rollout_id: str | None = None
 
 

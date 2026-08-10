@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -18,8 +17,6 @@ from agl_lite.verl.agl_rollout_manager import CompletedRollout
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
 _ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
-_ROLLOUT_TRAJECTORY_ARTIFACT_TYPE = "rollout_trajectories"
-_VALIDATION_TRAJECTORY_ARTIFACT_TYPE = "validation_trajectories"
 _TRACE_MERGE_MISMATCH_COLUMNS = [
     "global_steps",
     "rollout_id",
@@ -80,24 +77,6 @@ def _artifact_safe_name(value: Any) -> str:
     return safe or "unknown"
 
 
-def _rollout_trajectory_artifact_path(global_steps: int) -> str:
-    return f"step_{global_steps}/rollout_trajectories.jsonl.zip"
-
-
-def _validation_trajectory_artifact_path(global_steps: int) -> str:
-    return f"step_{global_steps}/validation_trajectories.jsonl.zip"
-
-
-def _rollout_trajectory_artifact_name(run: Any, global_steps: int) -> str:
-    run_id = _artifact_safe_name(getattr(run, "id", None) or "run")
-    return f"rollout-trajectories-{run_id}-step-{global_steps}"
-
-
-def _validation_trajectory_artifact_name(run: Any, global_steps: int) -> str:
-    run_id = _artifact_safe_name(getattr(run, "id", None) or "run")
-    return f"validation-trajectories-{run_id}-step-{global_steps}"
-
-
 def _build_compact_rollout_trajectory_records(
     rollouts: list[CompletedRollout],
     *,
@@ -135,19 +114,11 @@ def _build_zipped_jsonl(records: list[dict[str, Any]], jsonl_name: str) -> bytes
 
 
 def _upload_trace_merge_mismatches_to_wandb(rows: list[dict[str, Any]], global_steps: int) -> None:
-    if not rows:
-        return
-
     try:
         import wandb
-    except ImportError:
-        print("Warning: wandb is not installed; cannot upload trace merge mismatches.")
-        return
 
-    if getattr(wandb, "run", None) is None:
-        return
-
-    try:
+        if wandb.run is None:
+            return
         table = wandb.Table(columns=_TRACE_MERGE_MISMATCH_COLUMNS)
         for row in rows:
             table.add_data(*(row.get(column) for column in _TRACE_MERGE_MISMATCH_COLUMNS))
@@ -160,68 +131,35 @@ def _upload_compact_rollout_trajectories_to_wandb(
     records: list[dict[str, Any]],
     global_steps: int,
     *,
-    artifact_name_builder: Callable[[Any, int], str],
-    artifact_type: str,
-    artifact_path: str,
-    jsonl_name: str,
-    table_key: str,
-    warning_label: str,
+    is_validation: bool = False,
 ) -> None:
-    if not records:
-        return
-
+    split = "validation" if is_validation else "train"
     try:
         import wandb
-    except ImportError:
-        print(f"Warning: wandb is not installed; cannot upload {warning_label}.")
-        return
 
-    run = getattr(wandb, "run", None)
-    if run is None:
-        return
-
-    try:
-        artifact_name = artifact_name_builder(run, global_steps)
+        if wandb.run is None:
+            return
+        run = wandb.run
+        artifact_type = f"{split}_trajectories"
+        artifact_path = f"step_{global_steps}/{artifact_type}.jsonl.zip"
+        artifact_name = (
+            f"{split}-trajectories-{_artifact_safe_name(getattr(run, 'id', None) or 'run')}-step-{global_steps}"
+        )
         artifact = wandb.Artifact(
             name=artifact_name,
             type=artifact_type,
             metadata={"global_steps": global_steps, "row_count": len(records), "format": "jsonl.zip"},
         )
         with artifact.new_file(artifact_path, mode="wb") as trajectory_file:
-            trajectory_file.write(_build_zipped_jsonl(records, jsonl_name))
+            trajectory_file.write(_build_zipped_jsonl(records, f"{artifact_type}.jsonl"))
         run.log_artifact(artifact)
 
         table = wandb.Table(columns=_ROLLOUT_TRAJECTORY_COLUMNS)
         table.add_data(global_steps, artifact_name, artifact_path, len(records))
+        table_key = "val/rollout_trajectories" if is_validation else "training/rollout_trajectories"
         wandb.log({table_key: table}, step=global_steps)
     except Exception as exc:
-        print(f"Warning: failed to upload {warning_label} to wandb: {exc}")
-
-
-def _upload_rollout_trajectories_to_wandb(records: list[dict[str, Any]], global_steps: int) -> None:
-    _upload_compact_rollout_trajectories_to_wandb(
-        records,
-        global_steps,
-        artifact_name_builder=_rollout_trajectory_artifact_name,
-        artifact_type=_ROLLOUT_TRAJECTORY_ARTIFACT_TYPE,
-        artifact_path=_rollout_trajectory_artifact_path(global_steps),
-        jsonl_name="rollout_trajectories.jsonl",
-        table_key="training/rollout_trajectories",
-        warning_label="rollout trajectories",
-    )
-
-
-def _upload_validation_rollout_trajectories_to_wandb(records: list[dict[str, Any]], global_steps: int) -> None:
-    _upload_compact_rollout_trajectories_to_wandb(
-        records,
-        global_steps,
-        artifact_name_builder=_validation_trajectory_artifact_name,
-        artifact_type=_VALIDATION_TRAJECTORY_ARTIFACT_TYPE,
-        artifact_path=_validation_trajectory_artifact_path(global_steps),
-        jsonl_name="validation_trajectories.jsonl",
-        table_key="val/rollout_trajectories",
-        warning_label="validation rollout trajectories",
-    )
+        print(f"Warning: failed to upload {split} trajectories to wandb: {exc}")
 
 
 def get_left_padded_ids_and_attention_mask(
@@ -430,8 +368,7 @@ class RolloutAdapter:
                                 "rollout_id": rollout.rollout_id,
                                 "data_id": rollout.data_id,
                                 "turn_index": turn_index,
-                                # The legacy adapter only has token-prefix diagnostics,
-                                # so classify the split as an "other" mismatch.
+                                # Token-prefix failures are classified as other mismatches.
                                 "template_mismatch": False,
                                 "retoken_mismatch": False,
                                 "others_mismatch": True,
@@ -485,7 +422,7 @@ class RolloutAdapter:
             limit=_ROLLOUT_TRAJECTORY_WANDB_LIMIT,
         )
         _upload_trace_merge_mismatches_to_wandb(merge_mismatch_rows, global_steps)
-        _upload_rollout_trajectories_to_wandb(rollout_trajectory_records, global_steps)
+        _upload_compact_rollout_trajectories_to_wandb(rollout_trajectory_records, global_steps)
 
         n_sample = len(input_ids_list)
         if n_sample == 0:
@@ -595,7 +532,11 @@ class RolloutAdapter:
             tokenizer=self.tokenizer,
             reward_fillna_value=self.reward_fillna_value,
         )
-        _upload_validation_rollout_trajectories_to_wandb(validation_trajectory_records, global_steps)
+        _upload_compact_rollout_trajectories_to_wandb(
+            validation_trajectory_records,
+            global_steps,
+            is_validation=True,
+        )
 
         return {
             "val/reward": float(np.mean([stat["reward"] for stat in sample_stat_list])),

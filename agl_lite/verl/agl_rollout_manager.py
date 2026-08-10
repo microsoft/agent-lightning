@@ -53,10 +53,7 @@ class EnqueuedRollout(BaseModel):
     sample_idx_in_step: int
     enqueue_time: float
     input: Any = None
-    # Server-authoritative timestamps captured while polling: when the rollout's
-    # pod first entered RUNNING and when it reached a terminal state. None until
-    # observed. running_at - enqueue_time exposes pod queue/startup wait when
-    # jobs are launched in CPU-limited batches.
+    # Server timestamps expose pod queue time and completion time.
     running_at: float | None = None
     finished_at: float | None = None
 
@@ -176,8 +173,7 @@ class AglRolloutManagerBase:
             endpoint = address if address.startswith("http") else f"http://{address}/v1"
             models.append(Model(model=self._model, endpoint=endpoint))
 
-        # /api/models is an idempotent upsert by (model, endpoint), so retrying
-        # is safe rather than letting a transient failure crash the trainer.
+        # Model registration is idempotent, so transient failures are safe to retry.
         payload = [model.model_dump(mode="json") for model in models]
         response = self.client.post_with_retry("/api/models", json=payload)
         return [Model.model_validate(item) for item in response.json()]
@@ -264,8 +260,7 @@ class AglRolloutManagerBase:
                 )
                 if self._hooks is not None:
                     request = self._hooks.on_enqueue(request)
-                # Pre-assign the id (after the hook, so it can't be dropped) so
-                # the create POST is idempotent and can be retried safely.
+                # Assign the id after hooks so creation remains idempotent.
                 rollout_id = uuid.uuid4().hex
                 request = request.model_copy(update={"rollout_id": rollout_id})
                 enqueued_rollouts.append(
@@ -283,9 +278,7 @@ class AglRolloutManagerBase:
         if not rollout_requests:
             return []
 
-        # Rollout ids are pre-assigned, so /api/rollouts is idempotent: a retry
-        # after a partial/failed create returns the existing rollouts instead of
-        # duplicating them. Retry rather than crash the trainer on a transient error.
+        # Preassigned ids make batch creation safe to retry without duplicates.
         payload = [request.model_dump(mode="json", exclude_none=True) for request in rollout_requests]
         response = self.client.post_with_retry("/api/rollouts", json=payload)
         created = [Rollout.model_validate(item) for item in response.json()]
@@ -411,8 +404,7 @@ class AglRolloutManager(AglRolloutManagerBase):
         num_failed = 0
 
         while len(completed_rollouts) < len(enqueued_rollouts):
-            # Delete the previous round's completed rollouts (and their events)
-            # before polling again, so server-side state stays bounded.
+            # Delete prior completions before polling to bound server-side state.
             for completed_rollout in completed_rollouts[num_deleted:]:
                 self._delete_rollout(completed_rollout.rollout_id)
             num_deleted = len(completed_rollouts)
@@ -515,8 +507,7 @@ class AglAsyncRolloutManager(AglRolloutManagerBase):
                         )
                         for enqueued_rollout in group
                     )
-                    # This group is done and won't be carried over, so free its
-                    # server-side rollout + event state now that we've read it.
+                    # Free completed group state after reading it.
                     for enqueued_rollout in group:
                         self._delete_rollout(enqueued_rollout.rollout_id)
                     if len(completed_group_keys) >= target_finished_group_num:

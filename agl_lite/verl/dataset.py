@@ -22,8 +22,7 @@ class LoadedDataset(RLHFDataset):
     """
 
     def __init__(self, dataset: Sequence[Any]):
-        # Skip RLHFDataset.__init__ entirely — it requires tokenizer, data_files, etc.
-        # We only need self.dataframe and compatible __getitem__ / __len__.
+        # Skip file-based RLHFDataset initialization; only dataframe behavior is needed.
         dataset_copy = [dataset[i] for i in range(len(dataset))]
         self.dataframe = HuggingFaceDataset.from_list(dataset_copy)
         self.filter_overlong_prompts = False
