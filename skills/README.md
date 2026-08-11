@@ -26,21 +26,21 @@ The `skills/agent-lightning/` directory is both the canonical Agent Skills packa
 
 SkillOpt and the other non-agentic results are taken from the [SkillOpt paper](https://github.com/microsoft/SkillOpt) (Table 1); our agentic rows use the same splits and average all optimizers, budgets, and replicates.
 
-| Method | SpreadsheetBench accuracy (%) | OfficeQA correctness (%) |
-| :--- | ---: | ---: |
-| No skill | 36.1 | 22.1 |
-| Human skill | 42.9 | 45.9 |
-| LLM skill | 36.8 | 36.6 |
-| Trace2Skill | 40.7 | 20.9 |
-| TextGrad | 38.2 | 30.0 |
-| GEPA | 42.5 | 45.3 |
-| SkillOpt | 47.5 | 48.8 |
-| Agentic optimizer average, no skill | 62.9 | 54.1 |
-| **Agentic optimizer average, Agent Lightning** | **66.7** | **54.5** |
+| Method | SpreadsheetBench accuracy (%) | OfficeQA correctness (%) | ALFWorld success (%) |
+| :--- | ---: | ---: | ---: |
+| No skill | 36.1 | 22.1 | 73.1 |
+| Human skill | 42.9 | 45.9 | 56.7 |
+| LLM skill | 36.8 | 36.6 | 65.7 |
+| Trace2Skill | 40.7 | 20.9 | 82.8 |
+| TextGrad | 38.2 | 30.0 | 70.9 |
+| GEPA | 42.5 | 45.3 | 81.3 |
+| SkillOpt | 47.5 | 48.8 | 85.8 |
+| Agentic optimizer average, no skill | 62.9 | 54.1 | 88.6 |
+| **Agentic optimizer average, Agent Lightning** | **66.7** | **54.5** | **94.9** |
 
 #### Performance versus overall cost
 
-Each benchmark includes the \$5, \$10, and \$25 nominal-budget groups. Every point is a held-out finale result: the x-axis is average overall cost per treatment cell on a log scale, and the y-axis is SpreadsheetBench accuracy or OfficeQA correctness. Color identifies the optimizer, filled markers use Agent Lightning, hollow markers are no-skill controls, and marker shape identifies the budget. Overall cost includes optimizer LLM calls, train/self-evaluation, and held-out finale deployment; it excludes the one shared pristine-baseline evaluation.
+Each benchmark includes the \$5, \$10, and \$25 nominal-budget groups with three runs per treatment cell. Every point is one held-out finale result: the x-axis is that run's overall cost on a log scale, and the y-axis is SpreadsheetBench accuracy, OfficeQA correctness, or ALFWorld success. Color and shape identify the optimizer; filled markers use Agent Lightning and hollow markers are no-skill controls. Budget is not encoded in the legend. Overall cost includes optimizer LLM calls, train/self-evaluation, and held-out finale deployment; it excludes the pristine-baseline evaluations.
 
 Claude Code uses Claude Opus 4.8; Codex and GitHub Copilot use GPT 5.6 Sol as their optimizer models.
 
@@ -48,13 +48,17 @@ Claude Code uses Claude Opus 4.8; Codex and GitHub Copilot use GPT 5.6 Sol as th
 
 ![OfficeQA correctness versus overall cost](assets/agent-lightning-officeqa-correctness-overall-cost.svg)
 
+![ALFWorld success versus overall cost](assets/agent-lightning-alfworld-success-overall-cost.svg)
+
 #### Performance versus finale cost
 
-The selected-budget views use the groups with the strongest aggregate skill-over-control lift: \$5 for SpreadsheetBench and \$10 for OfficeQA. Each shows seven points: the pristine baseline plus Claude Code, Codex, and GitHub Copilot with and without Agent Lightning. The x-axis is average finale cost; the y-axis is held-out SpreadsheetBench accuracy or OfficeQA correctness.
+The selected-budget views use the groups with the strongest aggregate skill-over-control lift: \$5 for SpreadsheetBench and \$10 for OfficeQA and ALFWorld. Harness/treatment points average three runs. The x-axis is average finale cost; the y-axis is held-out SpreadsheetBench accuracy, OfficeQA correctness, or ALFWorld success. Finale cost measures LLM gateway spend, so an ALFWorld deterministic controller can have exactly \$0 finale cost while still executing and scoring real environment steps. SpreadsheetBench and OfficeQA show the pristine baseline as a point; the corrected ALFWorld records do not include baseline deployment cost, so its measured success is shown as a horizontal reference instead of assigning it an x-coordinate.
 
 ![SpreadsheetBench accuracy versus finale cost](assets/agent-lightning-spreadsheetbench-accuracy-finale-cost.svg)
 
 ![OfficeQA correctness versus finale cost](assets/agent-lightning-officeqa-correctness-finale-cost.svg)
+
+![ALFWorld success versus finale cost](assets/agent-lightning-alfworld-success-finale-cost.svg)
 
 #### \$5 budget snapshot
 
@@ -74,6 +78,13 @@ The selected-budget views use the groups with the strongest aggregate skill-over
 |  | Codex without skill | 49.61 ± 0.67 | \$3.77 ± 0.22 |
 |  | Copilot with skill | 51.55 ± 3.74 | **\$3.69 ± 0.45** |
 |  | Copilot without skill | **54.65 ± 2.01** | \$4.20 ± 0.58 |
+| ALFWorld success (3553/134) | Baseline | 56.97 ± 0.43 | — |
+|  | Claude Code with skill | **95.02 ± 1.14** | \$3.83 ± 0.78 |
+|  | Claude Code without skill | 93.53 ± 4.11 | **\$3.21 ± 0.38** |
+|  | Codex with skill | 87.31 ± 21.97 | \$1.69 ± 2.92 |
+|  | Codex without skill | **96.52 ± 3.02** | **\$0.97 ± 1.68** |
+|  | Copilot with skill | **99.75 ± 0.43** | \$0.01 ± 0.02 |
+|  | Copilot without skill | 95.52 ± 7.12 | **\$0.00 ± 0.00** |
 
 #### \$10 budget snapshot
 
@@ -93,6 +104,13 @@ The selected-budget views use the groups with the strongest aggregate skill-over
 |  | Codex without skill | 50.00 ± 0.58 | **\$3.77 ± 0.27** |
 |  | Copilot with skill | **53.68 ± 0.89** | \$3.46 ± 0.03 |
 |  | Copilot without skill | 51.16 ± 4.07 | **\$3.07 ± 1.46** |
+| ALFWorld success (3553/134) | Baseline | 56.97 ± 0.43 | — |
+|  | Claude Code with skill | 93.78 ± 0.43 | **\$3.62 ± 0.51** |
+|  | Claude Code without skill | **94.28 ± 3.02** | \$3.67 ± 0.90 |
+|  | Codex with skill | **99.00 ± 0.86** | \$0.75 ± 1.28 |
+|  | Codex without skill | 89.55 ± 18.10 | **\$0.00 ± 0.00** |
+|  | Copilot with skill | **100.00 ± 0.00** | \$0.00 ± 0.00 |
+|  | Copilot without skill | 66.92 ± 57.30 | \$0.00 ± 0.00 |
 
 #### \$25 budget snapshot
 
@@ -112,3 +130,10 @@ The selected-budget views use the groups with the strongest aggregate skill-over
 |  | Codex without skill | **52.13 ± 0.34** | \$3.83 ± 0.41 |
 |  | Copilot with skill | 51.16 ± 1.74 | **\$4.13 ± 0.25** |
 |  | Copilot without skill | **53.10 ± 0.34** | \$4.38 ± 0.40 |
+| ALFWorld success (3553/134) | Baseline | 56.97 ± 0.43 | — |
+|  | Claude Code with skill | 82.59 ± 21.84 | \$4.28 ± 1.27 |
+|  | Claude Code without skill | **94.78 ± 4.48** | **\$3.02 ± 0.55** |
+|  | Codex with skill | **96.77 ± 5.60** | \$1.08 ± 1.87 |
+|  | Codex without skill | 66.67 ± 57.74 | **\$0.01 ± 0.02** |
+|  | Copilot with skill | 100.00 ± 0.00 | \$0.12 ± 0.20 |
+|  | Copilot without skill | 100.00 ± 0.00 | **\$0.00 ± 0.00** |
