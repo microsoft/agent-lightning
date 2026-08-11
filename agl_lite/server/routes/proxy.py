@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Proxy forwarding and pause/drain management routes."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Prompt creation for math task (vanilla LLM mode).
 """

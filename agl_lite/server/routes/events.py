@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Event API routes."""
 
 from __future__ import annotations

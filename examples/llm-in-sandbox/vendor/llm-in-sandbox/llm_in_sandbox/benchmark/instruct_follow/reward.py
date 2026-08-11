@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Instruction following reward function (IFBench).
 Copied from R2E-Gym utils.py

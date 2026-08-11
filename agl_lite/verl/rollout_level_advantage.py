@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Rollout-level advantage computation for agl-lite training batches."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import re
 from typing import Dict
 import shlex

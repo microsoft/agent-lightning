@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Prompt creation for chemistry task (vanilla LLM mode).
 """

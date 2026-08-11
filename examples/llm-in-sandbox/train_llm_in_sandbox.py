@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) Microsoft. All rights reserved.
+
 """Train llm-in-sandbox with VERL through agl-lite."""
 
 from __future__ import annotations
@@ -18,8 +20,14 @@ from omegaconf import DictConfig, OmegaConf
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_DIR = Path(__file__).resolve().parent
 DEFAULT_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
-DEFAULT_TRAIN_DATA_DIR = "examples/llm-in-sandbox/data/llm_sandbox_sampled_pretrain_mini"
-DEFAULT_VAL_DATA_DIR = "examples/llm-in-sandbox/data/llm_sandbox_sampled_vali_mini"
+DEFAULT_TRAIN_DATA_DIR = "examples/llm-in-sandbox/data/llm_sandbox_instruct_pretrain"
+DEFAULT_VAL_DATA_DIR = ",".join(
+    [
+        "examples/llm-in-sandbox/data/llm_sandbox_math_mini",
+        "examples/llm-in-sandbox/data/llm_sandbox_biomed_mini",
+        "examples/llm-in-sandbox/data/llm_sandbox_long_context_mini",
+    ]
+)
 
 
 def log(message: str) -> None:
@@ -169,7 +177,6 @@ def build_config(
     agl_key: str | None = None,
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
-    ci: bool = False,
 ) -> DictConfig:
     """Build the full OmegaConf config by merging base + overrides."""
     verl_pkg = importlib.resources.files("agl_lite.verl")
@@ -186,29 +193,6 @@ def build_config(
         overrides["agentlightning"]["agl_key"] = agl_key
     if run_name:
         overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
-
-    if ci:
-        overrides["trainer"]["project_name"] = "AgentLightning-k8s-CI"
-        overrides["trainer"]["experiment_name"] = "train_llm_in_sandbox_ci"
-        if run_name:
-            overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
-        overrides["trainer"]["total_epochs"] = 1
-        overrides["trainer"]["total_training_steps"] = 5
-        overrides["trainer"]["test_freq"] = -1
-        overrides["trainer"].pop("save_freq", None)
-        overrides["trainer"]["n_gpus_per_node"] = 1
-        overrides["trainer"]["logger"] = ["console", "wandb"]
-        overrides["data"]["train_batch_size"] = 1
-        overrides["data"]["max_prompt_length"] = 2048
-        overrides["data"]["max_response_length"] = 2048
-        overrides["actor_rollout_ref"]["rollout"]["n"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 1
-        overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["agentlightning"]["rollout_timeout_seconds"] = 300
-        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] = 1024
-        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_response_length"] = 1024
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
@@ -229,7 +213,6 @@ def train(
     config_overrides: Sequence[str] = (),
     max_train_samples: int = 0,
     max_val_samples: int = 0,
-    ci: bool = False,
 ) -> None:
     """Load datasets, build config, and launch VERL training via agl-lite."""
     from agl_lite.verl.entrypoint import run_ppo
@@ -275,7 +258,6 @@ def train(
         agl_key=agl_key,
         run_name=run_name,
         config_overrides=config_overrides,
-        ci=ci,
     )
     log("\n=== VERL config ===")
     pprint(OmegaConf.to_container(config, resolve=True))
@@ -306,7 +288,6 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     )
     parser.add_argument("--max-train-samples", type=int, default=env_int("AGL_VERL_MAX_TRAIN_SAMPLES", 0))
     parser.add_argument("--max-val-samples", type=int, default=env_int("AGL_VERL_MAX_TEST_SAMPLES", 0))
-    parser.add_argument("--ci", action="store_true", help="Run a small smoke training loop")
     args, config_overrides = parser.parse_known_args()
     return args, config_overrides
 
@@ -323,7 +304,6 @@ def main() -> None:
         config_overrides=config_overrides,
         max_train_samples=args.max_train_samples,
         max_val_samples=args.max_val_samples,
-        ci=args.ci,
     )
 
 

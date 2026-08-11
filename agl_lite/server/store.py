@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """In-memory server state — single-threaded, no locks, plain dict/list.
 
 Route handlers mutate these module-level dictionaries directly on the event loop

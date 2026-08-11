@@ -3,7 +3,6 @@
 #
 #   pip install -r examples/swe_smith/requirements.txt
 #
-# Note: the agent pods install `openai` themselves inside the per-repo SWE-smith
-# image at startup (see job-template.yaml), so it is not listed here.
-datasets>=5.0.0   # load SWE-bench/SWE-smith from HuggingFace (train_smith_agent.py)
+# Note: pull_images.py installs `openai` into the per-repository rollout images,
+# so it is not listed here.
 docker>=7.1.0     # prepare per-repo rollout images (pull_images.py)

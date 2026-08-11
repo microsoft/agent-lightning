@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Concise coverage for the current server endpoints."""
 
 from __future__ import annotations

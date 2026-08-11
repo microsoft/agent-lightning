@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
 # Launch the Search-R1 retrieval endpoint used by SearchR1Agent.
 set -euo pipefail
 

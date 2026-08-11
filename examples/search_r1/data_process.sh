@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
 # Prepare Search-R1 retrieval data and the retriever conda environment.
 set -euo pipefail
 

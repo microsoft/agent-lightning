@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Thin httpx clients for agl-lite."""
 
 from __future__ import annotations

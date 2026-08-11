@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 LLM-in-Sandbox CLI - Run LLM agents in local Docker containers
 """

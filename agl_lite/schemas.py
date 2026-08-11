@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Shared Pydantic schemas for agl-lite."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Local reconciler that runs rollouts as short-lived Python subprocesses."""
 
 from __future__ import annotations

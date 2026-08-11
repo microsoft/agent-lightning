@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """AglLiteRayPPOTrainer drives VERL rollouts through agl-lite."""
 
 from __future__ import annotations

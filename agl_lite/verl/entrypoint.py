@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """VERL entrypoint for agl-lite — wraps verl's PPO setup with a custom trainer.
 
 Customizations:

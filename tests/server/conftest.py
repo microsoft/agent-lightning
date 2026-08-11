@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Shared fixtures for server endpoint tests."""
 
 from __future__ import annotations

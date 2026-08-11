@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Model server API routes."""
 
 from __future__ import annotations

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
 # Run Calc-X VERL training with agl-lite's k8s controller on minikube.
 set -euo pipefail
 

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Vanilla LLM Prompt for Demo Task
 =================================

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import argparse
 from collections.abc import Sequence
 from pathlib import Path

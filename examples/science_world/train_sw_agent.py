@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Train a ScienceWorld agent with VERL on agl-lite (local runner mode).
 
 Generates a dataset on-the-fly from a list of task names crossed with
@@ -9,8 +11,7 @@ already running on this host (started by ``run_local.sh``).
 
 Usage::
 
-    examples/science_world/run_local.sh                  # full training
-    examples/science_world/run_local.sh --ci             # short CI loop
+    examples/science_world/run_local.sh
 
     # Standalone (infra already up):
     python examples/science_world/train_sw_agent.py \\
@@ -118,28 +119,16 @@ def verl_default_config() -> dict[str, Any]:
         },
         "actor_rollout_ref": {
             "rollout": {
-                # Hardware: 8 GPUs, full NVLink mesh (NV12), 4 NUMA nodes of 2
-                # GPUs each (GPU0/1, GPU2/3, GPU4/5, GPU6/7). TP=2 maps every
-                # vLLM replica onto one NVLink + NUMA-local GPU pair → 8/2 = 4
-                # async rollout replicas, with intra-replica all-reduce staying
-                # on NVLink (no cross-NUMA / PCIe traffic).
                 "tensor_model_parallel_size": 2,
                 "n": 4,
                 "log_prob_micro_batch_size_per_gpu": 4,
                 "name": "vllm",
                 "gpu_memory_utilization": 0.5,
-                # 7B embed_tokens (152064 x 3584 x fp32 ~= 2181 MB) exceeds the
-                # default 2048 MB bucket; bump so weight sync fits.
                 "checkpoint_engine": {"update_weights_bucket_megabytes": 4096},
             },
             "actor": {
                 "ppo_mini_batch_size": 16,
                 "ppo_micro_batch_size_per_gpu": 4,
-                # Ulysses sequence parallelism: trajectory level merges all turns
-                # into one ~12k-token sequence (prompt 4096 + response 8192), so
-                # shard the sequence/activation dim across 2 GPUs. The all-to-all
-                # rides the NVLink mesh, so this cuts long-context activation
-                # memory almost for free. ref follows this value automatically.
                 "ulysses_sequence_parallel_size": 2,
                 "optim": {"lr": 1e-6},
                 "use_kl_loss": False,
@@ -147,12 +136,6 @@ def verl_default_config() -> dict[str, Any]:
                 "entropy_coeff": 0,
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.3,
-                # Offload actor params + optimizer to CPU between steps. With
-                # vLLM holding 0.5 of each 40 GB GPU and the weight-sync needing a
-                # ~4 GB on-GPU transfer buffer, keeping the 7B fp32 params +
-                # optimizer resident OOMs the vLLM receiver during weight sync
-                # (ZMQ deadlock). Offload frees that headroom; the PCIe<->host
-                # cost is hidden behind rollout. Matches the proven step-128 run.
                 "fsdp_config": {
                     "param_offload": True,
                     "optimizer_offload": True,
@@ -215,7 +198,6 @@ def build_config(
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
-    ci: bool = False,
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides."""
     import importlib.resources
@@ -237,33 +219,6 @@ def build_config(
     if run_name:
         overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
 
-    if ci:
-        overrides["trainer"]["project_name"] = "agl-lite-CI"
-        overrides["trainer"]["experiment_name"] = "science_world_ci"
-        if run_name:
-            overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
-        overrides["trainer"]["total_epochs"] = 1
-        overrides["trainer"]["total_training_steps"] = 5
-        overrides["trainer"]["test_freq"] = -1
-        overrides["trainer"].pop("save_freq", None)
-        overrides["data"]["train_batch_size"] = 2
-        overrides["data"]["max_prompt_length"] = 2048
-        overrides["data"]["max_response_length"] = 2048
-        # Keep trajectory tensor lengths aligned with the reduced CI dims.
-        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] = 2048
-        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_response_length"] = 2048
-        overrides["agentlightning"]["async_rollout"]["async_train_batch_size"] = 4
-        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
-        overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-        # Single-GPU CI: no sequence parallelism (SP group can't exceed world size).
-        overrides["actor_rollout_ref"]["actor"]["ulysses_sequence_parallel_size"] = 1
-        overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["n"] = 2
-        overrides["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-        overrides["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
-        overrides["trainer"]["n_gpus_per_node"] = 1
-
     override_conf = OmegaConf.create(overrides)
     OmegaConf.set_struct(base_cfg, False)
     return OmegaConf.merge(base_cfg, override_conf)
@@ -278,7 +233,6 @@ def train(
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
-    ci: bool = False,
 ) -> None:
     from agl_lite.verl.entrypoint import run_ppo
 
@@ -295,7 +249,6 @@ def train(
         agl_base_url=agl_base_url,
         agl_key=agl_key,
         run_name=run_name,
-        ci=ci,
     )
 
     from pprint import pprint
@@ -350,7 +303,6 @@ def main() -> None:
         default=None,
         help="Suffix appended to trainer.experiment_name",
     )
-    parser.add_argument("--ci", action="store_true", help="Run a short CI-style training loop")
     args = parser.parse_args()
 
     task_names = resolve_task_names(args.task_names)
@@ -365,7 +317,6 @@ def main() -> None:
         agl_base_url=args.agl_base_url,
         agl_key=args.agl_key,
         run_name=args.run_name,
-        ci=args.ci,
     )
 
 

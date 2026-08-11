@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
 set -euo pipefail
 ROLE="${1:-}"
 if [ "$ROLE" != "server" ] && [ "$ROLE" != "controller" ] && [ "$ROLE" != "trainer" ]; then
@@ -16,29 +18,20 @@ EXAMPLE_DIR="examples/swe_smith"
 AGL_SERVER_PORT="${AGL_SERVER_PORT:-8080}"
 AGL_KEY="${AGL_KEY:-dummy}"
 AGL_MODEL_NAME="${AGL_MODEL_NAME:-Qwen/Qwen3-8B}"
+AGL_NAMESPACE="${AGL_NAMESPACE:-default}"
 PUBLIC_HOST="${AGL_SERVER_PUBLIC_HOST:-0.0.0.0}"
 SERVER_URL="http://${PUBLIC_HOST}:${AGL_SERVER_PORT}"
-DATASET_PATH="${AGL_DATASET_PATH-$EXAMPLE_DIR/subset0.jsonl}"
-TRAIN_DATASET_PATH="${AGL_TRAIN_DATASET_PATH-$EXAMPLE_DIR/train_dataset.jsonl}"
-VAL_DATASET_PATH="${AGL_VAL_DATASET_PATH-$EXAMPLE_DIR/val_dataset.jsonl}"
+TRAIN_DATASET_PATH="${AGL_TRAIN_DATASET_PATH-$EXAMPLE_DIR/train_dataset_mixed.jsonl}"
+VAL_DATASET_PATH="${AGL_VAL_DATASET_PATH-$EXAMPLE_DIR/val_dataset_filtered.jsonl}"
 export VLLM_USE_FLASHINFER_MOE_FP16="${VLLM_USE_FLASHINFER_MOE_FP16:-0}"
 
-truthy() {
-  case "${1:-0}" in
-    1|true|TRUE|yes|YES|on|ON) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-if [ -n "${AGL_DATASET_PATH:-}" ]; then
-  DATASET_ARGS=(--dataset-path "$DATASET_PATH")
-  PULL_DATASET_ARGS=(--dataset "$DATASET_PATH")
-elif [ -f "$TRAIN_DATASET_PATH" ] && [ -f "$VAL_DATASET_PATH" ]; then
-  DATASET_ARGS=(--train-dataset-path "$TRAIN_DATASET_PATH" --val-dataset-path "$VAL_DATASET_PATH")
-  PULL_DATASET_ARGS=(--dataset "$TRAIN_DATASET_PATH" --dataset "$VAL_DATASET_PATH")
-else
-  DATASET_ARGS=(--dataset-path "$DATASET_PATH")
-  PULL_DATASET_ARGS=(--dataset "$DATASET_PATH")
+if { [ "$ROLE" = "controller" ] || [ "$ROLE" = "trainer" ]; } && \
+   { [ ! -f "$TRAIN_DATASET_PATH" ] || [ ! -f "$VAL_DATASET_PATH" ]; }; then
+  echo "ERROR: pre-split SWE-smith datasets are required:" >&2
+  echo "  train: $TRAIN_DATASET_PATH" >&2
+  echo "  val:   $VAL_DATASET_PATH" >&2
+  echo "Set AGL_TRAIN_DATASET_PATH and AGL_VAL_DATASET_PATH to existing JSONL files." >&2
+  exit 1
 fi
 
 if [ "$ROLE" = "server" ]; then
@@ -90,39 +83,30 @@ elif [ "$ROLE" = "trainer" ]; then
   python "$EXAMPLE_DIR/train_smith_agent.py" \
     --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
     --agl-key "$AGL_KEY" \
-    "${DATASET_ARGS[@]}" \
+    --train-dataset-path "$TRAIN_DATASET_PATH" \
+    --val-dataset-path "$VAL_DATASET_PATH" \
     --model "$AGL_MODEL_NAME" \
     --run-name distributed \
     "$@"
 elif [ "$ROLE" = "controller" ]; then
   echo "=== SWE-smith :: controller (Machine A) ==="
   echo "  Connecting to server: $SERVER_URL"
-  echo "  Namespace: ${AGL_NAMESPACE:-default}"
+  echo "  Namespace: $AGL_NAMESPACE"
   if ! curl -sf "${SERVER_URL}/healthz" >/dev/null 2>&1; then
     echo "WARNING: server not reachable at $SERVER_URL — start './run.sh server' on Machine B first."
   fi
-  if truthy "${AGL_SWE_SMITH_SKIP_IMAGE_PREP:-0}"; then
-    echo "=== Skipping SWE-smith image preparation ==="
-    echo "  AGL_SWE_SMITH_SKIP_IMAGE_PREP=${AGL_SWE_SMITH_SKIP_IMAGE_PREP}"
-    echo "  Assuming required :openai images already exist in the K8s node Docker daemon."
-  else
-    echo "=== Preparing SWE-smith images ==="
-    python "$EXAMPLE_DIR/pull_images.py" "${PULL_DATASET_ARGS[@]}"
-  fi
-  if [ -n "${AGL_NAMESPACE:-}" ]; then
-    echo "=== Ensuring namespace '$AGL_NAMESPACE' exists ==="
-    kubectl create namespace "$AGL_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-  fi
+  echo "=== Ensuring namespace '$AGL_NAMESPACE' exists ==="
+  kubectl create namespace "$AGL_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
   echo "=== Creating agent scripts ConfigMap ==="
-  kubectl ${AGL_NAMESPACE:+-n "$AGL_NAMESPACE"} create configmap swe-smith-agent-scripts \
+  kubectl -n "$AGL_NAMESPACE" create configmap swe-smith-agent-scripts \
     --from-file=smith_agent.py="$EXAMPLE_DIR/agents/smith_agent.py" \
-    --dry-run=client -o yaml | kubectl ${AGL_NAMESPACE:+-n "$AGL_NAMESPACE"} apply -f -
+    --dry-run=client -o yaml | kubectl -n "$AGL_NAMESPACE" apply -f -
   echo "=== Starting agl-lite controller (runner_type=k8s) ==="
   echo "  Next: start the trainer on Machine B with './run.sh trainer'."
   agl-lite-controller \
     runner_type=k8s \
     agl_server.url="$SERVER_URL" \
     agl_server.key="$AGL_KEY" \
-    ${AGL_NAMESPACE:+k8s_runner.namespace="$AGL_NAMESPACE"} \
+    k8s_runner.namespace="$AGL_NAMESPACE" \
     k8s_runner.ttl_after_finished=600
 fi

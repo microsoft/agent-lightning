@@ -1,6 +1,6 @@
-# Variant of job-template.yaml that uses local ":openai" images prepared by
-# pull_images.py (SWE-smith base image plus the openai package), so the container
-# starts the agent directly without a runtime `pip install openai`.
+# Uses local ":openai" images prepared by pull_images.py (SWE-smith base image
+# plus the openai package), so the container starts the agent directly without
+# a runtime `pip install openai`.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -28,7 +28,7 @@ spec:
             - name: SMITH_LEN_PEN_T0
               value: "80"
             - name: SMITH_LEN_PEN_LAMBDA
-              value: "0.2"
+              value: "0.1"
             # Prompt-length penalty (plan B): SOLVED (reward==1) train rollouts lose up
             # to SMITH_PROMPT_PEN_MAX as their longest prompt grows from SOFT_START to
             # HARD_CAP tokens (context-bloat penalty; stacks with plan A).

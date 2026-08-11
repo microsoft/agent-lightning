@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Prompt creation for physics task (vanilla LLM mode).
 """

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Prompt creation for long context task (vanilla LLM mode).
 Handles documents by embedding them in the prompt.

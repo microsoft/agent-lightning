@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """ScienceWorld agent — solves a text-based science task via a constrained-action LLM loop.
 
 Loaded by ``agl_lite.controller.local_reconciler`` as

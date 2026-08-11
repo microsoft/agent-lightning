@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Rollout managers for agl-lite VERL training."""
 
 from __future__ import annotations

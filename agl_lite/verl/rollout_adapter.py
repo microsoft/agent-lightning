@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Adapters from completed agl-lite rollouts to VERL training data."""
 
 from __future__ import annotations

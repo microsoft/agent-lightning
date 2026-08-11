@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Minimal Calc-X agent entrypoint."""
 
 # AutoGen is an optional runtime dependency for this example container.

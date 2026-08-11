@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 LLM-in-Sandbox: A lightweight framework that connects LLMs to a virtual computer (Docker-based sandbox) to build general-purpose agents
 """

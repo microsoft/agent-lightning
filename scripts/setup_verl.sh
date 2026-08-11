@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright (c) Microsoft. All rights reserved.
+
 # Install VERL training dependencies into a managed Python environment.
 set -euo pipefail
 

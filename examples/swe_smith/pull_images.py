@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) Microsoft. All rights reserved.
+
 """Prepare SWE-smith images for Kubernetes rollouts.
 
 The default job template runs ``{image_name}:openai`` so the agent starts
@@ -21,8 +23,8 @@ from typing import Any
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATASETS = (
-    EXAMPLE_DIR / "train_dataset.jsonl",
-    EXAMPLE_DIR / "val_dataset.jsonl",
+    EXAMPLE_DIR / "train_dataset_mixed.jsonl",
+    EXAMPLE_DIR / "val_dataset_filtered.jsonl",
 )
 OPENAI_IMAGE_SUFFIX = "openai"
 LOCAL_OPENAI_IMAGE_SUFFIXES = ("agl-openai",)
@@ -194,7 +196,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=None,
         help="SWE-smith JSONL to prepare images for. May be passed multiple times. "
-        "Defaults to train_dataset.jsonl and val_dataset.jsonl.",
+        "Defaults to train_dataset_mixed.jsonl and val_dataset_filtered.jsonl.",
     )
     parser.add_argument("--limit", type=int, default=None, help="only consider the first N instances")
     parser.add_argument("--max-workers", type=int, default=4)

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Hydra entrypoint for the agl-lite controller."""
 
 from __future__ import annotations

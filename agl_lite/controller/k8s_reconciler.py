@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """K8s controller reconciler — manages rollout lifecycle via K8s Jobs.
 
 Two concurrent tasks:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (c) Microsoft. All rights reserved.
+
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from pprint import pprint
 from typing import Any, Sequence
 
@@ -12,12 +12,8 @@ from omegaconf import DictConfig, OmegaConf
 from train_smith_agent import (  # noqa: E402 — sibling module, run from example dir
     DEFAULT_MODEL,
     EXAMPLE_DIR,
-    dump_subset,
-    env_int,
-    load_instances,
     load_split_file,
     log,
-    split_dataset,
 )
 
 import importlib.resources  # noqa: E402
@@ -143,10 +139,8 @@ def verl_megatron_config() -> dict[str, Any]:
         "agentlightning": {
             "agl_base_url": "http://localhost:8080",
             "agl_key": "",
-            "is_shuffle": False,
             "rollout_timeout_seconds": 5400,
             "reward_fillna_value": 0.0,
-            "cleanup_namespace": os.environ.get("AGL_NAMESPACE", "default"),
             "trace_aggregator": {
                 "level": "trajectory",
                 "trajectory_max_prompt_length": 24000,
@@ -157,7 +151,7 @@ def verl_megatron_config() -> dict[str, Any]:
                 "async_train_batch_size": 48,
             },
             "k8s": {
-                "job_template_path": str(EXAMPLE_DIR / "job-template.yaml"),
+                "job_template_path": str(EXAMPLE_DIR / "job-template-openai.yaml"),
             },
         },
     }
@@ -201,58 +195,30 @@ def build_config(
 
 def train(
     *,
-    dataset_path: str | None,
-    train_dataset_path: str | None = None,
-    val_dataset_path: str | None = None,
+    train_dataset_path: str,
+    val_dataset_path: str,
     max_val_instances: int | None = None,
-    max_instances: int,
-    min_f2p: int,
-    max_f2p: int,
-    max_repos: int | None,
     model: str | None = None,
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
-    ci: bool = False,
 ) -> None:
     from agl_lite.verl.entrypoint import run_ppo
 
     if not agl_key:
         raise RuntimeError("AGL_KEY is required")
 
-    use_explicit = bool(
-        train_dataset_path
-        and val_dataset_path
-        and Path(train_dataset_path).is_file()
-        and Path(val_dataset_path).is_file()
-    )
-    if use_explicit:
-        train_cap = max_instances if ci else None
-        val_cap = max(2, max_instances // 8) if ci else max_val_instances
-        train_dataset = load_split_file(train_dataset_path, max_instances=train_cap)
-        val_dataset = load_split_file(val_dataset_path, max_instances=val_cap)
-        instances = train_dataset + val_dataset
-    else:
-        instances = load_instances(
-            dataset_path=dataset_path,
-            max_instances=max_instances,
-            min_f2p=min_f2p,
-            max_f2p=max_f2p,
-            max_repos=max_repos,
-        )
-        train_dataset, val_dataset = split_dataset(instances)
+    train_dataset = load_split_file(train_dataset_path)
+    val_dataset = load_split_file(val_dataset_path, max_instances=max_val_instances)
+    instances = train_dataset + val_dataset
     distinct_repos = sorted({row["repo"] for row in instances})
 
     log("=== Preflight (Megatron + R3) ===")
     log(f"  agl-lite:     {agl_base_url or 'http://localhost:8080'}")
     log(f"  model:        {model or DEFAULT_MODEL}")
-    if use_explicit:
-        log("  data mode:    explicit pre-split files (no curation/split)")
-        log(f"  train file:   {train_dataset_path}")
-        log(f"  val file:     {val_dataset_path}")
-    else:
-        log("  data mode:    single file + {train,val} split")
+    log(f"  train file:   {train_dataset_path}")
+    log(f"  val file:     {val_dataset_path}")
     log(f"  instances:    {len(instances)}  (train {len(train_dataset)} / val {len(val_dataset)})")
     log(f"  distinct repos (images to prepare): {len(distinct_repos)}")
 
@@ -276,80 +242,39 @@ def parse_args():
         description="Train a SWE-smith agent with VERL/GRPO via agl-lite (Megatron + R3)"
     )
     parser.add_argument(
-        "--dataset-path",
-        default=os.environ.get("AGL_DATASET_PATH", str(EXAMPLE_DIR / "subset0.jsonl")),
-        help="Local JSONL subset (default: subset0.jsonl). Use '' to stream from HF. "
-        "Ignored when --train-dataset-path/--val-dataset-path exist.",
-    )
-    parser.add_argument(
         "--train-dataset-path",
-        default=os.environ.get("AGL_TRAIN_DATASET_PATH", str(EXAMPLE_DIR / "train_dataset.jsonl")),
-        help="Pre-split training JSONL, used as-is (no FAIL_TO_PASS curation, no train/val split). "
-        "Takes precedence over --dataset-path when this and --val-dataset-path both exist. "
-        "Set '' to fall back to the single-file split path.",
+        default=str(EXAMPLE_DIR / "train_dataset_mixed.jsonl"),
+        help="Pre-split training JSONL, used as-is.",
     )
     parser.add_argument(
         "--val-dataset-path",
-        default=os.environ.get("AGL_VAL_DATASET_PATH", str(EXAMPLE_DIR / "val_dataset.jsonl")),
+        default=str(EXAMPLE_DIR / "val_dataset_filtered.jsonl"),
         help="Pre-split validation JSONL, used as-is. Pairs with --train-dataset-path.",
     )
     parser.add_argument(
         "--max-val-instances",
         type=int,
-        default=env_int("AGL_MAX_VAL_INSTANCES", 0) or None,
+        default=None,
         help="Optional cap on validation instances (default: all). Each validation eval "
         "runs ALL val instances at the test_freq cadence, so capping bounds eval time.",
     )
-    parser.add_argument("--max-instances", type=int, default=env_int("AGL_MAX_INSTANCES", 735))
-    parser.add_argument("--min-f2p", type=int, default=2)
-    parser.add_argument("--max-f2p", type=int, default=5)
-    parser.add_argument("--max-repos", type=int, default=env_int("AGL_MAX_REPOS", 0) or None)
-    parser.add_argument("--model", default=os.environ.get("AGL_MODEL_NAME", DEFAULT_MODEL))
-    parser.add_argument("--agl-base-url", default=os.environ.get("AGL_BASE_URL", "http://localhost:8080"))
-    parser.add_argument("--agl-key", default=os.environ.get("AGL_KEY", ""))
-    parser.add_argument("--run-name", default=os.environ.get("AGL_VERL_EXPERIMENT_NAME", None))
-    parser.add_argument(
-        "--ci",
-        action="store_true",
-        help="Smoke mode: consume only a small slice of the train/val files.",
-    )
-    parser.add_argument(
-        "--dump-subset",
-        nargs="?",
-        const="subset0.jsonl",
-        default=None,
-        help="Curate the subset to this JSONL, then exit (no training).",
-    )
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--agl-base-url", default="http://localhost:8080")
+    parser.add_argument("--agl-key", default="")
+    parser.add_argument("--run-name", default=None)
     return parser.parse_known_args()
 
 def main() -> None:
     args, config_overrides = parse_args()
-    if args.dump_subset:
-        dump_subset(
-            out_path=args.dump_subset,
-            dataset_path=args.dataset_path or None,
-            max_instances=args.max_instances,
-            min_f2p=args.min_f2p,
-            max_f2p=args.max_f2p,
-            max_repos=args.max_repos,
-        )
-        return
-
     train(
-        dataset_path=args.dataset_path or None,
-        train_dataset_path=args.train_dataset_path or None,
-        val_dataset_path=args.val_dataset_path or None,
+        train_dataset_path=args.train_dataset_path,
+        val_dataset_path=args.val_dataset_path,
         max_val_instances=args.max_val_instances,
-        max_instances=args.max_instances,
-        min_f2p=args.min_f2p,
-        max_f2p=args.max_f2p,
-        max_repos=args.max_repos,
         model=args.model,
         agl_base_url=args.agl_base_url,
         agl_key=args.agl_key,
         run_name=args.run_name,
         config_overrides=config_overrides,
-        ci=args.ci,
     )
 
 if __name__ == "__main__":

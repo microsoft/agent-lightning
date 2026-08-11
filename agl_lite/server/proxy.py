@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Server-side OpenAI chat-completions proxy."""
 
 from __future__ import annotations

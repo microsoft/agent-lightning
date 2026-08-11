@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) Microsoft. All rights reserved.
+
 
 from __future__ import annotations
 
@@ -816,7 +818,6 @@ def main() -> int:
     max_tokens = int(os.environ.get("AGL_MAX_TOKENS", "16384"))
     max_format_errors = int(os.environ.get("SMITH_MAX_FORMAT_ERRORS", "3"))
     gateway_wait_s = float(os.environ.get("SMITH_GATEWAY_WAIT_S", "600"))
-    # SWE-smith --f2p_only: grade on FAIL_TO_PASS only, skip PASS_TO_PASS. On by default.
     f2p_only = os.environ.get("SMITH_F2P_ONLY", "1").lower() not in ("0", "false", "no")
 
     from openai import OpenAI
@@ -841,7 +842,7 @@ def main() -> int:
     # Train mode is the /mode/train/ marker in the base URL (fail-safe to val).
     is_train = "/mode/train/" in base_url
     len_pen_t0 = int(os.environ.get("SMITH_LEN_PEN_T0", "80"))
-    len_pen_lambda = float(os.environ.get("SMITH_LEN_PEN_LAMBDA", "0.2"))
+    len_pen_lambda = float(os.environ.get("SMITH_LEN_PEN_LAMBDA", "0.1"))
     reward = length_penalized_reward(reward, n_turns, max_turns,
                                      t0=len_pen_t0, lam=len_pen_lambda, is_train=is_train)
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
 # Run ScienceWorld VERL training with agl-lite's local controller.
 set -euo pipefail
 

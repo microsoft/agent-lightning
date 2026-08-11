@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) Microsoft. All rights reserved.
+
 """agl-lite adapter for the llm-in-sandbox container entrypoint."""
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ REWARD_MODULES = {
     "biomed_mini": "llm_in_sandbox.benchmark.biomed.reward",
     "chem_mini": "llm_in_sandbox.benchmark.chem.reward",
     "instruct_pretrain": "llm_in_sandbox.benchmark.instruct_pretrain.reward",
+    "long_context_mini": "llm_in_sandbox.benchmark.instruct_pretrain.reward",
     "math_mini": "llm_in_sandbox.benchmark.math.reward",
 }
 DEFAULT_MAX_TOKENS_PER_CALL = "20000"

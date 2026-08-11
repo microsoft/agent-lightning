@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Rollout lifecycle hooks used by enqueue and fit flows."""
 
 from __future__ import annotations

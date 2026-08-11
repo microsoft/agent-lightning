@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Demo Reward Function - Simple String Match
 ===========================================

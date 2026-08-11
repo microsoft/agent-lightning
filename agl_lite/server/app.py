@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """FastAPI application — lifespan, mount routes, wire proxy."""
 
 from __future__ import annotations

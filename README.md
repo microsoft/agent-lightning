@@ -1,78 +1,78 @@
-# agl-lite
-
-**Minimal agentic RL infrastructure — a streamlined [Agent Lightning](https://github.com/microsoft/agent-lightning).**
-
-agl-lite provides transparent LLM request capture, a rollout data store, and Kubernetes-native agent execution — all behind a single HTTP endpoint. Agents use standard OpenAI SDKs with zero instrumentation; the gateway captures everything automatically.
-
-## Architecture
-
 <p align="center">
-  <img src="docs/images/lite_arch.excalidraw.svg" alt="agl-lite architecture" width="800">
+  <img src="docs/images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
 </p>
 
-Three groups connected only by HTTP:
+<p align="center"><em>3,500-Line Lightweight Agentic RL Framework for Training Agents with Real Harnesses!</em></p>
 
-| Group | What it does | Managed by |
-|-------|-------------|------------|
-| **Compute Backend** | Model training (VERL/Megatron) + inference servers (vLLM) | User |
-| **agl-lite Service** | Gateway (LLM proxy + event capture) + Data Store (rollouts, events, models) | agl-lite |
-| **Agent Runner** | K8s controller + agent pods (any container, any language) | agl-lite + K8s |
+<p align="center">
+  <a href="docs/">Documentation</a> &nbsp;·&nbsp; Technical Report (Coming Soon) &nbsp;·&nbsp; <a href="LICENSE">MIT License</a>
+</p>
 
-## Key Design Choices
+## ⚡ Key Features
 
-1. **Self-owned LLM gateway** — a purpose-built reverse proxy replaces litellm, capturing all request-response data transparently as it flows through
-2. **Gateway-level data capture** — instead of instrumenting agents with OpenTelemetry, the gateway records request-response pairs during transfer — the proxy *is* the instrumentation
-3. **K8s-native agent runner** — K8s Jobs as the execution unit, rollout-scoped attempt IDs for trace grouping, Job lifecycle as the retry mechanism — the store focuses purely on data, not execution control
+- 🪶 **~3,500 lines of core Python:** We treat simplicity as the first principle.
+- 🧩 **Train with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with **ZERO changes**, while keeping tools, context, control flow, and environments in the loop.
+- ☸️ **Native Kubernetes support:** Run agents directly as Kubernetes Jobs without relying on external sandbox services.
+- 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts.
 
-## Quick Start
+## ⚡ Installation
 
-Install the project and run the remaining test suite:
+The following is an example installation on a CUDA 13.0 machine:
 
 ```bash
-git clone https://github.com/<org>/agl-lite && cd agl-lite
-uv sync --extra dev
-uv run pytest
+cd <this-repo>
+uv sync
+bash scripts/setup_verl.sh 0.8.0 cu130
 ```
 
-See the [Getting Started guide](docs/get_started.md) for the full setup walkthrough.
+See the [Installation Guide](docs/1-installation.md) for details.
 
-## How Agents Work
 
-Agents are plain containers that read env vars and call an OpenAI-compatible endpoint. No agl-lite import, no base class — any language, any framework:
+## ⚡ Architecture
 
-```python
-import os, json, openai
+<p align="center">
+  <img src="docs/images/architecture.jpg" alt="Agent Lightning v1.0 architecture" width="800">
+</p>
 
-task = json.loads(os.environ["AGL_TASK_INPUT"])
-client = openai.OpenAI()  # reads OPENAI_BASE_URL automatically
+Agent Lightning v1.0 keeps the training architecture simple with three lightweight components:
 
-response = client.chat.completions.create(
-    model="gpt-4.1",  # gateway routes to your vLLM
-    messages=[{"role": "user", "content": task["prompt"]}],
-)
-# Gateway captures this call automatically — no instrumentation needed
-```
+- **Trainer:** Runs VERL and vLLM, builds training samples, and updates the policy.
+- **API Gateway:** Proxies model requests and captures training data.
+- **Rollout Controller:** Runs agents locally or as Kubernetes Jobs.
 
-The controller injects 4 env vars into every agent pod: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `AGL_TASK_INPUT`, and `AGL_EVENT_URL`. See [What Happens Next](docs/get_started.md#what-happens-next) for details.
+The Trainer creates rollouts, the Controller launches agents, and the Gateway turns interactions into training data, while agents continue to run with their real harnesses.
 
-## Documentation
+## ⚡ Results
+
+We evaluate Agent Lightning v1.0 across several practical training domains, including Search R1, LLM-in-Sandbox, and Coding Agent. Pure RL delivers substantial improvements across all three domains, as shown below.
+
+<p align="center">
+  <img src="docs/images/benchmark-comparison.jpg" alt="Agent Lightning v1.0 benchmark comparison" width="600">
+</p>
+
+## ⚡ Documentation
 
 | Section | Content |
 |---------|---------|
-| [Getting Started](docs/get_started.md) | Prerequisites, setup flow, first run |
-| [Architecture](docs/design/0_architecture.md) | Full system design — data models, API spec, components |
-| [K8s Controller](docs/design/1_k8s_controller.md) | Controller design and implementation details |
-| [Dev Guidelines](docs/dev_guidelines.md) | Code conventions, tooling, concurrency model |
+| [Installation](docs/1-installation.md) | Base environment and VERL GPU stack |
+| [Quick Start](docs/2-quick-start.md) | Local first run and end-to-end flow |
+| [Basics](docs/3-basics.md) | Components, rollouts, events, and trajectories |
+| [Trainer Configuration](docs/4-trainer-configuration.md) | VERL integration and trace aggregation |
+| [Server Configuration](docs/5-server-configuration.md) | Gateway and model proxy settings |
+| [Controller Configuration](docs/6-controller-configuration.md) | Local and Kubernetes runners |
+| [Asynchronous Training](docs/7-asynchronous-training.md) | Collocated async collection and pause/drain |
 
-## Project Status
+## ⚡ Examples
 
-- **~3.5K lines** of source code, endpoint test coverage
-- Gateway with route config, streaming proxy, and automatic event capture
-- In-memory store (rollouts, events, models, resources)
-- K8s controller with Job lifecycle management
-- Python client library (`AglLiteClient`)
-- VERL integration (`AglLiteRolloutBridge`) with triplet format
+| Example | Description |
+|---|---|
+| [Calc-X](docs/8-example-calc-x.md) | POC math reasoning example with AutoGen and MCP calculator tools, requiring only one GPU. |
+| [GSM8K](docs/9-example-gsm8k.md) | POC grade-school math reasoning example. |
+| [ScienceWorld](docs/10-example-science-world.md) | Interactive science tasks in a text-based environment. |
+| [Search-R1](docs/11-example-search-r1.md) | Multi-turn retrieval and reasoning agent. |
+| [LLM-in-Sandbox](docs/12-example-llm-in-sandbox.md) | General agent with computer and code execution tools. |
+| [Coding Agent](docs/13-example-coding-agent.md) | Coding agent trained with repository tests. |
 
-## License
+## ⚡ License
 
-TBD
+Agent Lightning v1.0 is released under the [MIT License](LICENSE).

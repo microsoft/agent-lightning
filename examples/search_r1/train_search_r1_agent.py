@@ -113,7 +113,6 @@ def build_config(
     agl_key: str | None = None,
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
-    ci: bool = False,
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides."""
     import importlib.resources
@@ -144,31 +143,6 @@ def build_config(
     if run_name:
         overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
 
-    if ci:
-        overrides["trainer"]["project_name"] = "agl-lite-CI"
-        overrides["trainer"]["experiment_name"] = "search_r1_ci"
-        if run_name:
-            overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
-        overrides["trainer"]["total_epochs"] = 1
-        overrides["trainer"]["total_training_steps"] = 1
-        overrides["trainer"]["test_freq"] = -1
-        overrides["trainer"].pop("save_freq", None)
-        overrides["trainer"]["logger"] = ["console", "wandb"]
-        overrides["trainer"]["n_gpus_per_node"] = 1
-        overrides["data"]["train_batch_size"] = 2
-        overrides["data"]["max_prompt_length"] = 2048
-        overrides["data"]["max_response_length"] = 2048
-        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] = 2048
-        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_response_length"] = 2048
-        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
-        overrides["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["n"] = 2
-        overrides["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 1
-        overrides["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-        overrides["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
-        overrides["actor_rollout_ref"]["model"]["path"] = model or DEFAULT_MODEL
-
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
     OmegaConf.set_struct(base_cfg, False)
@@ -185,7 +159,6 @@ def train(
     agl_key: str | None = None,
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
-    ci: bool = False,
 ) -> None:
     """Load datasets, build config, and launch VERL training via agl-lite."""
     from agl_lite.verl.entrypoint import run_ppo
@@ -209,7 +182,6 @@ def train(
         agl_key=agl_key,
         run_name=run_name,
         config_overrides=config_overrides,
-        ci=ci,
     )
 
     from pprint import pprint
@@ -266,11 +238,6 @@ def main() -> None:
         default=None,
         help="Suffix appended to trainer.experiment_name",
     )
-    parser.add_argument(
-        "--ci",
-        action="store_true",
-        help="Run a 1-step CI-style training loop",
-    )
     args, config_overrides = parser.parse_known_args()
 
     train(
@@ -282,7 +249,6 @@ def main() -> None:
         agl_key=args.agl_key,
         run_name=args.run_name,
         config_overrides=config_overrides,
-        ci=args.ci,
     )
 
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
 # Run llm-in-sandbox on local minikube with agl-lite.
 set -euo pipefail
 

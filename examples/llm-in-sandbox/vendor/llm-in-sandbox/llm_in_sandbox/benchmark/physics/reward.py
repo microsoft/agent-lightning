@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Physics problem reward function.
 
 NOTE: This task requires LLM-as-a-Judge for proper evaluation.

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """OpenAI-compatible client helpers."""
 
 from __future__ import annotations

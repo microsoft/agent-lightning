@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Tests for VERL rollout manager event conversion."""
 
 from __future__ import annotations

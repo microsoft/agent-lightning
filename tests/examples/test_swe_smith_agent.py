@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Coverage for the SWE-smith agent loop's failure handling.
 
 Focused on the context-overflow case: once a multi-turn rollout's prompt grows
