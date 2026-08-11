@@ -49,6 +49,11 @@ def run_ppo(
         runtime_env_config = ray_init_kwargs.pop("runtime_env", {})
         runtime_env_kwargs = dict(runtime_env_config) if isinstance(runtime_env_config, dict) else {}
         runtime_env = {**default_runtime_env, **runtime_env_kwargs}
+        # Register the custom policy loss in each Ray actor process.
+        runtime_env.setdefault(
+            "worker_process_setup_hook",
+            "agl_lite.verl.per_rollout_loss.register_in_worker",
+        )
         _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
             runtime_env=runtime_env,

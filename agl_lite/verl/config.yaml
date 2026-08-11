@@ -35,5 +35,7 @@ data:
 actor_rollout_ref:
   actor:
     calculate_entropy: true
+    policy_loss:
+      loss_mode: per_rollout_mean
   rollout:
     mode: async

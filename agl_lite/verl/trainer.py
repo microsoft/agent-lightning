@@ -40,6 +40,7 @@ from .agl_rollout_manager import (
     CompletedRollout,
     EnqueuedRollout,
 )
+from .per_rollout_loss import PER_ROLLOUT_MEAN_LOSS_MODE, normalize_advantages_by_rollout
 from .rollout_adapter import RolloutAdapter
 from .rollout_level_advantage import compute_rollout_level_advantage
 
@@ -614,6 +615,18 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         metrics.update(_grpo_group_metrics(batch))
         metrics["critic/n_transition_after_dropping"] = len(batch)
         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+
+        loss_mode = self.config.actor_rollout_ref.actor.policy_loss.get("loss_mode", "vanilla")
+        if loss_mode == PER_ROLLOUT_MEAN_LOSS_MODE:
+            rollout_ids = batch.non_tensor_batch.get("rollout_id_list")
+            if rollout_ids is None:
+                raise RuntimeError("per_rollout_mean loss requires rollout_id_list")
+            batch.batch["advantages"] = normalize_advantages_by_rollout(
+                batch.batch["advantages"],
+                batch.batch["response_mask"],
+                rollout_ids,
+                num_trained_rows=len(batch),
+            )
 
         if self.use_critic:
             with marked_timer("update_critic", timing_raw, color="pink"):
