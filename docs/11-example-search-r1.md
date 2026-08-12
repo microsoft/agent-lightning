@@ -1,10 +1,10 @@
 # Search-R1
 
-| GPU | Model | Controller Mode | Trainer Mode |
-|---|---|---|---|
-| 8× A100 40GB | `meta-llama/Llama-3.2-3B-Instruct` | Local | Sync only |
+| GPU | Model | Controller Mode | Trainer Mode | Code |
+|---|---|---|---|---|
+| 8× A100 40GB | `meta-llama/Llama-3.2-3B-Instruct` | Local | Sync only | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/search_r1) |
 
-Search-R1 trains a retrieval-augmented question-answering agent with VERL and Agent Lightning >=v1.0. During each multi-turn rollout, the agent alternates between model responses and Wikipedia searches before producing a final answer.
+Search-R1 trains a retrieval-augmented question-answering agent with `verl` and Agent Lightning >=v1.0. During each multi-turn rollout, the agent alternates between model responses and Wikipedia searches before producing a final answer.
 
 This example is based on [*Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning*](https://arxiv.org/abs/2503.09516) by Jin et al. (2025).
 
@@ -63,7 +63,7 @@ With the retrieval service running, start local training from the repository roo
 examples/search_r1/run.sh
 ```
 
-`run.sh` starts `agl-server`, the local `agl-controller`, and the VERL trainer. The script cleans up the server, controller, and Ray processes when it exits.
+`run.sh` starts `agl-server`, the local `agl-controller`, and the `verl` trainer. The script cleans up the server, controller, and Ray processes when it exits.
 
 The default agent uses the Chat Completions API. To use the token-in/token-out Completions API instead:
 

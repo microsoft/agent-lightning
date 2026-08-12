@@ -1,10 +1,10 @@
 # Calc-X
 
-| GPU | Model | Controller Mode | Trainer Mode |
-|---|---|---|---|
-| 1× A100 80GB | `Qwen/Qwen2.5-1.5B-Instruct` | K8s or local | Sync and async |
+| GPU | Model | Controller Mode | Trainer Mode | Code |
+|---|---|---|---|---|
+| 1× A100 80GB | `Qwen/Qwen2.5-1.5B-Instruct` | K8s or local | Sync and async | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/calc_x) |
 
-Calc-X is a proof-of-concept (POC) example that trains a mathematical reasoning agent on the Calc-X dataset with VERL and Agent Lightning >=v1.0. It is intentionally lightweight and requires only one GPU. The agent uses AutoGen + MCP calculator tools to solve math problems.
+Calc-X is a proof-of-concept (POC) example that trains a mathematical reasoning agent on the Calc-X dataset with `verl` and Agent Lightning >=v1.0. It is intentionally lightweight and requires only one GPU. The agent uses AutoGen + MCP calculator tools to solve math problems.
 
 The example supports two controller modes:
 

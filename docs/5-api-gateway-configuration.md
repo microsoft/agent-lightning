@@ -1,6 +1,6 @@
-# Server Configuration
+# API Gateway Configuration
 
-The server uses Hydra configuration. The complete default configuration is located at `agentlightning/config/server.yaml`:
+Start the API Gateway with `agl-server`. It uses Hydra configuration, and the complete default configuration is located at `agentlightning/config/server.yaml`:
 
 ```yaml
 host: 0.0.0.0
@@ -46,17 +46,16 @@ Use the same non-empty key in the trainer and Controller.
 | `default_proxy.train.temperature` | `1` | Temperature forced for training rollouts. |
 | `default_proxy.val.temperature` | `0.7` | Temperature forced for validation rollouts. |
 
-`default_proxy.model_name` must match the model configured in verl at `actor_rollout_ref.model.path` and registered by the rollout manager:
+`default_proxy.model_name` must match the model configured in `verl` at `actor_rollout_ref.model.path`:
 
 ```text
 server default_proxy.model_name
           = trainer actor_rollout_ref.model.path
-          = model name registered by the rollout manager
 ```
 
 A mismatch produces a “model not found” error even if the vLLM endpoint itself is healthy.
 
-The train and validation temperatures configured here are the values actually used for model requests. Note that verl has similar temperature settings, but those values are not used for proxied requests because the proxy replaces them automatically.
+The train and validation temperatures configured here are the values actually used for model requests. Note that `verl` has similar temperature settings, but those values are not used for proxied requests because the proxy replaces them automatically.
 
-We recommend keeping `default_proxy.include_log_probs: true`. This records rollout log probabilities and allows verl to report rollout-correction metrics. Some rollout-correction features also require these log probabilities.
+We recommend keeping `default_proxy.include_log_probs: true`. This records rollout log probabilities and allows `verl` to report rollout-correction metrics. Some rollout-correction features also require these log probabilities.
 

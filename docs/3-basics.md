@@ -4,9 +4,11 @@ Agent Lightning v1.0 consists of three main components: the **API Gateway**, the
 
 ## Overview
 
-![Agent Lightning v1.0 architecture](images/architecture.jpg)
+<p align="center">
+	<img src="../images/architecture.jpg" alt="Agent Lightning v1.0 architecture" width="75%">
+</p>
 
-The Customized Trainer runs model inference and optimization on the GPU side. The API Gateway connects the trainer to agent executions, while the Rollout Controller launches and manages those executions as local processes or Kubernetes Jobs.
+The API Gateway stores the core rollouts, model endpoints, and events and provides an OpenAI-compatible model proxy for agent requests. The Rollout Controller launches and manages agent executions as local processes or Kubernetes Jobs. Finally, the Customized Trainer runs model inference and optimization on the GPU side and turns the rollout data collected by the Gateway into policy updates.
 
 This separation provides several practical advantages:
 
@@ -18,9 +20,11 @@ Below, we briefly introduce each component.
 
 ## API Gateway
 
-The API Gateway is a lightweight service at the center of Agent Lightning. It stores rollout state, model registrations, and events. It also provides an OpenAI-compatible proxy for agents to access model inference.
+The API Gateway is a lightweight service at the center of Agent Lightning. It stores rollouts, model endpoints, and events. It also provides an OpenAI-compatible proxy for agents to access model inference.
 
-![API Gateway objects and rollout state transitions](images/agentlightning-schema.jpg)
+<p align="center">
+	<img src="../images/agentlightning-schema.jpg" alt="API Gateway objects and rollout state transitions" width="50%">
+</p>
 
 ### Rollout API
 
@@ -45,13 +49,23 @@ Every event is associated with a specific rollout ID and is later exported as tr
 
 The Gateway also acts as a reverse proxy. The trainer registers one or more model inference endpoints, and the agent sends its model requests to a rollout-specific Gateway URL. The Gateway forwards each request to the registered model endpoint and records its prompt token IDs, response token IDs, and chosen-token log probabilities as a `model_request` event.
 
+For example, an OpenAI Chat Completions request for a training rollout is sent to:
+
+```text
+POST /proxy/rollout/{rollout_id}/attempt/{attempt_id}/mode/train/openai/v1/chat/completions
+```
+
+The corresponding validation path uses `mode/val`. OpenAI-compatible clients can use the path through `/openai/v1` as their base URL and append `/chat/completions` normally.
+
 Because the rollout ID is part of the proxy URL, every model call is automatically associated with the correct execution. An existing agent only needs to use the provided endpoint; it does not need to implement Agent Lightning's rollout or training logic.
 
 ## Rollout Controller
 
 The Rollout Controller turns queued rollouts into real agent executions. It continuously reconciles rollout state in the API Gateway with the processes or Jobs it manages, and reports execution progress back to the Gateway.
 
-![Controller reconciliation](images/controller-reconciliation.jpg)
+<p align="center">
+	<img src="../images/controller-reconciliation.jpg" alt="Controller reconciliation" width="75%">
+</p>
 
 The Controller supports two modes:
 
@@ -62,13 +76,13 @@ The API Gateway remains the source of truth for rollout status. If a process, Ku
 
 ## Customized Trainer
 
-The Customized Trainer sits on top of verl and connects the training backend to the API Gateway. During each training step, it:
+The Customized Trainer sits on top of `verl` and connects the training backend to the API Gateway. During each training step, it:
 
 1. registers the current model inference endpoints;
 2. creates one or more rollouts for each training input;
 3. waits for enough rollouts to finish;
 4. retrieves model requests, rewards, and other events;
-5. converts the captured calls into verl training samples;
+5. converts the captured calls into `verl` training samples;
 6. computes advantages and updates the policy.
 
 The trainer also handles Agent Lightning-specific data processing. It merges consecutive model calls only when their token histories are exactly continuous, computes advantages at the rollout level, and supports rollout-level loss normalization.
@@ -78,5 +92,5 @@ The trainer also handles Agent Lightning-specific data processing. It merges con
 The following chapters describe the settings for each component. Start with the trainer to define how rollouts are created and converted into training samples, then configure the server and the Controller that execute them:
 
 1. [Trainer Configuration](4-trainer-configuration.md)
-2. [Server Configuration](5-server-configuration.md)
+2. [API Gateway Configuration](5-api-gateway-configuration.md)
 3. [Controller Configuration](6-controller-configuration.md)

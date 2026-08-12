@@ -1,10 +1,10 @@
 # ScienceWorld
 
-| GPU | Model | Controller Mode | Trainer Mode |
-|---|---|---|---|
-| 8× A100 40GB | `Qwen/Qwen2.5-7B-Instruct` | Local | Async only |
+| GPU | Model | Controller Mode | Trainer Mode | Code |
+|---|---|---|---|---|
+| 8× A100 40GB | `Qwen/Qwen2.5-7B-Instruct` | Local | Async only | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/science_world) |
 
-ScienceWorld trains an agent with VERL and Agent Lightning >=v1.0 to solve text-based science tasks from AllenAI's [ScienceWorld](https://github.com/allenai/ScienceWorld).
+ScienceWorld trains an agent with `verl` and Agent Lightning >=v1.0 to solve text-based science tasks from AllenAI's [ScienceWorld](https://github.com/allenai/ScienceWorld).
 
 This example uses the local controller in asynchronous trainer mode. Each rollout runs as a local process that interacts with a ScienceWorld environment, calls the model through the AGL Gateway, and reports the final reward. It does not require K8s, Docker, or Minikube.
 
@@ -27,7 +27,7 @@ Start local training from the repository root:
 examples/science_world/run_local.sh
 ```
 
-`run_local.sh` starts `agl-server`, the local `agl-controller`, and the VERL trainer. The controller launches each rollout as a local process, and the script cleans up the server, controller, and Ray processes when it exits.
+`run_local.sh` starts `agl-server`, the local `agl-controller`, and the `verl` trainer. The controller launches each rollout as a local process, and the script cleans up the server, controller, and Ray processes when it exits.
 
 The training dataset is generated automatically from ScienceWorld task names and variation indices. To train on selected tasks or change the number of variations per task:
 

@@ -4,9 +4,9 @@ This quick start requires only one machine with one A100 GPU. It runs Agent Ligh
 
 ## Before you start
 
-Complete [Installation](1-installation.md), including the verl GPU stack.
+Complete [Installation](1-installation.md), including the `verl` GPU stack.
 
-> AGL v1.0 itself is lightweight, but policy inference and GRPO updates still require the GPU stack used by verl and vLLM.
+> AGL v1.0 itself is lightweight, but policy inference and GRPO updates still require the GPU stack used by `verl` and vLLM.
 
 ## 1. Prepare the example
 
@@ -38,14 +38,14 @@ examples/calc_x/run_local.sh
 
 The launcher performs four operations:
 
-1. starts Ray and the verl/vLLM model backend;
+1. starts Ray and the `verl`/vLLM model backend;
 2. starts `agl-server` on port `8181`;
 3. starts `agl-controller runner_type=local`;
 4. runs the Calc-X training entrypoint.
 
 Service logs are written under `/tmp/`.
 
-After starting the run in Step 2, you can view the training results in W&B.
+Once the task is running, you can view the training results in W&B.
 
 When you want to stop the run, press `Ctrl+C` once and wait for the script to exit. Do not press `Ctrl+C` repeatedly, as the cleanup process takes some time to stop all resources and processes safely.
 

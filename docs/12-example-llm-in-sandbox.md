@@ -1,14 +1,14 @@
 # LLM-in-Sandbox
 
-| GPU | Model | Controller Mode | Trainer Mode |
-|---|---|---|---|
-| 4× A100 80GB | `Qwen/Qwen3-4B-Instruct-2507` | K8s | Sync only |
+| GPU | Model | Controller Mode | Trainer Mode | Code |
+|---|---|---|---|---|
+| 4× A100 80GB | `Qwen/Qwen3-4B-Instruct-2507` | K8s | Sync only | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/llm-in-sandbox) |
 
-LLM-in-Sandbox trains a general instruction-following agent with VERL and Agent Lightning >=v1.0. The agent can manage files, execute code, and use external resources inside an isolated container sandbox.
+LLM-in-Sandbox trains a general instruction-following agent with `verl` and Agent Lightning >=v1.0. The agent can manage files, execute code, and use external resources inside an isolated container sandbox.
 
 This example is based on [*Computer Environments Elicit General Agentic Intelligence in LLMs*](https://arxiv.org/abs/2601.16206) by Cheng et al. (2026).
 
-This example uses the K8s controller in synchronous trainer mode. Each rollout runs as a Kubernetes Job, while model calls pass through the AGL Gateway to the VERL-managed vLLM server. The agent dependencies remain isolated from the trainer environment.
+This example uses the K8s controller in synchronous trainer mode. Each rollout runs as a Kubernetes Job, while model calls pass through the AGL Gateway to the `verl`-managed vLLM server. The agent dependencies remain isolated from the trainer environment.
 
 ## Environment Preparation
 
@@ -71,12 +71,12 @@ The launcher:
 1. creates a local Minikube cluster;
 2. builds the `llm-in-sandbox-agent:dev` image;
 3. starts `agl-server` and the K8s `agl-controller`;
-4. starts the VERL trainer;
+4. starts the `verl` trainer;
 5. cleans up the server, controller, and Ray processes when it exits.
 
 The controller creates one Kubernetes Job for each rollout. Inside the Job, the adapter runs the sandbox agent, routes model calls through the AGL Gateway, evaluates the final answer, and reports the reward.
 
-Additional VERL settings can be passed as dotlist overrides:
+Additional `verl` settings can be passed as dotlist overrides:
 
 ```bash
 examples/llm-in-sandbox/run.sh \

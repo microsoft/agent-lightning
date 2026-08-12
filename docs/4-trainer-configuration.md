@@ -1,6 +1,6 @@
 # Trainer Configuration
 
-Agent Lightning v1.0 adds its configuration on top of verl's `ppo_trainer` Hydra configuration. The complete default configuration from `agentlightning/verl/config.yaml` is shown below. The following sections explain these settings in detail.
+Agent Lightning v1.0 adds its configuration on top of `verl`'s `ppo_trainer` Hydra configuration. The complete default configuration from `agentlightning/verl/config.yaml` is shown below. The following sections explain these settings in detail.
 
 Complete default configuration added by Agent Lightning:
 
@@ -34,22 +34,22 @@ actor_rollout_ref:
       loss_mode: per_rollout_mean
 ```
 
-The configuration above only shows the settings recently added by Agent Lightning. All existing configuration inherited from verl's `ppo_trainer` remains available and takes effect as usual.
+The configuration above shows the Agent Lightning settings. At runtime, these settings are merged with the original `verl` `ppo_trainer` configuration, whose existing options remain available and take effect as usual.
 
-## Connect to the Gateway server
+## Connect to the API Gateway
 
-The first group of settings connects the trainer to the Agent Lightning Gateway server:
+The first group of settings connects the trainer to the Agent Lightning API Gateway:
 
 | Key | Default | Description |
 |---|---:|---|
 | `agentlightning.agl_base_url` | `http://localhost:8080` | Gateway URL used by the rollout manager. |
-| `agentlightning.agl_key` | `""` | Bearer key; must match server/controller. |
+| `agentlightning.agl_key` | `""` | Bearer key; must match the API Gateway and Controller. |
 
-Make sure the machine running the trainer can reach the Gateway at `agentlightning.agl_base_url`. The Hydra `agl_key` value must be identical in the trainer, server, and Controller configurations.
+Make sure the machine running the trainer can reach the Gateway at `agentlightning.agl_base_url`. The Hydra `agl_key` value must be identical in the trainer, API Gateway, and Controller configurations.
 
 ## Model and Data
 
-Model configuration follows the standard verl `actor_rollout_ref.model` settings. Set `actor_rollout_ref.model.path` to a Hugging Face model name or local model path:
+Model configuration follows the standard `verl` `actor_rollout_ref.model` settings. Set `actor_rollout_ref.model.path` to a Hugging Face model name or local model path:
 
 ```yaml
 actor_rollout_ref:
@@ -57,7 +57,7 @@ actor_rollout_ref:
     path: Qwen/Qwen2.5-1.5B-Instruct
 ```
 
-In upstream verl, dataset paths are normally configured with `data.train_files` and `data.val_files`. Agent Lightning instead loads the files first and passes the resulting datasets directly to `run_ppo`:
+In upstream `verl`, dataset paths are normally configured with `data.train_files` and `data.val_files`. Agent Lightning instead loads the files first and passes the resulting datasets directly to `run_ppo`. This provides additional flexibility: users can pass any dataset as long as it can be represented as a list of JSON objects.
 
 ```python
 from datasets import Dataset
@@ -70,7 +70,7 @@ val_dataset = Dataset.from_parquet("data/test.parquet").to_list()
 run_ppo(config, train_dataset=train_dataset, val_dataset=val_dataset)
 ```
 
-`run_ppo` accepts non-empty in-memory sequences as `train_dataset` and `val_dataset`. Each row is read as a JSON-like object. When the trainer creates a rollout, the complete row becomes the rollout's `input` field. The Controller can then map fields from `input` into the agent's environment or Kubernetes Job template.
+`run_ppo` accepts non-empty in-memory sequences as `train_dataset` and `val_dataset`. Each element is read as a JSON-like object. When the trainer creates a rollout, each element in the list becomes the rollout's `input` field. The Controller can then map fields from `input` into the agent's environment or Kubernetes Job template.
 
 ## Rollout execution
 
@@ -95,7 +95,7 @@ agentlightning:
 
 Here, the Controller imports `SearchR1Agent`, starts one local subprocess for each rollout, and sets `QUESTION` and `GOLDEN_ANSWERS` from that rollout's `input` object.
 
-In K8s mode, provide a Jinja Job template:
+In K8s mode, provide a Jinja template that renders to a Kubernetes Job YAML manifest:
 
 ```yaml
 agentlightning:
@@ -108,9 +108,9 @@ The template can use values from the rollout `input`. For example, this fragment
 ```yaml
 env:
   - name: QUESTION
-    value: {{ input.question | yaml_escape }}
+    value: {% raw %}{{ input.question | yaml_escape }}{% endraw %}
   - name: RESULT
-    value: {{ input.result | yaml_escape }}
+    value: {% raw %}{{ input.result | yaml_escape }}{% endraw %}
 ```
 
 The trainer reads the Jinja template and includes its text in each rollout. The Controller renders it with that rollout's `input`, then creates one Kubernetes Job per rollout.
@@ -119,9 +119,11 @@ Finally, `agentlightning.rollout_timeout_seconds` sets the maximum execution tim
 
 ## Trace aggregator
 
-![Trajectory aggregation](images/trajectory-aggregation.jpg)
+<p align="center">
+  <img src="../images/trajectory-aggregation.jpg" alt="Trajectory aggregation" width="80%">
+</p>
 
-During a rollout, the Gateway records every model call as a prompt-response pair. The trace aggregator organizes these calls into the rows used for training. It supports two modes.
+The left side of the diagram shows traditional agentic RL, where each rollout corresponds to one training sample. The right side shows Agent Lightning, where one rollout can correspond to multiple training samples. During a rollout, the Gateway collects all raw LLM calls as prompt-response pairs, and the trace aggregator assembles them into training samples using one of the following two modes.
 
 ### Trajectory mode
 
@@ -144,7 +146,7 @@ In this mode:
 
 We recommend setting `trajectory_max_response_length` relatively high so it can hold multiple turns without truncation. Choose a value that covers the expected combined length of later-turn prompts and responses while fitting the model context window and available GPU memory.
 
-Training rows whose initial prompt exceeds `trajectory_max_prompt_length` are marked and dropped from the policy-update batch. This filtering does not change the rollout reward used for rollout-level advantage calculation. Content beyond `trajectory_max_response_length`, on the other hand, is truncated to the configured response length.
+Training rows whose initial prompt exceeds `trajectory_max_prompt_length` are marked and dropped from the policy-update batch. Content beyond `trajectory_max_response_length`, on the other hand, is truncated to the configured response length.
 
 The number of dropped and truncated rows is reported to W&B with these metrics:
 
@@ -166,7 +168,7 @@ data:
   max_response_length: 2048
 ```
 
-Transition mode does not use `trajectory_max_prompt_length` or `trajectory_max_response_length`. It uses the same standard verl data limits used for individual vLLM rollout calls:
+Transition mode does not use `trajectory_max_prompt_length` or `trajectory_max_response_length`. It uses the same standard `verl` data limits used for individual vLLM rollout calls:
 
 - `data.max_prompt_length` limits each call's prompt;
 - `data.max_response_length` limits each call's response.
@@ -198,7 +200,7 @@ agentlightning:
 
 `actor_rollout_ref.actor.policy_loss.loss_mode: per_rollout_mean` normalizes the policy loss at the rollout level. It prevents a rollout from receiving more optimization weight only because it produced more training rows.
 
-For the motivation and detailed formulation of rollout-level advantage and loss normalization, see the Agent Lightning technical report.
+For the motivation and detailed formulation of rollout-level advantage and loss normalization, see the Agent Lightning v1.0 technical report.
 
 ### Maximum PPO update times
 

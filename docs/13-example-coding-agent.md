@@ -1,15 +1,15 @@
 # Coding Agent
 
-| GPU | Model | Controller Mode | Trainer Mode |
-|---|---|---|---|
-| 4× B200 | `Qwen/Qwen3.5-9B` | K8s | Sync and async |
+| GPU | Model | Controller Mode | Trainer Mode | Code |
+|---|---|---|---|---|
+| 4× B200 | `Qwen/Qwen3.5-9B` | K8s | Sync and async | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/swe_smith) |
 
-The Coding Agent example trains a software-engineering agent on SWE-smith tasks with VERL and Agent Lightning >=v1.0. Each rollout runs as a Kubernetes Job inside a repository-specific image, edits an isolated checkout, executes tests, and reports the resulting reward to the AGL Gateway.
+The Coding Agent example trains a software-engineering agent on SWE-smith tasks with `verl` and Agent Lightning >=v1.0. Each rollout runs as a Kubernetes Job inside a repository-specific image, edits an isolated checkout, executes tests, and reports the resulting reward to the AGL Gateway.
 
 This example uses two machines:
 
 - **Machine A — Kubernetes Controller machine:** connects to the Kubernetes cluster, prepares repository images in the node-accessible Docker runtime, and runs `agl-controller` to create rollout Jobs.
-- **Machine B — GPU training machine:** provides the GPUs and runs both `agl-server` (the AGL Gateway) and the VERL trainer with its model backend.
+- **Machine B — GPU training machine:** provides the GPUs and runs both `agl-server` (the AGL Gateway) and the `verl` trainer with its model backend.
 
 Machine B's AGL Gateway address must be reachable from Machine A and from the rollout pods in the Kubernetes cluster.
 
@@ -98,7 +98,7 @@ export AGL_MODEL_NAME=Qwen/Qwen3.5-9B
 examples/swe_smith/run.sh trainer
 ```
 
-The launcher passes additional arguments to `train_smith_agent.py`, including VERL dotlist overrides:
+The launcher passes additional arguments to `train_smith_agent.py`, including `verl` dotlist overrides:
 
 ```bash
 examples/swe_smith/run.sh trainer \

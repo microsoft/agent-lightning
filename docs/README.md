@@ -1,12 +1,25 @@
 # Agent Lightning Documentation
 
+<p align="center">
+	<img src="images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
+</p>
+
 Welcome to the Agent Lightning v1.0 documentation. Start with the installation and quick-start guides, then use the configuration guides and examples below to build and train your own agents.
+
+Agent Lightning v1.0 is a completely redesigned and reimplemented version with the following key features:
+
+- 🪶 **~3,500 lines of core Python:** Simplicity is the first principle.
+- 🧩 **Training with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with zero changes while keeping tools, context, control flow, and environments in the loop.
+- ☸️ **Native Kubernetes support:** Agents run directly as Kubernetes Jobs without relying on external sandbox services.
+- 💻 **A complete coding-agent training example:** The released pipeline covers data cleaning, reward-hacking prevention, and training scripts.
+
+For the legacy Agent Lightning releases earlier than v1.0, see the [`archive/agl` code branch](https://github.com/microsoft/agent-lightning/tree/archive/agl) and the [v0.3.0 documentation](https://microsoft.github.io/agent-lightning/0.3.0/).
 
 ## Getting Started
 
 | Guide | Description |
 |---|---|
-| [Installation](1-installation.md) | Set up the base environment and the tested VERL GPU stack. |
+| [Installation](1-installation.md) | Set up the base environment and the tested `verl` GPU stack. |
 | [Quick Start](2-quick-start.md) | Run a local end-to-end rollout-driven training job. |
 | [Basics](3-basics.md) | Learn the core components, rollouts, events, and trajectories. |
 
@@ -14,8 +27,8 @@ Welcome to the Agent Lightning v1.0 documentation. Start with the installation a
 
 | Guide | Description |
 |---|---|
-| [Trainer Configuration](4-trainer-configuration.md) | Configure VERL integration, rollout collection, and trace aggregation. |
-| [Server Configuration](5-server-configuration.md) | Configure the API gateway and model proxy. |
+| [Trainer Configuration](4-trainer-configuration.md) | Configure `verl` integration, rollout collection, and trace aggregation. |
+| [API Gateway Configuration](5-api-gateway-configuration.md) | Configure the API Gateway and model proxy. |
 | [Controller Configuration](6-controller-configuration.md) | Configure local and Kubernetes rollout runners. |
 | [Asynchronous Training](7-asynchronous-training.md) | Configure collocated asynchronous collection and pause/drain behavior. |
 
@@ -29,5 +42,3 @@ Welcome to the Agent Lightning v1.0 documentation. Start with the installation a
 | [Search-R1](11-example-search-r1.md) | Train a multi-turn retrieval and reasoning agent. |
 | [LLM-in-Sandbox](12-example-llm-in-sandbox.md) | Train a general agent with computer and code execution tools. |
 | [Coding Agent](13-example-coding-agent.md) | Train a coding agent using repository tests as feedback. |
-
-Return to the [project overview](../README.md).

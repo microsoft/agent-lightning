@@ -1,10 +1,10 @@
 # GSM8K
 
-| GPU | Model | Controller Mode | Trainer Mode |
-|---|---|---|---|
-| 1× A100 80GB | `Qwen/Qwen2.5-1.5B-Instruct` | Local | Sync only |
+| GPU | Model | Controller Mode | Trainer Mode | Code |
+|---|---|---|---|---|
+| 1× A100 80GB | `Qwen/Qwen2.5-1.5B-Instruct` | Local | Sync only | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/gsm8k) |
 
-GSM8K trains a grade-school math reasoning agent on the `openai/gsm8k` dataset with VERL and Agent Lightning >=v1.0.
+GSM8K trains a grade-school math reasoning agent on the `openai/gsm8k` dataset with `verl` and Agent Lightning >=v1.0.
 This example runs in local mode and demonstrates support for two API styles:
 
 1. **Chat Completions API:** the commonly used text-in/text-out API, where the agent sends structured chat messages and receives generated text.
