@@ -126,7 +126,7 @@ def verl_default_config() -> dict[str, Any]:
             "val_before_train": True,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
-            "project_name": "agl-lite",
+            "project_name": "agentlightning",
             "experiment_name": "swe_smith",
             "nnodes": 1,
 
@@ -166,7 +166,7 @@ def build_config(
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> DictConfig:
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     with initialize_config_dir(config_dir=str(verl_pkg), version_base=None):
         base_cfg = compose(config_name="config")
 
@@ -205,7 +205,7 @@ def train(
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> None:
-    from agl_lite.verl.entrypoint import run_ppo
+    from agentlightning.verl.entrypoint import run_ppo
 
     if not agl_key:
         raise RuntimeError("AGL_KEY is required")
@@ -216,7 +216,7 @@ def train(
     distinct_repos = sorted({row["repo"] for row in instances})
 
     log("=== Preflight ===")
-    log(f"  agl-lite:     {agl_base_url or 'http://localhost:8080'}")
+    log(f"  Agent Lightning: {agl_base_url or 'http://localhost:8080'}")
     log(f"  model:        {model or DEFAULT_MODEL}")
     log(f"  train file:   {train_dataset_path}")
     log(f"  val file:     {val_dataset_path}")
@@ -237,7 +237,7 @@ def train(
     run_ppo(config=config, train_dataset=train_dataset, val_dataset=val_dataset)
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Train a SWE-smith agent with VERL/GRPO via agl-lite")
+    parser = argparse.ArgumentParser(description="Train a SWE-smith agent with VERL/GRPO via Agent Lightning")
     parser.add_argument(
         "--train-dataset-path",
         default=str(EXAMPLE_DIR / "train_dataset_mixed.jsonl"),

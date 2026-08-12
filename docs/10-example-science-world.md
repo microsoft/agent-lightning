@@ -27,7 +27,7 @@ Start local training from the repository root:
 examples/science_world/run_local.sh
 ```
 
-`run_local.sh` starts `agl-lite-server`, the local `agl-lite-controller`, and the VERL trainer. The controller launches each rollout as a local process, and the script cleans up the server, controller, and Ray processes when it exits.
+`run_local.sh` starts `agl-server`, the local `agl-controller`, and the VERL trainer. The controller launches each rollout as a local process, and the script cleans up the server, controller, and Ray processes when it exits.
 
 The training dataset is generated automatically from ScienceWorld task names and variation indices. To train on selected tasks or change the number of variations per task:
 

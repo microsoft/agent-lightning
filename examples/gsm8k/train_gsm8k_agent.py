@@ -67,7 +67,7 @@ def verl_default_config() -> dict[str, Any]:
             "val_before_train": False,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
-            "project_name": "agl-lite",
+            "project_name": "agentlightning",
             "experiment_name": "gsm8k",
             "nnodes": 1,
             "save_freq": -1,
@@ -110,7 +110,7 @@ def build_config(
     """Build the full OmegaConf config by merging base + overrides."""
     import importlib.resources
 
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     config_dir = str(verl_pkg)
 
     with initialize_config_dir(config_dir=config_dir, version_base=None):
@@ -166,8 +166,8 @@ def train(
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> None:
-    """Load GSM8K datasets, build config, and launch VERL training via agl-lite."""
-    from agl_lite.verl.entrypoint import run_ppo
+    """Load GSM8K datasets, build config, and launch VERL training via Agent Lightning."""
+    from agentlightning.verl.entrypoint import run_ppo
 
     train_dataset = load_gsm8k_dataset(train_file)
     val_dataset = load_gsm8k_dataset(val_file)
@@ -198,7 +198,7 @@ def train(
 def main() -> None:
     data_dir = Path.home() / "dataset" / "gsm8k" / "main"
     parser = argparse.ArgumentParser(
-        description="Train GSM8K agent with VERL on agl-lite local mode.",
+        description="Train GSM8K agent with VERL on Agent Lightning local mode.",
     )
     parser.add_argument(
         "--train-file",
@@ -240,13 +240,13 @@ def main() -> None:
         "--agl-base-url",
         type=str,
         default="http://localhost:8181",
-        help="agl-lite server URL for the trainer",
+        help="Agent Lightning server URL for the trainer",
     )
     parser.add_argument(
         "--agl-key",
         type=str,
         default="gsm8k-dev-key",
-        help="agl-lite API key for the trainer",
+        help="Agent Lightning API key for the trainer",
     )
     parser.add_argument(
         "--run-name",

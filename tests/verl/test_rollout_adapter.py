@@ -17,8 +17,8 @@ pytest.importorskip("verl")
 
 import torch
 
-from agl_lite.verl.agl_rollout_manager import CompletedRollout, Triplet
-from agl_lite.verl.rollout_adapter import RolloutAdapter
+from agentlightning.verl.agl_rollout_manager import CompletedRollout, Triplet
+from agentlightning.verl.rollout_adapter import RolloutAdapter
 
 
 class FakeTokenizer:
@@ -238,21 +238,21 @@ def test_training_step_uploads_24_compact_rollout_trajectories_to_wandb_zip(
     table, step = _logged_table(logged, "training/rollout_trajectories")
     assert step == 23
     assert table.columns == ["global_steps", "trajectory_artifact", "trajectory_artifact_path", "row_count"]
-    artifact_name = "rollout-trajectories-fake-run-step-23"
-    artifact_path = "step_23/rollout_trajectories.jsonl.zip"
+    artifact_name = "train-trajectories-fake-run-step-23"
+    artifact_path = "step_23/train_trajectories.jsonl.zip"
     assert table.rows == [[23, artifact_name, artifact_path, 24]]
 
     assert len(run.artifacts) == 1
     artifact = run.artifacts[0]
     assert artifact.name == artifact_name
-    assert artifact.type == "rollout_trajectories"
+    assert artifact.type == "train_trajectories"
     assert artifact.metadata == {"global_steps": 23, "row_count": 24, "format": "jsonl.zip"}
     assert [file["name"] for file in artifact.files] == [artifact_path]
 
     records = _zipped_jsonl_records(
         artifact,
         artifact_path=artifact_path,
-        jsonl_name="rollout_trajectories.jsonl",
+        jsonl_name="train_trajectories.jsonl",
     )
     assert len(records) == 24
     assert all(set(record) == {"rollout_id", "reward", "prompt", "response"} for record in records)

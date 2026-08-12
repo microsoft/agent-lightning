@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from agl_lite.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
-from agl_lite.verl.agl_rollout_manager import AglRolloutManagerBase, EnqueuedRollout
+from agentlightning.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
+from agentlightning.verl.agl_rollout_manager import AglRolloutManagerBase, EnqueuedRollout
 
 
 class _Manager(AglRolloutManagerBase):

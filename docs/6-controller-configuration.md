@@ -1,6 +1,6 @@
 # Controller Configuration
 
-The Controller translates declarative rollouts into real agent executions. It uses Hydra configuration, and the complete default configuration is located at `agl_lite/config/controller.yaml`:
+The Controller translates declarative rollouts into real agent executions. It uses Hydra configuration, and the complete default configuration is located at `agentlightning/config/controller.yaml`:
 
 ![Controller reconciliation](images/controller-reconciliation.jpg)
 
@@ -28,7 +28,7 @@ local_runner:
 Override any setting with a Hydra command-line argument when starting the Controller. For example:
 
 ```bash
-agl-lite-controller \
+agl-controller \
   runner_type=local \
   agl_server.url=http://localhost:8080 \
   agl_server.key="$AGL_KEY" \
@@ -86,7 +86,7 @@ When the process pool reaches `maximum_size`, queued rollouts wait until capacit
 
 ## How tasks are launched
 
-In `k8s` mode, the Controller reads the Jinja Job template stored in each rollout. The template originates from `agentlightning.k8s.job_template_path` in the Trainer configuration. The Controller renders the template with the rollout's `input`, applies the Controller settings such as namespace, timeout, and cleanup TTL, and submits the resulting Kubernetes Job. It also injects rollout-specific `AGL_OPENAI_BASE_URL`, `AGL_EVENT_URL`, and `AGL_KEY` values into every container. See [Trainer Configuration](4-trainer-configuration.md#rollout-execution) for the template configuration and Jinja examples, and `agl_lite/controller/k8s_reconciler.py` for the implementation.
+In `k8s` mode, the Controller reads the Jinja Job template stored in each rollout. The template originates from `agentlightning.k8s.job_template_path` in the Trainer configuration. The Controller renders the template with the rollout's `input`, applies the Controller settings such as namespace, timeout, and cleanup TTL, and submits the resulting Kubernetes Job. It also injects rollout-specific `AGL_OPENAI_BASE_URL`, `AGL_EVENT_URL`, and `AGL_KEY` values into every container. See [Trainer Configuration](4-trainer-configuration.md#rollout-execution) for the template configuration and Jinja examples, and `agentlightning/controller/k8s_reconciler.py` for the implementation.
 
 In `local` mode, the Controller reads `agent_class` and `env_map` from the rollout. It imports the Agent class, starts it in a local subprocess, and uses `env_map` to replace environment-variable values with fields from the rollout's `input`. The same rollout-specific Gateway URL, event URL, and key are injected automatically.
 

@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Rollout-level advantage computation for agl-lite training batches."""
+"""Rollout-level advantage computation for Agent Lightning training batches."""
 
 from __future__ import annotations
 

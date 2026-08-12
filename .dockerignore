@@ -75,7 +75,7 @@ mlruns/
 *.tar.bz2
 *.tar.xz
 *.7z
-agl-lite-main.zip
+agentlightning-main.zip
 
 # Docs/dev generated artifacts
 docs/refactor_review/public/

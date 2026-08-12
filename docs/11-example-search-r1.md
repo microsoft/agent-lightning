@@ -63,7 +63,7 @@ With the retrieval service running, start local training from the repository roo
 examples/search_r1/run.sh
 ```
 
-`run.sh` starts `agl-lite-server`, the local `agl-lite-controller`, and the VERL trainer. The script cleans up the server, controller, and Ray processes when it exits.
+`run.sh` starts `agl-server`, the local `agl-controller`, and the VERL trainer. The script cleans up the server, controller, and Ray processes when it exits.
 
 The default agent uses the Chat Completions API. To use the token-in/token-out Completions API instead:
 

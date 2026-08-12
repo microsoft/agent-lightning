@@ -20,7 +20,7 @@ Below, we briefly introduce each component.
 
 The API Gateway is a lightweight service at the center of Agent Lightning. It stores rollout state, model registrations, and events. It also provides an OpenAI-compatible proxy for agents to access model inference.
 
-![API Gateway objects and rollout state transitions](images/agl-lite-schema.jpg)
+![API Gateway objects and rollout state transitions](images/agentlightning-schema.jpg)
 
 ### Rollout API
 

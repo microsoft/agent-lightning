@@ -1,4 +1,4 @@
-# Extra dependencies for the swe_smith example, beyond the agl-lite root
+# Extra dependencies for the swe_smith example, beyond the Agent Lightning root
 # project (see ../../pyproject.toml). Install on the controller/trainer host:
 #
 #   pip install -r examples/swe_smith/requirements.txt

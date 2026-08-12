@@ -12,8 +12,8 @@ from omegaconf import OmegaConf
 def verl_default_config() -> dict[str, Any]:
     """VERL config overrides for Calc-X training.
 
-    These are merged on top of agl-lite's base config
-    (agl_lite/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
+    These are merged on top of Agent Lightning's base config
+    (agentlightning/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
     """
     example_dir = Path(__file__).resolve().parent
     return {
@@ -70,7 +70,7 @@ def verl_default_config() -> dict[str, Any]:
             "val_before_train": False,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
-            "project_name": "agl-lite",
+            "project_name": "agentlightning",
             "experiment_name": "calc_x",
             "nnodes": 1,
             "save_freq": 64,
@@ -110,13 +110,13 @@ def build_config(
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides.
 
-    Uses Hydra compose to load agl-lite's base config (which includes
+    Uses Hydra compose to load Agent Lightning's base config (which includes
     verl's ppo_trainer defaults), then merges Calc-X overrides on top.
     """
     import importlib.resources
 
-    # Locate the agl_lite/verl package directory for Hydra.
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    # Locate the agentlightning/verl package directory for Hydra.
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     config_dir = str(verl_pkg)
 
     with initialize_config_dir(config_dir=config_dir, version_base=None):
@@ -159,8 +159,8 @@ def train(
     async_mode: bool = False,
     config_overrides: Sequence[str] = (),
 ) -> None:
-    """Load datasets, build config, and launch VERL training via agl-lite."""
-    from agl_lite.verl.entrypoint import run_ppo
+    """Load datasets, build config, and launch VERL training via Agent Lightning."""
+    from agentlightning.verl.entrypoint import run_ppo
 
     # Load datasets.
     train_dataset: Sequence[Any] = cast(
@@ -194,7 +194,7 @@ def train(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Train Calc-X agent with VERL on agl-lite.",
+        description="Train Calc-X agent with VERL on Agent Lightning.",
     )
     parser.add_argument(
         "--train-file",
@@ -218,13 +218,13 @@ def main() -> None:
         "--agl-base-url",
         type=str,
         default="http://localhost:8181",
-        help="agl-lite server URL for the trainer",
+        help="Agent Lightning server URL for the trainer",
     )
     parser.add_argument(
         "--agl-key",
         type=str,
         default="calcx-dev-key",
-        help="agl-lite API key for the trainer",
+        help="Agent Lightning API key for the trainer",
     )
     parser.add_argument(
         "--run-name",

@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Thin httpx clients for agl-lite."""
+"""Thin httpx clients for Agent Lightning."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _headers_with_key(headers: httpx.Headers | dict[str, str] | None, key: str |
     return merged
 
 
-class AglLiteAsyncClient(httpx.AsyncClient):
+class AgentLightningAsyncClient(httpx.AsyncClient):
     """Async httpx client with optional bearer key."""
 
     def __init__(
@@ -33,7 +33,7 @@ class AglLiteAsyncClient(httpx.AsyncClient):
         )
 
 
-class AglLiteSyncClient(httpx.Client):
+class AgentLightningSyncClient(httpx.Client):
     """Sync httpx client with optional bearer key."""
 
     def __init__(

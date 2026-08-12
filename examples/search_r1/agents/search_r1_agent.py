@@ -213,7 +213,7 @@ async def post_reward(event_url: str, agl_key: str, reward: float, reason: str) 
 
 
 class SearchR1Agent:
-    """Search-R1 agent for agl-lite local runner mode."""
+    """Search-R1 agent for Agent Lightning local runner mode."""
 
     async def run(self) -> None:
         setup_logging()

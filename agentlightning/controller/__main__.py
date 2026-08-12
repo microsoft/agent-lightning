@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Hydra entrypoint for the agl-lite controller."""
+"""Hydra entrypoint for the Agent Lightning controller."""
 
 from __future__ import annotations
 
@@ -11,23 +11,23 @@ import signal
 import hydra
 from omegaconf import DictConfig
 
-from agl_lite.client import AglLiteAsyncClient
+from agentlightning.client import AgentLightningAsyncClient
 
 
 async def _run_controller(config: DictConfig) -> None:
-    async with AglLiteAsyncClient(
+    async with AgentLightningAsyncClient(
         base_url=str(config.agl_server.url),
         key=str(config.agl_server.key or "") or None,
     ) as api:
         if config.runner_type == "k8s":
             try:
-                from agl_lite.controller.k8s_reconciler import K8sReconciler
+                from agentlightning.controller.k8s_reconciler import K8sReconciler
             except ImportError:
-                raise RuntimeError("kr8s unavailable - install agl-lite[controller]") from None
+                raise RuntimeError("kr8s unavailable - install agentlightning[controller]") from None
 
             reconciler = K8sReconciler(api=api, config=config)
         elif config.runner_type == "local":
-            from agl_lite.controller.local_reconciler import LocalReconciler
+            from agentlightning.controller.local_reconciler import LocalReconciler
 
             reconciler = LocalReconciler(
                 api=api,

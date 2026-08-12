@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Minimal GSM8K agent entrypoint for local agl-lite rollouts."""
+"""Minimal GSM8K agent entrypoint for local Agent Lightning rollouts."""
 
 # OpenAI is an optional runtime dependency for this example.
 # pyright: reportMissingImports=false

@@ -15,7 +15,7 @@ import torch
 from tensordict import TensorDict
 from verl import DataProto
 
-from agl_lite.verl.rollout_level_advantage import compute_rollout_level_advantage
+from agentlightning.verl.rollout_level_advantage import compute_rollout_level_advantage
 
 
 def _batch(

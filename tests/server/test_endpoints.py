@@ -272,7 +272,7 @@ def test_proxy_completion_endpoint(client: TestClient, auth_headers: dict[str, s
             headers={"content-type": "application/json"},
         )
 
-    monkeypatch.setattr("agl_lite.server.proxy._send_upstream_with_retries", fake_upstream)
+    monkeypatch.setattr("agentlightning.server.proxy._send_upstream_with_retries", fake_upstream)
     rollout = _rollout(client, auth_headers)
     client.post(
         "/api/models",
@@ -305,7 +305,7 @@ def test_proxy_error_triplet_preserves_status(client: TestClient, auth_headers: 
             headers={"content-type": "application/json"},
         )
 
-    monkeypatch.setattr("agl_lite.server.proxy._send_upstream_with_retries", fake_upstream)
+    monkeypatch.setattr("agentlightning.server.proxy._send_upstream_with_retries", fake_upstream)
     rollout = _rollout(client, auth_headers)
     client.post(
         "/api/models",

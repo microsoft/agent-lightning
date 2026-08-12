@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) Microsoft. All rights reserved.
 
-"""agl-lite adapter for the llm-in-sandbox container entrypoint."""
+"""Agent Lightning adapter for the llm-in-sandbox container entrypoint."""
 
 from __future__ import annotations
 

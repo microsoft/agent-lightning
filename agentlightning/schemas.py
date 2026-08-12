@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Shared Pydantic schemas for agl-lite."""
+"""Shared Pydantic schemas for Agent Lightning."""
 
 from __future__ import annotations
 

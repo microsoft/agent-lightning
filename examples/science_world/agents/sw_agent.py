@@ -2,7 +2,7 @@
 
 """ScienceWorld agent — solves a text-based science task via a constrained-action LLM loop.
 
-Loaded by ``agl_lite.controller.local_reconciler`` as
+Loaded by ``agentlightning.controller.local_reconciler`` as
 ``examples.science_world.agents.sw_agent:SWAgent`` when the controller runs
 in ``runner_type=local`` mode.
 
@@ -96,7 +96,7 @@ def _parse_action_index(text: str, num_actions: int) -> int:
 
 
 class SWAgent:
-    """ScienceWorld agent for agl-lite local runner mode."""
+    """ScienceWorld agent for Agent Lightning local runner mode."""
 
     async def run(self) -> None:
         _setup_logging()

@@ -11,8 +11,8 @@ from fastapi import APIRouter, Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
-from agl_lite.server.proxy import NoServersError, ProxyPauseState, ProxyRouter, forward_request
-from agl_lite.server.store import _rollouts
+from agentlightning.server.proxy import NoServersError, ProxyPauseState, ProxyRouter, forward_request
+from agentlightning.server.store import _rollouts
 
 log = structlog.get_logger()
 

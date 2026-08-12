@@ -8,8 +8,8 @@ The Coding Agent example trains a software-engineering agent on SWE-smith tasks 
 
 This example uses two machines:
 
-- **Machine A — Kubernetes Controller machine:** connects to the Kubernetes cluster, prepares repository images in the node-accessible Docker runtime, and runs `agl-lite-controller` to create rollout Jobs.
-- **Machine B — GPU training machine:** provides the GPUs and runs both `agl-lite-server` (the AGL Gateway) and the VERL trainer with its model backend.
+- **Machine A — Kubernetes Controller machine:** connects to the Kubernetes cluster, prepares repository images in the node-accessible Docker runtime, and runs `agl-controller` to create rollout Jobs.
+- **Machine B — GPU training machine:** provides the GPUs and runs both `agl-server` (the AGL Gateway) and the VERL trainer with its model backend.
 
 Machine B's AGL Gateway address must be reachable from Machine A and from the rollout pods in the Kubernetes cluster.
 

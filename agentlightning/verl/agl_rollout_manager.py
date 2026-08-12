@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Rollout managers for agl-lite VERL training."""
+"""Rollout managers for Agent Lightning VERL training."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ import numpy as np
 from httpx_retries import Retry, RetryTransport
 from pydantic import BaseModel, Field
 
-from agl_lite.client import AglLiteSyncClient
-from agl_lite.schemas import (
+from agentlightning.client import AgentLightningSyncClient
+from agentlightning.schemas import (
     TERMINAL_STATES,
     Event,
     EventCreate,
@@ -34,7 +34,7 @@ except ImportError:  # pragma: no cover - torch is optional outside VERL install
     torch = None
 
 if TYPE_CHECKING:
-    from agl_lite.hooks import RolloutHooks
+    from agentlightning.hooks import RolloutHooks
 
 
 class Triplet(BaseModel):
@@ -130,7 +130,7 @@ def _to_native(obj: Any) -> Any:
 
 
 class AglRolloutManagerBase:
-    """Base manager for agl-lite rollout HTTP operations."""
+    """Base manager for Agent Lightning rollout HTTP operations."""
 
     def __init__(
         self,
@@ -161,7 +161,7 @@ class AglRolloutManagerBase:
         if k8s_job_template_path:
             self._rollout_config["k8s"] = {"job_template": Path(k8s_job_template_path).read_text()}
 
-        self.client = AglLiteSyncClient(
+        self.client = AgentLightningSyncClient(
             base_url=agl_base_url,
             key=agl_key,
             timeout=120.0,
@@ -285,7 +285,7 @@ class AglRolloutManagerBase:
         response = self.client.post_with_retry("/api/rollouts", json=payload)
         created = [Rollout.model_validate(item) for item in response.json()]
         assert len(created) == len(rollout_requests), (
-            f"agl-lite returned {len(created)} rollouts, expected {len(rollout_requests)}"
+            f"Agent Lightning returned {len(created)} rollouts, expected {len(rollout_requests)}"
         )
         return [
             enqueued_rollout.model_copy(update={"rollout_id": rollout.rollout_id})

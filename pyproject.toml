@@ -1,7 +1,7 @@
 [project]
-name = "agl-lite"
-version = "0.1.0"
-description = "Minimal workable version of Agent Lightning — agentic RL infrastructure"
+name = "agentlightning"
+version = "1.0.0"
+description = "Agent Lightning — agentic RL infrastructure"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
@@ -28,8 +28,8 @@ dev = [
 ]
 
 [project.scripts]
-agl-lite-server = "agl_lite.server.__main__:main"
-agl-lite-controller = "agl_lite.controller.__main__:main"
+agl-server = "agentlightning.server.__main__:main"
+agl-controller = "agentlightning.controller.__main__:main"
 
 [tool.ruff]
 line-length = 120

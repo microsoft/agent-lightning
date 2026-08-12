@@ -14,8 +14,8 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import HTTPException
 from omegaconf import DictConfig, OmegaConf
 
-from agl_lite.server.proxy import ProxyPauseState, ProxyRouter
-from agl_lite.server.routes import events, models, proxy, rollouts
+from agentlightning.server.proxy import ProxyPauseState, ProxyRouter
+from agentlightning.server.routes import events, models, proxy, rollouts
 
 log = structlog.get_logger()
 
@@ -72,7 +72,7 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
             app.state.http_client = client
             yield
 
-    app = FastAPI(title="agl-lite", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Agent Lightning", version="1.0.0", lifespan=lifespan)
 
     # Health check — no auth.
     @app.get("/healthz")

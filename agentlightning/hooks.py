@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from agl_lite.schemas import RolloutCreate
+from agentlightning.schemas import RolloutCreate
 
 if TYPE_CHECKING:
-    from agl_lite.schemas import Rollout
+    from agentlightning.schemas import Rollout
 
 
 class TraceWriter(Protocol):

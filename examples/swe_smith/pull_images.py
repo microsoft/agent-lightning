@@ -125,7 +125,7 @@ def openai_dockerfile(source_image: str) -> str:
     return "".join(
         [
             f"FROM {source_image}\n",
-            'LABEL agl-lite.swe-smith.openai-layer="1"\n',
+            'LABEL agentlightning.swe-smith.openai-layer="1"\n',
             f"RUN bash -lc {shlex.quote(install_cmd)}\n",
         ]
     )

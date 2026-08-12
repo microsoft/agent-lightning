@@ -41,7 +41,7 @@ uv pip install \
     sympy \
     "autogen-agentchat" \
     "autogen-ext[openai]" \
-    "mcp>=1.10.0" \
+    "mcp>=1.11.0,<2" \
     mcp-server-calculator
 ```
 
@@ -53,7 +53,7 @@ cd examples/calc_x
 bash run_local.sh
 ```
 
-`run_local.sh` starts agl-lite-server and agl-lite-controller, and writes their logs under `/tmp/`. The script starts the agent in multi-process mode.
+`run_local.sh` starts `agl-server` and `agl-controller`, and writes their logs under `/tmp/`. The script starts the agent in multi-process mode.
 When `run_local.sh` exits, it automatically cleans up the server, controller, and agent it started.
 
 ## K8s Mode
@@ -68,6 +68,6 @@ cd examples/calc_x
 bash run_minikube.sh
 ```
 
-`run_minikube.sh` starts agl-lite-server and agl-lite-controller, and writes their logs under `/tmp/`. The script also starts a new local Minikube single-node K8s cluster, and the agent runs in this cluster as Kubernetes Jobs.
+`run_minikube.sh` starts `agl-server` and `agl-controller`, and writes their logs under `/tmp/`. The script also starts a new local Minikube single-node K8s cluster, and the agent runs in this cluster as Kubernetes Jobs.
 When `run_minikube.sh` exits, it automatically cleans up the server, controller, and Minikube it started.
 Minikube needs at least 64 GB of memory; otherwise, it may be killed due to insufficient memory.

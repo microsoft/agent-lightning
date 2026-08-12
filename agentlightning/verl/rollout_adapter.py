@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Adapters from completed agl-lite rollouts to VERL training data."""
+"""Adapters from completed Agent Lightning rollouts to VERL training data."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import torch
 from tensordict import TensorDict
 from verl import DataProto
 
-from agl_lite.verl.agl_rollout_manager import CompletedRollout
+from agentlightning.verl.agl_rollout_manager import CompletedRollout
 
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000

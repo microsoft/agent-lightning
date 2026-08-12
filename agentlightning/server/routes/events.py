@@ -11,8 +11,8 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 
-from agl_lite.schemas import DEFAULT_ATTEMPT_ID, Event, EventCreate
-from agl_lite.server.store import _events, _rollouts
+from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Event, EventCreate
+from agentlightning.server.store import _events, _rollouts
 
 router = APIRouter(tags=["events"])
 

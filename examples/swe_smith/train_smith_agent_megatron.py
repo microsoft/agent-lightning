@@ -128,7 +128,7 @@ def verl_megatron_config() -> dict[str, Any]:
             "critic_warmup": 0,
             "balance_batch": False,
             "logger": ["console", "wandb"],
-            "project_name": "agl-lite",
+            "project_name": "agentlightning",
             "experiment_name": "swe_smith_megatron_r3",
             "nccl_timeout": 1800,
             "test_freq": 8,
@@ -164,7 +164,7 @@ def build_config(
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> DictConfig:
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     from hydra import compose, initialize_config_dir
 
     with initialize_config_dir(config_dir=str(verl_pkg), version_base=None):
@@ -204,7 +204,7 @@ def train(
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> None:
-    from agl_lite.verl.entrypoint import run_ppo
+    from agentlightning.verl.entrypoint import run_ppo
 
     if not agl_key:
         raise RuntimeError("AGL_KEY is required")
@@ -215,7 +215,7 @@ def train(
     distinct_repos = sorted({row["repo"] for row in instances})
 
     log("=== Preflight (Megatron + R3) ===")
-    log(f"  agl-lite:     {agl_base_url or 'http://localhost:8080'}")
+    log(f"  Agent Lightning: {agl_base_url or 'http://localhost:8080'}")
     log(f"  model:        {model or DEFAULT_MODEL}")
     log(f"  train file:   {train_dataset_path}")
     log(f"  val file:     {val_dataset_path}")
@@ -239,7 +239,7 @@ def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Train a SWE-smith agent with VERL/GRPO via agl-lite (Megatron + R3)"
+        description="Train a SWE-smith agent with VERL/GRPO via Agent Lightning (Megatron + R3)"
     )
     parser.add_argument(
         "--train-dataset-path",

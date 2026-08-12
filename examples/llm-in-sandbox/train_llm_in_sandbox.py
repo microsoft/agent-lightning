@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Train llm-in-sandbox with VERL through agl-lite."""
+"""Train llm-in-sandbox with VERL through Agent Lightning."""
 
 from __future__ import annotations
 
@@ -179,7 +179,7 @@ def build_config(
     config_overrides: Sequence[str] = (),
 ) -> DictConfig:
     """Build the full OmegaConf config by merging base + overrides."""
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     with initialize_config_dir(config_dir=str(verl_pkg), version_base=None):
         base_cfg = compose(config_name="config")
 
@@ -214,8 +214,8 @@ def train(
     max_train_samples: int = 0,
     max_val_samples: int = 0,
 ) -> None:
-    """Load datasets, build config, and launch VERL training via agl-lite."""
-    from agl_lite.verl.entrypoint import run_ppo
+    """Load datasets, build config, and launch VERL training via Agent Lightning."""
+    from agentlightning.verl.entrypoint import run_ppo
 
     if not agl_key:
         raise RuntimeError("AGL_KEY is required")
@@ -245,7 +245,7 @@ def train(
     val_dataset = [sample for _, dataset in val_datasets for sample in dataset]
 
     log("=== Preflight ===")
-    log(f"  agl-lite:     {agl_base_url or 'http://localhost:8080'}")
+    log(f"  Agent Lightning: {agl_base_url or 'http://localhost:8080'}")
     log(f"  model:        {model or '(default)'}")
     log(f"  train:        {len(train_dataset)} samples from {train_dir.name}")
     for val_folder_name, dataset in val_datasets:
@@ -267,7 +267,7 @@ def train(
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Train llm-in-sandbox with VERL via agl-lite")
+    parser = argparse.ArgumentParser(description="Train llm-in-sandbox with VERL via Agent Lightning")
     parser.add_argument(
         "--train-data-dir",
         default=os.environ.get("AGL_TRAIN_DATA_DIR", DEFAULT_TRAIN_DATA_DIR),

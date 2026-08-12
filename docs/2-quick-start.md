@@ -25,7 +25,7 @@ Activate the project environment and install the dependencies:
 source .venv/bin/activate
 uv pip install openai httpx sympy \
   "autogen-agentchat" "autogen-ext[openai]" \
-  "mcp>=1.10.0" mcp-server-calculator
+  "mcp>=1.11.0,<2" mcp-server-calculator
 ```
 
 ## 2. Start one local run
@@ -39,8 +39,8 @@ examples/calc_x/run_local.sh
 The launcher performs four operations:
 
 1. starts Ray and the verl/vLLM model backend;
-2. starts `agl-lite-server` on port `8181`;
-3. starts `agl-lite-controller runner_type=local`;
+2. starts `agl-server` on port `8181`;
+3. starts `agl-controller runner_type=local`;
 4. runs the Calc-X training entrypoint.
 
 Service logs are written under `/tmp/`.

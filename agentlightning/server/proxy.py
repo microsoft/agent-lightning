@@ -18,9 +18,9 @@ import structlog
 from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
-from agl_lite.schemas import Model
-from agl_lite.server.routes.events import record_event
-from agl_lite.server.store import _models
+from agentlightning.schemas import Model
+from agentlightning.server.routes.events import record_event
+from agentlightning.server.store import _models
 
 log = structlog.get_logger()
 

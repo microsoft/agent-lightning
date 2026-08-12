@@ -6,7 +6,7 @@ Two concurrent tasks:
     1. periodic_reconcile() — poll queuing rollouts, create Jobs, expire stale
   2. watch_jobs() — react to Job completions/failures, update rollout status
 
-Uses AglLiteAsyncClient for store access and kr8s for K8s API.
+Uses AgentLightningAsyncClient for store access and kr8s for K8s API.
 """
 
 from __future__ import annotations
@@ -25,12 +25,12 @@ from jinja2 import Environment
 from kr8s.asyncio import objects as k8s_objects
 from omegaconf import DictConfig
 
-from agl_lite.client import AglLiteAsyncClient
-from agl_lite.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState
+from agentlightning.client import AgentLightningAsyncClient
+from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState
 
 log = structlog.get_logger()
 
-MANAGED_BY_SELECTOR = "app.kubernetes.io/managed-by=agl-lite"
+MANAGED_BY_SELECTOR = "app.kubernetes.io/managed-by=agentlightning"
 JOB_CREATION_WINDOW_SECONDS = 60
 
 
@@ -63,9 +63,9 @@ def build_job_spec(rollout: Rollout, controller_config: DictConfig) -> dict[str,
     metadata["name"] = build_job_name(rollout.rollout_id)
     metadata["namespace"] = controller_config.k8s_runner.namespace
     labels = metadata.setdefault("labels", {})
-    labels["app.kubernetes.io/managed-by"] = "agl-lite"
-    labels["agl-lite/rollout-id"] = rollout.rollout_id
-    labels["agl-lite/attempt-id"] = DEFAULT_ATTEMPT_ID
+    labels["app.kubernetes.io/managed-by"] = "agentlightning"
+    labels["agentlightning/rollout-id"] = rollout.rollout_id
+    labels["agentlightning/attempt-id"] = DEFAULT_ATTEMPT_ID
 
     spec = job.setdefault("spec", {})
     spec["backoffLimit"] = 0
@@ -107,11 +107,11 @@ class K8sReconciler:
     """Main controller loop. Reconciles rollouts into K8s Jobs.
 
     Args:
-        api: AglLiteAsyncClient for store access.
+        api: AgentLightningAsyncClient for store access.
         config: Controller configuration.
     """
 
-    def __init__(self, api: AglLiteAsyncClient, config: DictConfig) -> None:
+    def __init__(self, api: AgentLightningAsyncClient, config: DictConfig) -> None:
         self._api = api
         self._config = config
         self._runner_config = config.k8s_runner
@@ -186,7 +186,9 @@ class K8sReconciler:
                 await self._patch_status(rollout.rollout_id, state=RolloutState.FAILED, error_message="Job disappeared")
                 continue
 
-            attempt_id = job.get("metadata", {}).get("labels", {}).get("agl-lite/attempt-id") or DEFAULT_ATTEMPT_ID
+            attempt_id = (
+                job.get("metadata", {}).get("labels", {}).get("agentlightning/attempt-id") or DEFAULT_ATTEMPT_ID
+            )
 
             job_status = job.get("status", {})
             state = None
@@ -257,7 +259,7 @@ class K8sReconciler:
 
         try:
             manifest = build_job_spec(rollout, self._config)
-            attempt_id = manifest["metadata"]["labels"]["agl-lite/attempt-id"]
+            attempt_id = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
             api = await self._get_k8s_api()
             job = k8s_objects.Job(manifest, api=api)
             await job.async_create()
@@ -300,10 +302,10 @@ class K8sReconciler:
     async def _handle_job_event(self, job: dict[str, Any]) -> None:
         """Process a Job event — check conditions, update rollout status."""
         labels = job.get("metadata", {}).get("labels", {})
-        rollout_id = labels.get("agl-lite/rollout-id")
+        rollout_id = labels.get("agentlightning/rollout-id")
         if not rollout_id:
             return
-        attempt_id = labels.get("agl-lite/attempt-id") or DEFAULT_ATTEMPT_ID
+        attempt_id = labels.get("agentlightning/attempt-id") or DEFAULT_ATTEMPT_ID
 
         conditions = job.get("status", {}).get("conditions", [])
         if not conditions:

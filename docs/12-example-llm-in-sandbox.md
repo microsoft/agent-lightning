@@ -70,7 +70,7 @@ The launcher:
 
 1. creates a local Minikube cluster;
 2. builds the `llm-in-sandbox-agent:dev` image;
-3. starts `agl-lite-server` and the K8s `agl-lite-controller`;
+3. starts `agl-server` and the K8s `agl-controller`;
 4. starts the VERL trainer;
 5. cleans up the server, controller, and Ray processes when it exits.
 

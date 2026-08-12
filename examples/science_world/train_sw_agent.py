@@ -1,12 +1,12 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Train a ScienceWorld agent with VERL on agl-lite (local runner mode).
+"""Train a ScienceWorld agent with VERL on Agent Lightning (local runner mode).
 
 Generates a dataset on-the-fly from a list of task names crossed with
 variation indices, then drives VERL's PPO/GRPO trainer. Each rollout is run
 by the local controller as a short-lived ``SWAgent`` subprocess.
 
-Assumes ``agl-lite-server`` and ``agl-lite-controller runner_type=local`` are
+Assumes ``agl-server`` and ``agl-controller runner_type=local`` are
 already running on this host (started by ``run_local.sh``).
 
 Usage::
@@ -94,8 +94,8 @@ def build_dataset(
 def verl_default_config() -> dict[str, Any]:
     """VERL config overrides for ScienceWorld training (local runner).
 
-    Merged on top of agl-lite's base config
-    (agl_lite/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
+    Merged on top of Agent Lightning's base config
+    (agentlightning/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
     """
     return {
         "algorithm": {
@@ -156,7 +156,7 @@ def verl_default_config() -> dict[str, Any]:
             "val_before_train": False,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
-            "project_name": "agl-lite",
+            "project_name": "agentlightning",
             "experiment_name": "science_world",
             "nnodes": 1,
             "save_freq": 32,
@@ -202,7 +202,7 @@ def build_config(
     """Build the full OmegaConf config by merging base + overrides."""
     import importlib.resources
 
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     config_dir = str(verl_pkg)
 
     with initialize_config_dir(config_dir=config_dir, version_base=None):
@@ -234,7 +234,7 @@ def train(
     agl_key: str | None = None,
     run_name: str | None = None,
 ) -> None:
-    from agl_lite.verl.entrypoint import run_ppo
+    from agentlightning.verl.entrypoint import run_ppo
 
     train_rows, val_rows = build_dataset(task_names, variations_per_task, simplification)
     print(f"Train rows: {len(train_rows)} | Val rows: {len(val_rows)}")
@@ -260,7 +260,7 @@ def train(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train a ScienceWorld agent with VERL on agl-lite.")
+    parser = argparse.ArgumentParser(description="Train a ScienceWorld agent with VERL on Agent Lightning.")
     parser.add_argument(
         "--task-names",
         type=str,
@@ -289,13 +289,13 @@ def main() -> None:
         "--agl-base-url",
         type=str,
         default="http://localhost:8080",
-        help="agl-lite server URL for the trainer",
+        help="Agent Lightning server URL for the trainer",
     )
     parser.add_argument(
         "--agl-key",
         type=str,
         default="",
-        help="agl-lite API key for the trainer",
+        help="Agent Lightning API key for the trainer",
     )
     parser.add_argument(
         "--run-name",

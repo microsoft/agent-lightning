@@ -19,9 +19,8 @@ from dataclasses import dataclass
 import structlog
 from omegaconf import DictConfig
 
-from agl_lite.client import AglLiteAsyncClient
-from agl_lite.schemas import DEFAULT_ATTEMPT_ID, RolloutPatch
-from agl_lite.schemas import Rollout, RolloutState
+from agentlightning.client import AgentLightningAsyncClient
+from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState
 
 log = structlog.get_logger()
 
@@ -92,7 +91,7 @@ class LocalReconciler:
 
     def __init__(
         self,
-        api: AglLiteAsyncClient,
+        api: AgentLightningAsyncClient,
         config: DictConfig,
     ) -> None:
         assert config.runner_type == "local"
@@ -221,7 +220,7 @@ class LocalReconciler:
                 "-c",
                 (
                     "import sys; "
-                    "from agl_lite.controller.local_reconciler import _run_local_reconciler_worker; "
+                    "from agentlightning.controller.local_reconciler import _run_local_reconciler_worker; "
                     "sys.exit(_run_local_reconciler_worker(sys.argv[1]))"
                 ),
                 agent_class,

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from agl_lite.schemas import Model
-from agl_lite.server.store import _models
+from agentlightning.schemas import Model
+from agentlightning.server.store import _models
 
 router = APIRouter(tags=["models"])
 

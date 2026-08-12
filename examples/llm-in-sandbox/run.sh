@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Copyright (c) Microsoft. All rights reserved.
 
-# Run llm-in-sandbox on local minikube with agl-lite.
+# Run llm-in-sandbox on local minikube with Agent Lightning.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
 cleanup() {
-  pkill -f agl-lite-server 2>/dev/null || true
-  pkill -f agl-lite-controller 2>/dev/null || true
+  pkill -f agl-server 2>/dev/null || true
+  pkill -f agl-controller 2>/dev/null || true
   pkill -f "python .*train_llm_in_sandbox.py" 2>/dev/null || true
   ray stop --force >/dev/null 2>&1 || true
 }
@@ -26,13 +26,13 @@ minikube start --memory=65536 --cpus=16 --driver=docker
 echo "=== Building llm-in-sandbox image ==="
 minikube image build -t llm-in-sandbox-agent:dev -f examples/llm-in-sandbox/Dockerfile.agent examples/llm-in-sandbox
 
-echo "=== Starting agl-lite server ==="
-agl-lite-server \
+echo "=== Starting Agent Lightning server ==="
+agl-server \
   port="$AGL_SERVER_PORT" \
   key="$AGL_KEY" \
   default_proxy.model_name=Qwen/Qwen3-4B-Instruct-2507 &
 
-echo "=== Waiting for agl-lite server ==="
+echo "=== Waiting for Agent Lightning server ==="
 for _ in $(seq 1 60); do
   if curl -sf "http://localhost:$AGL_SERVER_PORT/healthz" >/dev/null 2>&1; then
     break
@@ -40,8 +40,8 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-echo "=== Starting agl-lite controller ==="
-agl-lite-controller \
+echo "=== Starting Agent Lightning controller ==="
+agl-controller \
   runner_type=k8s \
   agl_server.url="http://localhost:$AGL_SERVER_PORT" \
   agl_server.agent_url="http://host.minikube.internal:$AGL_SERVER_PORT" \

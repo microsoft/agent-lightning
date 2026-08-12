@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.12"
 
 [[package]]
-name = "agl-lite"
-version = "0.1.0"
+name = "agentlightning"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""AglLiteRayPPOTrainer drives VERL rollouts through agl-lite."""
+"""AgentLightningRayPPOTrainer drives VERL rollouts through Agent Lightning."""
 
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ from verl.utils.profiler.performance import marked_timer
 from verl.utils.ray_utils import auto_await
 from verl.utils.tracking import Tracking
 
-from agl_lite.client import AglLiteSyncClient
-from agl_lite.hooks import RolloutHooks, load_hooks
+from agentlightning.client import AgentLightningSyncClient
+from agentlightning.hooks import RolloutHooks, load_hooks
 
 from .agl_rollout_manager import (
     AglAsyncRolloutManager,
@@ -93,8 +93,8 @@ def _same_reward_uid_indices(batch: DataProto) -> list[int]:
     return same_reward_indices
 
 
-class AglLiteRayPPOTrainer(RayPPOTrainer):
-    """RayPPOTrainer that drives train and validation rollouts via agl-lite."""
+class AgentLightningRayPPOTrainer(RayPPOTrainer):
+    """RayPPOTrainer that drives train and validation rollouts via Agent Lightning."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -108,7 +108,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
                 f"data.train_batch_size ({train_batch_size})."
             )
         self._hooks: RolloutHooks | None = None
-        self._agl_client: AglLiteSyncClient | None = None
+        self._agl_client: AgentLightningSyncClient | None = None
         self._carry_over_rollouts: list[EnqueuedRollout] = []
         self._train_dataloader_iter: Any | None = None
 
@@ -122,10 +122,10 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         self._hooks.on_startup()
         return self._hooks
 
-    def _ensure_agl_client(self) -> AglLiteSyncClient:
+    def _ensure_agl_client(self) -> AgentLightningSyncClient:
         if self._agl_client is not None:
             return self._agl_client
-        self._agl_client = AglLiteSyncClient(
+        self._agl_client = AgentLightningSyncClient(
             base_url=self.config.agentlightning.agl_base_url,
             key=self.config.agentlightning.agl_key,
             timeout=300,
@@ -361,7 +361,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         return concat_batches(collected)
 
     def _rollout(self, gen_batch: DataProto, is_train: bool) -> tuple[DataProto, dict[str, Any]]:
-        """Run agl-lite rollouts and return the resulting DataProto plus metrics."""
+        """Run Agent Lightning rollouts and return the resulting DataProto plus metrics."""
         # verl 0.8.0 moved rollout server state behind llm_server_manager.
         has_llm_server_manager = hasattr(self, "llm_server_manager")
         if has_llm_server_manager:
@@ -432,13 +432,13 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             out = DataProto(batch=None)
 
         if self.is_async:
-            print("AglLiteRayPPOTrainer: pausing and draining agl gateway.")
+            print("AgentLightningRayPPOTrainer: pausing and draining agl gateway.")
             metrics.update(self._pause_and_drain_gateway(reason=f"rollout_done step={self.global_steps}"))
-            print("AglLiteRayPPOTrainer: agl gateway paused and drained.")
+            print("AgentLightningRayPPOTrainer: agl gateway paused and drained.")
         else:
-            print("AglLiteRayPPOTrainer: aborting residual vLLM requests.")
+            print("AgentLightningRayPPOTrainer: aborting residual vLLM requests.")
             self._abort_all_rollout_requests()
-            print("AglLiteRayPPOTrainer: residual vLLM requests aborted.")
+            print("AgentLightningRayPPOTrainer: residual vLLM requests aborted.")
         return out, metrics
 
     def _train_step(
@@ -477,7 +477,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
         metrics["timing/rollout_phase_end_wall"] = time.time()
 
         if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
-            raise NotImplementedError("REMAX baseline not yet supported in AglLiteRayPPOTrainer")
+            raise NotImplementedError("REMAX baseline not yet supported in AgentLightningRayPPOTrainer")
 
         batch = gen_batch_output
         batch.meta_info["temperature"] = self.config.actor_rollout_ref.rollout.temperature
@@ -535,9 +535,9 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             print("WARNING: no trainable batch after drop+floor; skipping this training step.")
             return None
 
-        print("AglLiteRayPPOTrainer: sleeping rollout replicas.")
+        print("AgentLightningRayPPOTrainer: sleeping rollout replicas.")
         self.checkpoint_manager.sleep_replicas()
-        print("AglLiteRayPPOTrainer: rollout replicas slept.")
+        print("AgentLightningRayPPOTrainer: rollout replicas slept.")
 
         if self.config.trainer.balance_batch:
             self._balance_batch(batch, metrics=metrics)
@@ -695,7 +695,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             with marked_timer("step", timing_raw):
                 result = self._train_step(timing_raw, curr_step_profile)
             if result is None:
-                print("AglLiteRayPPOTrainer: train step returned no batch; advancing step.")
+                print("AgentLightningRayPPOTrainer: train step returned no batch; advancing step.")
                 self.global_steps += 1
                 continue
             metrics, step_batch = result
@@ -736,7 +736,7 @@ class AglLiteRayPPOTrainer(RayPPOTrainer):
             self.global_steps += 1
 
     def _validate(self, merged: bool = False):
-        """Run validation through the agl-lite rollout manager."""
+        """Run validation through the Agent Lightning rollout manager."""
         # verl 0.8.0 moved rollout server state behind llm_server_manager.
         has_llm_server_manager = hasattr(self, "llm_server_manager")
         if has_llm_server_manager:

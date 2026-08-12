@@ -1,6 +1,6 @@
 # Server Configuration
 
-The server uses Hydra configuration. The complete default configuration is located at `agl_lite/config/server.yaml`:
+The server uses Hydra configuration. The complete default configuration is located at `agentlightning/config/server.yaml`:
 
 ```yaml
 host: 0.0.0.0
@@ -20,7 +20,7 @@ default_proxy:
 Override any setting with a Hydra command-line argument when starting the server. For example:
 
 ```bash
-agl-lite-server \
+agl-server \
   host=0.0.0.0 \
   port=8080 \
   key="$AGL_KEY" \

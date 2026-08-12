@@ -8,9 +8,7 @@ thread. See docs/dev_guidelines.md § Concurrency Model.
 
 from __future__ import annotations
 
-from agl_lite.schemas import Event
-from agl_lite.schemas import Model
-from agl_lite.schemas import Rollout
+from agentlightning.schemas import Event, Model, Rollout
 
 _rollouts: dict[str, Rollout] = {}
 _events: dict[str, dict[str, list[Event]]] = {}

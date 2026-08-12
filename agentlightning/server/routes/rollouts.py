@@ -12,7 +12,7 @@ from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
-from agl_lite.schemas import (
+from agentlightning.schemas import (
     TERMINAL_STATES,
     VALID_TRANSITIONS,
     Rollout,
@@ -23,7 +23,7 @@ from agl_lite.schemas import (
     RolloutPatch,
     RolloutState,
 )
-from agl_lite.server.store import _events, _rollouts, _terminal_order
+from agentlightning.server.store import _events, _rollouts, _terminal_order
 
 router = APIRouter(tags=["rollouts"])
 

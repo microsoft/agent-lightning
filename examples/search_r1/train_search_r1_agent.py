@@ -16,8 +16,8 @@ DEFAULT_MODEL = "meta-llama/Llama-3.2-3B-Instruct"
 def verl_default_config() -> dict[str, Any]:
     """VERL config overrides for Search-R1 training.
 
-    These are merged on top of agl-lite's base config
-    (agl_lite/verl/config.yaml -> verl/trainer/config/ppo_trainer.yaml).
+    These are merged on top of Agent Lightning's base config
+    (agentlightning/verl/config.yaml -> verl/trainer/config/ppo_trainer.yaml).
     """
     return {
         "algorithm": {
@@ -76,7 +76,7 @@ def verl_default_config() -> dict[str, Any]:
             "val_before_train": True,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
-            "project_name": "agl-lite",
+            "project_name": "agentlightning",
             "experiment_name": "search_r1",
             "nnodes": 1,
             "test_freq": 10,
@@ -117,7 +117,7 @@ def build_config(
     """Build the full OmegaConf config by merging base + overrides."""
     import importlib.resources
 
-    verl_pkg = importlib.resources.files("agl_lite.verl")
+    verl_pkg = importlib.resources.files("agentlightning.verl")
     config_dir = str(verl_pkg)
 
     with initialize_config_dir(config_dir=config_dir, version_base=None):
@@ -160,8 +160,8 @@ def train(
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> None:
-    """Load datasets, build config, and launch VERL training via agl-lite."""
-    from agl_lite.verl.entrypoint import run_ppo
+    """Load datasets, build config, and launch VERL training via Agent Lightning."""
+    from agentlightning.verl.entrypoint import run_ppo
 
     train_dataset: Sequence[Any] = cast(
         Sequence[Any],
@@ -194,7 +194,7 @@ def train(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Train Search-R1 agent with VERL on agl-lite.",
+        description="Train Search-R1 agent with VERL on Agent Lightning.",
     )
     parser.add_argument(
         "--train-file",
@@ -224,13 +224,13 @@ def main() -> None:
         "--agl-base-url",
         type=str,
         default="http://localhost:8080",
-        help="agl-lite server URL for the trainer",
+        help="Agent Lightning server URL for the trainer",
     )
     parser.add_argument(
         "--agl-key",
         type=str,
         default="search-r1-dev-key",
-        help="agl-lite API key for the trainer",
+        help="Agent Lightning API key for the trainer",
     )
     parser.add_argument(
         "--run-name",

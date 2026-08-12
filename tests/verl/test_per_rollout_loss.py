@@ -7,7 +7,7 @@ pytest.importorskip("verl")
 
 import torch
 
-from agl_lite.verl.per_rollout_loss import (
+from agentlightning.verl.per_rollout_loss import (
     PER_ROLLOUT_MEAN_LOSS_MODE,
     compute_policy_loss_per_rollout_mean,
     normalize_advantages_by_rollout,

@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Hydra entrypoint for the agl-lite server."""
+"""Hydra entrypoint for the Agent Lightning server."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import hydra
 import uvicorn
 from omegaconf import DictConfig
 
-from agl_lite.server.app import create_app
+from agentlightning.server.app import create_app
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="server")

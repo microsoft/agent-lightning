@@ -5,8 +5,8 @@ set -euo pipefail
 ROLE="${1:-}"
 if [ "$ROLE" != "server" ] && [ "$ROLE" != "controller" ] && [ "$ROLE" != "trainer" ]; then
   echo "Usage: $0 {server|controller|trainer} [extra args passed to trainer]"
-  echo "  server      → Machine B: agl-lite-server (store + API only, no model backend)"
-  echo "  controller  → Machine A: agent ConfigMap + agl-lite-controller (k8s runner)"
+  echo "  server      → Machine B: agl-server (store + API only, no model backend)"
+  echo "  controller  → Machine A: agent ConfigMap + agl-controller (k8s runner)"
   echo "  trainer     → Machine B: VERL trainer (enqueues rollouts)"
   echo ""
   echo "Start order: server → controller → trainer."
@@ -39,8 +39,8 @@ if [ "$ROLE" = "server" ]; then
   echo "  Public server URL: $SERVER_URL"
   echo "  No backend model is started here — this is just the store + REST API."
   echo "  Readiness criterion: GET ${SERVER_URL%/}/healthz returns 200."
-  echo "=== Starting agl-lite server (no model backend) ==="
-  agl-lite-server \
+  echo "=== Starting Agent Lightning server (no model backend) ==="
+  agl-server \
     port="$AGL_SERVER_PORT" \
     host="${AGL_SERVER_BIND:-0.0.0.0}" \
     key="$AGL_KEY" \
@@ -59,7 +59,7 @@ if [ "$ROLE" = "server" ]; then
       break
     fi
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-      echo "ERROR: agl-lite-server exited before becoming healthy." >&2
+      echo "ERROR: agl-server exited before becoming healthy." >&2
       exit 1
     fi
     sleep 1
@@ -101,9 +101,9 @@ elif [ "$ROLE" = "controller" ]; then
   kubectl -n "$AGL_NAMESPACE" create configmap swe-smith-agent-scripts \
     --from-file=smith_agent.py="$EXAMPLE_DIR/agents/smith_agent.py" \
     --dry-run=client -o yaml | kubectl -n "$AGL_NAMESPACE" apply -f -
-  echo "=== Starting agl-lite controller (runner_type=k8s) ==="
+  echo "=== Starting Agent Lightning controller (runner_type=k8s) ==="
   echo "  Next: start the trainer on Machine B with './run.sh trainer'."
-  agl-lite-controller \
+  agl-controller \
     runner_type=k8s \
     agl_server.url="$SERVER_URL" \
     agl_server.key="$AGL_KEY" \

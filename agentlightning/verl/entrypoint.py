@@ -1,10 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""VERL entrypoint for agl-lite — wraps verl's PPO setup with a custom trainer.
+"""VERL entrypoint for Agent Lightning — wraps verl's PPO setup with a custom trainer.
 
 Customizations:
-  1. Use AglLiteRayPPOTrainer (subclass of RayPPOTrainer) that drives rollouts
-     through the agl-lite HTTP API instead of stock VERL agent loop workers.
+  1. Use AgentLightningRayPPOTrainer (subclass of RayPPOTrainer) that drives rollouts
+      through the Agent Lightning HTTP API instead of stock VERL agent loop workers.
     2. Support pre-loaded in-memory datasets.
 """
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import socket
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Sequence
 from typing import Any, cast
 
 import ray
@@ -33,7 +33,7 @@ def run_ppo(
     train_dataset: Sequence[Any],
     val_dataset: Sequence[Any],
 ) -> None:
-    """Launch VERL PPO training with agl-lite agent orchestration.
+    """Launch VERL PPO training with Agent Lightning agent orchestration.
 
     Datasets must be passed as non-empty in-memory sequences.
     """
@@ -54,7 +54,7 @@ def run_ppo(
         # Register the custom policy loss in each Ray actor process.
         runtime_env.setdefault(
             "worker_process_setup_hook",
-            "agl_lite.verl.per_rollout_loss.register_in_worker",
+            "agentlightning.verl.per_rollout_loss.register_in_worker",
         )
         _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
@@ -93,7 +93,7 @@ class _AglTaskRunner:
         from verl.utils.fs import copy_to_local
         from verl.utils.tokenizer import hf_processor, hf_tokenizer
 
-        from agl_lite.verl.trainer import AglLiteRayPPOTrainer
+        from agentlightning.verl.trainer import AgentLightningRayPPOTrainer
 
         print(f"AglTaskRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
         pprint(OmegaConf.to_container(config, resolve=True))
@@ -127,7 +127,7 @@ class _AglTaskRunner:
 
         train_sampler = create_rl_sampler(config.data, train_dataset)
 
-        trainer = AglLiteRayPPOTrainer(
+        trainer = AgentLightningRayPPOTrainer(
             config=config,
             tokenizer=tokenizer,
             processor=processor,

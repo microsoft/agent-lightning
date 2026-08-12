@@ -1,6 +1,6 @@
 # Trainer Configuration
 
-Agent Lightning v1.0 adds its configuration on top of verl's `ppo_trainer` Hydra configuration. The complete default configuration from `agl_lite/verl/config.yaml` is shown below. The following sections explain these settings in detail.
+Agent Lightning v1.0 adds its configuration on top of verl's `ppo_trainer` Hydra configuration. The complete default configuration from `agentlightning/verl/config.yaml` is shown below. The following sections explain these settings in detail.
 
 Complete default configuration added by Agent Lightning:
 
@@ -62,7 +62,7 @@ In upstream verl, dataset paths are normally configured with `data.train_files` 
 ```python
 from datasets import Dataset
 
-from agl_lite.verl.entrypoint import run_ppo
+from agentlightning.verl.entrypoint import run_ppo
 
 train_dataset = Dataset.from_parquet("data/train.parquet").to_list()
 val_dataset = Dataset.from_parquet("data/test.parquet").to_list()
