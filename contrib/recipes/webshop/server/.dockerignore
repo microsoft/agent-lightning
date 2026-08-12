@@ -1,7 +1,0 @@
-venv/
-webshop/
-__pycache__/
-*.pyc
-*.pyo
-.git/
-activate.sh

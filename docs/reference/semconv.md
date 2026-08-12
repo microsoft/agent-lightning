@@ -1,3 +1,0 @@
-# Semantic Conventions
-
-::: agentlightning.semconv
