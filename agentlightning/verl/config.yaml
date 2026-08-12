@@ -1,0 +1,41 @@
+hydra:
+  searchpath:
+    - pkg://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+algorithm:
+  enable_rollout_level_advantage: true
+
+agentlightning:
+  agl_base_url: http://localhost:8080
+  agl_key: ""
+  hooks: null
+  rollout_timeout_seconds: 1800
+  local:
+    agent_class: null
+    env_map: {}
+  k8s:
+    job_template_path: null
+  reward_fillna_value: 0.0
+  max_ppo_update_times: null
+  trace_aggregator:
+    level: trajectory # transition | trajectory
+    trajectory_max_prompt_length: 2048
+    trajectory_max_response_length: 8192
+  async_rollout:
+    enabled: false
+    async_train_batch_size: null
+
+data:
+  filter_overlong_prompts: false
+
+actor_rollout_ref:
+  actor:
+    calculate_entropy: true
+    policy_loss:
+      loss_mode: per_rollout_mean
+  rollout:
+    mode: async

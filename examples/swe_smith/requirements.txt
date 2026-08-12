@@ -1,0 +1,8 @@
+# Extra dependencies for the swe_smith example, beyond the Agent Lightning root
+# project (see ../../pyproject.toml). Install on the controller/trainer host:
+#
+#   pip install -r examples/swe_smith/requirements.txt
+#
+# Note: pull_images.py installs `openai` into the per-repository rollout images,
+# so it is not listed here.
+docker>=7.1.0     # prepare per-repo rollout images (pull_images.py)

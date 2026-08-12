@@ -1,0 +1,81 @@
+# Version control / editor state
+# Local Python environments and caches
+# Local-only runtime/deploy state
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+.claude/
+.DS_Store
+**/.DS_Store
+
+# Local Python environments and caches
+.venv/
+.venv.bak/
+venv/
+env/
+ENV/
+__pycache__/
+**/__pycache__/
+*.py[codz]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+.cache/
+
+# Local-only runtime/deploy state
+.local/
+.env
+**/.env
+.env.local
+*.env.local
+.envrc
+tmp/
+node_modules/
+checkpoints/
+artifacts/
+logs/
+**/logs/
+*.log
+*-debug.log
+2026-*-debug.log
+
+# Files not needed for runtime images
+tests/
+docs/
+dev/
+uv.lock
+
+# Large example data and generated outputs
+examples/*/data/
+examples/*/outputs/
+examples/*/wandb/
+examples/*/mlruns/
+wandb/
+runs/
+outputs/
+mlruns/
+
+# Archives and large packaged artifacts
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.tar.xz
+*.7z
+agentlightning-main.zip
+
+# Docs/dev generated artifacts
+docs/refactor_review/public/

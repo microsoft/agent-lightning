@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Copyright (c) Microsoft. All rights reserved.
+
+# Run Calc-X VERL training with Agent Lightning's local controller.
+set -euo pipefail
+
+AGL_SERVER_PORT=8181
+AGL_KEY=dummy
+LOG_SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
+SERVER_LOG="/tmp/agl-server-$LOG_SUFFIX.log"
+CONTROLLER_LOG="/tmp/agl-controller-$LOG_SUFFIX.log"
+
+cleanup() {
+    pkill -f agl-server 2>/dev/null || true
+    pkill -f agl-controller 2>/dev/null || true
+    ray stop --force >/dev/null 2>&1 || true
+}
+
+cleanup
+trap cleanup EXIT INT TERM
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
+
+printf 'agl-server log: %s\n' "$SERVER_LOG"
+printf 'agl-controller log: %s\n' "$CONTROLLER_LOG"
+
+env LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
+    ray start --head --dashboard-host=0.0.0.0
+
+agl-server \
+    port="$AGL_SERVER_PORT" \
+    key="$AGL_KEY" \
+    default_proxy.model_name=Qwen/Qwen2.5-1.5B-Instruct \
+    >"$SERVER_LOG" 2>&1 &
+
+for _ in $(seq 1 60); do
+    curl -sf "http://localhost:$AGL_SERVER_PORT/healthz" >/dev/null && break
+    sleep 1
+done
+
+agl-controller \
+    runner_type=local \
+    agl_server.url="http://localhost:$AGL_SERVER_PORT" \
+    agl_server.key="$AGL_KEY" \
+    >"$CONTROLLER_LOG" 2>&1 &
+
+python train_calc_agent.py \
+    --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
+    --agl-key "$AGL_KEY" \
+    --run-name local \
+    "$@"
