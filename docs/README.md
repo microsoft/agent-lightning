@@ -13,7 +13,7 @@ Agent Lightning v1.0 is a completely redesigned and reimplemented version with t
 - ☸️ **Native Kubernetes support:** Agents run directly as Kubernetes Jobs without relying on external sandbox services.
 - 💻 **A complete coding-agent training example:** The released pipeline covers data cleaning, reward-hacking prevention, and training scripts.
 
-For the legacy Agent Lightning releases earlier than v1.0, see the [`archive/agl` code branch](https://github.com/microsoft/agent-lightning/tree/archive/agl) and the [v0.3.0 documentation](https://microsoft.github.io/agent-lightning/0.3.0/).
+For the legacy Agent Lightning releases earlier than v1.0, see the [`v0.x` code branch](https://github.com/microsoft/agent-lightning/tree/v0.x) and the [v0.3.0 documentation](https://microsoft.github.io/agent-lightning/0.3.0/).
 
 ## Getting Started
 
