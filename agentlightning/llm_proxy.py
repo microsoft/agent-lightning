@@ -1240,6 +1240,16 @@ class LLMProxy:
 
         logger.info("LLMProxy server is cleaning up.")
 
+        # Close any cached aiohttp sessions held by the store client to
+        # prevent resource leaks (file descriptors, TCP connections) that
+        # can accumulate across training restarts and cause MCP server
+        # timeouts.  See https://github.com/microsoft/agent-lightning/issues/471
+        if self.store is not None and hasattr(self.store, "close"):
+            try:
+                await self.store.close()
+            except Exception:
+                logger.warning("Error closing store sessions during LLMProxy cleanup.", exc_info=True)
+
         # Remove worker config to avoid stale references.
         if self._config_file and os.path.exists(self._config_file):
             os.unlink(self._config_file)

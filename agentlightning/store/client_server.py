@@ -1359,6 +1359,7 @@ class LightningStoreClient(LightningStore):
         self.server_address_root = server_address.rstrip("/")
         self.server_address = self.server_address_root + API_V1_AGL_PREFIX
         self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
+        self._session_loops: Dict[int, asyncio.AbstractEventLoop] = {}  # id(loop) -> loop ref
         self._lock = threading.Lock()
 
         # retry config
@@ -1415,6 +1416,7 @@ class LightningStoreClient(LightningStore):
         self.server_address = state["server_address"]
         self.server_address_root = state["server_address_root"]
         self._sessions = {}
+        self._session_loops = {}
         self._lock = threading.Lock()
         self._retry_delays = state["_retry_delays"]
         self._health_retry_delays = state["_health_retry_delays"]
@@ -1422,6 +1424,24 @@ class LightningStoreClient(LightningStore):
         self._connection_timeout = state["_connection_timeout"]
         self._dequeue_was_successful = False
         self._dequeue_first_unsuccessful = True
+
+    def _close_session_sync(self, sess: aiohttp.ClientSession, label: str = "") -> None:
+        """Best-effort synchronous teardown of a ClientSession.
+
+        When a session's owning event loop is already closed we cannot
+        ``await sess.close()``.  Instead we close the underlying connector
+        directly (which releases sockets/FDs) and mark the session object
+        as closed so aiohttp does not emit *Unclosed client session*
+        warnings during garbage collection.
+        """
+        try:
+            connector = sess.connector
+            if connector is not None:
+                connector.close()
+            # Prevent the destructor warning for an unclosed session.
+            sess._closed = True  # type: ignore[attr-defined]
+        except Exception:
+            client_logger.debug("Error during synchronous session cleanup%s", label, exc_info=True)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         # In the proxy process, FastAPI middleware calls
@@ -1443,6 +1463,16 @@ class LightningStoreClient(LightningStore):
         loop = asyncio.get_running_loop()
         key = id(loop)
         with self._lock:
+            # Evict sessions whose event loops have been closed.  This
+            # prevents resource leaks when loops are torn down and new
+            # ones are created (e.g. during RAG training restarts).
+            stale_keys = [k for k, cached_loop in self._session_loops.items() if cached_loop.is_closed()]
+            for k in stale_keys:
+                stale_sess = self._sessions.pop(k, None)
+                self._session_loops.pop(k, None)
+                if stale_sess is not None and not stale_sess.closed:
+                    self._close_session_sync(stale_sess, label=f" for stale loop {k}")
+
             sess = self._sessions.get(key)
             if sess is None or sess.closed:
                 timeout = aiohttp.ClientTimeout(
@@ -1453,6 +1483,7 @@ class LightningStoreClient(LightningStore):
                 )
                 sess = aiohttp.ClientSession(timeout=timeout)
                 self._sessions[key] = sess
+                self._session_loops[key] = loop
         return sess
 
     async def _wait_until_healthy(self, session: aiohttp.ClientSession) -> bool:
@@ -1547,25 +1578,50 @@ class LightningStoreClient(LightningStore):
         raise last_exc
 
     async def close(self):
-        """Close the HTTP session."""
+        """Close all cached HTTP sessions.
+
+        Sessions bound to the current event loop are closed with a proper
+        ``await``.  Sessions created on foreign (but still running) loops are
+        closed via ``run_coroutine_threadsafe`` so the connector teardown
+        happens on the correct loop.  Sessions whose loops are already closed
+        have their connectors shut down synchronously to avoid leaking sockets.
+        """
         with self._lock:
-            sessions = list(self._sessions.values())
+            sessions = dict(self._sessions)  # key -> session
+            loops = dict(self._session_loops)  # key -> loop
             self._sessions.clear()
+            self._session_loops.clear()
 
-        # close them on their own loops to avoid warnings
-        async def _close(sess: aiohttp.ClientSession):
-            if not sess.closed:
-                await sess.close()
+        current_loop: asyncio.AbstractEventLoop | None = None
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
 
-        # If called from one loop, best-effort close here.
-        for s in sessions:
-            try:
-                await _close(s)
-            except RuntimeError:
-                # If created on a different loop/thread, schedule a thread-safe close
-                # Fallback: close without awaiting (library tolerates it in practice),
-                # or keep a per-loop shutdown hook where they were created.
-                pass
+        for key, sess in sessions.items():
+            if sess.closed:
+                continue
+            sess_loop = loops.get(key)
+
+            # Case 1: session belongs to the current loop -- await close
+            if sess_loop is not None and current_loop is not None and sess_loop is current_loop:
+                try:
+                    await sess.close()
+                except Exception:
+                    client_logger.debug("Error closing aiohttp session on current loop", exc_info=True)
+                continue
+
+            # Case 2: session's loop is still running -- schedule close there
+            if sess_loop is not None and not sess_loop.is_closed():
+                try:
+                    asyncio.run_coroutine_threadsafe(sess.close(), sess_loop)
+                except RuntimeError:
+                    # Loop was closed between our check and the call
+                    self._close_session_sync(sess, label=f" for key {key}")
+                continue
+
+            # Case 3: session's loop is already closed -- synchronous teardown
+            self._close_session_sync(sess, label=f" for key {key}")
 
     async def start_rollout(
         self,

@@ -1693,3 +1693,106 @@ async def test_empty_health_retry_delays_skip_health_checks(monkeypatch: MonkeyP
     finally:
         await client.close()
         await server.stop()
+
+
+async def test_get_session_evicts_stale_loop_entries() -> None:
+    """Sessions whose event loops have been closed should be evicted on the
+    next _get_session() call so they don't pile up across training restarts.
+
+    This is the core leak the fix targets (see issue #471)."""
+    client = LightningStoreClient(
+        "http://127.0.0.1:9",  # nothing should actually call out
+        retry_delays=(),
+        health_retry_delays=(),
+    )
+    try:
+        # Create a session bound to a "stale" loop that's already closed.
+        stale_loop = asyncio.new_event_loop()
+        try:
+            async with aiohttp.ClientSession() as stale_sess:
+                # Inject a stale entry by hand to bypass the need for a
+                # running loop. Use the client's private dicts directly.
+                client._sessions[id(stale_loop)] = stale_sess
+                client._session_loops[id(stale_loop)] = stale_loop
+        finally:
+            stale_loop.close()
+
+        assert id(stale_loop) in client._sessions
+        assert id(stale_loop) in client._session_loops
+
+        # Call _get_session from the current (still running) loop. The
+        # eviction path should drop the stale entry and create a new one
+        # for the running loop.
+        sess = await client._get_session()
+        assert sess is not None
+        assert id(stale_loop) not in client._sessions, "stale entry should have been evicted"
+        assert id(stale_loop) not in client._session_loops
+
+        # The new session should be bound to the current running loop.
+        current_loop = asyncio.get_running_loop()
+        assert id(current_loop) in client._sessions
+        assert id(current_loop) in client._session_loops
+        assert not sess.closed
+    finally:
+        await client.close()
+
+
+async def test_close_handles_sessions_on_closed_loops() -> None:
+    """close() should not raise when it encounters a session whose owning
+    loop has been closed. The connector should be torn down synchronously."""
+    client = LightningStoreClient(
+        "http://127.0.0.1:9",
+        retry_delays=(),
+        health_retry_delays=(),
+    )
+    try:
+        # Create a session on a separate, soon-to-be-closed loop.
+        foreign_loop = asyncio.new_event_loop()
+        try:
+            async with aiohttp.ClientSession() as foreign_sess:
+                client._sessions[id(foreign_loop)] = foreign_sess
+                client._session_loops[id(foreign_loop)] = foreign_loop
+                # Detach the session from its loop so aiohttp's __aexit__
+                # doesn't double-close it after we've cleaned up.
+                foreign_sess._connector = None  # type: ignore[attr-defined]
+        finally:
+            foreign_loop.close()
+
+        # close() should run cleanly even though the foreign loop is closed.
+        await client.close()
+        assert client._sessions == {}
+        assert client._session_loops == {}
+    finally:
+        # Defensive: a second close() should also be a no-op.
+        await client.close()
+
+
+def test_close_session_sync_releases_connector() -> None:
+    """_close_session_sync should release the underlying connector sockets
+    synchronously, even when called outside the session's owning loop."""
+    client = LightningStoreClient(
+        "http://127.0.0.1:9",
+        retry_delays=(),
+        health_retry_delays=(),
+    )
+
+    # Build a fake session that records the close() call. We don't use
+    # aiohttp.ClientSession directly here because its __init__ requires a
+    # running event loop; the test exercises the cleanup logic in
+    # isolation, which only depends on the duck-typed interface.
+    closed = {"called": False}
+
+    class _FakeConnector:
+        def close(self) -> None:
+            closed["called"] = True
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.connector = _FakeConnector()
+            self._closed = False
+
+    sess = _FakeSession()  # type: ignore[assignment]
+    client._close_session_sync(sess, label=" unit-test")  # type: ignore[arg-type]
+    assert closed["called"], "connector.close() should have been called"
+    # The session is marked as closed to suppress aiohttp's destructor warning.
+    assert sess._closed is True
