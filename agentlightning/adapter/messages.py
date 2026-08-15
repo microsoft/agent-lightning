@@ -131,11 +131,18 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
 
         # Extract messages
         for msg in pc_entry["prompt"]:
-            role = msg["role"]
+            # Infer role from tool_calls presence when role key is missing;
+            # skip messages that have neither role nor tool_calls.
+            if "role" not in msg:
+                if "tool_calls" in msg:
+                    role = "assistant"
+                else:
+                    continue
+            else:
+                role = msg["role"]
 
             if role == "assistant" and "tool_calls" in msg:
                 # Use the tool_calls directly
-                # This branch is usually not used in the wild.
                 tool_calls: List[ChatCompletionMessageFunctionToolCallParam] = [
                     ChatCompletionMessageFunctionToolCallParam(
                         id=call["id"],
@@ -143,10 +150,12 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
                         function={"name": call["name"], "arguments": call["arguments"]},
                     )
                     for call in msg["tool_calls"]
+                    if "id" in call and "name" in call and "arguments" in call
                 ]
-                messages.append(
-                    ChatCompletionAssistantMessageParam(role="assistant", content=None, tool_calls=tool_calls)
-                )
+                if tool_calls:
+                    messages.append(
+                        ChatCompletionAssistantMessageParam(role="assistant", content=None, tool_calls=tool_calls)
+                    )
             else:
                 # Normal user/system/tool content
                 message = cast(
@@ -169,10 +178,22 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
                             function={"name": tool["name"], "arguments": tool["parameters"]},
                         )
                         for tool in pc_entry["tools"]
+                        if isinstance(tool.get("call"), dict)
+                        and "id" in tool["call"]
+                        and "type" in tool["call"]
+                        and "name" in tool
+                        and "parameters" in tool
                     ]
-                    messages.append(
-                        ChatCompletionAssistantMessageParam(role="assistant", content=content, tool_calls=tool_calls)
-                    )
+                    if tool_calls:
+                        messages.append(
+                            ChatCompletionAssistantMessageParam(
+                                role="assistant", content=content, tool_calls=tool_calls
+                            )
+                        )
+                    else:
+                        messages.append(
+                            ChatCompletionAssistantMessageParam(role="assistant", content=content)
+                        )
                 else:
                     messages.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
 
