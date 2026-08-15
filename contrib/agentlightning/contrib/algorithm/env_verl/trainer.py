@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import inspect
 import random
 from collections import defaultdict
 from contextlib import contextmanager
@@ -514,17 +515,23 @@ class EnvAgentLightningTrainer(RayPPOTrainer):
             rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
             if rollout_data_dir:
                 with _timer("dump_rollout_generations", timing_raw):
-                    print(batch.batch.keys())
                     inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
                     outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
                     scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
-                    self._dump_generations(
+                    dump_kwargs = dict(
                         inputs=inputs,
                         outputs=outputs,
                         scores=scores,
                         reward_extra_infos_dict=reward_extra_infos_dict,
                         dump_path=rollout_data_dir,
                     )
+                    # verl >=0.6.0 added a required `gts` (ground truths) parameter to
+                    # `_dump_generations`; verl 0.5.0 (CI-pinned) does not have it. Ground
+                    # truth is unavailable in agent-mode training, so feature-detect the
+                    # signature and only pass `gts=None` when the parameter exists.
+                    if "gts" in inspect.signature(self._dump_generations).parameters:
+                        dump_kwargs["gts"] = None
+                    self._dump_generations(**dump_kwargs)
 
         # compute training metrics
         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_after_processing"))
