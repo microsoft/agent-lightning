@@ -19,11 +19,12 @@ Follow the [installation guide](../../docs/tutorials/installation.md) to install
 | `room_selector.py` | Room booking agent implementation using function calling |
 | `room_selector_apo.py` | Training script using the built-in APO algorithm to optimize prompts |
 | `room_tasks.jsonl` | Dataset with room booking scenarios and expected selections |
-| `apo_custom_algorithm.py` | Tutorial on creating custom algorithms (runnable as algo or runner) |
+| `apo_custom_algorithm.py` | Tutorial on creating custom algorithms |
 | `apo_custom_algorithm_trainer.py` | Shows how to integrate custom algorithms into the Trainer |
 | `apo_debug.py` | Tutorial demonstrating various agent debugging techniques |
-| `legacy_apo_client.py` | Deprecated APO client implementation compatible with Agent-lightning v0.1.x |
-| `legacy_apo_server.py` | Deprecated APO server implementation compatible with Agent-lightning v0.1.x |
+| `apo_multi_provider.py` | Hybrid optimization sample using multiple LLM backends |
+| `legacy_apo_client.py` | Deprecated APO client implementation compatible with v0.1.x |
+| `legacy_apo_server.py` | Deprecated APO server implementation compatible with v0.1.x |
 
 ## Sample 1: Using Built-in APO Algorithm
 
