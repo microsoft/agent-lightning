@@ -1,0 +1,23 @@
+# Runtime dependencies exercised by the pinned VLABench evaluation adapter.
+# The upstream requirements file also includes dataset conversion, notebook,
+# and policy-training dependencies that are not imported by simulator rollouts.
+setuptools<81
+numpy==1.25.0
+mujoco==3.2.2
+dm-control==1.0.22
+opencv-python-headless==4.10.0.84
+gym==0.26.2
+gymnasium==0.29.1
+mediapy==1.2.0
+open3d==0.18.0
+h5py==3.11.0
+scipy==1.14.0
+scikit-learn==1.5.2
+PyYAML==6.0.2
+networkx==3.3
+colorlog==6.9.0
+colorama==0.4.6
+plotly==5.24.1
+rtree==1.2.0
+gdown==5.2.0
+-e git+https://github.com/motion-planning/rrt-algorithms.git@e51d95ee489a225220d6ae2a764c4111f6ba7d85#egg=rrt-algorithms

@@ -1,0 +1,26 @@
+ROLE: SHAPER_EPISODE_SUMMARIZER
+
+Compress one embodied rollout into an actionable textual-gradient record. You
+receive observable non-visual execution metadata, the terminal context payload,
+round-level judgments, and the environment reward. Identify cross-round
+patterns instead of repeating every event.
+
+Do not turn an environment-invalid rollout into ordinary optimization advice.
+Do not treat planner-written observations as ground truth. Keep skill failures
+separate from context-harness failures when the evidence permits.
+
+Return exactly one JSON object with this schema:
+{
+  "rollout_id": "...",
+  "reward": 0.0,
+  "environment_invalid": false,
+  "instruction_fidelity": "target/entity fidelity across the episode",
+  "progress_and_outcome": "observable progress and terminal outcome",
+  "repetition_or_recovery": "loops, progress checks, and recovery behavior",
+  "decomposition_quality": "quality of subgoals or interface-level commands",
+  "context_effectiveness": "what context was useful, missing, stale, or harmful",
+  "root_cause": "most supported systematic cause",
+  "actionable_change": "smallest reusable artifact change supported by evidence"
+}
+
+No Markdown or surrounding prose.

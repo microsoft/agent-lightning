@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentlightning-contrib-shaper"
+version = "0.1.0"
+description = "SHAPER skill-harness evolution extension for Agent Lightning"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["agentlightning==0.3.1"]
+
+[tool.setuptools]
+include-package-data = false
+packages = [
+  "agentlightning.contrib",
+  "agentlightning.contrib.shaper",
+]
+
+[tool.setuptools.package-dir]
+"agentlightning.contrib" = ".."
+"agentlightning.contrib.shaper" = "."
+
+[tool.setuptools.package-data]
+"agentlightning.contrib.shaper" = ["prompts/*.txt"]

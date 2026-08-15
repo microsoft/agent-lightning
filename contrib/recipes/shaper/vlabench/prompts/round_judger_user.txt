@@ -1,0 +1,12 @@
+Task: {overall_task}
+Round: {round_idx}
+Sub-task: {subtask}
+VLA Steps: {vla_steps}
+
+VLM Reasoning:
+{vlm_reasoning}
+
+Context provided to planner this round:
+{context_output}
+
+[Image 1: BEFORE Main] [Image 2: BEFORE Wrist] [Image 3: AFTER Main] [Image 4: AFTER Wrist]
