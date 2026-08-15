@@ -5,13 +5,13 @@
 Example usage:
 
 ```bash
-python train_chartqa_agent.py debug --n-runners 2
+python train_chartqa_agent.py debug --n-runners 32
 ```
 
 or:
 
 ```bash
-AGL_MANAGED_STORE=0 python train_chartqa_agent.py qwen --external-store-address http://localhost:9999
+AGL_MANAGED_STORE=0 python train_chartqa_agent.py qwen --external-store-address http://localhost:4747
 ```
 
 Make sure to run `python prepare_data.py` so the parquet files referenced here exist.
@@ -37,24 +37,24 @@ RL_CONFIG: Dict[str, Any] = {
     "algorithm": {"adv_estimator": "grpo", "use_kl_in_reward": False},
     "data": {
         "image_base_dir": chartqa_env_var.CHARTQA_IMAGES_DIR,
-        "train_batch_size": 32,
+        "train_batch_size": 8,
         "max_prompt_length": 4096,
         "max_response_length": 1024,
         "truncation": "error",
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 1,
-            "n": 4,
+            "tensor_model_parallel_size": 2,
+            "n": 8,
             "log_prob_micro_batch_size_per_gpu": 1,
             "name": "vllm",
-            "gpu_memory_utilization": 0.8,
+            "gpu_memory_utilization": 0.4,
             "enable_prefix_caching": True,
             "engine_kwargs": {"vllm": {"allowed_local_media_path": chartqa_env_var.CHARTQA_IMAGES_DIR}},
         },
         "actor": {
-            "ppo_mini_batch_size": 32,
-            "ppo_micro_batch_size_per_gpu": 4,
+            "ppo_mini_batch_size": 8,
+            "ppo_micro_batch_size_per_gpu": 1,
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -65,13 +65,13 @@ RL_CONFIG: Dict[str, Any] = {
         },
         "ref": {"log_prob_micro_batch_size_per_gpu": 1, "fsdp_config": {"param_offload": True}},
         "model": {
-            "path": "Qwen/Qwen2-VL-2B-Instruct",
+            "path": "Qwen/Qwen2.5-VL-3B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
-        "n_gpus_per_node": 1,
+        "n_gpus_per_node": 2,
         "val_before_train": False,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
@@ -83,7 +83,7 @@ RL_CONFIG: Dict[str, Any] = {
 
 
 def config_ci() -> Dict[str, Any]:
-    """Return a CI-friendly RL config for ChartQA."""
+    """Return a CI-friendly RL config for ChartQA agent."""
     # For CI testing, we need to set the experiment name and project name so that
     # they are available to subsequent steps.
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -97,20 +97,23 @@ def config_ci() -> Dict[str, Any]:
             f.write(f"run_name={EXPERIMENT_NAME}\n")
 
     config = deepcopy(RL_CONFIG)
-    config["data"]["train_batch_size"] = 16
-    config["trainer"]["n_gpus_per_node"] = 1
     config["trainer"]["total_training_steps"] = 4
-    config["trainer"]["val_before_train"] = True
     config["trainer"]["test_freq"] = 2
+    config["trainer"]["n_gpus_per_node"] = 1
+    config["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
+    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
+    config["data"]["train_batch_size"] = 4
+    config["actor_rollout_ref"]["rollout"]["n"] = 4
+    config["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 4
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["project_name"] = PROJECT_NAME
+
     return config
 
 
 def config_debug() -> Dict[str, Any]:
     """Return a short debugging config for smoke testing ChartQA training."""
     config = deepcopy(RL_CONFIG)
-    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
     config["trainer"]["total_training_steps"] = 10
     config["trainer"]["test_freq"] = 2
     return config
@@ -119,7 +122,6 @@ def config_debug() -> Dict[str, Any]:
 def config_qwen() -> Dict[str, Any]:
     """Return a Qwen-focused config with validation before each epoch."""
     config = deepcopy(RL_CONFIG)
-    config["trainer"]["val_before_train"] = True
     config["trainer"]["n_gpus_per_node"] = 2
     config["trainer"]["total_epochs"] = 2
     config["trainer"]["test_freq"] = 32
@@ -130,7 +132,7 @@ def train(
     config: Dict[str, Any],
     train_data: agl.Dataset[Any],
     val_data: agl.Dataset[Any],
-    external_store_address: str,
+    external_store_address: Optional[str],
     n_runners: int,
     debug: bool,
 ) -> None:

@@ -2,11 +2,14 @@
 
 [![chartqa workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-chartqa.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-chartqa.yml)
 
-This example demonstrates training a visual reasoning agent on the ChartQA dataset using Agent-Lightning with the VERL algorithm and LangGraph framework. The agent answers questions about charts through a multi-step workflow with self-refinement.
+This example demonstrates training a visual reasoning agent on the ChartQA dataset using Agent-Lightning with the VERL algorithm. The agent uses a two-step pipeline to answer questions about charts:
+
+1. **Extract** [model + image]: Read all relevant values from the chart
+2. **Compute** [model text-only]: Calculate the final answer from extracted data
 
 ## Requirements
 
-This example requires a single node with at least one 40GB GPU. Install dependencies with:
+This example requires a single node with at least 2x 40GB GPUs. Install dependencies with:
 
 ```bash
 uv sync --frozen \
@@ -41,11 +44,11 @@ This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), s
 
 | File/Directory | Description |
 |----------------|-------------|
-| `chartqa_agent.py` | Chart reasoning agent using LangGraph with multi-step workflow (observe → extract → calculate → check → refine) |
+| `chartqa_agent.py` | Two-step chart reasoning agent (extract → compute) |
 | `train_chartqa_agent.py` | Training script using VERL algorithm with configurable hyperparameters (debug, qwen) |
-| `debug_chartqa_agent.py` | Debugging script to test the agent with cloud APIs or a local vLLM proxy |
+| `debug_chartqa_agent.py` | Debugging script to test the agent with cloud APIs or a local vLLM server |
 | `prepare_data.py` | Script to download ChartQA dataset from HuggingFace and prepare parquet files |
-| `prompts.py` | Prompt templates for the agent workflow |
+| `prompts.py` | Prompt templates for extract and compute steps |
 | `multimodal_utils.py` | Utility functions for encoding images to base64 |
 | `env_var.py` | Environment variables and configurations |
 | `data/` | Directory containing images and parquet files after download |
@@ -69,43 +72,44 @@ export OPENAI_MODEL=gpt-4o
 python debug_chartqa_agent.py
 ```
 
-### Debugging with Local Model (LLMProxy)
+### Debugging with Local Model
 
-To test the agent with a local vLLM server and LLMProxy:
+To test the agent with a local vLLM server:
 
 ```bash
-# Start a vLLM server (specify image path for VLM)
+# Start a vLLM server (specify image path for vision model)
 export CHARTQA_DATA_DIR=<path to chartqa data>
-vllm serve Qwen/Qwen2-VL-2B-Instruct \
+vllm serve Qwen/Qwen2.5-VL-3B-Instruct \
     --gpu-memory-utilization 0.6 \
     --max-model-len 4096 \
     --allowed-local-media-path $CHARTQA_DATA_DIR \
     --enable-prefix-caching \
     --port 8088
 
-# Run the agent with LLMProxy
-USE_LLM_PROXY=1 \
-    OPENAI_API_BASE=http://localhost:8088/v1 \
-    OPENAI_MODEL=Qwen/Qwen2-VL-2B-Instruct \
+# Run the agent
+OPENAI_API_BASE=http://localhost:8088/v1 \
+    OPENAI_MODEL=Qwen/Qwen2.5-VL-3B-Instruct \
     python debug_chartqa_agent.py
 ```
 
 ### Training with Local Model
 
-```bash
-python train_chartqa_agent.py debug --n-runners 2
-```
+You can use an external store server (recommended for distributed setups)
 
-You can also use an external store server (recommended for distributed setups), first start the store:
 
 ```bash
 agl store --port 4747
 ```
-
-Then run the training script with the external store address:
+Debug script with the external store address with 10 training steps:
 
 ```bash
-AGL_MANAGED_STORE=0 python train_chartqa_agent.py qwen --external-store-address http://localhost:4747
+AGL_MANAGED_STORE=0 python train_chartqa_agent.py debug --n-runners 32 --external-store-address http://localhost:4747
+```
+
+Run full training with:
+
+```bash
+AGL_MANAGED_STORE=0 python train_chartqa_agent.py qwen --n-runners 32 --external-store-address http://localhost:4747
 ```
 
 If you want to track experiments with Weights & Biases, set the `WANDB_API_KEY` environment variable before training.
