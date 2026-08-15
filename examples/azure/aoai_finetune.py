@@ -18,7 +18,7 @@ from openai import OpenAI
 
 from agentlightning.adapter.messages import OpenAIMessages, TraceToMessages
 from agentlightning.algorithm import Algorithm
-from agentlightning.algorithm.utils import batch_iter_over_dataset
+from agentlightning.algorithm.apo.apo import batch_iter_over_dataset
 from agentlightning.reward import find_final_reward
 from agentlightning.types import LLM, RolloutMode, TaskInput
 
@@ -28,6 +28,11 @@ ROLLOUT_IDLE_SLEEP_SECONDS = 5.0
 FILE_STATUS_POLL_INTERVAL = 10
 FINETUNE_JOB_POLL_INTERVAL = 60
 
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (override existing)
+load_dotenv(override=True)
 
 class AzureOpenAIFinetune(Algorithm):
     """Coordinate iterative fine-tuning runs for an Azure OpenAI deployment.
@@ -176,6 +181,10 @@ class AzureOpenAIFinetune(Algorithm):
             training_data = await self.prepare_data_for_training(messages_group, reward_group, "train")
             self._log_info(f"[Stage 4] Prepared {len(training_data)} training examples after filtering.")
 
+            self.openai_client = OpenAI(
+                api_key=self.azure_openai_api_key,
+                base_url=self.azure_openai_endpoint + "/openai/v1/",
+            )
             # (5) Perform fine-tuning
             self._log_info(f"[Stage 5] Starting fine-tuning for model {training_model_name}...")
             training_model_name = self.finetune(training_data, training_model_name, i_iteration)

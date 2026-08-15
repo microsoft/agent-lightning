@@ -28,6 +28,13 @@ from rich.console import Console
 
 from agentlightning import LLM, AgentOpsTracer, InMemoryLightningStore, LitAgentRunner, rollout
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (override existing)
+load_dotenv(override=True)
+
+
+
 CAPITALS = {
     "japan": "Tokyo",
     "france": "Paris",
@@ -84,7 +91,16 @@ def capital_agent(task: CapitalTask, llm: LLM) -> float:
     prompt = task["input"]
     expected = task["output"]
 
-    openai_client = openai.OpenAI(base_url=llm.endpoint, api_key=os.getenv("AZURE_OPENAI_API_KEY", ""))
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "")
+    if not api_version:
+        raise ValueError("Set AZURE_OPENAI_API_VERSION to match your Azure OpenAI resource.")
+
+    # Use AzureOpenAI client for Azure endpoints
+    openai_client = openai.AzureOpenAI(
+        azure_endpoint=llm.endpoint,
+        api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
+        api_version=api_version,
+    )
 
     messages: List[ChatCompletionMessageParam] = [
         {"role": "system", "content": SYSTEM},
