@@ -670,27 +670,53 @@ class AgentModeDaemon:
 
         return result_rollout
 
+    def _is_failed_rollout(self, rollout: RolloutLegacy) -> bool:
+        """Check if a rollout represents a failed execution (e.g. vLLM HTTP 400).
+
+        A rollout is considered failed when both the reward and triplets are
+        missing, which typically indicates the backend returned an error before
+        the agent could produce any meaningful output.
+        """
+        return rollout.final_reward is None and (not rollout.triplets or len(rollout.triplets) == 0)
+
     async def _async_run_until_finished(self, verbose: bool = True):
         """Async helper to wait for all tasks to complete."""
         while len(self._completed_rollouts_v0) < self._total_tasks_queued:
             if self.mode == "v0":
                 completed_batch = await self.server.retrieve_completed_rollouts()
             else:
+                # Only wait for rollout IDs that have not yet successfully completed,
+                # so that re-runs of previously failed tasks are picked up.
+                pending_ids = [
+                    rid for rid in self._task_id_to_original_sample
+                    if rid not in self._completed_rollouts_v0
+                ]
+                if not pending_ids:
+                    break
                 completed_batch = await self.store.wait_for_rollouts(
-                    rollout_ids=list(self._task_id_to_original_sample.keys()), timeout=0
+                    rollout_ids=pending_ids, timeout=0
                 )
             for rollout in completed_batch:
-                if rollout.rollout_id in self._completed_rollouts_v0:
-                    # Already processed, skip
-                    continue
                 if isinstance(rollout, Rollout):
                     rollout = await self._validate_data_v1(rollout)
                 else:
                     self._validate_data(rollout)
                 if rollout.rollout_id not in self._task_id_to_original_sample:
                     print(f"Warning: Received unknown rollout ID {rollout.rollout_id}, skipping.")
-                else:
-                    self._completed_rollouts_v0[rollout.rollout_id] = rollout
+                    continue
+
+                if self._is_failed_rollout(rollout):
+                    # Do not count failed rollouts (None reward and no triplets)
+                    # as completed. The task will be re-claimed and retried.
+                    print(
+                        f"Warning: Rollout {rollout.rollout_id} failed (no reward and no triplets), "
+                        "not counting as completed. It will be retried."
+                    )
+                    continue
+
+                # A successful retry may arrive for a rollout_id that was
+                # previously skipped as failed; always accept the latest result.
+                self._completed_rollouts_v0[rollout.rollout_id] = rollout
             if verbose:
                 print(f"Completed {len(self._completed_rollouts_v0)}/{self._total_tasks_queued} tasks...")
             await asyncio.sleep(5)
