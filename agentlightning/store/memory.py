@@ -378,3 +378,81 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             # There is something removed for real
             self._total_span_bytes = max(self._total_span_bytes - removed_bytes, 0)
             self._evicted_rollout_span_sets.add(rollout_id)
+
+    @tracked("cleanup_finished_rollouts")
+    async def cleanup_finished_rollouts(self, rollout_ids=None):
+        """Remove all data associated with finished rollouts to free memory.
+
+        This should be called after training data has been extracted from completed
+        rollouts (e.g., after get_train_data_batch or get_test_metrics). It removes
+        rollouts, their attempts, spans, and associated tracking metadata from all
+        in-memory data structures.
+
+        Args:
+            rollout_ids: Optional list of rollout IDs to clean up. If None, all
+                finished rollouts will be cleaned up.
+
+        Returns:
+            The number of rollouts cleaned up.
+        """
+        cleaned_count = 0
+
+        async with self.collections.atomic(
+            mode="rw", snapshot=self._read_snapshot,
+            labels=["rollouts", "attempts", "spans", "span_sequence_ids"],
+        ) as collections:
+            # Determine which rollouts to clean up
+            if rollout_ids is None:
+                all_rollouts = await collections.rollouts.query()
+                target_ids = [
+                    r.rollout_id for r in all_rollouts.items if is_finished(r)
+                ]
+            else:
+                target_ids = list(rollout_ids)
+
+            for rollout_id in target_ids:
+                rollout = await collections.rollouts.get(
+                    {"rollout_id": {"exact": rollout_id}}
+                )
+                if rollout is None:
+                    continue
+                if not is_finished(rollout):
+                    continue
+
+                # Remove spans for this rollout
+                await collections.evict_spans_for_rollout(rollout_id)
+
+                # Remove attempts for this rollout
+                attempts_result = await collections.attempts.query(
+                    filter={"rollout_id": {"exact": rollout_id}}
+                )
+                if attempts_result.items:
+                    await collections.attempts.delete(attempts_result.items)
+
+                # Remove the rollout itself
+                await collections.rollouts.delete([rollout])
+
+                # Remove span sequence ID tracking
+                await collections.span_sequence_ids.pop(rollout_id)
+
+                cleaned_count += 1
+
+        # Clean up auxiliary tracking dicts outside the collection lock
+        for rollout_id in target_ids:
+            self._completion_events.pop(rollout_id, None)
+            self._start_time_by_rollout.pop(rollout_id, None)
+            self._span_bytes_by_rollout.pop(rollout_id, None)
+            self._running_rollout_ids.discard(rollout_id)
+            self._evicted_rollout_span_sets.discard(rollout_id)
+
+        if cleaned_count > 0:
+            logger.info(
+                "Cleaned up %d finished rollouts. Completion events: %d, "
+                "start time entries: %d, span byte entries: %d",
+                cleaned_count,
+                len(self._completion_events),
+                len(self._start_time_by_rollout),
+                len(self._span_bytes_by_rollout),
+            )
+
+        return cleaned_count

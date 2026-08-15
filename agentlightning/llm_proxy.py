@@ -210,6 +210,11 @@ class LightningSpanExporter(SpanExporter):
       internal loop, then waits for completion.
     """
 
+    # Maximum number of spans to hold in the buffer before dropping old entries.
+    # This prevents unbounded memory growth when spans cannot be flushed (e.g.,
+    # missing headers, store unavailable).
+    MAX_BUFFER_SIZE = 10000
+
     def __init__(self, _store: Optional[LightningStore] = None):
         self._store: Optional[LightningStore] = _store  # this is only for testing purposes
         self._buffer: List[ReadableSpan] = []
@@ -307,6 +312,19 @@ class LightningSpanExporter(SpanExporter):
         with self._ensure_lock():
             for span in spans:
                 self._buffer.append(span)
+
+            # Prevent unbounded buffer growth by dropping oldest entries when
+            # the buffer exceeds MAX_BUFFER_SIZE. This can happen when spans
+            # are missing required headers and can never be flushed.
+            if len(self._buffer) > self.MAX_BUFFER_SIZE:
+                n_drop = len(self._buffer) - self.MAX_BUFFER_SIZE
+                logger.warning(
+                    "Span exporter buffer exceeded %d entries. Dropping %d oldest spans to prevent memory leak.",
+                    self.MAX_BUFFER_SIZE,
+                    n_drop,
+                )
+                self._buffer = self._buffer[n_drop:]
+
             default_endpoint = self._otlp_exporter._endpoint  # pyright: ignore[reportPrivateUsage]
             try:
                 self._maybe_flush()
