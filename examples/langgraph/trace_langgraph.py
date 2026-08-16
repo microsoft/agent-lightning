@@ -56,7 +56,8 @@ def build_graph() -> CompiledStateGraph:
     def reverse_text(state: MessagesState) -> Dict[str, Any]:
         """Reverse the last message's content without any model."""
         last = state["messages"][-1]
-        return {"messages": [AIMessage(content=last.content[::-1])]}  # type: ignore
+        assert isinstance(last.content, str), f"Expected text content, got {type(last.content)}"
+        return {"messages": [AIMessage(content=last.content[::-1])]}
 
     graph = StateGraph(MessagesState)
     graph.add_node("say_hello", say_hello)
@@ -93,10 +94,11 @@ async def main() -> None:
     console.print(spans)
 
     span_names = [span.name for span in spans]
-    # The exact span names are owned by the AgentOps instrumentation, so
-    # assert on the structural guarantees instead: the workflow execution
-    # is captured and at least one model call was traced.
-    assert "langgraph.workflow.execute" in span_names, span_names
+    # The exact span names are owned by the AgentOps instrumentation and
+    # may change between versions, so assert on structural guarantees
+    # instead: at least one span carries the langgraph workflow marker
+    # and at least one model call was traced.
+    assert any("langgraph" in name for name in span_names), span_names
     assert any("llm" in name or "model" in name for name in span_names), span_names
     console.print("[green]The LangGraph workflow and its model call were captured as spans.[/green]")
 

@@ -12,7 +12,7 @@ required.
 ## Run
 
 ```bash
-uv sync --frozen --group dev --group langchain --no-default-groups
+uv sync --frozen --no-default-groups --group langchain
 python examples/langgraph/trace_langgraph.py
 ```
 
