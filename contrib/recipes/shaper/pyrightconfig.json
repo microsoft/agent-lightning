@@ -14,7 +14,6 @@
     "esi_bench/prompts/*.py"
   ],
   "extraPaths": ["../../.."],
-  "stubPath": "typings",
   "venvPath": "../../..",
   "venv": ".venv",
   "pythonVersion": "3.12",

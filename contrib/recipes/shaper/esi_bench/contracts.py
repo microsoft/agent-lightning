@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from agentlightning.contrib.shaper import PythonHarnessValidator
+    from contrib.agentlightning.contrib.shaper import PythonHarnessValidator
 
 from ..common import (
     check_python_api,
@@ -487,7 +487,7 @@ def make_harness_validator(
 ) -> PythonHarnessValidator:
     """Build the validator used both when admitting and executing artifacts."""
 
-    from agentlightning.contrib.shaper import PythonHarnessValidator
+    from contrib.agentlightning.contrib.shaper import PythonHarnessValidator
 
     return PythonHarnessValidator(
         smoke_args=_one_step_probe(),

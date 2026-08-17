@@ -27,7 +27,9 @@ from typing import Any, Callable, Generic, Mapping, Sequence, TypeVar, cast
 from openai import AsyncOpenAI
 
 import agentlightning as agl
-from agentlightning.contrib.shaper import (
+from agentlightning.litagent import LitAgent
+from agentlightning.types import LLM, Dataset, NamedResources, ProxyLLM
+from contrib.agentlightning.contrib.shaper import (
     DEFAULT_HARNESS_CONTRACT,
     SHAPER,
     PythonHarnessValidator,
@@ -36,8 +38,6 @@ from agentlightning.contrib.shaper import (
     SkillValidator,
     validate_nonempty_skill,
 )
-from agentlightning.litagent import LitAgent
-from agentlightning.types import LLM, Dataset, NamedResources, ProxyLLM
 
 T_task = TypeVar("T_task")
 

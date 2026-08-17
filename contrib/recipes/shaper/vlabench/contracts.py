@@ -8,7 +8,7 @@ import ast
 from pathlib import Path
 from typing import Any
 
-from agentlightning.contrib.shaper import PythonHarnessValidator
+from contrib.agentlightning.contrib.shaper import PythonHarnessValidator
 
 from ..common import check_python_api, git_revision, git_tracked_changes, validate_multimodal_harness_output
 from .actor_contract import OPENPI_COMMIT, OPENPI_REPOSITORY, POLICY_CONFIG

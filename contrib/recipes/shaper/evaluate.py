@@ -13,8 +13,8 @@ from typing import Any, Mapping, Sequence, cast
 
 import agentlightning as agl
 from agentlightning.algorithm import Baseline
-from agentlightning.contrib.shaper import EpisodeTrace, SHAPERTraceAdapter
 from agentlightning.types import Dataset, PromptTemplate
+from contrib.agentlightning.contrib.shaper import EpisodeTrace, SHAPERTraceAdapter
 
 from .reproduce import ReproductionBundle, execution_strategy, load_bundle_factory
 

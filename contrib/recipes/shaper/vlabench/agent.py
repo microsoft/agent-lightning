@@ -20,14 +20,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, cast
 
-from agentlightning.contrib.shaper import (
+from agentlightning.litagent import LitAgent
+from agentlightning.types import NamedResources, Rollout
+from contrib.agentlightning.contrib.shaper import (
     EpisodeMetadata,
     RoundRecord,
     emit_episode_metadata,
     emit_round_record,
 )
-from agentlightning.litagent import LitAgent
-from agentlightning.types import NamedResources, Rollout
 
 from ..common import (
     completion_text,

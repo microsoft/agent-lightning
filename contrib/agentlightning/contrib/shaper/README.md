@@ -10,15 +10,12 @@ does not yet have a code-harness resource. SHAPER transports both artifacts as
 `PromptTemplate` values. Integrations read harness `template` text as source;
 they must never call `PromptTemplate.format()` on that source.
 
-Install the extension beside the matching Agent Lightning release:
+Install Agent Lightning from the repository root and run the SHAPER recipes
+from the same checkout:
 
 ```bash
 python -m pip install -e .
-python -m pip install -e contrib/agentlightning/contrib/shaper
 ```
-
-Install the matching core checkout together with the extension when its exact
-core version has not yet been published.
 
 Public API:
 

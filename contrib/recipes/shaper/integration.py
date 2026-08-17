@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
-from agentlightning.contrib.shaper import PythonHarnessValidator
 from agentlightning.types import NamedResources, PromptTemplate
+from contrib.agentlightning.contrib.shaper import PythonHarnessValidator
 
 
 def get_artifact_text(

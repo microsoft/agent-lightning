@@ -72,13 +72,12 @@ install_agl() {
   local executable="$1"
   local agl_root="$2"
   "$executable" -m pip install -e "$agl_root"
-  "$executable" -m pip install -e "$agl_root/contrib/agentlightning/contrib/shaper"
   # Editable installs resolve the root dependency set and can otherwise
   # upgrade these packages again. Pin them last to the versions validated by
   # the repository lock; newer FastAPI releases remove APIs used by LiteLLM.
   "$executable" -m pip install --upgrade --force-reinstall \
     "fastapi==$FASTAPI_VERSION" "starlette==$STARLETTE_VERSION"
-  "$executable" -c 'from agentlightning.contrib.shaper import SHAPER; print("SHAPER import:", SHAPER.__name__)'
+  (cd "$agl_root" && "$executable" -c 'from contrib.agentlightning.contrib.shaper import SHAPER; print("SHAPER import:", SHAPER.__name__)')
 }
 
 mode="${1:-}"

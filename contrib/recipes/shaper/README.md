@@ -8,12 +8,10 @@ Paper: [arXiv:2608.11350](https://arxiv.org/abs/2608.11350)
 
 ## Install
 
-Install Agent Lightning and the SHAPER runtime extension from the repository
-root:
+Install Agent Lightning from the repository root:
 
 ```bash
 python -m pip install -e .
-python -m pip install -e contrib/agentlightning/contrib/shaper
 ```
 
 Check out the benchmark revisions used by the adapters:

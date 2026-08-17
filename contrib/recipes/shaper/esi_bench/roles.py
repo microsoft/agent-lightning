@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, cast
 
-from agentlightning.contrib.shaper import (
+from contrib.agentlightning.contrib.shaper import (
     ArtifactProposal,
     CandidateEvaluation,
     EpisodeTrace,
