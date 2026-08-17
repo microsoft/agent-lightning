@@ -5,14 +5,14 @@
 <p align="center"><em>3,500-Line Lightweight Agentic RL Framework for Training Agents with Real Harnesses!</em></p>
 
 <p align="center">
-  <a href="docs/">Documentation</a> &nbsp;·&nbsp; Technical Report (Coming Soon) &nbsp;·&nbsp; <a href="LICENSE">MIT License</a>
+  <a href="https://microsoft.github.io/agent-lightning/stable/">Documentation</a> &nbsp;·&nbsp; Technical Report (Coming Soon) &nbsp;·&nbsp; <a href="LICENSE">MIT License</a>
 </p>
 
 > Agent Lightning was completely refactored in v1.0. For legacy releases earlier than v1.0, see [this branch](https://github.com/microsoft/agent-lightning/tree/v0.x).
 
 ## ⚡ Key Features
 
-- 🪶 **~3,500 lines of core Python:** We treat simplicity as the first principle.
+- 🪶 **~3,500 lines of code:** We treat simplicity as the first principle.
 - 🧩 **Train with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with **ZERO changes**, while keeping tools, context, control flow, and environments in the loop.
 - ☸️ **Native Kubernetes support:** Run agents directly as Kubernetes Jobs without relying on external sandbox services.
 - 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts.
@@ -27,7 +27,7 @@ uv sync
 bash scripts/setup_verl.sh 0.8.0 cu130
 ```
 
-See the [Installation Guide](docs/1-installation.md) for details.
+See the [Installation Guide](https://microsoft.github.io/agent-lightning/stable/1-installation/) for details.
 
 
 ## ⚡ Architecture
@@ -56,24 +56,24 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 
 | Section | Content |
 |---------|---------|
-| [Installation](docs/1-installation.md) | Base environment and `verl` GPU stack |
-| [Quick Start](docs/2-quick-start.md) | Local first run and end-to-end flow |
-| [Basics](docs/3-basics.md) | Components, rollouts, events, and trajectories |
-| [Trainer Configuration](docs/4-trainer-configuration.md) | `verl` integration and trace aggregation |
-| [API Gateway Configuration](docs/5-api-gateway-configuration.md) | Gateway and model proxy settings |
-| [Controller Configuration](docs/6-controller-configuration.md) | Local and Kubernetes runners |
-| [Asynchronous Training](docs/7-asynchronous-training.md) | Collocated async collection and pause/drain |
+| [Installation](https://microsoft.github.io/agent-lightning/stable/1-installation/) | Base environment and `verl` GPU stack |
+| [Quick Start](https://microsoft.github.io/agent-lightning/stable/2-quick-start/) | Local first run and end-to-end flow |
+| [Basics](https://microsoft.github.io/agent-lightning/stable/3-basics/) | Components, rollouts, events, and trajectories |
+| [Trainer Configuration](https://microsoft.github.io/agent-lightning/stable/4-trainer-configuration/) | `verl` integration and trace aggregation |
+| [API Gateway Configuration](https://microsoft.github.io/agent-lightning/stable/5-api-gateway-configuration/) | Gateway and model proxy settings |
+| [Controller Configuration](https://microsoft.github.io/agent-lightning/stable/6-controller-configuration/) | Local and Kubernetes runners |
+| [Asynchronous Training](https://microsoft.github.io/agent-lightning/stable/7-asynchronous-training/) | Collocated async collection and pause/drain |
 
 ## ⚡ Examples
 
 | Example | Description |
 |---|---|
-| [Calc-X](docs/8-example-calc-x.md) | POC math reasoning example with AutoGen and MCP calculator tools, requiring only one GPU. |
-| [GSM8K](docs/9-example-gsm8k.md) | POC grade-school math reasoning example. |
-| [ScienceWorld](docs/10-example-science-world.md) | Interactive science tasks in a text-based environment. |
-| [Search-R1](docs/11-example-search-r1.md) | Multi-turn retrieval and reasoning agent. |
-| [LLM-in-Sandbox](docs/12-example-llm-in-sandbox.md) | General agent with computer and code execution tools. |
-| [Coding Agent](docs/13-example-coding-agent.md) | Coding agent trained with repository tests. |
+| [Calc-X](https://microsoft.github.io/agent-lightning/stable/8-example-calc-x/) | POC math reasoning example with AutoGen and MCP calculator tools, requiring only one GPU. |
+| [GSM8K](https://microsoft.github.io/agent-lightning/stable/9-example-gsm8k/) | POC grade-school math reasoning example. |
+| [ScienceWorld](https://microsoft.github.io/agent-lightning/stable/10-example-science-world/) | Interactive science tasks in a text-based environment. |
+| [Search-R1](https://microsoft.github.io/agent-lightning/stable/11-example-search-r1/) | Multi-turn retrieval and reasoning agent. |
+| [LLM-in-Sandbox](https://microsoft.github.io/agent-lightning/stable/12-example-llm-in-sandbox/) | General agent with computer and code execution tools. |
+| [Coding Agent](https://microsoft.github.io/agent-lightning/stable/13-example-coding-agent/) | Coding agent trained with repository tests. |
 
 ## ⚡ Articles
 
