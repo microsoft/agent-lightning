@@ -1,0 +1,23 @@
+{
+  "include": [
+    "../../agentlightning/contrib/shaper",
+    "integration.py",
+    "reproduce.py",
+    "evaluate.py",
+    "common.py",
+    "vlabench",
+    "esi_bench"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "vlabench/prompts/*.py",
+    "esi_bench/prompts/*.py"
+  ],
+  "extraPaths": ["../../.."],
+  "venvPath": "../../..",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": "none",
+  "reportMissingModuleSource": "none"
+}

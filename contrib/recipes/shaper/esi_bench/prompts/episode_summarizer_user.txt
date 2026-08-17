@@ -1,0 +1,20 @@
+Candidate: {candidate_name}
+
+Official exact-match result:
+{n_correct}/{n_scored} = {score}
+
+Valid trajectories: {n_valid}
+Environment-invalid trajectories: {n_environment_invalid}
+
+Category-level results:
+{category_summary}
+
+Aggregate execution statistics:
+{execution_statistics}
+
+Per-question diagnostic judger reports:
+{judgements}
+
+Summarize the observed development-batch outcome and patterns. Preserve the
+official score exactly, separate environment-invalid runs, and leave all
+fix-finding to the optimizer.
