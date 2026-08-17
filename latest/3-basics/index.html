@@ -8,29 +8,31 @@
       
       
       
-        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/">
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/3-basics/">
       
       
+        <link rel="prev" href="../2-quick-start/">
       
-        <link rel="next" href="1-installation/">
+      
+        <link rel="next" href="../4-trainer-configuration/">
       
       
         
       
       
-      <link rel="icon" href="assets/favicon.svg">
+      <link rel="icon" href="../assets/favicon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>Agent Lightning v1.0</title>
+        <title>Basics - Agent Lightning v1.0</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,15 +51,15 @@
       
     
     
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
-      <link rel="stylesheet" href="css/timeago.css">
+      <link rel="stylesheet" href="../css/timeago.css">
     
       <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
     
-      <link rel="stylesheet" href="stylesheets/extra.css">
+      <link rel="stylesheet" href="../stylesheets/extra.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#agent-lightning-documentation" class="md-skip">
+        <a href="#basics" class="md-skip">
           Skip to content
         </a>
       
@@ -102,9 +104,9 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Agent Lightning v1.0" class="md-header__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
+    <a href=".." title="Agent Lightning v1.0" class="md-header__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
       
-  <img src="assets/favicon-white.svg" alt="logo">
+  <img src="../assets/favicon-white.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -121,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Basics
             
           </span>
         </div>
@@ -239,9 +241,9 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Agent Lightning v1.0" class="md-nav__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
+    <a href=".." title="Agent Lightning v1.0" class="md-nav__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
       
-  <img src="assets/favicon-white.svg" alt="logo">
+  <img src="../assets/favicon-white.svg" alt="logo">
 
     </a>
     Agent Lightning v1.0
@@ -265,37 +267,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -311,59 +286,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Getting Started
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -372,8 +294,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -384,13 +308,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -411,7 +333,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -429,7 +351,7 @@
   
   
     <li class="md-nav__item">
-      <a href="1-installation/" class="md-nav__link">
+      <a href="../1-installation/" class="md-nav__link">
         
   
   
@@ -457,7 +379,7 @@
   
   
     <li class="md-nav__item">
-      <a href="2-quick-start/" class="md-nav__link">
+      <a href="../2-quick-start/" class="md-nav__link">
         
   
   
@@ -482,10 +404,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="3-basics/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Basics
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -501,6 +450,109 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-gateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Gateway
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Gateway">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rollout-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai-compatible-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI-compatible proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollout-controller" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout Controller
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customized-trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customized Trainer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configure-the-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure the components
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -513,7 +565,7 @@
   
   
     <li class="md-nav__item">
-      <a href="4-trainer-configuration/" class="md-nav__link">
+      <a href="../4-trainer-configuration/" class="md-nav__link">
         
   
   
@@ -541,7 +593,7 @@
   
   
     <li class="md-nav__item">
-      <a href="5-api-gateway-configuration/" class="md-nav__link">
+      <a href="../5-api-gateway-configuration/" class="md-nav__link">
         
   
   
@@ -569,7 +621,7 @@
   
   
     <li class="md-nav__item">
-      <a href="6-controller-configuration/" class="md-nav__link">
+      <a href="../6-controller-configuration/" class="md-nav__link">
         
   
   
@@ -597,7 +649,7 @@
   
   
     <li class="md-nav__item">
-      <a href="7-asynchronous-training/" class="md-nav__link">
+      <a href="../7-asynchronous-training/" class="md-nav__link">
         
   
   
@@ -686,7 +738,7 @@
   
   
     <li class="md-nav__item">
-      <a href="8-example-calc-x/" class="md-nav__link">
+      <a href="../8-example-calc-x/" class="md-nav__link">
         
   
   
@@ -714,7 +766,7 @@
   
   
     <li class="md-nav__item">
-      <a href="9-example-gsm8k/" class="md-nav__link">
+      <a href="../9-example-gsm8k/" class="md-nav__link">
         
   
   
@@ -742,7 +794,7 @@
   
   
     <li class="md-nav__item">
-      <a href="10-example-science-world/" class="md-nav__link">
+      <a href="../10-example-science-world/" class="md-nav__link">
         
   
   
@@ -770,7 +822,7 @@
   
   
     <li class="md-nav__item">
-      <a href="11-example-search-r1/" class="md-nav__link">
+      <a href="../11-example-search-r1/" class="md-nav__link">
         
   
   
@@ -798,7 +850,7 @@
   
   
     <li class="md-nav__item">
-      <a href="12-example-llm-in-sandbox/" class="md-nav__link">
+      <a href="../12-example-llm-in-sandbox/" class="md-nav__link">
         
   
   
@@ -826,7 +878,7 @@
   
   
     <li class="md-nav__item">
-      <a href="13-example-coding-agent/" class="md-nav__link">
+      <a href="../13-example-coding-agent/" class="md-nav__link">
         
   
   
@@ -881,10 +933,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Started
+        Overview
       
     </span>
   </a>
@@ -892,10 +944,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
+  <a href="#api-gateway" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuration
+        API Gateway
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Gateway">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rollout-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai-compatible-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI-compatible proxy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollout-controller" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout Controller
       
     </span>
   </a>
@@ -903,10 +994,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#customized-trainer" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Examples
+        Customized Trainer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configure-the-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure the components
       
     </span>
   </a>
@@ -972,7 +1074,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 13, 2026 04:27:35 UTC"><span class="timeago" datetime="2026-08-13T04:27:35+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 13, 2026 04:27:35 UTC">2026-08-13</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 12, 2026 09:10:22 UTC"><span class="timeago" datetime="2026-08-12T09:10:22+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 12, 2026 09:10:22 UTC">2026-08-12</span>
   </span>
 
     
@@ -982,7 +1084,7 @@
     <span class="md-icon" title="Created">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:34:41 UTC"><span class="timeago" datetime="2026-08-11T10:34:41+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:34:41 UTC">2026-08-11</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:30:09 UTC"><span class="timeago" datetime="2026-08-11T10:30:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:30:09 UTC">2026-08-11</span>
   </span>
 
     
@@ -1007,105 +1109,80 @@
 
 
 <!-- Page content -->
-<h1 id="agent-lightning-documentation">Agent Lightning Documentation<a class="headerlink" href="#agent-lightning-documentation" title="Permanent link">&para;</a></h1>
+<h1 id="basics">Basics<a class="headerlink" href="#basics" title="Permanent link">&para;</a></h1>
+<p>Agent Lightning v1.0 consists of three main components: the <strong>API Gateway</strong>, the <strong>Rollout Controller</strong>, and the <strong>Customized Trainer</strong>. Together, they connect existing agents to reinforcement learning through an OpenAI-compatible endpoint, without requiring changes to the agent's interaction loop.</p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p align="center">
-    <img src="images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
+    <img src="../images/architecture.jpg" alt="Agent Lightning v1.0 architecture" width="75%">
 </p>
 
-<p>Welcome to the Agent Lightning v1.0 documentation. Start with the installation and quick-start guides, then use the configuration guides and examples below to build and train your own agents.</p>
-<p>Agent Lightning v1.0 is a completely redesigned and reimplemented version with the following key features:</p>
+<p>The API Gateway stores the core rollouts, model endpoints, and events and provides an OpenAI-compatible model proxy for agent requests. The Rollout Controller launches and manages agent executions as local processes or Kubernetes Jobs. Finally, the Customized Trainer runs model inference and optimization on the GPU side and turns the rollout data collected by the Gateway into policy updates.</p>
+<p>This separation provides several practical advantages:</p>
 <ul>
-<li>🪶 <strong>~3,500 lines of core Python:</strong> Simplicity is the first principle.</li>
-<li>🧩 <strong>Training with real agent harnesses:</strong> Agents interact with the model through the Agent Lightning v1.0 proxy with zero changes while keeping tools, context, control flow, and environments in the loop.</li>
-<li>☸️ <strong>Native Kubernetes support:</strong> Agents run directly as Kubernetes Jobs without relying on external sandbox services.</li>
-<li>💻 <strong>A complete coding-agent training example:</strong> The released pipeline covers data cleaning, reward-hacking prevention, and training scripts.</li>
+<li><strong>Zero-code-change agent integration:</strong> an existing agent connects by redirecting its OpenAI-compatible model endpoint to the Gateway.</li>
+<li><strong>Independent resources:</strong> model training and agent execution can run on separate machines or clusters and scale independently.</li>
+<li><strong>Open infrastructure:</strong> agents can run on a self-hosted Kubernetes cluster instead of requiring a commercial sandbox service.</li>
 </ul>
-<p>For the legacy Agent Lightning releases earlier than v1.0, see the <a href="https://github.com/microsoft/agent-lightning/tree/v0.x"><code>v0.x</code> code branch</a> and the <a href="https://microsoft.github.io/agent-lightning/0.3.0/">v0.3.0 documentation</a>.</p>
-<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Guide</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="1-installation/">Installation</a></td>
-<td>Set up the base environment and the tested <code>verl</code> GPU stack.</td>
-</tr>
-<tr>
-<td><a href="2-quick-start/">Quick Start</a></td>
-<td>Run a local end-to-end rollout-driven training job.</td>
-</tr>
-<tr>
-<td><a href="3-basics/">Basics</a></td>
-<td>Learn the core components, rollouts, events, and trajectories.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Guide</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="4-trainer-configuration/">Trainer Configuration</a></td>
-<td>Configure <code>verl</code> integration, rollout collection, and trace aggregation.</td>
-</tr>
-<tr>
-<td><a href="5-api-gateway-configuration/">API Gateway Configuration</a></td>
-<td>Configure the API Gateway and model proxy.</td>
-</tr>
-<tr>
-<td><a href="6-controller-configuration/">Controller Configuration</a></td>
-<td>Configure local and Kubernetes rollout runners.</td>
-</tr>
-<tr>
-<td><a href="7-asynchronous-training/">Asynchronous Training</a></td>
-<td>Configure collocated asynchronous collection and pause/drain behavior.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Example</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="8-example-calc-x/">Calc-X</a></td>
-<td>Train a math reasoning agent with AutoGen and MCP calculator tools.</td>
-</tr>
-<tr>
-<td><a href="9-example-gsm8k/">GSM8K</a></td>
-<td>Train an agent on grade-school math reasoning tasks.</td>
-</tr>
-<tr>
-<td><a href="10-example-science-world/">ScienceWorld</a></td>
-<td>Train an agent on interactive science tasks in a text environment.</td>
-</tr>
-<tr>
-<td><a href="11-example-search-r1/">Search-R1</a></td>
-<td>Train a multi-turn retrieval and reasoning agent.</td>
-</tr>
-<tr>
-<td><a href="12-example-llm-in-sandbox/">LLM-in-Sandbox</a></td>
-<td>Train a general agent with computer and code execution tools.</td>
-</tr>
-<tr>
-<td><a href="13-example-coding-agent/">Coding Agent</a></td>
-<td>Train a coding agent using repository tests as feedback.</td>
-</tr>
-</tbody>
-</table>
+<p>Below, we briefly introduce each component.</p>
+<h2 id="api-gateway">API Gateway<a class="headerlink" href="#api-gateway" title="Permanent link">&para;</a></h2>
+<p>The API Gateway is a lightweight service at the center of Agent Lightning. It stores rollouts, model endpoints, and events. It also provides an OpenAI-compatible proxy for agents to access model inference.</p>
+<p align="center">
+    <img src="../images/agentlightning-schema.jpg" alt="API Gateway objects and rollout state transitions" width="50%">
+</p>
+
+<h3 id="rollout-api">Rollout API<a class="headerlink" href="#rollout-api" title="Permanent link">&para;</a></h3>
+<p>A <strong>rollout</strong> is one execution of an agent on one input. It has a globally unique ID, an input, user-defined metadata, execution configuration, and a status:</p>
+<ul>
+<li><code>QUEUING</code>: waiting for the Controller to start the agent;</li>
+<li><code>RUNNING</code>: the agent is executing;</li>
+<li><code>SUCCEEDED</code>: the execution completed successfully;</li>
+<li><code>FAILED</code>: the execution ended with an error or timeout.</li>
+</ul>
+<p>A rollout is not the same as a training example. Algorithms such as GRPO may create several independent rollouts from the same example so that the trainer can compare their rewards.</p>
+<p>The trainer creates rollouts through the Rollout API. The Controller reads queued rollouts and updates their status as execution progresses. Each rollout can also contain append-only events, including:</p>
+<ul>
+<li><code>model_request</code>, recorded automatically for each model call;</li>
+<li><code>reward</code>, normally reported by the agent at the end of execution;</li>
+<li>custom events for diagnostics and monitoring.</li>
+</ul>
+<p>Every event is associated with a specific rollout ID and is later exported as training data.</p>
+<h3 id="openai-compatible-proxy">OpenAI-compatible proxy<a class="headerlink" href="#openai-compatible-proxy" title="Permanent link">&para;</a></h3>
+<p>The Gateway also acts as a reverse proxy. The trainer registers one or more model inference endpoints, and the agent sends its model requests to a rollout-specific Gateway URL. The Gateway forwards each request to the registered model endpoint and records its prompt token IDs, response token IDs, and chosen-token log probabilities as a <code>model_request</code> event.</p>
+<p>For example, an OpenAI Chat Completions request for a training rollout is sent to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>POST /proxy/rollout/{rollout_id}/attempt/{attempt_id}/mode/train/openai/v1/chat/completions
+</code></pre></div>
+<p>The corresponding validation path uses <code>mode/val</code>. OpenAI-compatible clients can use the path through <code>/openai/v1</code> as their base URL and append <code>/chat/completions</code> normally.</p>
+<p>Because the rollout ID is part of the proxy URL, every model call is automatically associated with the correct execution. An existing agent only needs to use the provided endpoint; it does not need to implement Agent Lightning's rollout or training logic.</p>
+<h2 id="rollout-controller">Rollout Controller<a class="headerlink" href="#rollout-controller" title="Permanent link">&para;</a></h2>
+<p>The Rollout Controller turns queued rollouts into real agent executions. It continuously reconciles rollout state in the API Gateway with the processes or Jobs it manages, and reports execution progress back to the Gateway.</p>
+<p align="center">
+    <img src="../images/controller-reconciliation.jpg" alt="Controller reconciliation" width="75%">
+</p>
+
+<p>The Controller supports two modes:</p>
+<ul>
+<li><strong>Local mode:</strong> starts each rollout as a short-lived local subprocess. This mode is convenient for development and debugging when the agent and trainer dependencies can share one machine.</li>
+<li><strong>Kubernetes mode:</strong> creates one Kubernetes Job for each rollout from a user-provided template. This mode isolates agent dependencies and supports concurrent execution on a self-hosted or on-premises cluster.</li>
+</ul>
+<p>The API Gateway remains the source of truth for rollout status. If a process, Kubernetes watch, or network update is interrupted, the Controller retries reconciliation until the execution state converges.</p>
+<h2 id="customized-trainer">Customized Trainer<a class="headerlink" href="#customized-trainer" title="Permanent link">&para;</a></h2>
+<p>The Customized Trainer sits on top of <code>verl</code> and connects the training backend to the API Gateway. During each training step, it:</p>
+<ol>
+<li>registers the current model inference endpoints;</li>
+<li>creates one or more rollouts for each training input;</li>
+<li>waits for enough rollouts to finish;</li>
+<li>retrieves model requests, rewards, and other events;</li>
+<li>converts the captured calls into <code>verl</code> training samples;</li>
+<li>computes advantages and updates the policy.</li>
+</ol>
+<p>The trainer also handles Agent Lightning-specific data processing. It merges consecutive model calls only when their token histories are exactly continuous, computes advantages at the rollout level, and supports rollout-level loss normalization.</p>
+<h2 id="configure-the-components">Configure the components<a class="headerlink" href="#configure-the-components" title="Permanent link">&para;</a></h2>
+<p>The following chapters describe the settings for each component. Start with the trainer to define how rollouts are created and converted into training samples, then configure the server and the Controller that execute them:</p>
+<ol>
+<li><a href="../4-trainer-configuration/">Trainer Configuration</a></li>
+<li><a href="../5-api-gateway-configuration/">API Gateway Configuration</a></li>
+<li><a href="../6-controller-configuration/">Controller Configuration</a></li>
+</ol>
 
 <!-- Was this page helpful? -->
 
@@ -1158,15 +1235,15 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
     
     
   
-      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
-        <script src="js/timeago.min.js"></script>
+        <script src="../js/timeago.min.js"></script>
       
-        <script src="js/timeago_mkdocs_material.js"></script>
+        <script src="../js/timeago_mkdocs_material.js"></script>
       
         <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
       
@@ -1176,11 +1253,11 @@
       
         <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
       
-        <script src="javascripts/charts.js"></script>
+        <script src="../javascripts/charts.js"></script>
       
-        <script src="javascripts/move-source-file.js"></script>
+        <script src="../javascripts/move-source-file.js"></script>
       
-        <script src="javascripts/katex.js"></script>
+        <script src="../javascripts/katex.js"></script>
       
     
   <script>

@@ -8,29 +8,29 @@
       
       
       
-        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/">
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/13-example-coding-agent/">
       
       
+        <link rel="prev" href="../12-example-llm-in-sandbox/">
       
-        <link rel="next" href="1-installation/">
       
       
         
       
       
-      <link rel="icon" href="assets/favicon.svg">
+      <link rel="icon" href="../assets/favicon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>Agent Lightning v1.0</title>
+        <title>Coding Agent - Agent Lightning v1.0</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,15 +49,15 @@
       
     
     
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
-      <link rel="stylesheet" href="css/timeago.css">
+      <link rel="stylesheet" href="../css/timeago.css">
     
       <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
     
-      <link rel="stylesheet" href="stylesheets/extra.css">
+      <link rel="stylesheet" href="../stylesheets/extra.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#agent-lightning-documentation" class="md-skip">
+        <a href="#coding-agent" class="md-skip">
           Skip to content
         </a>
       
@@ -102,9 +102,9 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Agent Lightning v1.0" class="md-header__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
+    <a href=".." title="Agent Lightning v1.0" class="md-header__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
       
-  <img src="assets/favicon-white.svg" alt="logo">
+  <img src="../assets/favicon-white.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -121,7 +121,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Coding Agent
             
           </span>
         </div>
@@ -239,9 +239,9 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Agent Lightning v1.0" class="md-nav__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
+    <a href=".." title="Agent Lightning v1.0" class="md-nav__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
       
-  <img src="assets/favicon-white.svg" alt="logo">
+  <img src="../assets/favicon-white.svg" alt="logo">
 
     </a>
     Agent Lightning v1.0
@@ -265,37 +265,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -311,59 +284,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Getting Started
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -429,7 +349,7 @@
   
   
     <li class="md-nav__item">
-      <a href="1-installation/" class="md-nav__link">
+      <a href="../1-installation/" class="md-nav__link">
         
   
   
@@ -457,7 +377,7 @@
   
   
     <li class="md-nav__item">
-      <a href="2-quick-start/" class="md-nav__link">
+      <a href="../2-quick-start/" class="md-nav__link">
         
   
   
@@ -485,7 +405,7 @@
   
   
     <li class="md-nav__item">
-      <a href="3-basics/" class="md-nav__link">
+      <a href="../3-basics/" class="md-nav__link">
         
   
   
@@ -513,7 +433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="4-trainer-configuration/" class="md-nav__link">
+      <a href="../4-trainer-configuration/" class="md-nav__link">
         
   
   
@@ -541,7 +461,7 @@
   
   
     <li class="md-nav__item">
-      <a href="5-api-gateway-configuration/" class="md-nav__link">
+      <a href="../5-api-gateway-configuration/" class="md-nav__link">
         
   
   
@@ -569,7 +489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="6-controller-configuration/" class="md-nav__link">
+      <a href="../6-controller-configuration/" class="md-nav__link">
         
   
   
@@ -597,7 +517,7 @@
   
   
     <li class="md-nav__item">
-      <a href="7-asynchronous-training/" class="md-nav__link">
+      <a href="../7-asynchronous-training/" class="md-nav__link">
         
   
   
@@ -629,8 +549,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -641,13 +563,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -668,7 +588,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -686,7 +606,7 @@
   
   
     <li class="md-nav__item">
-      <a href="8-example-calc-x/" class="md-nav__link">
+      <a href="../8-example-calc-x/" class="md-nav__link">
         
   
   
@@ -714,7 +634,7 @@
   
   
     <li class="md-nav__item">
-      <a href="9-example-gsm8k/" class="md-nav__link">
+      <a href="../9-example-gsm8k/" class="md-nav__link">
         
   
   
@@ -742,7 +662,7 @@
   
   
     <li class="md-nav__item">
-      <a href="10-example-science-world/" class="md-nav__link">
+      <a href="../10-example-science-world/" class="md-nav__link">
         
   
   
@@ -770,7 +690,7 @@
   
   
     <li class="md-nav__item">
-      <a href="11-example-search-r1/" class="md-nav__link">
+      <a href="../11-example-search-r1/" class="md-nav__link">
         
   
   
@@ -798,7 +718,7 @@
   
   
     <li class="md-nav__item">
-      <a href="12-example-llm-in-sandbox/" class="md-nav__link">
+      <a href="../12-example-llm-in-sandbox/" class="md-nav__link">
         
   
   
@@ -823,10 +743,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="13-example-coding-agent/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Agent
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -842,6 +789,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#environment-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-image-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Image Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#training" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Training
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preventing-reward-hacking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preventing Reward Hacking
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -881,10 +903,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#environment-preparation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Started
+        Environment Preparation
       
     </span>
   </a>
@@ -892,10 +914,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
+  <a href="#data-preparation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuration
+        Data Preparation
       
     </span>
   </a>
@@ -903,10 +925,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#repository-image-preparation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Examples
+        Repository Image Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#training" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Training
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preventing-reward-hacking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preventing Reward Hacking
       
     </span>
   </a>
@@ -972,7 +1016,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 13, 2026 04:27:35 UTC"><span class="timeago" datetime="2026-08-13T04:27:35+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 13, 2026 04:27:35 UTC">2026-08-13</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 12, 2026 09:10:22 UTC"><span class="timeago" datetime="2026-08-12T09:10:22+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 12, 2026 09:10:22 UTC">2026-08-12</span>
   </span>
 
     
@@ -982,7 +1026,7 @@
     <span class="md-icon" title="Created">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:34:41 UTC"><span class="timeago" datetime="2026-08-11T10:34:41+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:34:41 UTC">2026-08-11</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:30:09 UTC"><span class="timeago" datetime="2026-08-11T10:30:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:30:09 UTC">2026-08-11</span>
   </span>
 
     
@@ -1007,105 +1051,105 @@
 
 
 <!-- Page content -->
-<h1 id="agent-lightning-documentation">Agent Lightning Documentation<a class="headerlink" href="#agent-lightning-documentation" title="Permanent link">&para;</a></h1>
-<p align="center">
-    <img src="images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
-</p>
-
-<p>Welcome to the Agent Lightning v1.0 documentation. Start with the installation and quick-start guides, then use the configuration guides and examples below to build and train your own agents.</p>
-<p>Agent Lightning v1.0 is a completely redesigned and reimplemented version with the following key features:</p>
+<h1 id="coding-agent">Coding Agent<a class="headerlink" href="#coding-agent" title="Permanent link">&para;</a></h1>
+<table>
+<thead>
+<tr>
+<th>GPU</th>
+<th>Model</th>
+<th>Controller Mode</th>
+<th>Trainer Mode</th>
+<th>Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4× B200</td>
+<td><code>Qwen/Qwen3.5-9B</code></td>
+<td>K8s</td>
+<td>Sync and async</td>
+<td><a href="https://github.com/microsoft/agent-lightning/tree/main/examples/swe_smith">Source</a></td>
+</tr>
+</tbody>
+</table>
+<p>The Coding Agent example trains a software-engineering agent on SWE-smith tasks with <code>verl</code> and Agent Lightning &gt;=v1.0. Each rollout runs as a Kubernetes Job inside a repository-specific image, edits an isolated checkout, executes tests, and reports the resulting reward to the AGL Gateway.</p>
+<p>This example uses two machines:</p>
 <ul>
-<li>🪶 <strong>~3,500 lines of core Python:</strong> Simplicity is the first principle.</li>
-<li>🧩 <strong>Training with real agent harnesses:</strong> Agents interact with the model through the Agent Lightning v1.0 proxy with zero changes while keeping tools, context, control flow, and environments in the loop.</li>
-<li>☸️ <strong>Native Kubernetes support:</strong> Agents run directly as Kubernetes Jobs without relying on external sandbox services.</li>
-<li>💻 <strong>A complete coding-agent training example:</strong> The released pipeline covers data cleaning, reward-hacking prevention, and training scripts.</li>
+<li><strong>Machine A — Kubernetes Controller machine:</strong> connects to the Kubernetes cluster, prepares repository images in the node-accessible Docker runtime, and runs <code>agl-controller</code> to create rollout Jobs.</li>
+<li><strong>Machine B — GPU training machine:</strong> provides the GPUs and runs both <code>agl-server</code> (the AGL Gateway) and the <code>verl</code> trainer with its model backend.</li>
 </ul>
-<p>For the legacy Agent Lightning releases earlier than v1.0, see the <a href="https://github.com/microsoft/agent-lightning/tree/v0.x"><code>v0.x</code> code branch</a> and the <a href="https://microsoft.github.io/agent-lightning/0.3.0/">v0.3.0 documentation</a>.</p>
-<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Guide</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="1-installation/">Installation</a></td>
-<td>Set up the base environment and the tested <code>verl</code> GPU stack.</td>
-</tr>
-<tr>
-<td><a href="2-quick-start/">Quick Start</a></td>
-<td>Run a local end-to-end rollout-driven training job.</td>
-</tr>
-<tr>
-<td><a href="3-basics/">Basics</a></td>
-<td>Learn the core components, rollouts, events, and trajectories.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Guide</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="4-trainer-configuration/">Trainer Configuration</a></td>
-<td>Configure <code>verl</code> integration, rollout collection, and trace aggregation.</td>
-</tr>
-<tr>
-<td><a href="5-api-gateway-configuration/">API Gateway Configuration</a></td>
-<td>Configure the API Gateway and model proxy.</td>
-</tr>
-<tr>
-<td><a href="6-controller-configuration/">Controller Configuration</a></td>
-<td>Configure local and Kubernetes rollout runners.</td>
-</tr>
-<tr>
-<td><a href="7-asynchronous-training/">Asynchronous Training</a></td>
-<td>Configure collocated asynchronous collection and pause/drain behavior.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Example</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="8-example-calc-x/">Calc-X</a></td>
-<td>Train a math reasoning agent with AutoGen and MCP calculator tools.</td>
-</tr>
-<tr>
-<td><a href="9-example-gsm8k/">GSM8K</a></td>
-<td>Train an agent on grade-school math reasoning tasks.</td>
-</tr>
-<tr>
-<td><a href="10-example-science-world/">ScienceWorld</a></td>
-<td>Train an agent on interactive science tasks in a text environment.</td>
-</tr>
-<tr>
-<td><a href="11-example-search-r1/">Search-R1</a></td>
-<td>Train a multi-turn retrieval and reasoning agent.</td>
-</tr>
-<tr>
-<td><a href="12-example-llm-in-sandbox/">LLM-in-Sandbox</a></td>
-<td>Train a general agent with computer and code execution tools.</td>
-</tr>
-<tr>
-<td><a href="13-example-coding-agent/">Coding Agent</a></td>
-<td>Train a coding agent using repository tests as feedback.</td>
-</tr>
-</tbody>
-</table>
+<p>Machine B's AGL Gateway address must be reachable from Machine A and from the rollout pods in the Kubernetes cluster.</p>
+<h2 id="environment-preparation">Environment Preparation<a class="headerlink" href="#environment-preparation" title="Permanent link">&para;</a></h2>
+<p>On <strong>Machine A (Kubernetes Controller machine)</strong>, activate the project environment and install the dependency used to prepare repository images:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>examples/swe_smith/requirements.txt
+</code></pre></div>
+<p>Machine A also requires Docker, <code>kubectl</code>, and access to the Kubernetes cluster.</p>
+<p>On <strong>Machine B (GPU training machine)</strong>, install the project and GPU training environment described in the project installation guide. The SWE-smith image-preparation requirements above are not needed on Machine B.</p>
+<h2 id="data-preparation">Data Preparation<a class="headerlink" href="#data-preparation" title="Permanent link">&para;</a></h2>
+<p>The provided splits are derived from the original SWE-smith dataset, which contains 59,136 executable software-engineering tasks from 128 Python repositories. We build the training data with the following filtering pipeline:</p>
+<ol>
+<li>Remove tasks with an empty problem statement. The original release contains 18,033 such records.</li>
+<li>Remove tasks whose corresponding problem branch is missing from the provided repository image. This affects 1,265 records.</li>
+<li>Remove tasks requiring more than 200 tests, which avoids examples with prohibitively expensive test suites.</li>
+<li>Run Qwen3.5-9B four times on every remaining candidate as a difficulty probe.</li>
+<li>Remove tasks solved in all four probe rollouts because they provide little learning signal.</li>
+<li>Retain tasks with a mixture of successful and failed probe rollouts, yielding approximately 5,000 examples.</li>
+<li>Add a sample of 1,000 tasks that fail all four probes so the training set is not biased toward easier tasks.</li>
+</ol>
+<p>The resulting data contains approximately 6,000 training examples and 400 validation examples. <code>train_dataset_mixed.jsonl</code> contains the mixed-difficulty training set, while <code>val_dataset_filtered.jsonl</code> contains the filtered validation set.</p>
+<p>Download the pre-split dataset archive from <a href="https://drive.google.com/file/d/1q19DP53l4rldvBR2dkUhbaPI_mHVBVL1/view?usp=drive_link">Google Drive</a> on <strong>both machines</strong>, then extract it into <code>examples/swe_smith/</code>:</p>
+<ul>
+<li><strong>Machine A</strong> reads the datasets to determine which repository images must be prepared.</li>
+<li><strong>Machine B</strong> reads the datasets to construct the training and validation inputs.</li>
+</ul>
+<p>The example reads these files by default:</p>
+<ul>
+<li><code>examples/swe_smith/train_dataset_mixed.jsonl</code></li>
+<li><code>examples/swe_smith/val_dataset_filtered.jsonl</code></li>
+</ul>
+<p>When using <code>run.sh</code>, custom paths can be selected with the <code>AGL_TRAIN_DATASET_PATH</code> and <code>AGL_VAL_DATASET_PATH</code> environment variables read by the launcher.</p>
+<h2 id="repository-image-preparation">Repository Image Preparation<a class="headerlink" href="#repository-image-preparation" title="Permanent link">&para;</a></h2>
+<p>On Machine A, prepare the repository images in the Docker daemon used by the Kubernetes nodes before starting the Controller:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>examples/swe_smith/pull_images.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--dataset<span class="w"> </span>examples/swe_smith/train_dataset_mixed.jsonl<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--dataset<span class="w"> </span>examples/swe_smith/val_dataset_filtered.jsonl
+</code></pre></div>
+<p>This command installs the OpenAI client into each required SWE-smith base image and creates the <code>:openai</code> tags expected by <code>job-template-openai.yaml</code>. Run it again if the datasets introduce new repository images.</p>
+<h2 id="training">Training<a class="headerlink" href="#training" title="Permanent link">&para;</a></h2>
+<p>The distributed launcher has three roles and must be started in this order:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>server → controller → trainer
+</code></pre></div>
+<p>On <strong>Machine B (GPU training machine)</strong>, start the Gateway:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PUBLIC_HOST</span><span class="o">=</span>&lt;address-reachable-from-controller-and-pods&gt;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;shared-secret&gt;
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_MODEL_NAME</span><span class="o">=</span>Qwen/Qwen3.5-9B
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>examples/swe_smith/run.sh<span class="w"> </span>server
+</code></pre></div>
+<p>On <strong>Machine A (Kubernetes Controller machine)</strong>, start the Controller:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PUBLIC_HOST</span><span class="o">=</span>&lt;gateway-address&gt;
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;same-shared-secret&gt;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_NAMESPACE</span><span class="o">=</span>agents
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>examples/swe_smith/run.sh<span class="w"> </span>controller
+</code></pre></div>
+<p>After the Gateway and Controller are ready, start the trainer on <strong>Machine B (GPU training machine)</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;same-shared-secret&gt;
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_MODEL_NAME</span><span class="o">=</span>Qwen/Qwen3.5-9B
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>examples/swe_smith/run.sh<span class="w"> </span>trainer
+</code></pre></div>
+<p>The launcher passes additional arguments to <code>train_smith_agent.py</code>, including <code>verl</code> dotlist overrides:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>examples/swe_smith/run.sh<span class="w"> </span>trainer<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>trainer.total_training_steps<span class="o">=</span><span class="m">100</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">4</span>
+</code></pre></div>
+<h2 id="preventing-reward-hacking">Preventing Reward Hacking<a class="headerlink" href="#preventing-reward-hacking" title="Permanent link">&para;</a></h2>
+<p>A coding agent may obtain the reference fix without solving the task, for example by inspecting Git history, downloading upstream source code with <code>curl</code> or <code>wget</code>, installing the original package with <code>pip</code>, or using Python networking libraries such as <code>urllib</code>.</p>
+<p>The SWE agent limits these reward-hacking paths in two ways:</p>
+<ul>
+<li><strong>Repository isolation:</strong> before the agent starts, the harness checks out the task branch and moves <code>.git</code> outside the visible testbed. Agent commands that invoke Git, access the hidden Git metadata, install packages, download files, or modify the test harness are blocked.</li>
+<li><strong>Network isolation:</strong> we strongly recommend adding a Kubernetes network policy that denies all outbound traffic from agent pods except connections to the AGL Gateway. Without this restriction, an agent may retrieve upstream source code or other external information and obtain reward without solving the task as intended.</li>
+</ul>
+<p>The final reward is computed by running the task-specific <code>FAIL_TO_PASS</code> and <code>PASS_TO_PASS</code> tests inside the isolated repository environment. These controls are part of the training setup: weakening them can allow the agent to recover reference code and corrupt the reward signal.</p>
 
 <!-- Was this page helpful? -->
 
@@ -1158,15 +1202,15 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
     
     
   
-      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
-        <script src="js/timeago.min.js"></script>
+        <script src="../js/timeago.min.js"></script>
       
-        <script src="js/timeago_mkdocs_material.js"></script>
+        <script src="../js/timeago_mkdocs_material.js"></script>
       
         <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
       
@@ -1176,11 +1220,11 @@
       
         <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
       
-        <script src="javascripts/charts.js"></script>
+        <script src="../javascripts/charts.js"></script>
       
-        <script src="javascripts/move-source-file.js"></script>
+        <script src="../javascripts/move-source-file.js"></script>
       
-        <script src="javascripts/katex.js"></script>
+        <script src="../javascripts/katex.js"></script>
       
     
   <script>

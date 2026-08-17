@@ -8,29 +8,31 @@
       
       
       
-        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/">
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/6-controller-configuration/">
       
       
+        <link rel="prev" href="../5-api-gateway-configuration/">
       
-        <link rel="next" href="1-installation/">
+      
+        <link rel="next" href="../7-asynchronous-training/">
       
       
         
       
       
-      <link rel="icon" href="assets/favicon.svg">
+      <link rel="icon" href="../assets/favicon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>Agent Lightning v1.0</title>
+        <title>Controller Configuration - Agent Lightning v1.0</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -49,15 +51,15 @@
       
     
     
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
-      <link rel="stylesheet" href="css/timeago.css">
+      <link rel="stylesheet" href="../css/timeago.css">
     
       <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
     
-      <link rel="stylesheet" href="stylesheets/extra.css">
+      <link rel="stylesheet" href="../stylesheets/extra.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#agent-lightning-documentation" class="md-skip">
+        <a href="#controller-configuration" class="md-skip">
           Skip to content
         </a>
       
@@ -102,9 +104,9 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Agent Lightning v1.0" class="md-header__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
+    <a href=".." title="Agent Lightning v1.0" class="md-header__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
       
-  <img src="assets/favicon-white.svg" alt="logo">
+  <img src="../assets/favicon-white.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -121,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Controller Configuration
             
           </span>
         </div>
@@ -239,9 +241,9 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Agent Lightning v1.0" class="md-nav__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
+    <a href=".." title="Agent Lightning v1.0" class="md-nav__button md-logo" aria-label="Agent Lightning v1.0" data-md-component="logo">
       
-  <img src="assets/favicon-white.svg" alt="logo">
+  <img src="../assets/favicon-white.svg" alt="logo">
 
     </a>
     Agent Lightning v1.0
@@ -265,37 +267,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -311,59 +286,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Getting Started
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -372,8 +294,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -384,13 +308,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -411,7 +333,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -429,7 +351,7 @@
   
   
     <li class="md-nav__item">
-      <a href="1-installation/" class="md-nav__link">
+      <a href="../1-installation/" class="md-nav__link">
         
   
   
@@ -457,7 +379,7 @@
   
   
     <li class="md-nav__item">
-      <a href="2-quick-start/" class="md-nav__link">
+      <a href="../2-quick-start/" class="md-nav__link">
         
   
   
@@ -485,7 +407,7 @@
   
   
     <li class="md-nav__item">
-      <a href="3-basics/" class="md-nav__link">
+      <a href="../3-basics/" class="md-nav__link">
         
   
   
@@ -513,7 +435,7 @@
   
   
     <li class="md-nav__item">
-      <a href="4-trainer-configuration/" class="md-nav__link">
+      <a href="../4-trainer-configuration/" class="md-nav__link">
         
   
   
@@ -541,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="5-api-gateway-configuration/" class="md-nav__link">
+      <a href="../5-api-gateway-configuration/" class="md-nav__link">
         
   
   
@@ -566,10 +488,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="6-controller-configuration/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controller Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -585,6 +534,92 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#override-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Override configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runner-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runner type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connect-to-the-api-gateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connect to the API Gateway
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#k8s-runner-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        K8s runner limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-runner-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local runner limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-agents-are-launched" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How agents are launched
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -597,7 +632,7 @@
   
   
     <li class="md-nav__item">
-      <a href="7-asynchronous-training/" class="md-nav__link">
+      <a href="../7-asynchronous-training/" class="md-nav__link">
         
   
   
@@ -686,7 +721,7 @@
   
   
     <li class="md-nav__item">
-      <a href="8-example-calc-x/" class="md-nav__link">
+      <a href="../8-example-calc-x/" class="md-nav__link">
         
   
   
@@ -714,7 +749,7 @@
   
   
     <li class="md-nav__item">
-      <a href="9-example-gsm8k/" class="md-nav__link">
+      <a href="../9-example-gsm8k/" class="md-nav__link">
         
   
   
@@ -742,7 +777,7 @@
   
   
     <li class="md-nav__item">
-      <a href="10-example-science-world/" class="md-nav__link">
+      <a href="../10-example-science-world/" class="md-nav__link">
         
   
   
@@ -770,7 +805,7 @@
   
   
     <li class="md-nav__item">
-      <a href="11-example-search-r1/" class="md-nav__link">
+      <a href="../11-example-search-r1/" class="md-nav__link">
         
   
   
@@ -798,7 +833,7 @@
   
   
     <li class="md-nav__item">
-      <a href="12-example-llm-in-sandbox/" class="md-nav__link">
+      <a href="../12-example-llm-in-sandbox/" class="md-nav__link">
         
   
   
@@ -826,7 +861,7 @@
   
   
     <li class="md-nav__item">
-      <a href="13-example-coding-agent/" class="md-nav__link">
+      <a href="../13-example-coding-agent/" class="md-nav__link">
         
   
   
@@ -881,10 +916,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#override-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Started
+        Override configuration
       
     </span>
   </a>
@@ -892,10 +927,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
+  <a href="#runner-type" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuration
+        Runner type
       
     </span>
   </a>
@@ -903,10 +938,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#connect-to-the-api-gateway" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Examples
+        Connect to the API Gateway
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#k8s-runner-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        K8s runner limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-runner-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local runner limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-agents-are-launched" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How agents are launched
       
     </span>
   </a>
@@ -972,7 +1040,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 13, 2026 04:27:35 UTC"><span class="timeago" datetime="2026-08-13T04:27:35+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 13, 2026 04:27:35 UTC">2026-08-13</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 12, 2026 09:10:22 UTC"><span class="timeago" datetime="2026-08-12T09:10:22+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 12, 2026 09:10:22 UTC">2026-08-12</span>
   </span>
 
     
@@ -982,7 +1050,7 @@
     <span class="md-icon" title="Created">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:34:41 UTC"><span class="timeago" datetime="2026-08-11T10:34:41+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:34:41 UTC">2026-08-11</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:30:09 UTC"><span class="timeago" datetime="2026-08-11T10:30:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:30:09 UTC">2026-08-11</span>
   </span>
 
     
@@ -1007,105 +1075,139 @@
 
 
 <!-- Page content -->
-<h1 id="agent-lightning-documentation">Agent Lightning Documentation<a class="headerlink" href="#agent-lightning-documentation" title="Permanent link">&para;</a></h1>
+<h1 id="controller-configuration">Controller Configuration<a class="headerlink" href="#controller-configuration" title="Permanent link">&para;</a></h1>
+<p>Start the Controller with <code>agl-controller</code>. It translates declarative rollouts into real agent executions, uses Hydra configuration, and loads its complete default configuration from <code>agentlightning/config/controller.yaml</code>:</p>
 <p align="center">
-    <img src="images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
+  <img src="../images/controller-reconciliation.jpg" alt="Controller reconciliation" width="80%">
 </p>
 
-<p>Welcome to the Agent Lightning v1.0 documentation. Start with the installation and quick-start guides, then use the configuration guides and examples below to build and train your own agents.</p>
-<p>Agent Lightning v1.0 is a completely redesigned and reimplemented version with the following key features:</p>
-<ul>
-<li>🪶 <strong>~3,500 lines of core Python:</strong> Simplicity is the first principle.</li>
-<li>🧩 <strong>Training with real agent harnesses:</strong> Agents interact with the model through the Agent Lightning v1.0 proxy with zero changes while keeping tools, context, control flow, and environments in the loop.</li>
-<li>☸️ <strong>Native Kubernetes support:</strong> Agents run directly as Kubernetes Jobs without relying on external sandbox services.</li>
-<li>💻 <strong>A complete coding-agent training example:</strong> The released pipeline covers data cleaning, reward-hacking prevention, and training scripts.</li>
-</ul>
-<p>For the legacy Agent Lightning releases earlier than v1.0, see the <a href="https://github.com/microsoft/agent-lightning/tree/v0.x"><code>v0.x</code> code branch</a> and the <a href="https://microsoft.github.io/agent-lightning/0.3.0/">v0.3.0 documentation</a>.</p>
-<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">runner_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">k8s</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">agl_server</span><span class="p">:</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:8080</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">agent_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nt">k8s_runner</span><span class="p">:</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">ttl_after_finished</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">max_jobs_per_minute</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">poll_interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nt">local_runner</span><span class="p">:</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="nt">maximum_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="nt">poll_interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</code></pre></div>
+<h2 id="override-configuration">Override configuration<a class="headerlink" href="#override-configuration" title="Permanent link">&para;</a></h2>
+<p>Override any setting with a Hydra command-line argument when starting the Controller. For example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>agl-controller<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nv">runner_type</span><span class="o">=</span><span class="nb">local</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>agl_server.url<span class="o">=</span>http://localhost:8080<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>agl_server.key<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$AGL_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>local_runner.maximum_size<span class="o">=</span><span class="m">32</span>
+</code></pre></div>
+<h2 id="runner-type">Runner type<a class="headerlink" href="#runner-type" title="Permanent link">&para;</a></h2>
+<p>The Controller supports one runner type at a time. Set <code>runner_type</code> to either <code>k8s</code> or <code>local</code>:</p>
 <table>
 <thead>
 <tr>
-<th>Guide</th>
+<th>Key</th>
+<th style="text-align: right;">Default</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="1-installation/">Installation</a></td>
-<td>Set up the base environment and the tested <code>verl</code> GPU stack.</td>
-</tr>
-<tr>
-<td><a href="2-quick-start/">Quick Start</a></td>
-<td>Run a local end-to-end rollout-driven training job.</td>
-</tr>
-<tr>
-<td><a href="3-basics/">Basics</a></td>
-<td>Learn the core components, rollouts, events, and trajectories.</td>
+<td><code>runner_type</code></td>
+<td style="text-align: right;"><code>k8s</code></td>
+<td>The single execution backend used by this Controller: <code>k8s</code> or <code>local</code>.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>One Controller instance cannot run both modes simultaneously.</p>
+<p>In <code>k8s</code> mode, every rollout runs as a Kubernetes Job. The Controller uses the default Kubernetes configuration at <code>~/.kube/config</code> on its machine to access the cluster. In <code>local</code> mode, every rollout runs as a local subprocess on the Controller machine, with multiple rollouts managed through a local process pool.</p>
+<h2 id="connect-to-the-api-gateway">Connect to the API Gateway<a class="headerlink" href="#connect-to-the-api-gateway" title="Permanent link">&para;</a></h2>
+<p>The Controller configuration contains two API Gateway URLs for two different network paths:</p>
 <table>
 <thead>
 <tr>
-<th>Guide</th>
+<th>Key</th>
+<th style="text-align: right;">Default</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="4-trainer-configuration/">Trainer Configuration</a></td>
-<td>Configure <code>verl</code> integration, rollout collection, and trace aggregation.</td>
+<td><code>agl_server.url</code></td>
+<td style="text-align: right;"><code>http://localhost:8080</code></td>
+<td>API Gateway URL used by the Controller itself.</td>
 </tr>
 <tr>
-<td><a href="5-api-gateway-configuration/">API Gateway Configuration</a></td>
-<td>Configure the API Gateway and model proxy.</td>
+<td><code>agl_server.agent_url</code></td>
+<td style="text-align: right;"><code>null</code></td>
+<td>API Gateway URL used by the Agent. When <code>null</code>, it falls back to <code>agl_server.url</code>.</td>
 </tr>
 <tr>
-<td><a href="6-controller-configuration/">Controller Configuration</a></td>
-<td>Configure local and Kubernetes rollout runners.</td>
-</tr>
-<tr>
-<td><a href="7-asynchronous-training/">Asynchronous Training</a></td>
-<td>Configure collocated asynchronous collection and pause/drain behavior.</td>
+<td><code>agl_server.key</code></td>
+<td style="text-align: right;"><code>""</code></td>
+<td>Bearer key used by the Controller and agents.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
+<p><code>agl_server.url</code> must be reachable from the Controller process. <code>agl_server.agent_url</code> must be reachable from the Agent process or pod because it is used to build the Gateway proxy and event URLs injected into that Agent.</p>
+<p>In most cases, <code>agl_server.agent_url</code> does not need to be set separately. Leave it as <code>null</code>, and Agents automatically use <code>agl_server.url</code> to access the API Gateway.</p>
+<p>Set <code>agl_server.agent_url</code> only when Agents cannot reach the API Gateway through <code>agl_server.url</code>, usually because the Controller and Agents are in different networks. For example, when using the Minikube Docker driver, the Controller runs locally while Agents run inside Minikube, so they do not share the same network. The Controller may use <code>http://localhost:8080</code>, while Agents inside Minikube need <code>http://host.minikube.internal:8080</code> to access the same API Gateway.</p>
+<h2 id="k8s-runner-limits">K8s runner limits<a class="headerlink" href="#k8s-runner-limits" title="Permanent link">&para;</a></h2>
+<p>The K8s runner provides settings that limit Job creation and clean up completed Jobs:</p>
 <table>
 <thead>
 <tr>
-<th>Example</th>
+<th>Key</th>
+<th style="text-align: right;">Default</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="8-example-calc-x/">Calc-X</a></td>
-<td>Train a math reasoning agent with AutoGen and MCP calculator tools.</td>
+<td><code>k8s_runner.max_jobs_per_minute</code></td>
+<td style="text-align: right;"><code>100</code></td>
+<td>Maximum number of Kubernetes Jobs the Controller can create per minute.</td>
 </tr>
 <tr>
-<td><a href="9-example-gsm8k/">GSM8K</a></td>
-<td>Train an agent on grade-school math reasoning tasks.</td>
-</tr>
-<tr>
-<td><a href="10-example-science-world/">ScienceWorld</a></td>
-<td>Train an agent on interactive science tasks in a text environment.</td>
-</tr>
-<tr>
-<td><a href="11-example-search-r1/">Search-R1</a></td>
-<td>Train a multi-turn retrieval and reasoning agent.</td>
-</tr>
-<tr>
-<td><a href="12-example-llm-in-sandbox/">LLM-in-Sandbox</a></td>
-<td>Train a general agent with computer and code execution tools.</td>
-</tr>
-<tr>
-<td><a href="13-example-coding-agent/">Coding Agent</a></td>
-<td>Train a coding agent using repository tests as feedback.</td>
+<td><code>k8s_runner.ttl_after_finished</code></td>
+<td style="text-align: right;"><code>1200</code></td>
+<td>Number of seconds a completed Job is retained before Kubernetes removes it automatically.</td>
 </tr>
 </tbody>
 </table>
+<p><code>max_jobs_per_minute</code> prevents the Controller from creating too many Jobs in a short period. <code>ttl_after_finished</code> prevents completed Jobs from accumulating and overloading the Kubernetes API server.</p>
+<h2 id="local-runner-limits">Local runner limits<a class="headerlink" href="#local-runner-limits" title="Permanent link">&para;</a></h2>
+<p>The local runner limits concurrent processes and periodically synchronizes their state:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th style="text-align: right;">Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>local_runner.maximum_size</code></td>
+<td style="text-align: right;"><code>50</code></td>
+<td>Maximum number of Agent subprocesses managed concurrently on the Controller machine.</td>
+</tr>
+<tr>
+<td><code>local_runner.poll_interval</code></td>
+<td style="text-align: right;"><code>10</code></td>
+<td>Number of seconds between automatic synchronization checks for local process and rollout state.</td>
+</tr>
+</tbody>
+</table>
+<p>When the process pool reaches <code>maximum_size</code>, queued rollouts wait until capacity becomes available.</p>
+<h2 id="how-agents-are-launched">How agents are launched<a class="headerlink" href="#how-agents-are-launched" title="Permanent link">&para;</a></h2>
+<p>In <code>k8s</code> mode, the Controller reads the Jinja Job template stored in each rollout. The template originates from <code>agentlightning.k8s.job_template_path</code> in the Trainer configuration. The Controller renders the template with the rollout's <code>input</code>, applies the Controller settings such as namespace, timeout, and cleanup TTL, and submits the resulting Kubernetes Job. It also injects rollout-specific <code>AGL_OPENAI_BASE_URL</code>, <code>AGL_EVENT_URL</code>, and <code>AGL_KEY</code> values into every container. See <a href="../4-trainer-configuration/#rollout-execution">Trainer Configuration</a> for the template configuration and Jinja examples, and <code>agentlightning/controller/k8s_reconciler.py</code> for the implementation.</p>
+<p>In <code>local</code> mode, the Controller reads <code>agent_class</code> and <code>env_map</code> from the rollout. It imports the Agent class, starts it in a local subprocess, and uses <code>env_map</code> to replace environment-variable values with fields from the rollout's <code>input</code>. The same rollout-specific Gateway URL, event URL, and key are injected automatically.</p>
 
 <!-- Was this page helpful? -->
 
@@ -1158,15 +1260,15 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
     
     
   
-      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
-        <script src="js/timeago.min.js"></script>
+        <script src="../js/timeago.min.js"></script>
       
-        <script src="js/timeago_mkdocs_material.js"></script>
+        <script src="../js/timeago_mkdocs_material.js"></script>
       
         <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
       
@@ -1176,11 +1278,11 @@
       
         <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
       
-        <script src="javascripts/charts.js"></script>
+        <script src="../javascripts/charts.js"></script>
       
-        <script src="javascripts/move-source-file.js"></script>
+        <script src="../javascripts/move-source-file.js"></script>
       
-        <script src="javascripts/katex.js"></script>
+        <script src="../javascripts/katex.js"></script>
       
     
   <script>
