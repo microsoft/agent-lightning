@@ -12,7 +12,7 @@
 
 ## ⚡ Key Features
 
-- 🪶 **~3,500 lines of core Python:** We treat simplicity as the first principle.
+- 🪶 **~3,500 lines of code:** We treat simplicity as the first principle.
 - 🧩 **Train with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with **ZERO changes**, while keeping tools, context, control flow, and environments in the loop.
 - ☸️ **Native Kubernetes support:** Run agents directly as Kubernetes Jobs without relying on external sandbox services.
 - 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts.
