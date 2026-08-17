@@ -1,4 +1,4 @@
-site_name: Agent-lightning
+site_name: Agent Lightning v1.0
 site_url: https://microsoft.github.io/agent-lightning/
 repo_url: https://github.com/microsoft/agent-lightning
 repo_name: agent-lightning
@@ -96,46 +96,22 @@ extra_javascript:
   - javascripts/katex.js
 
 nav:
-  - Home: index.md
-  - Quickstart:
-    - Installation: tutorials/installation.md
-    - Train the First Agent: how-to/train-first-agent.md
-    - Write the First Algorithm: how-to/write-first-algorithm.md
-  - How-To Recipes:
-    - Examples Catalog: how-to/examples-catalog.md
-    - SFT with Unsloth: how-to/unsloth-sft.md
-    - Train SQL Agent with RL: how-to/train-sql-agent.md
-  - Learning More:
-    - Write Agents: tutorials/write-agents.md
-    - Debugging: tutorials/debug.md
-    - Work with Traces: tutorials/traces.md
-    - Use Emitters: tutorials/emitter.md
-    - Parallelize: tutorials/parallelize.md
-  - Algorithm Zoo:
-    - Overview: algorithm-zoo/index.md
-    - APO: algorithm-zoo/apo.md
-    - VERL: algorithm-zoo/verl.md
-  - Deep Dive:
-    - Bird's Eye View: deep-dive/birds-eye-view.md
-    - Understanding Store: deep-dive/store.md
-    - Serving LLM: deep-dive/serving-llm.md
-  - API References:
-    - Agent: reference/agent.md
-    - Algorithm: reference/algorithm.md
-    - Command Line: reference/cli.md
-    - Instrumentation: reference/instrumentation.md
-    - Runner: reference/runner.md
-    - Semantic Conventions: reference/semconv.md
-    - Store: reference/store.md
-    - Trainer: reference/trainer.md
-    - Types: reference/types.md
-    - RESTful: reference/restful.md
-    - Utilities: reference/utilities.md
-    - Internal: reference/internal.md
-  - Miscellaneous:
-    - Contributing Guide: community/contributing.md
-    - Maintainer Guide: community/maintainers.md
-    - Changelog: changelog.md
+  - Home: README.md
+  - Documentation:
+    - Installation: 1-installation.md
+    - Quick Start: 2-quick-start.md
+    - Basics: 3-basics.md
+    - Trainer Configuration: 4-trainer-configuration.md
+    - API Gateway Configuration: 5-api-gateway-configuration.md
+    - Controller Configuration: 6-controller-configuration.md
+    - Asynchronous Training: 7-asynchronous-training.md
+  - Examples:
+    - Calc-X: 8-example-calc-x.md
+    - GSM8K: 9-example-gsm8k.md
+    - ScienceWorld: 10-example-science-world.md
+    - Search-R1: 11-example-search-r1.md
+    - LLM-in-Sandbox: 12-example-llm-in-sandbox.md
+    - Coding Agent: 13-example-coding-agent.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css

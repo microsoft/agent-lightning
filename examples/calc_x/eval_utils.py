@@ -2,18 +2,22 @@
 
 # Copied and adapted from https://github.com/prompteus/calc-x/blob/master/gadgets/metrics.py
 
+"""Evaluation utilities for Calc-X math problems.
+
+Pure functions — no framework dependencies. Used by hooks (on_succeeded)
+to compute rewards.
+"""
+
 import math
 import re
 import string
 
 import sympy
 
-from agentlightning.reward import reward
-
 
 def normalize_option(option: str) -> str:
     """
-    >>> normalize_option("  (A)  \n")
+    >>> normalize_option("  (A)  \\n")
     'A'
     """
     return re.sub(r"(\s+|\(|\))", "", option)
@@ -21,7 +25,7 @@ def normalize_option(option: str) -> str:
 
 def is_option_result(result: str) -> bool:
     """
-    >>> is_option_result("  A)  \n")
+    >>> is_option_result("  A)  \\n")
     True
     >>> is_option_result("  23/7 ")
     False
@@ -37,6 +41,11 @@ def float_eval(input_str: str) -> float:
 
 
 def scalar_are_results_same(pred_result: str, true_result: str, rel_tol: float) -> bool:
+    """Compare predicted and true results with numeric tolerance.
+
+    Handles exact string match, multiple-choice options, and numeric
+    comparison via sympy parsing.
+    """
     pred_result = str(pred_result) if pred_result is not None else ""  # type: ignore
     true_result = str(true_result) if true_result is not None else ""  # type: ignore
 
@@ -60,10 +69,6 @@ def scalar_are_results_same(pred_result: str, true_result: str, rel_tol: float) 
     return False
 
 
-async def evaluate(prediction: str, ground_truth: str) -> float:
-    return float(scalar_are_results_same(prediction, ground_truth, 1e-2))
-
-
-@reward
-async def evaluate_v0_1(prediction: str, ground_truth: str) -> float:
+def evaluate(prediction: str, ground_truth: str) -> float:
+    """Return 1.0 if prediction matches ground truth, 0.0 otherwise."""
     return float(scalar_are_results_same(prediction, ground_truth, 1e-2))

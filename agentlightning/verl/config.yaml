@@ -6,22 +6,36 @@ defaults:
   - ppo_trainer
   - _self_
 
+algorithm:
+  enable_rollout_level_advantage: true
+
 agentlightning:
-  port: 9999
+  agl_base_url: http://localhost:8080
+  agl_key: ""
+  hooks: null
+  rollout_timeout_seconds: 1800
+  local:
+    agent_class: null
+    env_map: {}
+  k8s:
+    job_template_path: null
+  reward_fillna_value: 0.0
+  max_ppo_update_times: null
   trace_aggregator:
-    level: transition  # transition or trajectory, docs refer to https://agent-lightning.github.io/posts/trajectory_level_aggregation/
-    trajectory_max_prompt_length: 2048  # supported in trajectory level aggregation, suggest to set as maximum length for the prompt in first turn
-    trajectory_max_response_length: 8192  # supported in trajectory level aggregation, suggest to set as maximum length for the cumulative agent responses in the full trajectory, i.e., n_turns * (max_response_length + max_prompt_length)
-    debug: False  # supported in trajectory level aggregation, enable to diagnose trace merging failures
-    mismatch_log_dir: ./mismatch_cases  # supported in trajectory level aggregation with debug=True, directory to store logs of mismatch cases
+    level: trajectory # transition | trajectory
+    trajectory_max_prompt_length: 2048
+    trajectory_max_response_length: 8192
+  async_rollout:
+    enabled: false
+    async_train_batch_size: null
 
 data:
   filter_overlong_prompts: false
 
 actor_rollout_ref:
+  actor:
+    calculate_entropy: true
+    policy_loss:
+      loss_mode: per_rollout_mean
   rollout:
     mode: async
-    agent:
-      custom_async_server:
-        path: pkg://agentlightning.verl.async_server
-        name: PatchedvLLMServer

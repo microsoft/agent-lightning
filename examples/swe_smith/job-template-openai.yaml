@@ -1,0 +1,66 @@
+# Uses local ":openai" images prepared by pull_images.py (SWE-smith base image
+# plus the openai package), so the container starts the agent directly without
+# a runtime `pip install openai`.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ job_name }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: agl-rollout
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: {{ (input.image_name ~ ":openai") | yaml_escape }}
+          command: ["bash", "-lc", "set -o pipefail && mkdir -p /agl-logs/new && python /agl/agents/smith_agent.py 2>&1 | tee /agl-logs/new/{{ job_name }}.log"]
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGL_TASK_INPUT
+              value: {{ input.problem_statement | yaml_escape }}
+            - name: SMITH_MAX_TURNS
+              value: "100"
+            # Long-turn penalty (plan A): only SOLVED (reward==1) rollouts are
+            # penalized for burning turns. reward = 1 - λ·clip((n_turns-T0)/(max_turns-T0),0,1).
+            - name: SMITH_LEN_PEN_T0
+              value: "80"
+            - name: SMITH_LEN_PEN_LAMBDA
+              value: "0.1"
+            # Prompt-length penalty (plan B): SOLVED (reward==1) train rollouts lose up
+            # to SMITH_PROMPT_PEN_MAX as their longest prompt grows from SOFT_START to
+            # HARD_CAP tokens (context-bloat penalty; stacks with plan A).
+            - name: SMITH_PROMPT_PEN_SOFT_START
+              value: "50000"
+            - name: SMITH_PROMPT_PEN_HARD_CAP
+              value: "64000"
+            - name: SMITH_PROMPT_PEN_MAX
+              value: "0.1"
+            - name: AGL_MAX_TOKENS
+              value: "12288"
+            - name: SMITH_OBS_CHAR_CAP
+              value: "6000"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "6Gi"
+          volumeMounts:
+            - name: agent-scripts
+              mountPath: /agl/agents
+              readOnly: true
+            - name: rollout-logs
+              mountPath: /agl-logs
+      volumes:
+        - name: agent-scripts
+          configMap:
+            name: swe-smith-agent-scripts
+            defaultMode: 0755
+        - name: rollout-logs
+          hostPath:
+            path: /agl-logs
+            type: DirectoryOrCreate

@@ -1,48 +1,79 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.svg" alt="Agent-lightning-banner" style="width:600px"/>
+  <img src="docs/images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
 </p>
 
-# Agent Lightning⚡
-
-[![Unit Tests](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml)
-[![Documentation](https://img.shields.io/badge/GitHub%20Pages-Documentation-blue)](https://microsoft.github.io/agent-lightning/)
-[![PyPI version](https://badge.fury.io/py/agentlightning.svg)](https://badge.fury.io/py/agentlightning)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/microsoft/agent-lightning)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/RYk7CdvDR7)
-
-**The absolute trainer to light up AI agents.**
-
-Join our [Discord community](https://discord.gg/RYk7CdvDR7) to connect with other users and contributors.
-
-## ⚡ Core Features
-
-- Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)! 💤
-- Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, Microsoft Agent Framework...); or even WITHOUT agent framework (Python OpenAI). You name it! 🤖
-- **Selectively** optimize one or more agents in a multi-agent system. 🎯
-- Embraces **Algorithms** like Reinforcement Learning, Automatic Prompt Optimization, Supervised Fine-tuning and more. 🤗
-
-Read more on our [documentation website](https://microsoft.github.io/agent-lightning/).
+<p align="center"><em>3,500-Line Lightweight Agentic RL Framework for Training Agents with Real Harnesses!</em></p>
 
 <p align="center">
-  <img src="docs/assets/readme-diff.svg" alt="Agent-Lightning Core Quickstart" style="width:100%"/>
+  <a href="docs/">Documentation</a> &nbsp;·&nbsp; Technical Report (Coming Soon) &nbsp;·&nbsp; <a href="LICENSE">MIT License</a>
 </p>
+
+> Agent Lightning was completely refactored in v1.0. For legacy releases earlier than v1.0, see [this branch](https://github.com/microsoft/agent-lightning/tree/v0.x).
+
+## ⚡ Key Features
+
+- 🪶 **~3,500 lines of core Python:** We treat simplicity as the first principle.
+- 🧩 **Train with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with **ZERO changes**, while keeping tools, context, control flow, and environments in the loop.
+- ☸️ **Native Kubernetes support:** Run agents directly as Kubernetes Jobs without relying on external sandbox services.
+- 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts.
 
 ## ⚡ Installation
 
-```bash
-pip install agentlightning
-```
-
-For the latest nightly build (cutting-edge features), you can install from Test PyPI:
+The following is an example installation on a CUDA 13.0 machine:
 
 ```bash
-pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --pre agentlightning
+cd <this-repo>
+uv sync
+bash scripts/setup_verl.sh 0.8.0 cu130
 ```
 
-Please refer to our [installation guide](https://microsoft.github.io/agent-lightning/stable/tutorials/installation/) for more details.
+See the [Installation Guide](docs/1-installation.md) for details.
 
-To start using Agent-lightning, check out our [documentation](https://microsoft.github.io/agent-lightning/) and [examples](./examples).
+
+## ⚡ Architecture
+
+<p align="center">
+  <img src="docs/images/architecture.jpg" alt="Agent Lightning v1.0 architecture" width="800">
+</p>
+
+Agent Lightning v1.0 keeps the training architecture simple with three lightweight components:
+
+- **Trainer:** Runs `verl` and vLLM, builds training samples, and updates the policy.
+- **API Gateway:** Proxies model requests and captures training data.
+- **Rollout Controller:** Runs agents locally or as Kubernetes Jobs.
+
+The Trainer creates rollouts, the Controller launches agents, and the Gateway turns interactions into training data, while agents continue to run with their real harnesses.
+
+## ⚡ Results
+
+We evaluate Agent Lightning v1.0 across several practical training domains, including Search R1, LLM-in-Sandbox, and Coding Agent. Pure RL delivers substantial improvements across all three domains, as shown below.
+
+<p align="center">
+  <img src="docs/images/benchmark-comparison.jpg" alt="Agent Lightning v1.0 benchmark comparison" width="600">
+</p>
+
+## ⚡ Documentation
+
+| Section | Content |
+|---------|---------|
+| [Installation](docs/1-installation.md) | Base environment and `verl` GPU stack |
+| [Quick Start](docs/2-quick-start.md) | Local first run and end-to-end flow |
+| [Basics](docs/3-basics.md) | Components, rollouts, events, and trajectories |
+| [Trainer Configuration](docs/4-trainer-configuration.md) | `verl` integration and trace aggregation |
+| [API Gateway Configuration](docs/5-api-gateway-configuration.md) | Gateway and model proxy settings |
+| [Controller Configuration](docs/6-controller-configuration.md) | Local and Kubernetes runners |
+| [Asynchronous Training](docs/7-asynchronous-training.md) | Collocated async collection and pause/drain |
+
+## ⚡ Examples
+
+| Example | Description |
+|---|---|
+| [Calc-X](docs/8-example-calc-x.md) | POC math reasoning example with AutoGen and MCP calculator tools, requiring only one GPU. |
+| [GSM8K](docs/9-example-gsm8k.md) | POC grade-school math reasoning example. |
+| [ScienceWorld](docs/10-example-science-world.md) | Interactive science tasks in a text-based environment. |
+| [Search-R1](docs/11-example-search-r1.md) | Multi-turn retrieval and reasoning agent. |
+| [LLM-in-Sandbox](docs/12-example-llm-in-sandbox.md) | General agent with computer and code execution tools. |
+| [Coding Agent](docs/13-example-coding-agent.md) | Coding agent trained with repository tests. |
 
 ## ⚡ Articles
 
@@ -59,29 +90,6 @@ To start using Agent-lightning, check out our [documentation](https://microsoft.
 - [DeepWerewolf](https://github.com/af-74413592/DeepWerewolf) — A case study of agent RL training for the Chinese Werewolf game built with AgentScope and Agent Lightning.
 - [AgentFlow](https://agentflow.stanford.edu/) — A modular multi-agent framework that combines planner, executor, verifier, and generator agents with the Flow-GRPO algorithm to tackle long-horizon, sparse-reward tasks.
 - [Youtu-Agent](https://github.com/TencentCloudADP/Youtu-agent) — Youtu-Agent lets you build and train your agent with ease. Built with [a modified branch](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning) of Agent Lightning, Youtu-Agent has verified up to 128 GPUs RL training on maths/code and search capabilities with steady convergence. Also check [the recipe](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) and their blog [*Stop Wrestling with Your Agent RL: How Youtu-Agent Achieved Stable, 128-GPU Scaling Without Breaking a Sweat*](https://spotted-coconut-df8.notion.site/Stop-Wrestling-with-Your-Agent-RL-How-Youtu-Agent-Achieved-Stable-128-GPU-Scaling-Without-Breaking-2ca5e8f089ba80539a98c582b65e0233).
-
-## ⚡ Architecture
-
-Agent Lightning keeps the moving parts to a minimum so you can focus on your idea, not the plumbing. Your agent continues to run as usual; you can still use any agent framework you like; you drop in the lightweight `agl.emit_xxx()` helper, or let the tracer collect every prompt, tool call, and reward. Those events become structured spans that flow into the LightningStore, a central hub that keeps tasks, resources, and traces in sync.
-
-On the other side of the store sits the algorithm you choose, or write yourself. The algorithm reads spans, learns from them, and posts updated resources such as refined prompt templates or new policy weights. The Trainer ties it all together: it streams datasets to runners, ferries resources between the store and the algorithm, and updates the inference engine when improvements land. You can either stop there, or simply let the same loop keep turning.
-
-No rewrites, no lock-in, just a clear path from first rollout to steady improvement.
-
-<p align="center">
-  <img src="docs/assets/readme-architecture.svg" alt="Agent-lightning Architecture" style="width:100%"/>
-</p>
-
-## ⚡ CI Status
-
-| Workflow | Status |
-|----------|--------|
-| CPU Tests | [![tests workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml) |
-| Full Tests | [![tests summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml) |
-| UI Tests | [![UI Tests](https://github.com/microsoft/agent-lightning/actions/workflows/dashboard.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/dashboard.yml) |
-| Examples Integration | [![examples summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-examples.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-examples.yml) |
-| Latest Dependency Compatibility | [![latest summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-latest.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-latest.yml) |
-| Legacy Examples Compatibility | [![compat summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-compat.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-compat.yml) |
 
 ## ⚡ Citation
 
@@ -115,6 +123,7 @@ This project may contain trademarks or logos for projects, products, or services
 
 This project has been evaluated and certified to comply with the Microsoft Responsible AI Standard. The team will continue to monitor and maintain the repository, addressing any severe issues, including potential harms, if they arise.
 
+
 ## ⚡ License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Agent Lightning v1.0 is released under the [MIT License](LICENSE).
