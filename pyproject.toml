@@ -53,6 +53,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+docs = [
+    "mike>=2.2.0",
+    "mkdocs-autorefs>=1.4.4",
+    "mkdocs-git-authors-plugin>=0.10.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.5.3",
+    "mkdocs-macros-plugin>=1.5.0",
+    "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.6",
+]
 dev = [
     "pytest-httpx>=0.36.0",
     "sympy>=1.14.0",
