@@ -200,7 +200,7 @@ agentlightning:
 
 `actor_rollout_ref.actor.policy_loss.loss_mode: per_rollout_mean` normalizes the policy loss at the rollout level. It prevents a rollout from receiving more optimization weight only because it produced more training rows.
 
-For the motivation and detailed formulation of rollout-level advantage and loss normalization, see the Agent Lightning v1.0 technical report.
+For the motivation and detailed formulation of rollout-level advantage and loss normalization, see the [Agent Lightning v1.0 technical report](https://arxiv.org/pdf/2608.17528).
 
 ### Maximum PPO update times
 

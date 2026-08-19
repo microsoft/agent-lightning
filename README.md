@@ -5,7 +5,7 @@
 <p align="center"><em>3,500-Line Lightweight Agentic RL Framework for Training Agents with Real Harnesses!</em></p>
 
 <p align="center">
-  <a href="https://microsoft.github.io/agent-lightning/stable/">Documentation</a> &nbsp;·&nbsp; Technical Report (Coming Soon) &nbsp;·&nbsp; <a href="LICENSE">MIT License</a>
+  <a href="https://microsoft.github.io/agent-lightning/stable/">Documentation</a> &nbsp;·&nbsp; <a href="https://arxiv.org/pdf/2608.17528">Technical Report</a> &nbsp;·&nbsp; <a href="LICENSE">MIT License</a>
 </p>
 
 > Agent Lightning was completely refactored in v1.0. For legacy releases earlier than v1.0, see [this branch](https://github.com/microsoft/agent-lightning/tree/v0.x).
@@ -77,6 +77,7 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 
 ## ⚡ Articles
 
+- 8/19/2026 [Agent Lightning v1.0: Towards Harnessed Agentic RL](https://arxiv.org/abs/2608.17528) technical report.
 - 12/17/2025 [Adopting the Trajectory Level Aggregation for Faster Training](https://agent-lightning.github.io/posts/trajectory_level_aggregation/) Agent-lightning blog.
 - 11/4/2025 [Tuning ANY AI agent with Tinker ✕ Agent-lightning](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-1-1d8c9a397f0e) Medium. See also [Part 2](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-2-332c5437f0dc).
 - 10/22/2025 [No More Retokenization Drift: Returning Token IDs via the OpenAI Compatible API Matters in Agent RL](https://blog.vllm.ai/2025/10/22/agent-lightning.html) vLLM blog. See also [Zhihu writeup](https://zhuanlan.zhihu.com/p/1965067274642785725).
@@ -93,7 +94,21 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 
 ## ⚡ Citation
 
-If you find Agent Lightning useful in your research or projects, please cite our paper:
+If you use Agent Lightning v1.0 in your research or projects, please cite the technical report:
+
+```bibtex
+@misc{he2026agentlightningv10harnessed,
+  title={Agent Lightning v1.0: Towards Harnessed Agentic RL},
+  author={Zhiyuan He and Siwei Zhang and Zhiwen Zhou and Yuqing Yang and Yu Kang and Yuge Zhang and Luna K. Qiu and Tin Yan Tsui and Jiahang Xu and Chong Luo},
+  year={2026},
+  eprint={2608.17528},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI},
+  url={https://arxiv.org/abs/2608.17528},
+}
+```
+
+For the original Agent Lightning paper, please use:
 
 ```bibtex
 @misc{luo2025agentlightningtrainai,
