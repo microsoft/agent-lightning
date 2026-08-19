@@ -94,7 +94,21 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 
 ## ⚡ Citation
 
-If you find Agent Lightning useful in your research or projects, please cite our paper:
+If you use Agent Lightning v1.0 in your research or projects, please cite the technical report:
+
+```bibtex
+@misc{he2026agentlightningv10harnessed,
+  title={Agent Lightning v1.0: Towards Harnessed Agentic RL},
+  author={Zhiyuan He and Siwei Zhang and Zhiwen Zhou and Yuqing Yang and Yu Kang and Yuge Zhang and Luna K. Qiu and Tin Yan Tsui and Jiahang Xu and Chong Luo},
+  year={2026},
+  eprint={2608.17528},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI},
+  url={https://arxiv.org/abs/2608.17528},
+}
+```
+
+For the original Agent Lightning paper, please use:
 
 ```bibtex
 @misc{luo2025agentlightningtrainai,
