@@ -2,58 +2,58 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/1-installation/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/10-example-science-world/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/11-example-search-r1/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/12-example-llm-in-sandbox/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/13-example-coding-agent/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/2-quick-start/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/3-basics/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/4-trainer-configuration/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/5-api-gateway-configuration/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/6-controller-configuration/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/7-asynchronous-training/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/8-example-calc-x/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/9-example-gsm8k/</loc>
-         <lastmod>2026-08-17</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
 </urlset>
