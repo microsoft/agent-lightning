@@ -3,79 +3,58 @@ name: PyPI Release
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0, v1.2.3, etc.
-  workflow_dispatch:  # Allow manual trigger
+      - 'v*'
+
+permissions:
+  contents: read
 
 jobs:
-  check-version:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-      tag_version: ${{ steps.get_tag.outputs.tag_version }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Get version from pyproject.toml
-        id: get_version
-        run: |
-          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Package version: $VERSION"
-
-      - name: Get tag version
-        id: get_tag
-        run: |
-          TAG_VERSION=${GITHUB_REF#refs/tags/v}
-          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
-          echo "Tag version: $TAG_VERSION"
-
-      - name: Verify version matches tag
-        run: |
-          if [ "${{ steps.get_version.outputs.version }}" != "${{ steps.get_tag.outputs.tag_version }}" ]; then
-            echo "Error: Version in pyproject.toml (${{ steps.get_version.outputs.version }}) does not match tag (${{ steps.get_tag.outputs.tag_version }})"
-            exit 1
-          fi
-          echo "Version check passed!"
-
   publish-pypi:
-    needs: check-version
+    name: Test, build, and publish package
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
       contents: read
+      id-token: write
 
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
-      - name: Sync dependencies
-        run: uv sync --frozen --no-default-groups --group dev
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-      - name: Install JavaScript dependencies
-        run: cd dashboard && npm ci
-      - name: Build dashboard
-        run: cd dashboard && npm run build
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION=$(uv version --short)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${PACKAGE_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "Package version ${PACKAGE_VERSION} does not match tag ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
+      - name: Sync test dependencies
+        run: uv sync --frozen --no-default-groups --extra dev --group dev
+
+      - name: Run tests
+        run: >-
+          uv run --locked --no-sync pytest -v --durations=20
+          tests/server
+          tests/controller
+          tests/test_package.py
+          tests/examples/test_swe_smith_images.py
 
       - name: Build package
-        run: |
-          uv build
+        run: uv build --no-sources
 
       - name: Verify package contents
         run: |
-          uv run --locked --no-sync python -m tarfile -l dist/*.tar.gz
-          uv run --locked --no-sync python -m zipfile -l dist/*.whl
+          python -m tarfile -l dist/*.tar.gz
+          python -m zipfile -l dist/*.whl
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

@@ -2,58 +2,55 @@ name: PyPI Nightly Build
 
 on:
   schedule:
-    # Run daily at 6:00 AM UTC+8
+    # Run daily at 6:00 AM UTC+8.
     - cron: '0 22 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-nightly
+  cancel-in-progress: false
 
 jobs:
   publish-test-pypi:
+    name: Publish nightly package to TestPyPI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
       contents: read
+      id-token: write
 
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
-      - name: Sync dependencies
-        run: uv sync --frozen --no-default-groups --group dev
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-      - name: Install JavaScript dependencies
-        run: cd dashboard && npm ci
-      - name: Build dashboard
-        run: cd dashboard && npm run build
-
-      - name: Get current version
-        id: get_version
-        run: |
-          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Current version: $VERSION"
 
       - name: Create development version
+        id: version
+        shell: bash
         run: |
-          # Create a dev version with timestamp
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          DEV_VERSION="${{ steps.get_version.outputs.version }}.dev$TIMESTAMP"
-          echo "Creating dev version: $DEV_VERSION"
-          ./scripts/bump_version.sh "$DEV_VERSION"
+          set -euo pipefail
+          BASE_VERSION=$(uv version --short)
+          TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+          DEV_VERSION="${BASE_VERSION}.dev${TIMESTAMP}"
+          uv version --frozen "${DEV_VERSION}"
+          echo "version=${DEV_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Build package
-        run: |
-          uv build
+        run: uv build --no-sources
 
-      - name: Publish to Test PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Verify package contents
+        run: |
+          python -m tarfile -l dist/*.tar.gz
+          python -m zipfile -l dist/*.whl
+
+      - name: Publish ${{ steps.version.outputs.version }} to TestPyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
