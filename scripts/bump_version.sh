@@ -30,9 +30,18 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION_FILE="$PROJECT_ROOT/agentlightning/__init__.py"
+
+if ! grep -q '^__version__ = ".*"$' "$VERSION_FILE"; then
+    echo "ERROR: package version not found in $VERSION_FILE." >&2
+    exit 1
+fi
 
 CURRENT_VERSION="$(uv version --project "$PROJECT_ROOT" --short)"
 uv version --project "$PROJECT_ROOT" --bump "$BUMP" --no-sync
 NEW_VERSION="$(uv version --project "$PROJECT_ROOT" --short)"
+
+sed -i.bak "s/^__version__ = \".*\"$/__version__ = \"$NEW_VERSION\"/" "$VERSION_FILE"
+rm -f "$VERSION_FILE.bak"
 
 echo "Bumped agentlightning version from $CURRENT_VERSION to $NEW_VERSION."
