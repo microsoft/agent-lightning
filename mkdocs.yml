@@ -98,20 +98,20 @@ extra_javascript:
 nav:
   - Home: README.md
   - Documentation:
-    - Installation: 1-installation.md
-    - Quick Start: 2-quick-start.md
-    - Basics: 3-basics.md
-    - Trainer Configuration: 4-trainer-configuration.md
-    - API Gateway Configuration: 5-api-gateway-configuration.md
-    - Controller Configuration: 6-controller-configuration.md
-    - Asynchronous Training: 7-asynchronous-training.md
+    - Installation: 00-installation.md
+    - Quick Start: 01-quick-start.md
+    - Basics: 05-basics.md
+    - Trainer Configuration: 20-trainer-configuration.md
+    - API Gateway Configuration: 25-api-gateway-configuration.md
+    - Controller Configuration: 30-controller-configuration.md
+    - Asynchronous Training: 35-asynchronous-training.md
   - Examples:
-    - Calc-X: 8-example-calc-x.md
-    - GSM8K: 9-example-gsm8k.md
-    - ScienceWorld: 10-example-science-world.md
-    - Search-R1: 11-example-search-r1.md
-    - LLM-in-Sandbox: 12-example-llm-in-sandbox.md
-    - Coding Agent: 13-example-coding-agent.md
+    - Calc-X: 50-example-calc-x.md
+    - GSM8K: 55-example-gsm8k.md
+    - ScienceWorld: 60-example-science-world.md
+    - Search-R1: 65-example-search-r1.md
+    - LLM-in-Sandbox: 70-example-llm-in-sandbox.md
+    - Coding Agent: 75-example-coding-agent.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css

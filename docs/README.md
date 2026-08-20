@@ -1,7 +1,7 @@
 # Agent Lightning Documentation
 
 <p align="center">
-	<img src="images/agl-v1.0.jpg" alt="Agent Lightning v1.0" width="500">
+	<img src="images/agl-v1.0.svg" alt="Agent Lightning v1.0" width="500">
 </p>
 
 Welcome to the Agent Lightning v1.0 documentation. Start with the installation and quick-start guides, then use the configuration guides and examples below to build and train your own agents.
@@ -19,26 +19,26 @@ For the legacy Agent Lightning releases earlier than v1.0, see the [`v0.x` code 
 
 | Guide | Description |
 |---|---|
-| [Installation](1-installation.md) | Set up the base environment and the tested `verl` GPU stack. |
-| [Quick Start](2-quick-start.md) | Run a local end-to-end rollout-driven training job. |
-| [Basics](3-basics.md) | Learn the core components, rollouts, events, and trajectories. |
+| [Installation](00-installation.md) | Set up the base environment and the tested `verl` GPU stack. |
+| [Quick Start](01-quick-start.md) | Run a local end-to-end rollout-driven training job. |
+| [Basics](05-basics.md) | Learn the core components, rollouts, events, and trajectories. |
 
 ## Configuration
 
 | Guide | Description |
 |---|---|
-| [Trainer Configuration](4-trainer-configuration.md) | Configure `verl` integration, rollout collection, and trace aggregation. |
-| [API Gateway Configuration](5-api-gateway-configuration.md) | Configure the API Gateway and model proxy. |
-| [Controller Configuration](6-controller-configuration.md) | Configure local and Kubernetes rollout runners. |
-| [Asynchronous Training](7-asynchronous-training.md) | Configure collocated asynchronous collection and pause/drain behavior. |
+| [Trainer Configuration](20-trainer-configuration.md) | Configure `verl` integration, rollout collection, and trace aggregation. |
+| [API Gateway Configuration](25-api-gateway-configuration.md) | Configure the API Gateway and model proxy. |
+| [Controller Configuration](30-controller-configuration.md) | Configure local and Kubernetes rollout runners. |
+| [Asynchronous Training](35-asynchronous-training.md) | Configure collocated asynchronous collection and pause/drain behavior. |
 
 ## Examples
 
 | Example | Description |
 |---|---|
-| [Calc-X](8-example-calc-x.md) | Train a math reasoning agent with AutoGen and MCP calculator tools. |
-| [GSM8K](9-example-gsm8k.md) | Train an agent on grade-school math reasoning tasks. |
-| [ScienceWorld](10-example-science-world.md) | Train an agent on interactive science tasks in a text environment. |
-| [Search-R1](11-example-search-r1.md) | Train a multi-turn retrieval and reasoning agent. |
-| [LLM-in-Sandbox](12-example-llm-in-sandbox.md) | Train a general agent with computer and code execution tools. |
-| [Coding Agent](13-example-coding-agent.md) | Train a coding agent using repository tests as feedback. |
+| [Calc-X](50-example-calc-x.md) | Train a math reasoning agent with AutoGen and MCP calculator tools. |
+| [GSM8K](55-example-gsm8k.md) | Train an agent on grade-school math reasoning tasks. |
+| [ScienceWorld](60-example-science-world.md) | Train an agent on interactive science tasks in a text environment. |
+| [Search-R1](65-example-search-r1.md) | Train a multi-turn retrieval and reasoning agent. |
+| [LLM-in-Sandbox](70-example-llm-in-sandbox.md) | Train a general agent with computer and code execution tools. |
+| [Coding Agent](75-example-coding-agent.md) | Train a coding agent using repository tests as feedback. |
