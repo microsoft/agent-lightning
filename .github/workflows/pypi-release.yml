@@ -37,6 +37,17 @@ jobs:
             exit 1
           fi
 
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION=$(uv version --short)
+          RUNTIME_VERSION=$(python -c 'from agentlightning import __version__; print(__version__)')
+          if [[ "${PACKAGE_VERSION}" != "${RUNTIME_VERSION}" ]]; then
+            echo "Package version ${PACKAGE_VERSION} does not match runtime version ${RUNTIME_VERSION}." >&2
+            exit 1
+          fi
+
       - name: Sync test dependencies
         run: uv sync --frozen --no-default-groups --extra dev --group dev
 

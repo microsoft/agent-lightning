@@ -40,7 +40,19 @@ jobs:
           TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
           DEV_VERSION="${BASE_VERSION}.dev${TIMESTAMP}"
           uv version --frozen "${DEV_VERSION}"
+          sed -i "s/^__version__ = \".*\"$/__version__ = \"${DEV_VERSION}\"/" agentlightning/__init__.py
           echo "version=${DEV_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION=$(uv version --short)
+          RUNTIME_VERSION=$(python -c 'from agentlightning import __version__; print(__version__)')
+          if [[ "${PACKAGE_VERSION}" != "${RUNTIME_VERSION}" ]]; then
+            echo "Package version ${PACKAGE_VERSION} does not match runtime version ${RUNTIME_VERSION}." >&2
+            exit 1
+          fi
 
       - name: Build package
         run: uv build --no-sources
