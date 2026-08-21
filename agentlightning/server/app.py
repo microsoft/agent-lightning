@@ -23,12 +23,12 @@ log = structlog.get_logger()
 def _server_config(config: Mapping[str, Any] | DictConfig | None) -> dict[str, Any]:
     if config is None:
         raise ValueError("server config is required")
-    if isinstance(config, DictConfig):
-        container = OmegaConf.to_container(config, resolve=True)
-        if not isinstance(container, dict):
-            raise TypeError("server config must be a mapping")
-        return cast(dict[str, Any], container)
-    return dict(config)
+    elif OmegaConf.is_config(config):
+        raw = dict(cast(Any, OmegaConf.to_container(config, resolve=True)))
+    else:
+        raw = dict(config)
+
+    return raw
 
 
 def _build_auth_dependency(key: str):

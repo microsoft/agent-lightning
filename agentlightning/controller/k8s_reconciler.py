@@ -15,7 +15,7 @@ import asyncio
 import json
 import time
 from collections import deque
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import kr8s
@@ -163,7 +163,7 @@ class K8sReconciler:
         rollouts = await self._query_rollouts(state_in=[RolloutState.QUEUING, RolloutState.RUNNING], limit=500)
         api = await self._get_k8s_api()
         jobs = [
-            job if isinstance(job, dict) else job.raw
+            cast(k8s_objects.Job, job).raw
             async for job in k8s_objects.Job.async_list(
                 namespace=self._namespace,
                 label_selector=MANAGED_BY_SELECTOR,
