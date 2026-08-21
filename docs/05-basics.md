@@ -91,6 +91,6 @@ The trainer also handles Agent Lightning-specific data processing. It merges con
 
 The following chapters describe the settings for each component. Start with the trainer to define how rollouts are created and converted into training samples, then configure the server and the Controller that execute them:
 
-1. [Trainer Configuration](4-trainer-configuration.md)
-2. [API Gateway Configuration](5-api-gateway-configuration.md)
-3. [Controller Configuration](6-controller-configuration.md)
+1. [Trainer Configuration](20-trainer-configuration.md)
+2. [API Gateway Configuration](25-api-gateway-configuration.md)
+3. [Controller Configuration](30-controller-configuration.md)

@@ -4,7 +4,7 @@ This quick start requires only one machine with one A100 GPU. It runs Agent Ligh
 
 ## Before you start
 
-Complete [Installation](1-installation.md), including the `verl` GPU stack.
+Complete [Installation](00-installation.md), including the `verl` GPU stack.
 
 > AGL v1.0 itself is lightweight, but policy inference and GRPO updates still require the GPU stack used by `verl` and vLLM.
 
@@ -51,5 +51,5 @@ When you want to stop the run, press `Ctrl+C` once and wait for the script to ex
 
 ## What's Next
 
-1. Read [Basics](3-basics.md) to learn the core Agent Lightning >= v1.0 concepts.
-2. Read the complete [Calc-X example](8-example-calc-x.md), which also covers the Kubernetes controller mode.
+1. Read [Basics](05-basics.md) to learn the core Agent Lightning >= v1.0 concepts.
+2. Read the complete [Calc-X example](50-example-calc-x.md), which also covers the Kubernetes controller mode.

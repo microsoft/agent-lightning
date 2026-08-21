@@ -2,9 +2,16 @@
 
 """Package rename and application metadata smoke tests."""
 
+from importlib.metadata import version
+
 from fastapi.testclient import TestClient
 
+from agentlightning import __version__
 from agentlightning.server.app import create_app
+
+
+def test_package_version() -> None:
+    assert __version__ == version("agentlightning")
 
 
 def test_server_metadata() -> None:

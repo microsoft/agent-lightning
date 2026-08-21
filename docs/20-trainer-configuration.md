@@ -212,4 +212,4 @@ For additional training stability, we recommend setting it to `2`. Samples beyon
 
 ## Asynchronous training
 
-Agent Lightning supports collocated asynchronous rollout collection through `agentlightning.async_rollout`. For configuration, behavior, and constraints, see [Asynchronous Training](7-asynchronous-training.md).
+Agent Lightning supports collocated asynchronous rollout collection through `agentlightning.async_rollout`. For configuration, behavior, and constraints, see [Asynchronous Training](35-asynchronous-training.md).
