@@ -8,13 +8,13 @@
       
       
       
-        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/1-installation/">
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/65-example-search-r1/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../60-example-science-world/">
       
       
-        <link rel="next" href="../2-quick-start/">
+        <link rel="next" href="../70-example-llm-in-sandbox/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Installation - Agent Lightning v1.0</title>
+        <title>Search-R1 - Agent Lightning v1.0</title>
       
     
     
@@ -84,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#search-r1" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              Search-R1
             
           </span>
         </div>
@@ -294,8 +294,6 @@
       
   
   
-    
-  
   
   
     
@@ -308,11 +306,13 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -333,7 +333,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -348,37 +348,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../00-installation/" class="md-nav__link">
         
   
   
@@ -394,59 +367,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#step-1-uv-sync" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 1: UV Sync
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-2-install-verl-and-flashattention" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 2: Install verl and FlashAttention
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-3-wb-login" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 3: W&amp;B Login
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -459,7 +379,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../2-quick-start/" class="md-nav__link">
+      <a href="../01-quick-start/" class="md-nav__link">
         
   
   
@@ -487,7 +407,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../3-basics/" class="md-nav__link">
+      <a href="../05-basics/" class="md-nav__link">
         
   
   
@@ -515,7 +435,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../4-trainer-configuration/" class="md-nav__link">
+      <a href="../20-trainer-configuration/" class="md-nav__link">
         
   
   
@@ -543,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../5-api-gateway-configuration/" class="md-nav__link">
+      <a href="../25-api-gateway-configuration/" class="md-nav__link">
         
   
   
@@ -571,7 +491,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../6-controller-configuration/" class="md-nav__link">
+      <a href="../30-controller-configuration/" class="md-nav__link">
         
   
   
@@ -599,7 +519,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../7-asynchronous-training/" class="md-nav__link">
+      <a href="../35-asynchronous-training/" class="md-nav__link">
         
   
   
@@ -631,8 +551,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -643,13 +565,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -670,7 +590,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -688,7 +608,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../8-example-calc-x/" class="md-nav__link">
+      <a href="../50-example-calc-x/" class="md-nav__link">
         
   
   
@@ -716,7 +636,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../9-example-gsm8k/" class="md-nav__link">
+      <a href="../55-example-gsm8k/" class="md-nav__link">
         
   
   
@@ -744,7 +664,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../10-example-science-world/" class="md-nav__link">
+      <a href="../60-example-science-world/" class="md-nav__link">
         
   
   
@@ -769,10 +689,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../11-example-search-r1/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Search-R1
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -788,6 +735,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#data-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retrieval-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retrieval Service
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#training" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Training
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -800,7 +800,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../12-example-llm-in-sandbox/" class="md-nav__link">
+      <a href="../70-example-llm-in-sandbox/" class="md-nav__link">
         
   
   
@@ -828,7 +828,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../13-example-coding-agent/" class="md-nav__link">
+      <a href="../75-example-coding-agent/" class="md-nav__link">
         
   
   
@@ -883,10 +883,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#step-1-uv-sync" class="md-nav__link">
+  <a href="#data-preparation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: UV Sync
+        Data Preparation
       
     </span>
   </a>
@@ -894,10 +894,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-install-verl-and-flashattention" class="md-nav__link">
+  <a href="#retrieval-service" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Install verl and FlashAttention
+        Retrieval Service
       
     </span>
   </a>
@@ -905,10 +905,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-wb-login" class="md-nav__link">
+  <a href="#training" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: W&amp;B Login
+        Training
       
     </span>
   </a>
@@ -1009,30 +1009,131 @@
 
 
 <!-- Page content -->
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>This guide sets up a single-node environment for Agent Lightning v1.0. After completing it, you can run single-machine training jobs.</p>
-<p>Before getting started, install <code>uv</code> and NVIDIA CUDA. We support CUDA <code>12.9</code> or <code>13.0</code>.</p>
-<h4 id="step-1-uv-sync">Step 1: UV Sync<a class="headerlink" href="#step-1-uv-sync" title="Permanent link">&para;</a></h4>
-<p>From the project root, run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>&lt;this-repo&gt;
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>sync
+<h1 id="search-r1">Search-R1<a class="headerlink" href="#search-r1" title="Permanent link">&para;</a></h1>
+<table>
+<thead>
+<tr>
+<th>GPU</th>
+<th>Model</th>
+<th>Controller Mode</th>
+<th>Trainer Mode</th>
+<th>Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8× A100 40GB</td>
+<td><code>meta-llama/Llama-3.2-3B-Instruct</code></td>
+<td>Local</td>
+<td>Sync only</td>
+<td><a href="https://github.com/microsoft/agent-lightning/tree/main/examples/search_r1">Source</a></td>
+</tr>
+</tbody>
+</table>
+<p>Search-R1 trains a retrieval-augmented question-answering agent with <code>verl</code> and Agent Lightning &gt;=v1.0. During each multi-turn rollout, the agent alternates between model responses and Wikipedia searches before producing a final answer.</p>
+<p>This example is based on <a href="https://arxiv.org/abs/2503.09516"><em>Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning</em></a> by Jin et al. (2025).</p>
+<p>This example uses the local controller in synchronous trainer mode. Each rollout runs as a local process, calls the policy model through the AGL Gateway, and queries a separate FAISS retrieval service.</p>
+<p>The example supports two API styles:</p>
+<ol>
+<li><strong>Chat Completions API:</strong> the standard text-in/text-out API used by default.</li>
+<li><strong>Token-in/token-out Completions API:</strong> the agent sends prompt token IDs and receives generated token IDs while preserving the multi-turn token sequence.</li>
+</ol>
+<h2 id="data-preparation">Data Preparation<a class="headerlink" href="#data-preparation" title="Permanent link">&para;</a></h2>
+<p>Prepare the Wikipedia corpus, E5 FAISS index, training data, and retriever environment from the repository root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>examples/search_r1/data_process.sh
 </code></pre></div>
-<p>This installs the base Python environment into <code>.venv</code> under the project root.</p>
-<h4 id="step-2-install-verl-and-flashattention">Step 2: Install <code>verl</code> and FlashAttention<a class="headerlink" href="#step-2-install-verl-and-flashattention" title="Permanent link">&para;</a></h4>
-<p>Agent Lightning uses <code>verl</code> as its training backend. The compatible versions of <code>verl</code>, <code>vllm</code>, and <code>torch</code> are tightly coupled, and installing <code>flash-attn</code> can also be error-prone. We recommend using <code>scripts/setup_verl.sh</code> to install the tested, pinned GPU stack and build <code>flash-attn</code> from source.</p>
-<p>Pass the <code>verl</code> version and CUDA wheel variant explicitly. The script supports <code>verl==0.7.1</code> or <code>verl==0.8.0</code>, and CUDA wheel variant <code>cu129</code> or <code>cu130</code>. We recommend CUDA <code>13.0</code> with <code>verl==0.8.0</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>bash<span class="w"> </span>scripts/setup_verl.sh<span class="w"> </span><span class="m">0</span>.8.0<span class="w"> </span>cu130
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># or</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>bash<span class="w"> </span>scripts/setup_verl.sh<span class="w"> </span><span class="m">0</span>.7.1<span class="w"> </span>cu129
+<p>The script creates a Conda environment named <code>retriever</code> and prepares these files:</p>
+<ul>
+<li><code>examples/search_r1/data/wiki-18.jsonl</code></li>
+<li><code>examples/search_r1/data/e5_Flat.index</code></li>
+<li><code>examples/search_r1/data/train.parquet</code></li>
+<li><code>examples/search_r1/data/test.parquet</code></li>
+</ul>
+<p>Set <code>SEARCH_R1_DATA_DIR</code> before running the script to use a different data directory.</p>
+<h2 id="retrieval-service">Retrieval Service<a class="headerlink" href="#retrieval-service" title="Permanent link">&para;</a></h2>
+<p>Start the retrieval service in a separate terminal and keep it running during training:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>examples/search_r1/retrieval_launch.sh
 </code></pre></div>
-<p>For <code>verl==0.7.1</code>, the script installs <code>vllm==0.12.0</code>. For <code>verl==0.8.0</code>, it installs <code>vllm==0.20.2</code> first, then installs <code>verl==0.8.0</code>. Both paths build <code>flash-attn==2.8.3</code> locally against the selected environment. Depending on the number of CPU cores available, the script can take 10-30 minutes to complete.</p>
-<h4 id="step-3-wb-login">Step 3: W&amp;B Login<a class="headerlink" href="#step-3-wb-login" title="Permanent link">&para;</a></h4>
-<p>By default, all tasks upload logs and trajectories to Weights &amp; Biases. Log in to W&amp;B before running a task:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>wandb<span class="w"> </span>login
+<p>The service listens at <code>http://127.0.0.1:8000/retrieve</code> by default. Check that it is ready with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>http://127.0.0.1:8000/healthz
 </code></pre></div>
+<p>Common retrieval settings include:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SEARCH_R1_DATA_DIR</code></td>
+<td><code>examples/search_r1/data</code></td>
+<td>Corpus and FAISS index directory</td>
+</tr>
+<tr>
+<td><code>SEARCH_R1_RETRIEVAL_PORT</code></td>
+<td><code>8000</code></td>
+<td>Retrieval service port</td>
+</tr>
+<tr>
+<td><code>SEARCH_R1_TOPK</code></td>
+<td><code>3</code></td>
+<td>Documents returned for each search</td>
+</tr>
+<tr>
+<td><code>SEARCH_R1_RETRIEVER_DEVICE</code></td>
+<td><code>auto</code></td>
+<td>Retriever device: <code>auto</code>, <code>cuda</code>, <code>cuda:0</code>, or <code>cpu</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="training">Training<a class="headerlink" href="#training" title="Permanent link">&para;</a></h2>
+<p>With the retrieval service running, start local training from the repository root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>examples/search_r1/run.sh
+</code></pre></div>
+<p><code>run.sh</code> starts <code>agl-server</code>, the local <code>agl-controller</code>, and the <code>verl</code> trainer. The script cleans up the server, controller, and Ray processes when it exits.</p>
+<p>The default agent uses the Chat Completions API. To use the token-in/token-out Completions API instead:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>examples/search_r1/run.sh<span class="w"> </span>--api-type<span class="w"> </span>completion
+</code></pre></div>
+<p>To use different dataset files:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>examples/search_r1/run.sh<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--train-file<span class="w"> </span>/path/to/train.parquet<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span>--val-file<span class="w"> </span>/path/to/test.parquet
+</code></pre></div>
+<p>Agent runtime settings include:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SEARCH_R1_RETRIEVAL_URL</code></td>
+<td><code>http://127.0.0.1:8000/retrieve</code></td>
+<td>Retrieval endpoint used by rollout agents</td>
+</tr>
+<tr>
+<td><code>SEARCH_R1_MAX_TURNS</code></td>
+<td><code>4</code></td>
+<td>Maximum model/search turns per rollout</td>
+</tr>
+<tr>
+<td><code>SEARCH_R1_MAX_TOKENS</code></td>
+<td><code>500</code></td>
+<td>Maximum generated tokens per model response</td>
+</tr>
+<tr>
+<td><code>SEARCH_R1_TEMPERATURE</code></td>
+<td><code>1.0</code></td>
+<td>Sampling temperature</td>
+</tr>
+</tbody>
+</table>
 
 <!-- Was this page helpful? -->
 

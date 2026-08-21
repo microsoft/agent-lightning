@@ -8,13 +8,11 @@
       
       
       
-        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/12-example-llm-in-sandbox/">
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/75-example-coding-agent/">
       
       
-        <link rel="prev" href="../11-example-search-r1/">
+        <link rel="prev" href="../70-example-llm-in-sandbox/">
       
-      
-        <link rel="next" href="../13-example-coding-agent/">
       
       
         
@@ -25,7 +23,7 @@
     
     
       
-        <title>LLM-in-Sandbox - Agent Lightning v1.0</title>
+        <title>Coding Agent - Agent Lightning v1.0</title>
       
     
     
@@ -84,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#llm-in-sandbox" class="md-skip">
+        <a href="#coding-agent" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +121,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              LLM-in-Sandbox
+              Coding Agent
             
           </span>
         </div>
@@ -351,7 +349,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../1-installation/" class="md-nav__link">
+      <a href="../00-installation/" class="md-nav__link">
         
   
   
@@ -379,7 +377,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../2-quick-start/" class="md-nav__link">
+      <a href="../01-quick-start/" class="md-nav__link">
         
   
   
@@ -407,7 +405,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../3-basics/" class="md-nav__link">
+      <a href="../05-basics/" class="md-nav__link">
         
   
   
@@ -435,7 +433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../4-trainer-configuration/" class="md-nav__link">
+      <a href="../20-trainer-configuration/" class="md-nav__link">
         
   
   
@@ -463,7 +461,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../5-api-gateway-configuration/" class="md-nav__link">
+      <a href="../25-api-gateway-configuration/" class="md-nav__link">
         
   
   
@@ -491,7 +489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../6-controller-configuration/" class="md-nav__link">
+      <a href="../30-controller-configuration/" class="md-nav__link">
         
   
   
@@ -519,7 +517,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../7-asynchronous-training/" class="md-nav__link">
+      <a href="../35-asynchronous-training/" class="md-nav__link">
         
   
   
@@ -608,7 +606,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../8-example-calc-x/" class="md-nav__link">
+      <a href="../50-example-calc-x/" class="md-nav__link">
         
   
   
@@ -636,7 +634,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../9-example-gsm8k/" class="md-nav__link">
+      <a href="../55-example-gsm8k/" class="md-nav__link">
         
   
   
@@ -664,7 +662,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../10-example-science-world/" class="md-nav__link">
+      <a href="../60-example-science-world/" class="md-nav__link">
         
   
   
@@ -692,7 +690,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../11-example-search-r1/" class="md-nav__link">
+      <a href="../65-example-search-r1/" class="md-nav__link">
         
   
   
@@ -700,6 +698,34 @@
     
   
     Search-R1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../70-example-llm-in-sandbox/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM-in-Sandbox
   
 
     
@@ -736,7 +762,7 @@
   <span class="md-ellipsis">
     
   
-    LLM-in-Sandbox
+    Coding Agent
   
 
     
@@ -754,7 +780,7 @@
   <span class="md-ellipsis">
     
   
-    LLM-in-Sandbox
+    Coding Agent
   
 
     
@@ -802,6 +828,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repository-image-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Image Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#training" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -812,38 +849,21 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#preventing-reward-hacking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preventing Reward Hacking
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../13-example-coding-agent/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Coding Agent
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -905,10 +925,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repository-image-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Image Preparation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#training" class="md-nav__link">
     <span class="md-ellipsis">
       
         Training
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preventing-reward-hacking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preventing Reward Hacking
       
     </span>
   </a>
@@ -1009,7 +1051,7 @@
 
 
 <!-- Page content -->
-<h1 id="llm-in-sandbox">LLM-in-Sandbox<a class="headerlink" href="#llm-in-sandbox" title="Permanent link">&para;</a></h1>
+<h1 id="coding-agent">Coding Agent<a class="headerlink" href="#coding-agent" title="Permanent link">&para;</a></h1>
 <table>
 <thead>
 <tr>
@@ -1022,91 +1064,92 @@
 </thead>
 <tbody>
 <tr>
-<td>4× A100 80GB</td>
-<td><code>Qwen/Qwen3-4B-Instruct-2507</code></td>
+<td>4× B200</td>
+<td><code>Qwen/Qwen3.5-9B</code></td>
 <td>K8s</td>
-<td>Sync only</td>
-<td><a href="https://github.com/microsoft/agent-lightning/tree/main/examples/llm-in-sandbox">Source</a></td>
+<td>Sync and async</td>
+<td><a href="https://github.com/microsoft/agent-lightning/tree/main/examples/swe_smith">Source</a></td>
 </tr>
 </tbody>
 </table>
-<p>LLM-in-Sandbox trains a general instruction-following agent with <code>verl</code> and Agent Lightning &gt;=v1.0. The agent can manage files, execute code, and use external resources inside an isolated container sandbox.</p>
-<p>This example is based on <a href="https://arxiv.org/abs/2601.16206"><em>Computer Environments Elicit General Agentic Intelligence in LLMs</em></a> by Cheng et al. (2026).</p>
-<p>This example uses the K8s controller in synchronous trainer mode. Each rollout runs as a Kubernetes Job, while model calls pass through the AGL Gateway to the <code>verl</code>-managed vLLM server. The agent dependencies remain isolated from the trainer environment.</p>
+<p>The Coding Agent example trains a software-engineering agent on SWE-smith tasks with <code>verl</code> and Agent Lightning &gt;=v1.0. Each rollout runs as a Kubernetes Job inside a repository-specific image, edits an isolated checkout, executes tests, and reports the resulting reward to the AGL Gateway.</p>
+<p>This example uses two machines:</p>
+<ul>
+<li><strong>Machine A — Kubernetes Controller machine:</strong> connects to the Kubernetes cluster, prepares repository images in the node-accessible Docker runtime, and runs <code>agl-controller</code> to create rollout Jobs.</li>
+<li><strong>Machine B — GPU training machine:</strong> provides the GPUs and runs both <code>agl-server</code> (the AGL Gateway) and the <code>verl</code> trainer with its model backend.</li>
+</ul>
+<p>Machine B's AGL Gateway address must be reachable from Machine A and from the rollout pods in the Kubernetes cluster.</p>
 <h2 id="environment-preparation">Environment Preparation<a class="headerlink" href="#environment-preparation" title="Permanent link">&para;</a></h2>
-<p>Use Python 3.12 and install the project environment before running the example. You also need:</p>
-<ul>
-<li>Docker</li>
-<li>Minikube</li>
-<li><code>kubectl</code></li>
-<li>Image build support inside Minikube</li>
-</ul>
-<p>The bundled Minikube setup is intended for testing only. For production deployments, replace it with a production-grade Kubernetes cluster.</p>
+<p>On <strong>Machine A (Kubernetes Controller machine)</strong>, activate the project environment and install the dependency used to prepare repository images:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>examples/swe_smith/requirements.txt
+</code></pre></div>
+<p>Machine A also requires Docker, <code>kubectl</code>, and access to the Kubernetes cluster.</p>
+<p>On <strong>Machine B (GPU training machine)</strong>, install the project and GPU training environment described in the project installation guide. The SWE-smith image-preparation requirements above are not needed on Machine B.</p>
 <h2 id="data-preparation">Data Preparation<a class="headerlink" href="#data-preparation" title="Permanent link">&para;</a></h2>
-<p>The public training and validation data is hosted in the <a href="https://huggingface.co/datasets/daixuancheng/llm-in-sandbox-rl"><code>daixuancheng/llm-in-sandbox-rl</code></a> dataset on Hugging Face. The upstream <a href="https://github.com/llm-in-sandbox/llm-in-sandbox-rl"><code>llm-in-sandbox-rl</code></a> repository provides the conversion script used to generate the JSON files expected by this example.</p>
-<p>From the repository root, clone the upstream repository and convert all dataset configurations:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/llm-in-sandbox/llm-in-sandbox-rl.git<span class="w"> </span>/tmp/llm-in-sandbox-rl
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python<span class="w"> </span>/tmp/llm-in-sandbox-rl/examples/llm_in_sandbox/convert_llm_sandbox_dataset.py<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--all<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--output-dir<span class="w"> </span>examples/llm-in-sandbox/data
-</code></pre></div>
-<p>The converter downloads the following Hugging Face configurations:</p>
-<ul>
-<li>Training: <code>instruct_pretrain</code> (<code>train</code> split, 3,600 samples)</li>
-<li>Validation: <code>math_mini</code>, <code>biomed_mini</code>, and <code>long_context_mini</code> (<code>test</code> splits)</li>
-</ul>
-<p>The default files used by this example are:</p>
-<table>
-<thead>
-<tr>
-<th>Split</th>
-<th>Path</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Training</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_instruct_pretrain/train_verl.json</code></td>
-</tr>
-<tr>
-<td>Validation</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_math_mini/test_verl.json</code></td>
-</tr>
-<tr>
-<td>Validation</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_biomed_mini/test_verl.json</code></td>
-</tr>
-<tr>
-<td>Validation</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_long_context_mini/test_verl.json</code></td>
-</tr>
-</tbody>
-</table>
-<p>The command above creates these directories directly; no manual file move is needed. If you generate or download the files separately, place <code>train_verl.json</code> and <code>test_verl.json</code> in their corresponding directories, or pass those directories to the launcher.</p>
-<p>For validation, select any one or more of <code>math_mini</code>, <code>biomed_mini</code>, and <code>long_context_mini</code>. Separate multiple directories with commas:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>examples/llm-in-sandbox/run.sh<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--train-data-dir<span class="w"> </span>/path/to/train-data<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--val-data-dir<span class="w"> </span>/path/to/math-data,/path/to/biomed-data,/path/to/long-context-data
-</code></pre></div>
-<h2 id="training">Training<a class="headerlink" href="#training" title="Permanent link">&para;</a></h2>
-<p>Start training from the repository root:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>examples/llm-in-sandbox/run.sh
-</code></pre></div>
-<p>The launcher:</p>
+<p>The provided splits are derived from the original SWE-smith dataset, which contains 59,136 executable software-engineering tasks from 128 Python repositories. We build the training data with the following filtering pipeline:</p>
 <ol>
-<li>creates a local Minikube cluster;</li>
-<li>builds the <code>llm-in-sandbox-agent:dev</code> image;</li>
-<li>starts <code>agl-server</code> and the K8s <code>agl-controller</code>;</li>
-<li>starts the <code>verl</code> trainer;</li>
-<li>cleans up the server, controller, and Ray processes when it exits.</li>
+<li>Remove tasks with an empty problem statement. The original release contains 18,033 such records.</li>
+<li>Remove tasks whose corresponding problem branch is missing from the provided repository image. This affects 1,265 records.</li>
+<li>Remove tasks requiring more than 200 tests, which avoids examples with prohibitively expensive test suites.</li>
+<li>Run Qwen3.5-9B four times on every remaining candidate as a difficulty probe.</li>
+<li>Remove tasks solved in all four probe rollouts because they provide little learning signal.</li>
+<li>Retain tasks with a mixture of successful and failed probe rollouts, yielding approximately 5,000 examples.</li>
+<li>Add a sample of 1,000 tasks that fail all four probes so the training set is not biased toward easier tasks.</li>
 </ol>
-<p>The controller creates one Kubernetes Job for each rollout. Inside the Job, the adapter runs the sandbox agent, routes model calls through the AGL Gateway, evaluates the final answer, and reports the reward.</p>
-<p>Additional <code>verl</code> settings can be passed as dotlist overrides:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>examples/llm-in-sandbox/run.sh<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>trainer.total_epochs<span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">2</span>
+<p>The resulting data contains approximately 6,000 training examples and 400 validation examples. <code>train_dataset_mixed.jsonl</code> contains the mixed-difficulty training set, while <code>val_dataset_filtered.jsonl</code> contains the filtered validation set.</p>
+<p>Download the pre-split dataset archive from <a href="https://drive.google.com/file/d/1q19DP53l4rldvBR2dkUhbaPI_mHVBVL1/view?usp=drive_link">Google Drive</a> on <strong>both machines</strong>, then extract it into <code>examples/swe_smith/</code>:</p>
+<ul>
+<li><strong>Machine A</strong> reads the datasets to determine which repository images must be prepared.</li>
+<li><strong>Machine B</strong> reads the datasets to construct the training and validation inputs.</li>
+</ul>
+<p>The example reads these files by default:</p>
+<ul>
+<li><code>examples/swe_smith/train_dataset_mixed.jsonl</code></li>
+<li><code>examples/swe_smith/val_dataset_filtered.jsonl</code></li>
+</ul>
+<p>When using <code>run.sh</code>, custom paths can be selected with the <code>AGL_TRAIN_DATASET_PATH</code> and <code>AGL_VAL_DATASET_PATH</code> environment variables read by the launcher.</p>
+<h2 id="repository-image-preparation">Repository Image Preparation<a class="headerlink" href="#repository-image-preparation" title="Permanent link">&para;</a></h2>
+<p>On Machine A, prepare the repository images in the Docker daemon used by the Kubernetes nodes before starting the Controller:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>examples/swe_smith/pull_images.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--dataset<span class="w"> </span>examples/swe_smith/train_dataset_mixed.jsonl<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--dataset<span class="w"> </span>examples/swe_smith/val_dataset_filtered.jsonl
 </code></pre></div>
-<p>Use <code>Ctrl+C</code> to stop training and clean up the processes started by the launcher.</p>
+<p>This command installs the OpenAI client into each required SWE-smith base image and creates the <code>:openai</code> tags expected by <code>job-template-openai.yaml</code>. Run it again if the datasets introduce new repository images.</p>
+<h2 id="training">Training<a class="headerlink" href="#training" title="Permanent link">&para;</a></h2>
+<p>The distributed launcher has three roles and must be started in this order:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>server → controller → trainer
+</code></pre></div>
+<p>On <strong>Machine B (GPU training machine)</strong>, start the Gateway:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PUBLIC_HOST</span><span class="o">=</span>&lt;address-reachable-from-controller-and-pods&gt;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;shared-secret&gt;
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_MODEL_NAME</span><span class="o">=</span>Qwen/Qwen3.5-9B
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>examples/swe_smith/run.sh<span class="w"> </span>server
+</code></pre></div>
+<p>On <strong>Machine A (Kubernetes Controller machine)</strong>, start the Controller:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PUBLIC_HOST</span><span class="o">=</span>&lt;gateway-address&gt;
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;same-shared-secret&gt;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_NAMESPACE</span><span class="o">=</span>agents
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>examples/swe_smith/run.sh<span class="w"> </span>controller
+</code></pre></div>
+<p>After the Gateway and Controller are ready, start the trainer on <strong>Machine B (GPU training machine)</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;same-shared-secret&gt;
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_MODEL_NAME</span><span class="o">=</span>Qwen/Qwen3.5-9B
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>examples/swe_smith/run.sh<span class="w"> </span>trainer
+</code></pre></div>
+<p>The launcher passes additional arguments to <code>train_smith_agent.py</code>, including <code>verl</code> dotlist overrides:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>examples/swe_smith/run.sh<span class="w"> </span>trainer<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>trainer.total_training_steps<span class="o">=</span><span class="m">100</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">4</span>
+</code></pre></div>
+<h2 id="preventing-reward-hacking">Preventing Reward Hacking<a class="headerlink" href="#preventing-reward-hacking" title="Permanent link">&para;</a></h2>
+<p>A coding agent may obtain the reference fix without solving the task, for example by inspecting Git history, downloading upstream source code with <code>curl</code> or <code>wget</code>, installing the original package with <code>pip</code>, or using Python networking libraries such as <code>urllib</code>.</p>
+<p>The SWE agent limits these reward-hacking paths in two ways:</p>
+<ul>
+<li><strong>Repository isolation:</strong> before the agent starts, the harness checks out the task branch and moves <code>.git</code> outside the visible testbed. Agent commands that invoke Git, access the hidden Git metadata, install packages, download files, or modify the test harness are blocked.</li>
+<li><strong>Network isolation:</strong> we strongly recommend adding a Kubernetes network policy that denies all outbound traffic from agent pods except connections to the AGL Gateway. Without this restriction, an agent may retrieve upstream source code or other external information and obtain reward without solving the task as intended.</li>
+</ul>
+<p>The final reward is computed by running the task-specific <code>FAIL_TO_PASS</code> and <code>PASS_TO_PASS</code> tests inside the isolated repository environment. These controls are part of the training setup: weakening them can allow the agent to recover reference code and corrupt the reward signal.</p>
 
 <!-- Was this page helpful? -->
 
