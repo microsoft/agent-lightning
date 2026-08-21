@@ -394,3 +394,36 @@ def test_terminal_rollouts_cursor_pagination(client: TestClient, auth_headers: d
     page3 = client.get("/api/rollouts/terminal", params={"after": 3}, headers=auth_headers)
     assert page3.json() == {"items": [], "next_after": 3, "total_terminal": 3}
     assert pending not in {it["rollout_id"] for it in body1["items"] + body2["items"]}
+
+
+def test_delete_removes_completed_rollout_from_terminal_log(client: TestClient, auth_headers: dict[str, str]):
+    rid_a = _terminal(client, auth_headers, "a", is_train=True)
+    rid_b = _terminal(client, auth_headers, "b", is_train=False)
+
+    assert client.delete(f"/api/rollouts/{rid_a}", headers=auth_headers).status_code == 204
+
+    body = client.get("/api/rollouts/terminal", params={"after": 0}, headers=auth_headers).json()
+    assert body == {
+        "items": [{"rollout_id": rid_b, "state": "succeeded", "data_id": "b", "is_train": False}],
+        "next_after": 1,
+        "total_terminal": 1,
+    }
+
+
+def test_delete_and_reenqueue_completion_is_logged_once(client: TestClient, auth_headers: dict[str, str]):
+    rid = _terminal(client, auth_headers, "a", is_train=True)
+    assert client.delete(f"/api/rollouts/{rid}", headers=auth_headers).status_code == 204
+
+    recreated = client.post(
+        "/api/rollouts", json=[{"rollout_id": rid, "input": {"data_id": "a"}}], headers=auth_headers
+    )
+    assert recreated.status_code == 201
+    assert recreated.json()[0]["rollout_id"] == rid
+    for state in ("running", "succeeded"):
+        resp = client.patch(f"/api/rollouts/{rid}", json={"status": {"state": state}}, headers=auth_headers)
+        assert resp.status_code == 200
+
+    body = client.get("/api/rollouts/terminal", params={"after": 0}, headers=auth_headers).json()
+    assert body["total_terminal"] == 1
+    ids = [it["rollout_id"] for it in body["items"]]
+    assert ids == [rid]
