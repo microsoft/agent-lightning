@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release"
+  short_description: "Prepare and publish Agent Lightning releases"
+  default_prompt: "Use $release to prepare and publish a new Agent Lightning release."
