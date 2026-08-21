@@ -7,7 +7,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ from agentlightning.verl.agl_rollout_manager import CompletedRollout
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
 _ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
-_TRACE_MERGE_MISMATCH_COLUMNS: list[Any] = [
+_TRACE_MERGE_MISMATCH_COLUMNS = [
     "global_steps",
     "rollout_id",
     "data_id",
@@ -34,7 +34,7 @@ _TRACE_MERGE_MISMATCH_COLUMNS: list[Any] = [
     "previous_trace",
     "current_trace",
 ]
-_ROLLOUT_TRAJECTORY_COLUMNS: list[Any] = [
+_ROLLOUT_TRAJECTORY_COLUMNS = [
     "global_steps",
     "trajectory_artifact",
     "trajectory_artifact_path",
@@ -119,7 +119,7 @@ def _upload_trace_merge_mismatches_to_wandb(rows: list[dict[str, Any]], global_s
 
         if wandb.run is None:
             return
-        table = wandb.Table(columns=_TRACE_MERGE_MISMATCH_COLUMNS)
+        table = wandb.Table(columns=cast(list[str | int], _TRACE_MERGE_MISMATCH_COLUMNS))
         for row in rows:
             table.add_data(*(row.get(column) for column in _TRACE_MERGE_MISMATCH_COLUMNS))
         wandb.log({"training/trace_merge_mismatches": table}, step=global_steps)
@@ -154,7 +154,7 @@ def _upload_compact_rollout_trajectories_to_wandb(
             trajectory_file.write(_build_zipped_jsonl(records, f"{artifact_type}.jsonl"))
         run.log_artifact(artifact)
 
-        table = wandb.Table(columns=_ROLLOUT_TRAJECTORY_COLUMNS)
+        table = wandb.Table(columns=cast(list[str | int], _ROLLOUT_TRAJECTORY_COLUMNS))
         table.add_data(global_steps, artifact_name, artifact_path, len(records))
         table_key = "val/rollout_trajectories" if is_validation else "training/rollout_trajectories"
         wandb.log({table_key: table}, step=global_steps)
