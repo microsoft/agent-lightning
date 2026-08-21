@@ -59,9 +59,10 @@ jobs:
         run: uv run --locked --no-sync pyright
 
   test:
-    name: Run core tests
+    name: Run tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # verl-cpu is needed for tests/verl; the rest of the suite only needs dev.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -71,14 +72,9 @@ jobs:
         with:
           enable-cache: true
       - name: Sync test dependencies
-        run: uv sync --frozen --no-default-groups --extra dev --group dev
+        run: uv sync --frozen --no-default-groups --extra dev --group dev --group verl-cpu
       - name: Run tests
-        run: >-
-          uv run --locked --no-sync pytest -v --durations=20
-          tests/server
-          tests/controller
-          tests/test_package.py
-          tests/examples/test_swe_smith_images.py
+        run: uv run --locked --no-sync pytest -v --durations=20 tests
 
   package:
     name: Build package
