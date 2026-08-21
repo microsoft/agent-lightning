@@ -17,6 +17,7 @@ import time
 from collections import deque
 from typing import Any
 
+import httpx
 import kr8s
 import kr8s.asyncio
 import structlog
@@ -26,7 +27,7 @@ from kr8s.asyncio import objects as k8s_objects
 from omegaconf import DictConfig
 
 from agentlightning.client import AgentLightningAsyncClient
-from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState
+from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState, RolloutStatusPatch
 
 log = structlog.get_logger()
 
@@ -162,7 +163,7 @@ class K8sReconciler:
         rollouts = await self._query_rollouts(state_in=[RolloutState.QUEUING, RolloutState.RUNNING], limit=500)
         api = await self._get_k8s_api()
         jobs = [
-            job.raw
+            job if isinstance(job, dict) else job.raw
             async for job in k8s_objects.Job.async_list(
                 namespace=self._namespace,
                 label_selector=MANAGED_BY_SELECTOR,
@@ -339,15 +340,17 @@ class K8sReconciler:
         state_in: list[RolloutState],
         limit: int = 50,
     ) -> list[Rollout]:
-        params: list[tuple[str, str | int]] = [("state_in", state.value) for state in state_in]
-        params.append(("limit", limit))
+        params = httpx.QueryParams()
+        for state in state_in:
+            params = params.add("state_in", state.value)
+        params = params.add("limit", limit)
         response = await self._api.get("/api/rollouts", params=params)
         response.raise_for_status()
         return [Rollout.model_validate(item) for item in response.json()]
 
     async def _patch_status(self, rollout_id: str, **status: Any) -> bool:
         try:
-            patch = RolloutPatch(status=status)
+            patch = RolloutPatch(status=RolloutStatusPatch.model_validate(status))
             response = await self._api.patch(
                 f"/api/rollouts/{rollout_id}",
                 json=patch.model_dump(mode="json", exclude_unset=True),
