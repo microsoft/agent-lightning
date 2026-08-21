@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from httpx_retries import Retry, RetryTransport
@@ -257,7 +257,7 @@ class AglRolloutManagerBase:
                 request = RolloutCreate(
                     input=_to_native(original),
                     is_train=is_train,
-                    config=self._rollout_config,
+                    config=cast(Any, self._rollout_config),  # pydantic coerces the dict
                     metadata={},
                 )
                 if self._hooks is not None:

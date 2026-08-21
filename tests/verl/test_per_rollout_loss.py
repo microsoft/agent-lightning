@@ -63,7 +63,7 @@ def test_policy_loss_matches_masked_sum() -> None:
     log_prob = torch.zeros(2, 3)
 
     loss, metrics = compute_policy_loss_per_rollout_mean(
-        old_log_prob=log_prob,
+        old_log_prob=log_prob,  # pyright: ignore[reportCallIssue]
         log_prob=log_prob,
         advantages=advantages,
         response_mask=response_mask,

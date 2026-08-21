@@ -33,6 +33,19 @@ dev = [
 agl-server = "agentlightning.server.__main__:main"
 agl-controller = "agentlightning.controller.__main__:main"
 
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", group = "verl-cpu" },
+]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
@@ -46,7 +59,6 @@ quote-style = "double"
 
 [tool.pyright]
 include = ["agentlightning", "tests", "docs/macros", "scripts"]
-exclude = ["agentlightning/verl", "tests/verl"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 venvPath = "."
@@ -72,4 +84,23 @@ docs = [
 dev = [
     "pytest-httpx>=0.36.0",
     "sympy>=1.14.0",
+]
+# Lint/type-check environment for the VERL integration under agentlightning/verl.
+# Pyright needs verl and its peers importable to check that subtree; it only ever
+# reads .py/.pyi files, so torch comes from the CPU index (see [tool.uv.sources])
+# and ~2.3GB of CUDA runtime is skipped. This is not a training environment --
+# install verl against the GPU torch build of your choice for that.
+#
+# Upper bound is deliberate: verl 0.9.0 renamed main_ppo.TaskRunner to
+# TaskRunnerV1 (the old name moved to main_ppo_v0) and dropped
+# create_rl_sampler, both of which entrypoint.py imports. auto_await landed in
+# 0.7.1, so that is the floor.
+verl-cpu = [
+    "verl>=0.7.1,<0.9.0",
+    "torch",
+    "ray",
+    "tensordict",
+    "datasets",
+    "numpy",
+    "tqdm",
 ]

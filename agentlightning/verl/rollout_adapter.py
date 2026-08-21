@@ -19,7 +19,7 @@ from agentlightning.verl.agl_rollout_manager import CompletedRollout
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
 _ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
-_TRACE_MERGE_MISMATCH_COLUMNS = [
+_TRACE_MERGE_MISMATCH_COLUMNS: list[Any] = [
     "global_steps",
     "rollout_id",
     "data_id",
@@ -34,7 +34,7 @@ _TRACE_MERGE_MISMATCH_COLUMNS = [
     "previous_trace",
     "current_trace",
 ]
-_ROLLOUT_TRAJECTORY_COLUMNS = [
+_ROLLOUT_TRAJECTORY_COLUMNS: list[Any] = [
     "global_steps",
     "trajectory_artifact",
     "trajectory_artifact_path",
