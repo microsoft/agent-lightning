@@ -31,11 +31,10 @@ public side effects, not one.
    version exists in neither place, and stop for an explicit release decision
    when either of these holds:
    - A tag exists with no matching PyPI version. A published version is
-     immutable and its tag must never be reused or moved. A tag that never
-     published is a different situation and still needs a human decision:
-     re-pushing an existing tag does not re-trigger `pypi-release.yml`, so
-     recovering that version means deleting and re-pushing the tag, while
-     abandoning it means releasing a later version instead.
+     immutable, and its tag must never be reused or moved. A tag that never
+     published is a different situation and still needs a human decision,
+     informed by why it did not publish. See "Recovering a tag that never
+     published" below.
    - The proposed bump would skip a version that was tagged but never published.
 6. Treat verified PyPI trusted-publisher configuration for the canonical
    repository and `pypi-release.yml` as a prerequisite. If it cannot be
@@ -120,6 +119,18 @@ uv version --short
 grep '^__version__' agentlightning/__init__.py
 ```
 
+The workflow itself reads the runtime value as
+`python -c 'from agentlightning import __version__; print(__version__)'`, after
+`uv sync` has installed the checkout. Locally that import can resolve to some
+other installed copy of the package instead of the tree being tagged, so read
+the file directly here; `agentlightning/__init__.py` assigns `__version__` as a
+single literal, so the two agree by construction.
+
+GitHub reads workflow files as they exist **at the tagged commit**, not at the
+tip of the default branch. Confirm that the commit being tagged actually
+contains `.github/workflows/pypi-release.yml` with its `v*` trigger; a commit
+that predates the workflow will never publish, however the tag is pushed.
+
 Immediately query the canonical repository and PyPI again to ensure that
 `vX.Y.Z` is still absent. Then create an annotated tag on the release commit and
 push it to the canonical repository:
@@ -156,6 +167,30 @@ For a transient workflow failure, rerun only with authorization. For a source
 or workflow defect, do not move the public tag; prepare a corrective release
 version. A GitHub Release and release notes are optional, separate publication
 actions and must not be created unless requested.
+
+## Recovering a tag that never published
+
+Separate the mechanics from the policy before proposing a recovery.
+
+The mechanics: pushing a tag that already exists and points at the same commit
+changes no ref, so it starts no workflow run. Creating a tag, moving one to a
+different commit, or deleting and recreating one does change the ref and does
+start a run. What that run executes is the workflow file at the tagged commit,
+so a tag on a commit from before `pypi-release.yml` existed starts no PyPI
+publication no matter how it is pushed. Run
+`git ls-tree --name-only <tag> .github/workflows/` before assuming a re-push
+would help.
+
+The policy: never move or reuse a tag whose version is on PyPI. That version is
+immutable, so a re-run could only fail at upload, and consumers who already
+resolved the tag would silently get different code.
+
+Between those, a tag that never published is a decision for a release owner,
+not a default action. Releasing the next version from a commit that carries the
+current workflow is usually simpler and always safer than resurrecting the old
+tag. Note that a non-publishing tag may still have had effects: `docs.yml` has
+carried the `v*` trigger for longer than `pypi-release.yml`, so an older tag can
+have deployed documentation and moved `stable` without ever reaching PyPI.
 
 ## Nightly distinction
 
