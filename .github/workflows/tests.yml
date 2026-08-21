@@ -15,6 +15,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint Python and repository files
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+      - name: Sync lint dependencies
+        run: uv sync --frozen --no-default-groups --extra dev --group dev
+      - name: Run pre-commit checks
+        run: uv run --locked --no-sync pre-commit run --all-files --show-diff-on-failure
+      - name: Run Ruff
+        run: uv run --locked --no-sync ruff check .
+      - name: Check Ruff formatting
+        run: uv run --locked --no-sync ruff format --check .
+      - name: Run Pyright
+        run: uv run --locked --no-sync pyright
+      - name: Check Python headers
+        run: uv run --locked --no-sync python scripts/check_headers.py
+
   test:
     name: Run core tests
     runs-on: ubuntu-latest
