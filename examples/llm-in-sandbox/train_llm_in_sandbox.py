@@ -10,9 +10,10 @@ import copy
 import importlib.resources
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from pprint import pprint
-from typing import Any, Sequence
+from typing import Any
 
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf

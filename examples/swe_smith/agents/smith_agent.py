@@ -347,7 +347,7 @@ def _run(command: str, timeout: int) -> tuple[str, int]:
         return proc.stdout + proc.stderr, proc.returncode
     except subprocess.TimeoutExpired:
         return f"[timed out after {timeout}s]", 124
-    except Exception as exc:  # noqa: BLE001 — surface exec errors to the model
+    except Exception as exc:
         return f"[failed to start: {exc}]", 1
 
 
@@ -564,7 +564,7 @@ def capture_patch() -> str:
             timeout=60,
         )
         return proc.stdout
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.error("patch capture failed: %s", exc)
         return ""
 
@@ -613,7 +613,7 @@ def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> 
     # only count P2P reporting PASSED/XFAIL — a missing status means it never ran.
     p2p_ok = [t for t in pass_to_pass if statuses.get(t) in ("PASSED", "XFAIL")]
     resolved = not timed_out and len(f2p_pass) == len(fail_to_pass) and len(p2p_ok) == len(pass_to_pass)
-    prefix = "EVAL TIMEOUT after {}s — ".format(timeout) if timed_out else ""
+    prefix = f"EVAL TIMEOUT after {timeout}s — " if timed_out else ""
     suffix = " (f2p_only)" if f2p_only else ""
     reason = (
         f"{prefix}FAIL_TO_PASS {len(f2p_pass)}/{len(fail_to_pass)} passed, "
@@ -831,7 +831,7 @@ def _query(client: Any, messages: list[dict[str, Any]], max_tokens: int) -> tupl
         choice = completion.choices[0]
         prompt_tokens = getattr(getattr(completion, "usage", None), "prompt_tokens", 0) or 0
         return (choice.message.content or ""), (choice.finish_reason or "stop"), int(prompt_tokens)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if _is_context_overflow(exc):
             raise _ContextOverflow(str(exc)) from exc
         if _is_gateway_paused(exc):

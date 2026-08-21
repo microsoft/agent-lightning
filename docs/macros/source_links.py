@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import os
-from typing import Any, Dict
+from typing import Any
 
 
 def define_env(env: Any):
@@ -29,9 +29,9 @@ def define_env(env: Any):
         ```
     """
 
-    cfg: Dict[str, Any] = env.conf or {}
+    cfg: dict[str, Any] = env.conf or {}
     repo_url = cfg.get("repo_url", "").rstrip("/")
-    extra: Dict[str, Any] = cfg.get("extra", {}) or {}
+    extra: dict[str, Any] = cfg.get("extra", {}) or {}
     default_commit = extra.get("source_commit", "main")
     project_dir = env.project_dir
 

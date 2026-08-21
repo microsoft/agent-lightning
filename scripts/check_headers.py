@@ -49,7 +49,7 @@ def main() -> int:
             with file_path.open("r", encoding="utf-8") as file:
                 first_line = file.readline().rstrip("\r\n")
                 header_line = file.readline().rstrip("\r\n") if first_line.startswith("#!") else first_line
-                following_line = file.readline() if first_line.startswith("#!") else file.readline()
+                following_line = file.readline()
         except OSError as exc:
             print(f"Failed to read {file_path}: {exc}", file=sys.stderr)
             return 1

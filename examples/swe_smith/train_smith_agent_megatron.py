@@ -4,19 +4,18 @@
 
 from __future__ import annotations
 
+import importlib.resources
+from collections.abc import Sequence
 from pprint import pprint
-from typing import Any, Sequence
+from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
-
-from train_smith_agent import (  # noqa: E402 — sibling module, run from example dir
+from train_smith_agent import (
     DEFAULT_MODEL,
     EXAMPLE_DIR,
     load_split_file,
     log,
 )
-
-import importlib.resources  # noqa: E402
 
 CHAT_TEMPLATE_PATH = str(EXAMPLE_DIR / "swe_smith_chat_template.jinja")
 TRAIN_BACKEND = "megatron"

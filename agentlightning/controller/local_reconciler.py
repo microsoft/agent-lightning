@@ -161,9 +161,12 @@ class LocalReconciler:
                 continue
             rollout = rollouts_by_id.get(rollout_id)
             timeout = float(rollout.config.timeout_seconds) if rollout and rollout.config.timeout_seconds else None
-            if timeout is not None and (now - item.spawned_at) > timeout:
-                if await self._kill_process_group(rollout_id, item):
-                    await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
+            if (
+                timeout is not None
+                and (now - item.spawned_at) > timeout
+                and await self._kill_process_group(rollout_id, item)
+            ):
+                await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
 
     async def _finish_proc(self, rollout: Rollout, item: Proc) -> bool:
         if rollout.status.state == RolloutState.QUEUING:

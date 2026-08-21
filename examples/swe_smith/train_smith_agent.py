@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import importlib.resources
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from pprint import pprint
-from typing import Any, Sequence
+from typing import Any
 
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf
@@ -45,7 +46,8 @@ def load_split_file(
     max_instances: int | None = None,
 ) -> list[dict[str, Any]]:
     """Load a pre-split, pre-curated JSONL dataset and project to the VERL schema."""
-    rows = [json.loads(line) for line in Path(path).open() if line.strip()]
+    with Path(path).open() as file:
+        rows = [json.loads(line) for line in file if line.strip()]
     selected = [_project(row) for row in rows]
     if max_instances:
         selected = selected[:max_instances]
