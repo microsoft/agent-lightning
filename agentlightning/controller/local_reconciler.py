@@ -210,8 +210,7 @@ class LocalReconciler:
                     f"/attempt/{attempt_id}/mode/{mode}/openai/v1"
                 ),
                 "AGL_EVENT_URL": (
-                    f"{self._config.agl_server.url}/api/rollouts/{rollout.rollout_id}"
-                    f"/attempt/{attempt_id}/events"
+                    f"{self._config.agl_server.url}/api/rollouts/{rollout.rollout_id}/attempt/{attempt_id}/events"
                 ),
             }
             env.update(_build_env_from_map(rollout.input, rollout.config.local.env_map))
@@ -279,4 +278,3 @@ class LocalReconciler:
         except Exception as e:
             log.warning("Failed to patch rollout", rollout_id=rollout_id, error=str(e))
             return False
-

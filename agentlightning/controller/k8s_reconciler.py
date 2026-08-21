@@ -77,20 +77,17 @@ def build_job_spec(rollout: Rollout, controller_config: DictConfig) -> dict[str,
 
     mode = "train" if rollout.is_train else "val"
     agent_base_url = str(
-        controller_config.agl_server.get("agent_url", None)
-        or controller_config.agl_server.url
+        controller_config.agl_server.get("agent_url", None) or controller_config.agl_server.url
     ).rstrip("/")
     agl_openai_base_url = (
-        f"{agent_base_url}/proxy/rollout/{rollout.rollout_id}"
-        f"/attempt/{DEFAULT_ATTEMPT_ID}/mode/{mode}/openai/v1"
+        f"{agent_base_url}/proxy/rollout/{rollout.rollout_id}/attempt/{DEFAULT_ATTEMPT_ID}/mode/{mode}/openai/v1"
     )
     for container in pod_spec.get("containers", []):
         env = container.setdefault("env", [])
         for name, value in {
             "AGL_OPENAI_BASE_URL": agl_openai_base_url,
             "AGL_EVENT_URL": (
-                f"{agent_base_url}/api/rollouts/{rollout.rollout_id}"
-                f"/attempt/{DEFAULT_ATTEMPT_ID}/events"
+                f"{agent_base_url}/api/rollouts/{rollout.rollout_id}/attempt/{DEFAULT_ATTEMPT_ID}/events"
             ),
             "AGL_KEY": str(controller_config.agl_server.key or ""),
         }.items():
@@ -360,5 +357,3 @@ class K8sReconciler:
         except Exception as exc:
             log.warning("Failed to patch rollout", rollout_id=rollout_id, error=str(exc))
             return False
-
-

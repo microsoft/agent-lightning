@@ -33,9 +33,7 @@ def iter_source_files() -> list[Path]:
     )
     paths = (line.strip() for line in result.stdout.splitlines())
     return [
-        REPO_ROOT / path
-        for path in paths
-        if path and not any(path.startswith(prefix) for prefix in EXCLUDED_PREFIXES)
+        REPO_ROOT / path for path in paths if path and not any(path.startswith(prefix) for prefix in EXCLUDED_PREFIXES)
     ]
 
 

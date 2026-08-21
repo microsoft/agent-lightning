@@ -218,5 +218,3 @@ async def delete_rollout(rollout_id: str) -> None:
     """Delete a rollout and its events. Idempotent: missing id is a no-op."""
     _rollouts.pop(rollout_id, None)
     _events.pop(rollout_id, None)
-
-

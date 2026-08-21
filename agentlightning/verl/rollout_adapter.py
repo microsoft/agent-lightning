@@ -106,9 +106,7 @@ def _build_compact_rollout_trajectory_records(
 
 
 def _build_zipped_jsonl(records: list[dict[str, Any]], jsonl_name: str) -> bytes:
-    jsonl_text = "".join(
-        json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records
-    )
+    jsonl_text = "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.writestr(jsonl_name, jsonl_text.encode("utf-8"))
@@ -512,10 +510,7 @@ class RolloutAdapter:
                 "has_reward": rollout.final_reward is not None,
             }
             if rollout.triplets:
-                response_length_list = [
-                    len(triplet.response.get("token_ids") or [])
-                    for triplet in rollout.triplets
-                ]
+                response_length_list = [len(triplet.response.get("token_ids") or []) for triplet in rollout.triplets]
                 sample_stat.update(
                     {
                         "total_response_length": np.sum(response_length_list),

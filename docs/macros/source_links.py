@@ -61,9 +61,7 @@ def define_env(env: Any):
         if not os.path.exists(abs_path):
             _warn(f"Source path not found: {path}. Rendering a visible broken-link marker.")
             label = html.escape(text or path)
-            return (
-                f'<span class="broken-source-link" title="Missing: {html.escape(url)}">' f"{label} (missing)" f"</span>"
-            )
+            return f'<span class="broken-source-link" title="Missing: {html.escape(url)}">{label} (missing)</span>'
 
         if text:
             return f"[{text}]({url})"

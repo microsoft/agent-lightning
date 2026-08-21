@@ -233,9 +233,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             running_at = rollout.running_at
             finished_at = rollout.finished_at
             queue_wait = (running_at - submitted) if running_at is not None else None
-            run_duration = (
-                finished_at - running_at if (running_at is not None and finished_at is not None) else None
-            )
+            run_duration = finished_at - running_at if (running_at is not None and finished_at is not None) else None
             total = (finished_at - submitted) if finished_at is not None else None
             if queue_wait is not None:
                 queue_waits.append(queue_wait)
@@ -585,18 +583,12 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             else:
                 batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
-            if (
-                rollout_corr_config is not None
-                and not bypass_mode
-                and "rollout_log_probs" in batch.batch
-            ):
+            if rollout_corr_config is not None and not bypass_mode and "rollout_log_probs" in batch.batch:
                 from verl.trainer.ppo.rollout_corr_helper import (
                     compute_rollout_correction_and_add_to_batch,
                 )
 
-                batch, is_metrics = compute_rollout_correction_and_add_to_batch(
-                    batch, rollout_corr_config
-                )
+                batch, is_metrics = compute_rollout_correction_and_add_to_batch(batch, rollout_corr_config)
                 metrics.update(is_metrics)
 
             adv_kwargs = {
@@ -704,9 +696,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             metrics.update(compute_timing_metrics(batch=step_batch, timing_raw=timing_raw))
             n_gpus = self.resource_pool_manager.get_n_gpus()
             if n_gpus > 0 and "step" in timing_raw:
-                metrics.update(
-                    compute_throughout_metrics(batch=step_batch, timing_raw=timing_raw, n_gpus=n_gpus)
-                )
+                metrics.update(compute_throughout_metrics(batch=step_batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
             is_last_step = self.global_steps >= self.total_training_steps
 

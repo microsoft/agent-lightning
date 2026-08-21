@@ -40,7 +40,7 @@ _ACTION_RE = re.compile(r"```(?:bash|mswea_bash_command)[^\S\n]*\n(.*?)\n?```", 
 # Block git use/metadata access. `git` matched only in command position (after
 # ; && || | ( ` $( and VAR=val prefixes) so args/prose containing "git" pass.
 _GIT_INVOKE_RE = re.compile(
-    r'(?:^|[\n;`(]|&&|\|\|?|\$\()\s*(?:\w+=\S+\s+)*(?:[\w./-]*/)?git(?:-[a-z]+)?(?=\s|$|;|&|\|)',
+    r"(?:^|[\n;`(]|&&|\|\|?|\$\()\s*(?:\w+=\S+\s+)*(?:[\w./-]*/)?git(?:-[a-z]+)?(?=\s|$|;|&|\|)",
     re.I,
 )
 _GIT_ACCESS_RE = re.compile(r'--git-dir|--work-tree|(?:^|[\s=:"\'/])\.git(?:/|\b)', re.I)
@@ -49,30 +49,30 @@ _GIT_ACCESS_RE = re.compile(r'--git-dir|--work-tree|(?:^|[\s=:"\'/])\.git(?:/|\b
 # (curl/wget, pip install, python urllib). Block these; same command-position
 # anchoring as _GIT_INVOKE_RE. Code-level backstop for the egress NetworkPolicy.
 _NET_FETCH_RE = re.compile(
-    r'(?:^|[\n;`(]|&&|\|\|?|\$\()\s*(?:\w+=\S+\s+)*(?:[\w./-]*/)?'
-    r'(?:curl|wget|httpie|http|https|aria2c|scp|sftp|rsync|nc|ncat|netcat|telnet)'
-    r'(?=\s|$|;|&|\|)',
+    r"(?:^|[\n;`(]|&&|\|\|?|\$\()\s*(?:\w+=\S+\s+)*(?:[\w./-]*/)?"
+    r"(?:curl|wget|httpie|http|https|aria2c|scp|sftp|rsync|nc|ncat|netcat|telnet)"
+    r"(?=\s|$|;|&|\|)",
     re.I,
 )
 # Any install can pull the target package's correct source. Match
 # pip/pip3/conda/mamba/uv/easy_install install and `python -m pip install`.
 _PKG_INSTALL_RE = re.compile(
-    r'(?:^|[\n;`(]|&&|\|\|?|\$\()\s*(?:\w+=\S+\s+)*(?:'
-    r'(?:[\w./-]*/)?(?:pip|pip3|conda|mamba|easy_install|uv)\b[^\n;&|]*?\binstall\b'
-    r'|(?:[\w./-]*/)?python[0-9.]*\s+-m\s+pip\b[^\n;&|]*?\binstall\b)',
+    r"(?:^|[\n;`(]|&&|\|\|?|\$\()\s*(?:\w+=\S+\s+)*(?:"
+    r"(?:[\w./-]*/)?(?:pip|pip3|conda|mamba|easy_install|uv)\b[^\n;&|]*?\binstall\b"
+    r"|(?:[\w./-]*/)?python[0-9.]*\s+-m\s+pip\b[^\n;&|]*?\binstall\b)",
     re.I,
 )
 # Python one-liners that reach the network -- a route around curl/wget.
 _PY_NET_RE = re.compile(
-    r'urllib\.request|\burlopen\b|\brequests\.(?:get|post|put|head|Session)\b|'
-    r'\bhttpx\.|\bsocket\.(?:socket|create_connection)\b|\burllib3\b',
+    r"urllib\.request|\burlopen\b|\brequests\.(?:get|post|put|head|Session)\b|"
+    r"\bhttpx\.|\bsocket\.(?:socket|create_connection)\b|\burllib3\b",
     re.I,
 )
 # Writing test-harness/config files (conftest, .pth, sitecustomize) can force
 # PASS or patch imports, bypassing evaluate(). Match writes TO these files only.
 _TEST_TAMPER_RE = re.compile(
     r'(?:>>?|\btee\b(?:\s+-a)?\s+)\s*[\'"]?[^\s\'"|;&<>]*'
-    r'(?:conftest\.py|pytest\.ini|tox\.ini|sitecustomize\.py|usercustomize\.py|'
+    r"(?:conftest\.py|pytest\.ini|tox\.ini|sitecustomize\.py|usercustomize\.py|"
     r'setup\.cfg|pyproject\.toml|\.pth)(?=[\'"\s;&|]|$)',
     re.I,
 )
@@ -263,25 +263,35 @@ def _forbidden_action(action: str) -> str | None:
     backstop; the authoritative fix is a default-deny egress NetworkPolicy.
     """
     if _GIT_INVOKE_RE.search(action):
-        return ("git is disabled in this environment; do not use it for any "
-                "purpose. Inspect and edit the source files under /testbed "
-                "directly (cat, grep, sed, python) to fix the bug.")
+        return (
+            "git is disabled in this environment; do not use it for any "
+            "purpose. Inspect and edit the source files under /testbed "
+            "directly (cat, grep, sed, python) to fix the bug."
+        )
     if _GIT_ACCESS_RE.search(action) or _HIDDEN_GIT_DIR in action:
-        return ("Accessing the git metadata directory is not allowed. Work only "
-                "with the source files under /testbed; do not read .git.")
+        return (
+            "Accessing the git metadata directory is not allowed. Work only "
+            "with the source files under /testbed; do not read .git."
+        )
     if _NET_FETCH_RE.search(action) or _PY_NET_RE.search(action):
-        return ("Network access is disabled. Do not fetch code from the internet "
-                "(curl, wget, urllib, requests, etc.); all dependencies are "
-                "already installed. Solve the bug using only the source files "
-                "already present under /testbed.")
+        return (
+            "Network access is disabled. Do not fetch code from the internet "
+            "(curl, wget, urllib, requests, etc.); all dependencies are "
+            "already installed. Solve the bug using only the source files "
+            "already present under /testbed."
+        )
     if _PKG_INSTALL_RE.search(action):
-        return ("Installing packages is not allowed. Everything needed to run the "
-                "code and its tests is already installed. Fix the bug by editing "
-                "the source under /testbed; do not install anything.")
+        return (
+            "Installing packages is not allowed. Everything needed to run the "
+            "code and its tests is already installed. Fix the bug by editing "
+            "the source under /testbed; do not install anything."
+        )
     if _TEST_TAMPER_RE.search(action):
-        return ("Modifying test-harness or config files (conftest.py, pytest.ini, "
-                "tox.ini, setup.cfg, pyproject.toml, sitecustomize.py, .pth) is "
-                "not allowed. Fix the bug in the source under /testbed instead.")
+        return (
+            "Modifying test-harness or config files (conftest.py, pytest.ini, "
+            "tox.ini, setup.cfg, pyproject.toml, sitecustomize.py, .pth) is "
+            "not allowed. Fix the bug in the source under /testbed instead."
+        )
     return None
 
 
@@ -340,6 +350,7 @@ def _run(command: str, timeout: int) -> tuple[str, int]:
     except Exception as exc:  # noqa: BLE001 — surface exec errors to the model
         return f"[failed to start: {exc}]", 1
 
+
 def post_event(event_type: str, data: dict[str, Any], retry: bool = False) -> None:
     event_url = os.environ.get("AGL_EVENT_URL")
     if not event_url:
@@ -365,9 +376,13 @@ def post_event(event_type: str, data: dict[str, Any], retry: bool = False) -> No
             backoff = min(2 ** min(attempt, 5), 30)
             log.warning(
                 "failed to post %s event (attempt %d): %s; retrying in %ds",
-                event_type, attempt, exc, backoff,
+                event_type,
+                attempt,
+                exc,
+                backoff,
             )
             time.sleep(backoff)
+
 
 def fetch_eval_meta() -> dict[str, Any]:
     event_url = os.environ.get("AGL_EVENT_URL", "")
@@ -388,11 +403,16 @@ def fetch_eval_meta() -> dict[str, Any]:
             with urllib.request.urlopen(request, timeout=30) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             break
-        except (urllib.error.URLError, TimeoutError, ConnectionError,
-                http.client.HTTPException, json.JSONDecodeError) as exc:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+        ) as exc:
             log.warning("fetch eval meta failed (attempt %d/%d): %s", i + 1, attempts, exc)
             if i < attempts - 1:
-                time.sleep(min(2 ** i, 8))
+                time.sleep(min(2**i, 8))
     if payload is None:
         log.error("failed to fetch eval meta from server after %d attempts", attempts)
         return {}
@@ -403,6 +423,7 @@ def fetch_eval_meta() -> dict[str, Any]:
         "FAIL_TO_PASS": inp.get("FAIL_TO_PASS", []),
         "PASS_TO_PASS": inp.get("PASS_TO_PASS", []),
     }
+
 
 def _git_dir() -> str:
     """Path to the live git directory (relocated once the agent loop is set up)."""
@@ -432,12 +453,12 @@ def _remove_stale_git_index_lock() -> None:
     except OSError as exc:
         log.warning("failed to remove stale git index lock %s: %s", lock_path, exc)
 
+
 def _proc_output(proc: subprocess.CompletedProcess) -> str:
     return "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
 
-def _git_retry(
-    args: list[str], *, timeout: int = 120, attempts: int = 3
-) -> subprocess.CompletedProcess | None:
+
+def _git_retry(args: list[str], *, timeout: int = 120, attempts: int = 3) -> subprocess.CompletedProcess | None:
     """Run a git command in /testbed with retries on timeout/failure.
 
     Under high pod concurrency the node is heavily oversubscribed and IO-bound
@@ -453,24 +474,23 @@ def _git_retry(
             log.info("sleeping %.2fs before git checkout", delay)
             time.sleep(delay)
         try:
-            proc = subprocess.run(
-                [*_git_base(), *args], cwd=TESTBED, capture_output=True, text=True, timeout=timeout
-            )
+            proc = subprocess.run([*_git_base(), *args], cwd=TESTBED, capture_output=True, text=True, timeout=timeout)
             if proc.returncode == 0:
                 return proc
             last = proc
             if "index.lock" in _proc_output(proc):
                 _remove_stale_git_index_lock()
-            log.warning("git %s rc=%d (attempt %d/%d): %s",
-                        args[0], proc.returncode, i + 1, attempts, _proc_output(proc)[:200])
+            log.warning(
+                "git %s rc=%d (attempt %d/%d): %s", args[0], proc.returncode, i + 1, attempts, _proc_output(proc)[:200]
+            )
         except subprocess.TimeoutExpired:
             last = None
             _remove_stale_git_index_lock()
-            log.warning("git %s timed out after %ds (attempt %d/%d)",
-                        args[0], timeout, i + 1, attempts)
+            log.warning("git %s timed out after %ds (attempt %d/%d)", args[0], timeout, i + 1, attempts)
         if i < attempts - 1:
-            time.sleep(min(2 ** i, 8))
+            time.sleep(min(2**i, 8))
     return last
+
 
 def checkout_bug_commit(instance_id: str) -> None:
     """Bring the injected bug into /testbed using SWE-smith's official checkout.
@@ -487,6 +507,7 @@ def checkout_bug_commit(instance_id: str) -> None:
         reason = "timeout" if proc is None else _proc_output(proc)
         raise SystemExit(f"git checkout {instance_id} failed: {reason}")
     log.info("checked out SWE-smith bug branch in /testbed: %s", instance_id)
+
 
 def relocate_git() -> None:
     """Move /testbed/.git out of the agent's working tree (call after checkout).
@@ -513,8 +534,8 @@ def relocate_git() -> None:
     except OSError:
         same_fs = False
     shutil.move(src, _HIDDEN_GIT_DIR)
-    log.info("relocated .git -> %s (%s)", _HIDDEN_GIT_DIR,
-             "rename O(1)" if same_fs else "cross-fs copy")
+    log.info("relocated .git -> %s (%s)", _HIDDEN_GIT_DIR, "rename O(1)" if same_fs else "cross-fs copy")
+
 
 def restore_f2p_tests(instance_id: str, test_nodes: list[str]) -> None:
     """Restore the test files deleted by `Remove F2P Tests`, keeping the agent's fix.
@@ -532,16 +553,21 @@ def restore_f2p_tests(instance_id: str, test_nodes: list[str]) -> None:
     if proc is None or proc.returncode != 0:
         log.warning("restore_f2p_tests failed: %s", getattr(proc, "stderr", "timeout"))
 
+
 def capture_patch() -> str:
     try:
         proc = subprocess.run(
             [*_git_base(), "-c", "core.fileMode=false", "diff", "HEAD"],
-            cwd=TESTBED, capture_output=True, text=True, timeout=60,
+            cwd=TESTBED,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         return proc.stdout
     except Exception as exc:  # noqa: BLE001
         log.error("patch capture failed: %s", exc)
         return ""
+
 
 def parse_test_statuses(test_output: str) -> dict[str, str]:
     statuses: dict[str, str] = {}
@@ -556,6 +582,7 @@ def parse_test_statuses(test_output: str) -> dict[str, str]:
         statuses[node] = status
     return statuses
 
+
 def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> tuple[float, bool, str, bool]:
     fail_to_pass = list(eval_meta.get("FAIL_TO_PASS", []))
     pass_to_pass = list(eval_meta.get("PASS_TO_PASS", []))
@@ -567,20 +594,16 @@ def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> 
     # unrelated cross-file P2P that cause eval timeouts). Resolve = all F2P + P2P pass.
     if f2p_only:
         f2p_files = sorted({t.split("::", 1)[0] for t in fail_to_pass})
-        pass_to_pass = [t for t in pass_to_pass
-                        if any(t.startswith(f) for f in f2p_files)]
+        pass_to_pass = [t for t in pass_to_pass if any(t.startswith(f) for f in f2p_files)]
 
     nodes = fail_to_pass + pass_to_pass
     restore_f2p_tests(eval_meta.get("instance_id", ""), nodes)
     # Cap pytest at 4 workers: the project's own `-n auto` reads HOST cores (dozens),
     # ignores the pod cgroup, and spawns ~70 workers that OOMKill the 4Gi pod. `-n`
     # needs xdist, so probe first and fall back to serial `-p no:xdist` when absent.
-    xdist_flag = (
-        "-n4" if _run("python -c 'import xdist'", 30)[1] == 0 else "-p no:xdist"
-    )
+    xdist_flag = "-n4" if _run("python -c 'import xdist'", 30)[1] == 0 else "-p no:xdist"
     output, rc = _run(
-        "python -m pytest -rA -p no:cacheprovider " + xdist_flag + " "
-        + " ".join(map(_shq, nodes)),
+        "python -m pytest -rA -p no:cacheprovider " + xdist_flag + " " + " ".join(map(_shq, nodes)),
         timeout,
     )
     # rc 124 == subprocess.TimeoutExpired (see _run); pytest itself never exits 124.
@@ -589,11 +612,7 @@ def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> 
     f2p_pass = [t for t in fail_to_pass if statuses.get(t) in ("PASSED", "XFAIL")]
     # only count P2P reporting PASSED/XFAIL — a missing status means it never ran.
     p2p_ok = [t for t in pass_to_pass if statuses.get(t) in ("PASSED", "XFAIL")]
-    resolved = (
-        not timed_out
-        and len(f2p_pass) == len(fail_to_pass)
-        and len(p2p_ok) == len(pass_to_pass)
-    )
+    resolved = not timed_out and len(f2p_pass) == len(fail_to_pass) and len(p2p_ok) == len(pass_to_pass)
     prefix = "EVAL TIMEOUT after {}s — ".format(timeout) if timed_out else ""
     suffix = " (f2p_only)" if f2p_only else ""
     reason = (
@@ -602,16 +621,21 @@ def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> 
     )
     return (1.0 if resolved else 0.0), resolved, reason, timed_out
 
+
 def _shq(value: str) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
+
 
 class _ContextOverflow(Exception):
     pass
 
+
 class _GatewayPaused(Exception):
     pass
 
+
 _OVERFLOW_MARKERS = ("maximum context length", "'max_tokens' is too large")
+
 
 def _is_context_overflow(exc: Exception) -> bool:
 
@@ -620,6 +644,7 @@ def _is_context_overflow(exc: Exception) -> bool:
     message = str(getattr(exc, "message", None) or exc).lower()
     return any(marker in message for marker in _OVERFLOW_MARKERS)
 
+
 def _is_gateway_paused(exc: Exception) -> bool:
     # async weight-sync pauses the proxy (429 gateway paused). Transient — callers
     # wait it out instead of burning a turn.
@@ -627,8 +652,10 @@ def _is_gateway_paused(exc: Exception) -> bool:
         return False
     return "gateway paused" in str(getattr(exc, "message", None) or exc).lower()
 
-def length_penalized_reward(reward: float, n_turns: int, max_turns: int,
-                            *, t0: int, lam: float, is_train: bool) -> float:
+
+def length_penalized_reward(
+    reward: float, n_turns: int, max_turns: int, *, t0: int, lam: float, is_train: bool
+) -> float:
     """Apply the long-turn penalty (plan A) to a SOLVED *training* trajectory's reward.
 
     The penalty applies **only** when ``is_train`` is True and ``reward >= 1.0``
@@ -650,9 +677,16 @@ def length_penalized_reward(reward: float, n_turns: int, max_turns: int,
     return 1.0 - lam * frac
 
 
-def prompt_length_penalty(reward: float, max_prompt_tokens: int, *,
-                          soft_start: int, hard_cap: int, max_pen: float,
-                          is_train: bool, solved: bool) -> float:
+def prompt_length_penalty(
+    reward: float,
+    max_prompt_tokens: int,
+    *,
+    soft_start: int,
+    hard_cap: int,
+    max_pen: float,
+    is_train: bool,
+    solved: bool,
+) -> float:
     """Penalizes context bloat: the longest single-turn prompt of a rollout is its
     true upper bound on context pressure (each turn's prompt embeds all prior
     history). Gated identically to the turn penalty — only ``is_train`` and
@@ -678,9 +712,18 @@ def prompt_length_penalty(reward: float, max_prompt_tokens: int, *,
     return reward - max_pen * frac
 
 
-def run_agent_loop(client: Any, problem: str, *, max_turns: int, cmd_timeout: int,
-                   obs_cap: int, max_tokens: int, max_format_errors: int = 3,
-                   gateway_wait_s: float = 600.0, gateway_poll_s: float = 5.0) -> tuple[bool, int, int]:
+def run_agent_loop(
+    client: Any,
+    problem: str,
+    *,
+    max_turns: int,
+    cmd_timeout: int,
+    obs_cap: int,
+    max_tokens: int,
+    max_format_errors: int = 3,
+    gateway_wait_s: float = 600.0,
+    gateway_poll_s: float = 5.0,
+) -> tuple[bool, int, int]:
     """Drive the agent until it submits, errors out, or hits ``max_turns``.
 
     Mirrors mini-swe-agent's control flow: each turn we query the model, parse a
@@ -718,12 +761,12 @@ def run_agent_loop(client: Any, problem: str, *, max_turns: int, cmd_timeout: in
                 return False, turns_used, max_prompt_tokens
             except _GatewayPaused as exc:
                 if paused_for >= gateway_wait_s:
-                    log.warning("turn=%d gateway paused >%.0fs, giving up: %s",
-                                turn, gateway_wait_s, exc)
+                    log.warning("turn=%d gateway paused >%.0fs, giving up: %s", turn, gateway_wait_s, exc)
                     content, finish_reason, prompt_tokens = "", "error", 0
                     break
-                log.info("turn=%d gateway paused, waiting %.0fs (waited %.0fs): %s",
-                         turn, gateway_poll_s, paused_for, exc)
+                log.info(
+                    "turn=%d gateway paused, waiting %.0fs (waited %.0fs): %s", turn, gateway_poll_s, paused_for, exc
+                )
                 time.sleep(gateway_poll_s)
                 paused_for += gateway_poll_s
 
@@ -747,12 +790,10 @@ def run_agent_loop(client: Any, problem: str, *, max_turns: int, cmd_timeout: in
         except FormatError as exc:
             n_format_errors += 1
             if 0 < max_format_errors <= n_format_errors:
-                log.warning("turn=%d %d consecutive format errors, ending episode",
-                            turn, n_format_errors)
+                log.warning("turn=%d %d consecutive format errors, ending episode", turn, n_format_errors)
                 return False, turns_used, max_prompt_tokens
             log.info("turn=%d format error (%d/%d)", turn, n_format_errors, max_format_errors)
-            messages.append({"role": "user",
-                             "content": format_error_message(exc.n_actions, finish_reason)})
+            messages.append({"role": "user", "content": format_error_message(exc.n_actions, finish_reason)})
             continue
         n_format_errors = 0
 
@@ -770,6 +811,7 @@ def run_agent_loop(client: Any, problem: str, *, max_turns: int, cmd_timeout: in
         messages.append({"role": "user", "content": render_observation(rc, output, obs_cap)})
     return False, turns_used, max_prompt_tokens
 
+
 def _query(client: Any, messages: list[dict[str, Any]], max_tokens: int) -> tuple[str, str, int]:
     """Return ``(content, finish_reason, prompt_tokens)`` for one model call.
 
@@ -780,7 +822,9 @@ def _query(client: Any, messages: list[dict[str, Any]], max_tokens: int) -> tupl
     """
     try:
         completion = client.chat.completions.create(
-            model="auto", messages=messages, max_tokens=max_tokens,
+            model="auto",
+            messages=messages,
+            max_tokens=max_tokens,
             temperature=1.0,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
@@ -795,9 +839,11 @@ def _query(client: Any, messages: list[dict[str, Any]], max_tokens: int) -> tupl
         log.error("LLM call failed: %s", exc)
         return "", "error", 0
 
+
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        handlers=[logging.StreamHandler(sys.stdout)])
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[logging.StreamHandler(sys.stdout)]
+    )
 
     problem = os.environ.get("AGL_TASK_INPUT", "").strip()
     if not problem:
@@ -828,8 +874,13 @@ def main() -> int:
     checkout_bug_commit(instance_id)
     relocate_git()
     submitted, n_turns, max_prompt_tokens = run_agent_loop(
-        client, problem, max_turns=max_turns, cmd_timeout=cmd_timeout,
-        obs_cap=obs_cap, max_tokens=max_tokens, max_format_errors=max_format_errors,
+        client,
+        problem,
+        max_turns=max_turns,
+        cmd_timeout=cmd_timeout,
+        obs_cap=obs_cap,
+        max_tokens=max_tokens,
+        max_format_errors=max_format_errors,
         gateway_wait_s=gateway_wait_s,
     )
 
@@ -843,8 +894,7 @@ def main() -> int:
     is_train = "/mode/train/" in base_url
     len_pen_t0 = int(os.environ.get("SMITH_LEN_PEN_T0", "80"))
     len_pen_lambda = float(os.environ.get("SMITH_LEN_PEN_LAMBDA", "0.1"))
-    reward = length_penalized_reward(reward, n_turns, max_turns,
-                                     t0=len_pen_t0, lam=len_pen_lambda, is_train=is_train)
+    reward = length_penalized_reward(reward, n_turns, max_turns, t0=len_pen_t0, lam=len_pen_lambda, is_train=is_train)
 
     # Prompt-length penalty (plan B): stack a context-bloat penalty on the same
     # SOLVED-train gating, keyed on the rollout's largest prompt_tokens.
@@ -852,23 +902,48 @@ def main() -> int:
     prompt_pen_hard = int(os.environ.get("SMITH_PROMPT_PEN_HARD_CAP", "64000"))
     prompt_pen_max = float(os.environ.get("SMITH_PROMPT_PEN_MAX", "0.1"))
     if is_train and max_prompt_tokens >= prompt_pen_hard:
-        log.warning("max_prompt_tokens=%d >= hard_cap=%d (context near budget)",
-                    max_prompt_tokens, prompt_pen_hard)
-    reward = prompt_length_penalty(reward, max_prompt_tokens, soft_start=prompt_pen_soft,
-                                   hard_cap=prompt_pen_hard, max_pen=prompt_pen_max,
-                                   is_train=is_train, solved=resolved)
+        log.warning("max_prompt_tokens=%d >= hard_cap=%d (context near budget)", max_prompt_tokens, prompt_pen_hard)
+    reward = prompt_length_penalty(
+        reward,
+        max_prompt_tokens,
+        soft_start=prompt_pen_soft,
+        hard_cap=prompt_pen_hard,
+        max_pen=prompt_pen_max,
+        is_train=is_train,
+        solved=resolved,
+    )
 
-    log.info("done: mode=%s submitted=%s patch=%dB reward=%.3f raw_reward=%.3f n_turns=%d "
-             "max_prompt_tokens=%d reason=%s",
-             "train" if is_train else "val", submitted, len(patch), reward, raw_reward, n_turns,
-             max_prompt_tokens, reason)
+    log.info(
+        "done: mode=%s submitted=%s patch=%dB reward=%.3f raw_reward=%.3f n_turns=%d max_prompt_tokens=%d reason=%s",
+        "train" if is_train else "val",
+        submitted,
+        len(patch),
+        reward,
+        raw_reward,
+        n_turns,
+        max_prompt_tokens,
+        reason,
+    )
 
     event_base = {"instance_id": instance_id, "repo": eval_meta.get("repo", "")}
     post_event("agent_output", {**event_base, "patch": patch, "patch_size": len(patch), "submitted": submitted})
-    post_event("reward", {**event_base, "value": reward, "raw_value": raw_reward, "resolved": resolved,
-                          "reason": reason, "n_turns": n_turns, "max_prompt_tokens": max_prompt_tokens,
-                          "eval_timeout": timed_out, "source": "agent"}, retry=True)
+    post_event(
+        "reward",
+        {
+            **event_base,
+            "value": reward,
+            "raw_value": raw_reward,
+            "resolved": resolved,
+            "reason": reason,
+            "n_turns": n_turns,
+            "max_prompt_tokens": max_prompt_tokens,
+            "eval_timeout": timed_out,
+            "source": "agent",
+        },
+        retry=True,
+    )
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

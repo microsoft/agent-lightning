@@ -192,7 +192,7 @@ def build_config(
     if agl_key is not None:
         overrides["agentlightning"]["agl_key"] = agl_key
     if run_name:
-        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
+        overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))

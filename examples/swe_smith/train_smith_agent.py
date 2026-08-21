@@ -27,14 +27,17 @@ INSTANCE_FIELDS = (
     "PASS_TO_PASS",
 )
 
+
 def log(message: str) -> None:
     print(message, flush=True)
+
 
 def _project(instance: dict[str, Any]) -> dict[str, Any]:
     row = {field: instance.get(field) for field in INSTANCE_FIELDS}
     row["data_source"] = DATA_SOURCE
     row["data_id"] = str(instance.get("instance_id", ""))
     return row
+
 
 def load_split_file(
     path: str,
@@ -49,6 +52,7 @@ def load_split_file(
     if not selected:
         raise ValueError(f"No instances loaded from {path}")
     return selected
+
 
 def verl_default_config() -> dict[str, Any]:
     return {
@@ -88,7 +92,6 @@ def verl_default_config() -> dict[str, Any]:
                 "val_kwargs": {"temperature": 0.7, "do_sample": True},
                 "enable_prefix_caching": True,
                 "enable_chunked_prefill": True,
-
                 "checkpoint_engine": {"update_weights_bucket_megabytes": 4096},
             },
             "actor": {
@@ -101,7 +104,6 @@ def verl_default_config() -> dict[str, Any]:
                 "entropy_coeff": 0,
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.28,
-
                 "fsdp_config": {
                     "param_offload": True,
                     "optimizer_offload": True,
@@ -129,7 +131,6 @@ def verl_default_config() -> dict[str, Any]:
             "project_name": "agentlightning",
             "experiment_name": "swe_smith",
             "nnodes": 1,
-
             "nccl_timeout": 1800,
             "test_freq": 16,
             "save_freq": 16,
@@ -139,7 +140,6 @@ def verl_default_config() -> dict[str, Any]:
         "agentlightning": {
             "agl_base_url": "http://localhost:8080",
             "agl_key": "",
-
             "rollout_timeout_seconds": 5400,
             "reward_fillna_value": 0.0,
             "max_ppo_update_times": 2,
@@ -157,6 +157,7 @@ def verl_default_config() -> dict[str, Any]:
             },
         },
     }
+
 
 def build_config(
     *,
@@ -181,11 +182,9 @@ def build_config(
 
     rollout_mode = overrides["actor_rollout_ref"]["rollout"]["mode"]
     model_path = overrides["actor_rollout_ref"]["model"]["path"]
-    overrides["trainer"]["experiment_name"] = (
-        f"swe_smith_{rollout_mode}_{model_path.split('/')[-1]}_{TRAIN_BACKEND}"
-    )
+    overrides["trainer"]["experiment_name"] = f"swe_smith_{rollout_mode}_{model_path.split('/')[-1]}_{TRAIN_BACKEND}"
     if run_name:
-        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
+        overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
@@ -193,6 +192,7 @@ def build_config(
     config = OmegaConf.merge(base_cfg, override_conf, cli_override_conf)
     OmegaConf.set_struct(config, False)
     return config
+
 
 def train(
     *,
@@ -236,6 +236,7 @@ def train(
     log("\n=== Start VERL training ===")
     run_ppo(config=config, train_dataset=train_dataset, val_dataset=val_dataset)
 
+
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(description="Train a SWE-smith agent with VERL/GRPO via Agent Lightning")
     parser.add_argument(
@@ -263,6 +264,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     args, config_overrides = parser.parse_known_args()
     return args, config_overrides
 
+
 def main() -> None:
     args, config_overrides = parse_args()
     train(
@@ -275,6 +277,7 @@ def main() -> None:
         run_name=args.run_name,
         config_overrides=config_overrides,
     )
+
 
 if __name__ == "__main__":
     main()

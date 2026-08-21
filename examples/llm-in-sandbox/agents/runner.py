@@ -79,9 +79,7 @@ def configure_llm_env() -> None:
     model_name = os.environ.get("AGL_MODEL_NAME", "Qwen/Qwen3-4B-Instruct-2507")
     os.environ["LLM_NAME"] = openai_model_name(model_name)
     os.environ["LLM_BASE_URL"] = (
-        os.environ.get("LLM_BASE_URL")
-        or os.environ.get("AGL_OPENAI_BASE_URL")
-        or os.environ.get("OPENAI_BASE_URL")
+        os.environ.get("LLM_BASE_URL") or os.environ.get("AGL_OPENAI_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
     )
     os.environ["LLM_API_KEY"] = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY", "dummy")
     os.environ["LLM_TEMPERATURE"] = os.environ.get("LLM_TEMPERATURE") or os.environ.get("AGL_LLM_TEMPERATURE", "1.0")
