@@ -14,9 +14,10 @@ public side effects, not one.
 ## Establish the release state
 
 1. Confirm the repository root, clean working tree, current branch, and remotes.
-2. Resolve the canonical `OWNER/REPO` and its default branch with `gh repo view`.
-   Identify the local remotes for that repository and the contributor fork by
-   their URLs; do not assume particular remote names.
+2. Resolve the canonical `OWNER/REPO`, its default branch, and its permitted
+   merge methods with `gh repo view`. Identify the local remotes for that
+   repository and the contributor fork by their URLs; do not assume particular
+   remote names or merge settings.
 3. Inspect the release contract in:
    - `.github/workflows/pypi-release.yml`
    - `.github/workflows/docs.yml`
@@ -25,7 +26,10 @@ public side effects, not one.
    - `pyproject.toml`
    - `agentlightning/__init__.py`
 4. Confirm the canonical default branch is already green before branching from
-   it. A release branch inherits every failure that main is carrying.
+   it. Resolve its current commit with `gh api repos/OWNER/REPO/commits/BRANCH`
+   and inspect that commit's check runs; a general recent-run listing can omit
+   or mix commits. A release branch inherits every failure that main is
+   carrying.
 5. Query the canonical repository's tags and compare them with the versions
    published at `https://pypi.org/pypi/agentlightning/json`. Confirm the target
    version exists in neither place, and stop for an explicit release decision
@@ -52,6 +56,12 @@ git switch -c chore/release-vX.Y.Z <canonical-remote>/<default-branch>
 scripts/bump_version.sh patch  # or minor / major
 ```
 
+The bump updates `pyproject.toml` before uv finishes resolving and writing the
+lockfile. If resolution or network access fails, the command can exit after a
+partial bump. Inspect `git diff` after any failure and restore or reconcile all
+three version files before retrying; blindly rerunning a partial patch bump can
+advance the version twice.
+
 The bump rewrites exactly three files. Confirm that with `git diff --stat`:
 
 - `pyproject.toml`
@@ -63,10 +73,11 @@ Other version strings in the tree, such as the FastAPI `version` in
 alone; changing them is a separate pull request, not release work.
 
 Review the version diff, but do not run the release tests or package build
-locally as a matter of course. `tests.yml` runs the same test set and package
-build on the pull request that `pypi-release.yml` will run on the tag, so the
-pull request's GitHub checks are the verification gate. Reproduce a single
-failure locally only when the workflow logs are not enough to fix it.
+locally as a matter of course. `tests.yml` runs a broader test suite and the
+same package build on the pull request, covering the narrower tests and build
+that `pypi-release.yml` will run on the tag. The pull request's GitHub checks
+are therefore the verification gate. Reproduce a single failure locally only
+when the workflow logs are not enough to fix it.
 
 Commit the version change, push it to the fork, and open the pull request with
 the GitHub CLI when those external actions are authorized:
@@ -89,10 +100,18 @@ Follow the pull request through its required checks with
 `gh pr checks <pr> --repo OWNER/REPO --watch`. If a check fails, take the run id
 from that output, inspect it with
 `gh run view <run-id> --repo OWNER/REPO --log-failed`, correct the source on the
-same branch, and resume watching. Once every required check has succeeded, merge
-the pull request with `gh pr merge <pr> --repo OWNER/REPO` using a merge method
-the repository permits. Committing, pushing, opening the pull request, and
-merging are each distinct external actions and each requires authorization.
+same branch, and resume watching. Once every required check has succeeded,
+resolve the reviewed head with
+`gh pr view <pr> --repo OWNER/REPO --json headRefOid` and pass both an explicit
+permitted method and `--match-head-commit` to `gh pr merge`. The canonical
+repository currently permits only squash merges, for example:
+
+```bash
+gh pr merge <pr> --repo OWNER/REPO --squash --match-head-commit <head-sha>
+```
+
+Committing, pushing, opening the pull request, and merging are each distinct
+external actions and each requires authorization.
 
 ## Tag and publish the merged release
 
@@ -120,11 +139,11 @@ grep '^__version__' agentlightning/__init__.py
 ```
 
 The workflow itself reads the runtime value as
-`python -c 'from agentlightning import __version__; print(__version__)'`, after
-`uv sync` has installed the checkout. Locally that import can resolve to some
-other installed copy of the package instead of the tree being tagged, so read
-the file directly here; `agentlightning/__init__.py` assigns `__version__` as a
-single literal, so the two agree by construction.
+`python -c 'from agentlightning import __version__; print(__version__)'` from
+the repository root before its dependency-sync step, so Python resolves the
+checkout through the current working directory. Read the file directly for the
+local pre-tag check; `agentlightning/__init__.py` assigns `__version__` as a
+single literal, making that check independent of the active Python environment.
 
 GitHub reads workflow files as they exist **at the tagged commit**, not at the
 tip of the default branch. Confirm that the commit being tagged actually
@@ -155,13 +174,23 @@ One tag push starts two workflows, and both belong to the release:
   versioned documentation and repoints the public `stable` alias at this
   release.
 
-Follow both to a terminal result with `gh run list --repo OWNER/REPO` and
-`gh run watch <run-id> --repo OWNER/REPO --exit-status`. After `PyPI Release`
-succeeds, verify that PyPI exposes the exact version with both the expected
-wheel and source distribution. After `Deploy Documentation` succeeds, verify
-that the published site serves `X.Y.Z` and that `stable` resolves to it. A green
-PyPI job with a failed documentation job is a half-finished release: report both
-workflow URLs and both outcomes.
+Look up each run by workflow and tag rather than selecting from an unfiltered
+recent-run list:
+
+```bash
+gh run list --repo OWNER/REPO --workflow pypi-release.yml \
+  --branch vX.Y.Z --event push --limit 1
+gh run list --repo OWNER/REPO --workflow docs.yml \
+  --branch vX.Y.Z --event push --limit 1
+```
+
+Confirm both runs have the expected tag commit, then follow them to a terminal
+result with `gh run watch <run-id> --repo OWNER/REPO --exit-status`. After
+`PyPI Release` succeeds, verify that PyPI exposes the exact version with both
+the expected wheel and source distribution. After `Deploy Documentation`
+succeeds, verify that the published site serves `X.Y.Z` and that `stable`
+resolves to it. A green PyPI job with a failed documentation job is a
+half-finished release: report both workflow URLs and both outcomes.
 
 For a transient workflow failure, rerun only with authorization. For a source
 or workflow defect, do not move the public tag; prepare a corrective release
