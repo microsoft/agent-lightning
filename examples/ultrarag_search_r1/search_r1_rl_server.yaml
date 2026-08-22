@@ -1,0 +1,31 @@
+# Search-R1 RL Training Pipeline (no benchmark/eval)
+
+# MCP Server
+servers:
+  generation: servers/generation
+  retriever: servers/retriever
+  prompt: servers/prompt
+  router: servers/router
+  custom: servers/custom
+
+# MCP Client Pipeline (RL mode)
+pipeline:
+- retriever.retriever_init
+- generation.generation_init
+- prompt.qa_boxed
+- generation.generate
+- loop:
+    times: 8
+    steps:
+    - branch:
+        router:
+        - router.search_r1_check
+        branches:
+          incomplete:
+          - custom.search_r1_query_extract
+          - retriever.retriever_search:
+              input:
+                query_list: extract_query_list
+          - prompt.search_r1_gen
+          - generation.generate
+          complete: []
