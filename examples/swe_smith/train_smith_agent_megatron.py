@@ -4,22 +4,22 @@
 
 from __future__ import annotations
 
+import importlib.resources
+from collections.abc import Sequence
 from pprint import pprint
-from typing import Any, Sequence
+from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
-
-from train_smith_agent import (  # noqa: E402 — sibling module, run from example dir
+from train_smith_agent import (
     DEFAULT_MODEL,
     EXAMPLE_DIR,
     load_split_file,
     log,
 )
 
-import importlib.resources  # noqa: E402
-
 CHAT_TEMPLATE_PATH = str(EXAMPLE_DIR / "swe_smith_chat_template.jinja")
 TRAIN_BACKEND = "megatron"
+
 
 def verl_megatron_config() -> dict[str, Any]:
     return {
@@ -42,9 +42,7 @@ def verl_megatron_config() -> dict[str, Any]:
                 "gpu_memory_utilization": 0.7,
                 "max_model_len": 32768,
                 "enforce_eager": True,
-
                 "enable_rollout_routing_replay": True,
-
                 "calculate_log_probs": True,
                 "log_prob_micro_batch_size_per_gpu": 1,
                 "log_prob_use_dynamic_bsz": False,
@@ -75,7 +73,6 @@ def verl_megatron_config() -> dict[str, Any]:
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.28,
                 "loss_agg_mode": "seq-mean-token-sum",
-
                 "megatron": {
                     "pipeline_model_parallel_size": 1,
                     "tensor_model_parallel_size": 2,
@@ -85,9 +82,7 @@ def verl_megatron_config() -> dict[str, Any]:
                     "optimizer_offload": True,
                     "grad_offload": True,
                     "use_mbridge": True,
-
                     "router_replay": {"mode": "R3"},
-
                     "override_transformer_config": {
                         "moe_enable_deepep": True,
                         "moe_token_dispatcher_type": "flex",
@@ -156,6 +151,7 @@ def verl_megatron_config() -> dict[str, Any]:
         },
     }
 
+
 def build_config(
     *,
     model: str | None = None,
@@ -180,11 +176,9 @@ def build_config(
 
     rollout_mode = overrides["actor_rollout_ref"]["rollout"]["mode"]
     model_path = overrides["actor_rollout_ref"]["model"]["path"]
-    overrides["trainer"]["experiment_name"] = (
-        f"swe_smith_{rollout_mode}_{model_path.split('/')[-1]}_{TRAIN_BACKEND}"
-    )
+    overrides["trainer"]["experiment_name"] = f"swe_smith_{rollout_mode}_{model_path.split('/')[-1]}_{TRAIN_BACKEND}"
     if run_name:
-        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
+        overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
@@ -192,6 +186,7 @@ def build_config(
     config = OmegaConf.merge(base_cfg, override_conf, cli_override_conf)
     OmegaConf.set_struct(config, False)
     return config
+
 
 def train(
     *,
@@ -235,6 +230,7 @@ def train(
     log("\n=== Start VERL training (Megatron actor, R3 router replay, vLLM rollout) ===")
     run_ppo(config=config, train_dataset=train_dataset, val_dataset=val_dataset)
 
+
 def parse_args():
     import argparse
 
@@ -264,6 +260,7 @@ def parse_args():
     parser.add_argument("--run-name", default=None)
     return parser.parse_known_args()
 
+
 def main() -> None:
     args, config_overrides = parse_args()
     train(
@@ -276,6 +273,7 @@ def main() -> None:
         run_name=args.run_name,
         config_overrides=config_overrides,
     )
+
 
 if __name__ == "__main__":
     main()

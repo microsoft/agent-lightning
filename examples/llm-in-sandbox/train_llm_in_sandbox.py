@@ -10,9 +10,10 @@ import copy
 import importlib.resources
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from pprint import pprint
-from typing import Any, Sequence
+from typing import Any
 
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf
@@ -192,7 +193,7 @@ def build_config(
     if agl_key is not None:
         overrides["agentlightning"]["agl_key"] = agl_key
     if run_name:
-        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
+        overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))

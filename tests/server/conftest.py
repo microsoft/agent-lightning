@@ -4,7 +4,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agentlightning.server.app import create_app
@@ -15,7 +19,7 @@ MODEL_NAME = "test-model"
 
 
 @pytest.fixture(autouse=True)
-def clean_store():
+def clean_store() -> Iterator[None]:
     _rollouts.clear()
     _events.clear()
     _models.clear()
@@ -40,12 +44,12 @@ def server_config() -> dict:
 
 
 @pytest.fixture
-def app(server_config: dict[str, str]):
+def app(server_config: dict[str, Any]) -> FastAPI:
     return create_app(server_config)
 
 
 @pytest.fixture
-def client(app) -> TestClient:
+def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as c:
         yield c
 

@@ -12,7 +12,6 @@ import os
 import re
 
 import httpx
-
 from eval_utils import scalar_are_results_same
 
 

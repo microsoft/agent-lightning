@@ -133,9 +133,9 @@ def build_config(
         overrides["agentlightning"]["local"]["agent_class"] = (
             "examples.search_r1.agents.search_r1_agent:SearchR1CompletionAgent"
         )
-        overrides["agentlightning"]["local"]["env_map"]["SEARCH_R1_TOKENIZER_MODEL"] = overrides[
-            "actor_rollout_ref"
-        ]["model"]["path"]
+        overrides["agentlightning"]["local"]["env_map"]["SEARCH_R1_TOKENIZER_MODEL"] = overrides["actor_rollout_ref"][
+            "model"
+        ]["path"]
     if agl_base_url:
         overrides["agentlightning"]["agl_base_url"] = agl_base_url
     if agl_key is not None:

@@ -15,8 +15,9 @@ import asyncio
 import json
 import time
 from collections import deque
-from typing import Any
+from typing import Any, cast
 
+import httpx
 import kr8s
 import kr8s.asyncio
 import structlog
@@ -26,7 +27,7 @@ from kr8s.asyncio import objects as k8s_objects
 from omegaconf import DictConfig
 
 from agentlightning.client import AgentLightningAsyncClient
-from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState
+from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState, RolloutStatusPatch
 
 log = structlog.get_logger()
 
@@ -77,20 +78,17 @@ def build_job_spec(rollout: Rollout, controller_config: DictConfig) -> dict[str,
 
     mode = "train" if rollout.is_train else "val"
     agent_base_url = str(
-        controller_config.agl_server.get("agent_url", None)
-        or controller_config.agl_server.url
+        controller_config.agl_server.get("agent_url", None) or controller_config.agl_server.url
     ).rstrip("/")
     agl_openai_base_url = (
-        f"{agent_base_url}/proxy/rollout/{rollout.rollout_id}"
-        f"/attempt/{DEFAULT_ATTEMPT_ID}/mode/{mode}/openai/v1"
+        f"{agent_base_url}/proxy/rollout/{rollout.rollout_id}/attempt/{DEFAULT_ATTEMPT_ID}/mode/{mode}/openai/v1"
     )
     for container in pod_spec.get("containers", []):
         env = container.setdefault("env", [])
         for name, value in {
             "AGL_OPENAI_BASE_URL": agl_openai_base_url,
             "AGL_EVENT_URL": (
-                f"{agent_base_url}/api/rollouts/{rollout.rollout_id}"
-                f"/attempt/{DEFAULT_ATTEMPT_ID}/events"
+                f"{agent_base_url}/api/rollouts/{rollout.rollout_id}/attempt/{DEFAULT_ATTEMPT_ID}/events"
             ),
             "AGL_KEY": str(controller_config.agl_server.key or ""),
         }.items():
@@ -165,7 +163,7 @@ class K8sReconciler:
         rollouts = await self._query_rollouts(state_in=[RolloutState.QUEUING, RolloutState.RUNNING], limit=500)
         api = await self._get_k8s_api()
         jobs = [
-            job.raw
+            cast(k8s_objects.Job, job).raw
             async for job in k8s_objects.Job.async_list(
                 namespace=self._namespace,
                 label_selector=MANAGED_BY_SELECTOR,
@@ -342,15 +340,17 @@ class K8sReconciler:
         state_in: list[RolloutState],
         limit: int = 50,
     ) -> list[Rollout]:
-        params: list[tuple[str, str | int]] = [("state_in", state.value) for state in state_in]
-        params.append(("limit", limit))
+        params = httpx.QueryParams()
+        for state in state_in:
+            params = params.add("state_in", state.value)
+        params = params.add("limit", limit)
         response = await self._api.get("/api/rollouts", params=params)
         response.raise_for_status()
         return [Rollout.model_validate(item) for item in response.json()]
 
     async def _patch_status(self, rollout_id: str, **status: Any) -> bool:
         try:
-            patch = RolloutPatch(status=status)
+            patch = RolloutPatch(status=RolloutStatusPatch.model_validate(status))
             response = await self._api.patch(
                 f"/api/rollouts/{rollout_id}",
                 json=patch.model_dump(mode="json", exclude_unset=True),
@@ -360,5 +360,3 @@ class K8sReconciler:
         except Exception as exc:
             log.warning("Failed to patch rollout", rollout_id=rollout_id, error=str(exc))
             return False
-
-

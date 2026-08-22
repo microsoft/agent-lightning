@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Rollout-level mean policy loss for VERL."""
 
 from __future__ import annotations

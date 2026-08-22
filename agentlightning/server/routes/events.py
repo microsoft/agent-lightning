@@ -180,11 +180,7 @@ def _dedupe_model_requests_by_prompt_token_ids(events: list[Event]) -> list[Even
         last_index_by_prompt[prompt_key] = index
 
     last_indexes = set(last_index_by_prompt.values())
-    return [
-        event
-        for index, event in enumerate(events)
-        if event.event_type != "model_request" or index in last_indexes
-    ]
+    return [event for index, event in enumerate(events) if event.event_type != "model_request" or index in last_indexes]
 
 
 @router.post("/rollouts/{rollout_id}/attempt/{attempt_id}/events", response_model=Event)

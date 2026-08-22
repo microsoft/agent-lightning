@@ -142,5 +142,3 @@ class CompletionAgent:
             prediction=decode_choice_token_ids(response.choices[0], model),
             answer=answer,
         )
-
-
