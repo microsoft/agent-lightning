@@ -1,0 +1,52 @@
+name: Upgrade uv dependencies
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * MON'
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Generate timestamp
+        id: timestamp
+        run: |
+          echo "date=$(date -u '+%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+          echo "slug=$(date -u '+%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Upgrade dependencies
+        id: upgrade
+        shell: bash
+        run: |
+          set -o pipefail
+          uv lock --upgrade 2>&1 | tee /tmp/uv-upgrade.log
+          {
+            echo "output<<'EOF'"
+            cat /tmp/uv-upgrade.log
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: upgrade uv dependencies"
+          committer: agent-lightning-bot <agl.msft@outlook.com>
+          author: agent-lightning-bot <agl.msft@outlook.com>
+          title: "chore: upgrade uv dependencies (${{ steps.timestamp.outputs.date }})"
+          body: |
+            Automated uv dependency upgrade.
+
+            ```
+            ${{ steps.upgrade.outputs.output }}
+            ```
+          branch: chore/uv-dependency-upgrade-${{ steps.timestamp.outputs.slug }}
+          delete-branch: true
