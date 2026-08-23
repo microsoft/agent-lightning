@@ -27,7 +27,7 @@ uv sync
 bash scripts/setup_verl.sh 0.8.0 cu130
 ```
 
-See the [Installation Guide](https://microsoft.github.io/agent-lightning/stable/00-installation/) for details.
+See the [Installation Guide](https://microsoft.github.io/agent-lightning/stable/1-installation/) for details.
 
 
 ## ⚡ Architecture
@@ -56,24 +56,24 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 
 | Section | Content |
 |---------|---------|
-| [Installation](https://microsoft.github.io/agent-lightning/stable/00-installation/) | Base environment and `verl` GPU stack |
-| [Quick Start](https://microsoft.github.io/agent-lightning/stable/01-quick-start/) | Local first run and end-to-end flow |
-| [Basics](https://microsoft.github.io/agent-lightning/stable/05-basics/) | Components, rollouts, events, and trajectories |
-| [Trainer Configuration](https://microsoft.github.io/agent-lightning/stable/20-trainer-configuration/) | `verl` integration and trace aggregation |
-| [API Gateway Configuration](https://microsoft.github.io/agent-lightning/stable/25-api-gateway-configuration/) | Gateway and model proxy settings |
-| [Controller Configuration](https://microsoft.github.io/agent-lightning/stable/30-controller-configuration/) | Local and Kubernetes runners |
-| [Asynchronous Training](https://microsoft.github.io/agent-lightning/stable/35-asynchronous-training/) | Collocated async collection and pause/drain |
+| [Installation](https://microsoft.github.io/agent-lightning/stable/1-installation/) | Base environment and `verl` GPU stack |
+| [Quick Start](https://microsoft.github.io/agent-lightning/stable/2-quick-start/) | Local first run and end-to-end flow |
+| [Basics](https://microsoft.github.io/agent-lightning/stable/3-basics/) | Components, rollouts, events, and trajectories |
+| [Trainer Configuration](https://microsoft.github.io/agent-lightning/stable/4-trainer-configuration/) | `verl` integration and trace aggregation |
+| [API Gateway Configuration](https://microsoft.github.io/agent-lightning/stable/5-api-gateway-configuration/) | Gateway and model proxy settings |
+| [Controller Configuration](https://microsoft.github.io/agent-lightning/stable/6-controller-configuration/) | Local and Kubernetes runners |
+| [Asynchronous Training](https://microsoft.github.io/agent-lightning/stable/7-asynchronous-training/) | Collocated async collection and pause/drain |
 
 ## ⚡ Examples
 
 | Example | Description |
 |---|---|
-| [Calc-X](https://microsoft.github.io/agent-lightning/stable/50-example-calc-x/) | POC math reasoning example with AutoGen and MCP calculator tools, requiring only one GPU. |
-| [GSM8K](https://microsoft.github.io/agent-lightning/stable/55-example-gsm8k/) | POC grade-school math reasoning example. |
-| [ScienceWorld](https://microsoft.github.io/agent-lightning/stable/60-example-science-world/) | Interactive science tasks in a text-based environment. |
-| [Search-R1](https://microsoft.github.io/agent-lightning/stable/65-example-search-r1/) | Multi-turn retrieval and reasoning agent. |
-| [LLM-in-Sandbox](https://microsoft.github.io/agent-lightning/stable/70-example-llm-in-sandbox/) | General agent with computer and code execution tools. |
-| [Coding Agent](https://microsoft.github.io/agent-lightning/stable/75-example-coding-agent/) | Coding agent trained with repository tests. |
+| [Calc-X](https://microsoft.github.io/agent-lightning/stable/8-example-calc-x/) | POC math reasoning example with AutoGen and MCP calculator tools, requiring only one GPU. |
+| [GSM8K](https://microsoft.github.io/agent-lightning/stable/9-example-gsm8k/) | POC grade-school math reasoning example. |
+| [ScienceWorld](https://microsoft.github.io/agent-lightning/stable/10-example-science-world/) | Interactive science tasks in a text-based environment. |
+| [Search-R1](https://microsoft.github.io/agent-lightning/stable/11-example-search-r1/) | Multi-turn retrieval and reasoning agent. |
+| [LLM-in-Sandbox](https://microsoft.github.io/agent-lightning/stable/12-example-llm-in-sandbox/) | General agent with computer and code execution tools. |
+| [Coding Agent](https://microsoft.github.io/agent-lightning/stable/13-example-coding-agent/) | Coding agent trained with repository tests. |
 
 ## ⚡ Articles
 
@@ -124,7 +124,7 @@ For the original Agent Lightning paper, please use:
 
 ## ⚡ Contributing
 
-This project welcomes contributions and suggestions. Start by reading the [Contributing Guide](docs/community/contributing.md) for recommended contribution points, environment setup, branching conventions, and pull request expectations. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+This project welcomes contributions and suggestions. Use the [issue tracker](https://github.com/microsoft/agent-lightning/issues) to report bugs, propose features, or find an existing issue to work on. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
 When you submit a pull request, a CLA bot will automatically determine whether you need to provide a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions provided by the bot. You will only need to do this once across all repos using our CLA.
 
