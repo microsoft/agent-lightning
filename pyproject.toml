@@ -2,6 +2,22 @@
 name = "agentlightning"
 version = "1.0.0"
 description = "Agent Lightning — agentic RL infrastructure"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Agent-lightning Team" },
+]
+keywords = ["agentic-ai", "ai-agents", "reinforcement-learning"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
@@ -32,6 +48,12 @@ dev = [
 [project.scripts]
 agl-server = "agentlightning.server.__main__:main"
 agl-controller = "agentlightning.controller.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/microsoft/agent-lightning"
+Documentation = "https://microsoft.github.io/agent-lightning/stable/"
+Repository = "https://github.com/microsoft/agent-lightning"
+Issues = "https://github.com/microsoft/agent-lightning/issues"
 
 [tool.uv.sources]
 torch = [
