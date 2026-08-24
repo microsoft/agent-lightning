@@ -1,6 +1,6 @@
-## Agent Lightning Skill
+# Agent Lightning Skill
 
-**Teaches your coding agent how to write better agent code.** Given an editable agent and a benchmark to hillclimb on, it improves the agent's accuracy, cost, and latency through edits of prompts, skills, tools, workflows, configurations and pre-/post-processings.
+**Agent Lightning helps a coding agent improve another AI agent.** Give the coding agent an editable agent and a benchmark. It can then test changes to prompts, tools, workflows, models, and other settings. The goal is to improve quality, cost, speed, or reliability without breaking how the agent is used.
 
 ### Installation
 
@@ -12,17 +12,19 @@ gh skill install microsoft/agent-lightning agent-lightning --agent codex
 gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
 ```
 
-The core files of the skill is in [`agent-lightning`][agent-lightning] directory.
+The skill files are in [`skills/agent-lightning/`](agent-lightning/). This directory is also the Claude Code plugin root. The skill package and plugin use the same `SKILL.md`.
 
-### How It Works
+### How it works
 
-A large portion of the skill's power comes from the model and the coding-agent harness itself. As a matter of fact, coding-agent harnesses (like Claude Code, Codex, GitHub Copilot) are already strong optimizers. They can improve an agent's performance simply by using the following prompt:
+Coding agents such as Claude Code, Codex, and GitHub Copilot can already optimize agents. They can inspect the code, make changes, run the benchmark, and learn from failures. Even without Agent Lightning, they can improve an agent with a prompt such as:
 
 > I've got an agent in this workspace — and it's underperforming on our benchmark. Can you raise its benchmark score while keeping any increase in per-run cost minimal — buy score cheaply, and only pay more when it clearly earns its keep?
 
-The improvement can be further boosted when the coding agent is armed with our skill, which makes the optimization more powerful and robust.
+Agent Lightning gives them a clearer process. It suggests useful changes, explains how to read noisy results, and tells them to measure each change. It also separates the one-time cost of optimization from the cost of running the final agent.
 
-We've challenged Claude Code, Codex, GitHub Copilot to optimize three poorly-written agents on three benchmarks. The model to to drive these agents being optimized are GPT-5.4-mini; The models that are used by the optimizer coding agents are Opus 4.8 for Claude Code, and GPT-5.6-Sol for Codex and GitHub Copilot respectively. We compared against other methods that are non-coding-agent-based (all other results are taken from the [SkillOpt paper](https://github.com/microsoft/SkillOpt)). The results are shown below.
+We asked each coding agent to improve three underperforming agents, one for each benchmark. The agents being improved used GPT-5.4-mini. Claude Code used Opus 4.8 to optimize them. Codex and GitHub Copilot used GPT-5.6-Sol. The last two rows below average the three coding agents, all budget groups, and all repeated runs. The other rows come from Table 1 of the [SkillOpt paper](https://github.com/microsoft/SkillOpt) and use the same benchmark splits.
+
+In the last two rows, the value in parentheses is the improvement over the starting agent, measured in percentage points.
 
 | Method | SpreadsheetBench accuracy (%) | OfficeQA correctness (%) | ALFWorld success (%) |
 | :--- | ---: | ---: | ---: |
@@ -33,14 +35,16 @@ We've challenged Claude Code, Codex, GitHub Copilot to optimize three poorly-wri
 | TextGrad | 38.2 | 30.0 | 70.9 |
 | GEPA | 42.5 | 45.3 | 81.3 |
 | SkillOpt | 47.5 | 48.8 | 85.8 |
-| Coding Agent (Avg. of CC+Codex+GHCP) | 62.9 | 54.1 | 88.6 |
-| **Coding Agent (with Agent Lightning Skill)** | **66.7** | **54.5** | **94.9** |
+| Coding agents, without Agent Lightning (average) | 62.9 (+37.3) | 54.1 (+22.3) | 88.6 (+31.6) |
+| **Coding agents, with Agent Lightning (average)** | **66.7 (+41.1)** | **54.5 (+22.7)** | **94.9 (+37.9)** |
 
-### Performance Breakdowns
+### Performance breakdowns
 
-To further measure how the coding agent responds to a limited API budget, we control the API credit balance they can use during the optimization. Note that every API call, including those calls made by the coding agent itself, and those calls made by the agent being optimized, are billed into the credit. We experimented with three groups, each with \$5, \$10, and \$25 budget, and we performed three runs per group, per coding-agent harness.
+#### Overall cost
 
-The results are shown below, every point on the chart averages the three held-out finale runs for one harness, treatment, and budget: the x-axis is average overall cost on a log scale, and the y-axis is average SpreadsheetBench accuracy, OfficeQA correctness, or ALFWorld success. Color and shape identify the optimizer; filled markers use Agent Lightning and hollow markers run without. Budget is not encoded in the legend. Overall cost includes optimizer LLM calls, train/self-evaluation, and held-out finale deployment; it excludes the pristine-baseline evaluations.
+To test limited budgets, we gave each optimizer \$5, \$10, or \$25 in API credits. Calls made during optimization by both the coding agent and the agent it was improving counted toward the budget. We ran every combination of benchmark, coding agent, budget, and skill setting three times.
+
+Each point below averages three runs for one coding agent, budget, and skill setting. The x-axis shows the average total cost on a logarithmic scale. The y-axis shows the average final score on held-out data. Color and shape identify the coding agent. Filled markers use Agent Lightning; hollow markers show runs without it. The legend does not show the budget. Total cost includes optimizer calls, training and self-evaluation calls, and the final held-out evaluation. It does not include evaluations of the original, unchanged agent.
 
 ![SpreadsheetBench accuracy versus overall cost](assets/agent-lightning-spreadsheetbench-accuracy-overall-cost.svg)
 
@@ -48,9 +52,11 @@ The results are shown below, every point on the chart averages the three held-ou
 
 ![ALFWorld success versus overall cost](assets/agent-lightning-alfworld-success-overall-cost.svg)
 
-As the coding agent can change anything in the agent code, it can sometimes change some hard-coded settings in the code being optimized (e.g., tweaking the reasoning effort, or using an more expensive model). It's valuable to see whether the performance improvements are actually bought with a more expensive API cost, which we call "finale evaluation cost".
+#### Finale cost
 
-We chose a slice from the pervious experiment, \$5 optimizer budget for SpreadsheetBench, and \$10 budget for OfficeQA and ALFWorld as the datasets are larger. Every point in the chart is an average of three runs; the x-axis is that run's finale cost, and the y-axis is held-out SpreadsheetBench accuracy, OfficeQA correctness, or ALFWorld success. As shown in the chart, the overall performance increases much more compared to the smaller increase in API cost.
+The optimizer can change settings such as the model or reasoning effort. This may improve the score but make the agent more expensive to run. Finale cost is the agent's LLM cost during the final held-out evaluation.
+
+These charts use the budgets where Agent Lightning had the largest overall advantage: \$5 for SpreadsheetBench and \$10 for OfficeQA and ALFWorld. Each point is one run, not an average of three runs. The x-axis shows the run's finale cost, and the y-axis shows its held-out score. An ALFWorld controller can have \$0 in finale LLM cost and still complete environment steps. We move overlapping zero-cost points slightly so that every run remains visible. Each chart also shows the result for the original, unchanged agent.
 
 ![SpreadsheetBench accuracy versus finale cost](assets/agent-lightning-spreadsheetbench-accuracy-finale-cost.svg)
 
