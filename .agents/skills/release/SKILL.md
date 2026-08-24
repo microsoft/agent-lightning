@@ -193,8 +193,14 @@ result with `gh run watch <run-id> --repo OWNER/REPO --exit-status`. After
 `PyPI Release` succeeds, verify that PyPI exposes the exact version with both
 the expected wheel and source distribution. After `Deploy Documentation`
 succeeds, verify that the published site serves `X.Y.Z` and that `stable`
-resolves to it. A green PyPI job with a failed documentation job is a
-half-finished release: report both workflow URLs and both outcomes.
+serves that same release. Do not require an HTTP redirect: Mike aliases can
+serve directly from the alias path with a `200` response. Fetch the versioned
+and `stable` entry pages and compare their content; byte-for-byte equality is
+the clearest proof for a static deployment. If path-dependent markup prevents
+an exact match, verify a release-specific marker such as the version selector
+or canonical metadata instead. A successful response from `stable` alone is
+not proof that the alias moved. A green PyPI job with a failed documentation
+job is a half-finished release: report both workflow URLs and both outcomes.
 
 For a transient workflow failure, rerun only with authorization. For a source
 or workflow defect, do not move the public tag; prepare a corrective release
