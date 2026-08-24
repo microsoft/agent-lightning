@@ -52,7 +52,7 @@ Claude Code uses Claude Opus 4.8; Codex and GitHub Copilot use GPT 5.6 Sol as th
 
 #### Performance versus finale cost
 
-The selected-budget views use the groups with the strongest aggregate skill-over-control lift: \$5 for SpreadsheetBench and \$10 for OfficeQA and ALFWorld. Every harness/treatment point is one of three runs; the x-axis is that run's finale cost, and the y-axis is held-out SpreadsheetBench accuracy, OfficeQA correctness, or ALFWorld success. Finale cost measures LLM gateway spend, so an ALFWorld deterministic controller can have exactly \$0 finale cost while still executing and scoring real environment steps; coincident zero-cost ALFWorld results are offset slightly along the x-axis so each replicate remains visible. Each chart shows its aggregate pristine-baseline result as a single reference point. 
+The selected-budget views use the groups with the strongest aggregate skill-over-control lift: \$5 for SpreadsheetBench and \$10 for OfficeQA and ALFWorld. Every harness/treatment point is one of three runs; the x-axis is that run's finale cost, and the y-axis is held-out SpreadsheetBench accuracy, OfficeQA correctness, or ALFWorld success. Finale cost measures LLM gateway spend, so an ALFWorld deterministic controller can have exactly \$0 finale cost while still executing and scoring real environment steps; coincident zero-cost ALFWorld results are offset slightly along the x-axis so each replicate remains visible. Each chart shows its aggregate pristine-baseline result as a single reference point.
 
 ![SpreadsheetBench accuracy versus finale cost](assets/agent-lightning-spreadsheetbench-accuracy-finale-cost.svg)
 
