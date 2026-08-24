@@ -24,7 +24,7 @@ Agent Lightning gives them a clearer process. It suggests useful changes, explai
 
 We asked each coding agent to improve three underperforming agents, one for each benchmark. The agents being improved used GPT-5.4-mini. Claude Code used Opus 4.8 to optimize them. Codex and GitHub Copilot used GPT-5.6-Sol. The last two rows below average the three coding agents, all budget groups, and all repeated runs. The other rows come from Table 1 of the [SkillOpt paper](https://github.com/microsoft/SkillOpt) and use the same benchmark splits.
 
-In the last two rows, the value in parentheses is the improvement over the starting agent, measured in percentage points.
+In the last two rows, the value in parentheses is the improvement over the starting agent, measured in percentage points. The starting-agent row is not shown in the table.
 
 | Method | SpreadsheetBench accuracy (%) | OfficeQA correctness (%) | ALFWorld success (%) |
 | :--- | ---: | ---: | ---: |
@@ -42,9 +42,9 @@ In the last two rows, the value in parentheses is the improvement over the start
 
 #### Overall cost
 
-To test limited budgets, we gave each optimizer \$5, \$10, or \$25 in API credits. Calls made during optimization by both the coding agent and the agent it was improving counted toward the budget. We ran every combination of benchmark, coding agent, budget, and skill setting three times.
+To test limited budgets, we gave each optimizer \$5, \$10, or \$25 in API credits. Calls made during optimization by both the coding agent and the agent it was improving counted toward the budget. The final held-out evaluation ran after optimization and did not count toward this limit. We ran every combination of benchmark, coding agent, budget, and skill setting three times.
 
-Each point below averages three runs for one coding agent, budget, and skill setting. The x-axis shows the average total cost on a logarithmic scale. The y-axis shows the average final score on held-out data. Color and shape identify the coding agent. Filled markers use Agent Lightning; hollow markers show runs without it. The legend does not show the budget. Total cost includes optimizer calls, training and self-evaluation calls, and the final held-out evaluation. It does not include evaluations of the original, unchanged agent.
+Each point below averages three runs for one coding agent, budget, and skill setting. The x-axis shows the average total cost on a logarithmic scale. The y-axis shows the average final score on held-out data. Color and shape identify the coding agent. Filled markers use Agent Lightning; hollow markers show runs without it. The legend does not show the budget. Total cost includes optimizer calls, training and self-evaluation calls, and the final held-out evaluation, even though that evaluation is outside the optimization limit. It does not include evaluations of the original, unchanged agent.
 
 ![SpreadsheetBench accuracy versus overall cost](assets/agent-lightning-spreadsheetbench-accuracy-overall-cost.svg)
 
