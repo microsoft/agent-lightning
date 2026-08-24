@@ -26,9 +26,7 @@ def compute_rollout_level_advantage(
     """Compute advantages once per rollout, then broadcast to rollout triplets."""
     rollout_ids = _required_non_tensor(batch, "rollout_id_list")
     if len(rollout_ids) != len(batch):
-        raise RuntimeError(
-            f"rollout_id_list length ({len(rollout_ids)}) must match batch length ({len(batch)})"
-        )
+        raise RuntimeError(f"rollout_id_list length ({len(rollout_ids)}) must match batch length ({len(batch)})")
 
     uid_values = batch.non_tensor_batch.get("uid")
     if uid_values is None:

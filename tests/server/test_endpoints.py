@@ -360,16 +360,21 @@ def _terminal(client: TestClient, headers: dict[str, str], data_id: str, is_trai
     )
     assert created.status_code == 201
     rid = created.json()[0]["rollout_id"]
-    assert client.patch(f"/api/rollouts/{rid}", json={"status": {"state": "running"}}, headers=headers).status_code == 200
-    assert client.patch(f"/api/rollouts/{rid}", json={"status": {"state": "succeeded"}}, headers=headers).status_code == 200
+    assert (
+        client.patch(f"/api/rollouts/{rid}", json={"status": {"state": "running"}}, headers=headers).status_code == 200
+    )
+    assert (
+        client.patch(f"/api/rollouts/{rid}", json={"status": {"state": "succeeded"}}, headers=headers).status_code
+        == 200
+    )
     return rid
 
 
 def test_terminal_rollouts_cursor_pagination(client: TestClient, auth_headers: dict[str, str]):
     # A rollout that never reaches a terminal state must NOT appear in the log.
-    pending = client.post(
-        "/api/rollouts", json=[{"input": {"data_id": "pending"}}], headers=auth_headers
-    ).json()[0]["rollout_id"]
+    pending = client.post("/api/rollouts", json=[{"input": {"data_id": "pending"}}], headers=auth_headers).json()[0][
+        "rollout_id"
+    ]
 
     # Complete three rollouts; the log is ordered by COMPLETION (append-on-terminal).
     rid_a = _terminal(client, auth_headers, "a", is_train=True)

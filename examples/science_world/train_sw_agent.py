@@ -81,8 +81,7 @@ def build_dataset(
         n_train = budget - n_val
         if n_train <= 0:
             raise ValueError(
-                f"task {task_name!r} has only {budget} variations after "
-                f"val_fraction={val_fraction}; no train rows left"
+                f"task {task_name!r} has only {budget} variations after val_fraction={val_fraction}; no train rows left"
             )
         for v in range(n_train):
             train.append(_row(task_name, v, simplification))
@@ -217,7 +216,7 @@ def build_config(
     if agl_key is not None:
         overrides["agentlightning"]["agl_key"] = agl_key
     if run_name:
-        overrides["trainer"]["experiment_name"] = f'{overrides["trainer"]["experiment_name"]}_{run_name}'
+        overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
 
     override_conf = OmegaConf.create(overrides)
     OmegaConf.set_struct(base_cfg, False)

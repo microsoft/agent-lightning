@@ -7,7 +7,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -106,9 +106,7 @@ def _build_compact_rollout_trajectory_records(
 
 
 def _build_zipped_jsonl(records: list[dict[str, Any]], jsonl_name: str) -> bytes:
-    jsonl_text = "".join(
-        json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records
-    )
+    jsonl_text = "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.writestr(jsonl_name, jsonl_text.encode("utf-8"))
@@ -121,7 +119,7 @@ def _upload_trace_merge_mismatches_to_wandb(rows: list[dict[str, Any]], global_s
 
         if wandb.run is None:
             return
-        table = wandb.Table(columns=_TRACE_MERGE_MISMATCH_COLUMNS)
+        table = wandb.Table(columns=cast(list[str | int], _TRACE_MERGE_MISMATCH_COLUMNS))
         for row in rows:
             table.add_data(*(row.get(column) for column in _TRACE_MERGE_MISMATCH_COLUMNS))
         wandb.log({"training/trace_merge_mismatches": table}, step=global_steps)
@@ -156,7 +154,7 @@ def _upload_compact_rollout_trajectories_to_wandb(
             trajectory_file.write(_build_zipped_jsonl(records, f"{artifact_type}.jsonl"))
         run.log_artifact(artifact)
 
-        table = wandb.Table(columns=_ROLLOUT_TRAJECTORY_COLUMNS)
+        table = wandb.Table(columns=cast(list[str | int], _ROLLOUT_TRAJECTORY_COLUMNS))
         table.add_data(global_steps, artifact_name, artifact_path, len(records))
         table_key = "val/rollout_trajectories" if is_validation else "training/rollout_trajectories"
         wandb.log({table_key: table}, step=global_steps)
@@ -512,10 +510,7 @@ class RolloutAdapter:
                 "has_reward": rollout.final_reward is not None,
             }
             if rollout.triplets:
-                response_length_list = [
-                    len(triplet.response.get("token_ids") or [])
-                    for triplet in rollout.triplets
-                ]
+                response_length_list = [len(triplet.response.get("token_ids") or []) for triplet in rollout.triplets]
                 sample_stat.update(
                     {
                         "total_response_length": np.sum(response_length_list),

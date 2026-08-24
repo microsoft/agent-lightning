@@ -20,7 +20,7 @@ from tqdm import tqdm
 from verl import DataProto
 from verl.trainer.ppo.metric_utils import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics
 from verl.trainer.ppo.ray_trainer import (
-    AdvantageEstimator,
+    AdvantageEstimator,  # pyright: ignore[reportPrivateImportUsage]
     RayPPOTrainer,
     apply_kl_penalty,
     compute_advantage,
@@ -149,8 +149,8 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
 
     def _rollout_replicas(self) -> list[Any]:
         if hasattr(self, "llm_server_manager"):
-            return list(self.llm_server_manager.get_replicas())
-        return list(self.async_rollout_manager.rollout_replicas)
+            return list(self.llm_server_manager.get_replicas())  # pyright: ignore[reportAttributeAccessIssue]
+        return list(self.async_rollout_manager.rollout_replicas)  # pyright: ignore[reportAttributeAccessIssue]
 
     @auto_await
     async def _abort_all_rollout_requests(self) -> None:
@@ -233,9 +233,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             running_at = rollout.running_at
             finished_at = rollout.finished_at
             queue_wait = (running_at - submitted) if running_at is not None else None
-            run_duration = (
-                finished_at - running_at if (running_at is not None and finished_at is not None) else None
-            )
+            run_duration = finished_at - running_at if (running_at is not None and finished_at is not None) else None
             total = (finished_at - submitted) if finished_at is not None else None
             if queue_wait is not None:
                 queue_waits.append(queue_wait)
@@ -365,10 +363,10 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         # verl 0.8.0 moved rollout server state behind llm_server_manager.
         has_llm_server_manager = hasattr(self, "llm_server_manager")
         if has_llm_server_manager:
-            server_addresses = list(self.llm_server_manager.get_addresses())
+            server_addresses = list(self.llm_server_manager.get_addresses())  # pyright: ignore[reportAttributeAccessIssue]
         else:
-            server_addresses = list(self.async_rollout_manager.server_addresses)
-        self._resume_all_rollout_generation()
+            server_addresses = list(self.async_rollout_manager.server_addresses)  # pyright: ignore[reportAttributeAccessIssue]
+        self._resume_all_rollout_generation()  # pyright: ignore[reportUnusedCoroutine]
         if self.is_async:
             self._resume_gateway()
         data_dict = dict(gen_batch.non_tensor_batch)
@@ -437,7 +435,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             print("AgentLightningRayPPOTrainer: agl gateway paused and drained.")
         else:
             print("AgentLightningRayPPOTrainer: aborting residual vLLM requests.")
-            self._abort_all_rollout_requests()
+            self._abort_all_rollout_requests()  # pyright: ignore[reportUnusedCoroutine]
             print("AgentLightningRayPPOTrainer: residual vLLM requests aborted.")
         return out, metrics
 
@@ -463,16 +461,16 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         with marked_timer("gen", timing_raw, color="red"):
             if curr_step_profile:
                 if has_llm_server_manager:
-                    self.llm_server_manager.start_profile()
+                    self.llm_server_manager.start_profile()  # pyright: ignore[reportAttributeAccessIssue]
                 else:
-                    self.async_rollout_manager.start_profile()
+                    self.async_rollout_manager.start_profile()  # pyright: ignore[reportAttributeAccessIssue]
 
             gen_batch_output, agent_metrics = self._rollout(gen_batch, is_train=True)
             if curr_step_profile:
                 if has_llm_server_manager:
-                    self.llm_server_manager.stop_profile()
+                    self.llm_server_manager.stop_profile()  # pyright: ignore[reportAttributeAccessIssue]
                 else:
-                    self.async_rollout_manager.stop_profile()
+                    self.async_rollout_manager.stop_profile()  # pyright: ignore[reportAttributeAccessIssue]
             metrics.update(agent_metrics)
         metrics["timing/rollout_phase_end_wall"] = time.time()
 
@@ -496,7 +494,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         if "is_drop_mask" in batch.batch:
             keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
             metrics["training/n_sample_dropped/marked"] = len(batch) - len(keep)
-            batch = batch[keep]
+            batch = batch[keep]  # pyright: ignore[reportAssignmentType]
 
         mini_bs = self.config.actor_rollout_ref.actor.ppo_mini_batch_size * self.config.actor_rollout_ref.rollout.n
         n_transition = len(batch)
@@ -527,7 +525,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
 
             drop_indices = same_reward_drop_set | set(random_drop_indices)
             keep_indices = [sample_idx for sample_idx in range(n_transition) if sample_idx not in drop_indices]
-            batch = batch[keep_indices]
+            batch = batch[keep_indices]  # pyright: ignore[reportAssignmentType]
         metrics["training/n_sample_dropped/same_reward"] = n_dropped_same_reward
         metrics["training/n_sample_dropped/random"] = n_dropped_random
         metrics["training/n_sample_trained"] = len(batch)
@@ -536,7 +534,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             return None
 
         print("AgentLightningRayPPOTrainer: sleeping rollout replicas.")
-        self.checkpoint_manager.sleep_replicas()
+        self.checkpoint_manager.sleep_replicas()  # pyright: ignore[reportOptionalMemberAccess]
         print("AgentLightningRayPPOTrainer: rollout replicas slept.")
 
         if self.config.trainer.balance_batch:
@@ -578,25 +576,19 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             if self.config.algorithm.use_kl_in_reward:
                 batch, kl_metrics = apply_kl_penalty(
                     batch,
-                    kl_ctrl=self.kl_ctrl_in_reward,
+                    kl_ctrl=self.kl_ctrl_in_reward,  # pyright: ignore[reportArgumentType]
                     kl_penalty=self.config.algorithm.kl_penalty,
                 )
                 metrics.update(kl_metrics)
             else:
                 batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
-            if (
-                rollout_corr_config is not None
-                and not bypass_mode
-                and "rollout_log_probs" in batch.batch
-            ):
+            if rollout_corr_config is not None and not bypass_mode and "rollout_log_probs" in batch.batch:
                 from verl.trainer.ppo.rollout_corr_helper import (
                     compute_rollout_correction_and_add_to_batch,
                 )
 
-                batch, is_metrics = compute_rollout_correction_and_add_to_batch(
-                    batch, rollout_corr_config
-                )
+                batch, is_metrics = compute_rollout_correction_and_add_to_batch(batch, rollout_corr_config)
                 metrics.update(is_metrics)
 
             adv_kwargs = {
@@ -641,7 +633,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             metrics.update(reduce_metrics(actor_output.meta_info["metrics"]))
 
         with marked_timer("update_weights", timing_raw, color="red"):
-            self.checkpoint_manager.update_weights(self.global_steps)
+            self.checkpoint_manager.update_weights(self.global_steps)  # pyright: ignore[reportOptionalMemberAccess]
 
         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
         # Return the batch so fit() can compute throughput after the step timer closes.
@@ -663,7 +655,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         self._carry_over_rollouts = []
         self._load_checkpoint()
         # Push loaded weights before the first rollout or validation.
-        self.checkpoint_manager.update_weights(self.global_steps)
+        self.checkpoint_manager.update_weights(self.global_steps)  # pyright: ignore[reportOptionalMemberAccess]
 
         if self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
@@ -704,9 +696,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             metrics.update(compute_timing_metrics(batch=step_batch, timing_raw=timing_raw))
             n_gpus = self.resource_pool_manager.get_n_gpus()
             if n_gpus > 0 and "step" in timing_raw:
-                metrics.update(
-                    compute_throughout_metrics(batch=step_batch, timing_raw=timing_raw, n_gpus=n_gpus)
-                )
+                metrics.update(compute_throughout_metrics(batch=step_batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
             is_last_step = self.global_steps >= self.total_training_steps
 
@@ -740,9 +730,9 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         # verl 0.8.0 moved rollout server state behind llm_server_manager.
         has_llm_server_manager = hasattr(self, "llm_server_manager")
         if has_llm_server_manager:
-            server_addresses = list(self.llm_server_manager.get_addresses())
+            server_addresses = list(self.llm_server_manager.get_addresses())  # pyright: ignore[reportAttributeAccessIssue]
         else:
-            server_addresses = list(self.async_rollout_manager.server_addresses)
+            server_addresses = list(self.async_rollout_manager.server_addresses)  # pyright: ignore[reportAttributeAccessIssue]
         assert server_addresses, "_validate called before rollout server addresses are available"
 
         merged_metrics: dict[str, Any] = {}

@@ -23,16 +23,16 @@
     {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}
         {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>' + '\n' }}
     {%- elif message.role == "assistant" %}
-        
+
         {{- '<|im_start|>' + message.role + '\n' }}
-        
+
         {%- if enable_thinking is defined and enable_thinking is false %}
             {{- '<think>\n\n</think>\n\n' }}
         {%- endif %}
         {{- content }}
         {%- if message.tool_calls %}
             {%- for tool_call in message.tool_calls %}
-                
+
                 {%- if tool_call.function %}
                     {%- set tool_call = tool_call.function %}
                 {%- endif %}

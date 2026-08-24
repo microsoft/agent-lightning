@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import structlog
@@ -24,7 +24,7 @@ def _server_config(config: Mapping[str, Any] | DictConfig | None) -> dict[str, A
     if config is None:
         raise ValueError("server config is required")
     elif OmegaConf.is_config(config):
-        raw = dict(OmegaConf.to_container(config, resolve=True))
+        raw = dict(cast(Any, OmegaConf.to_container(config, resolve=True)))
     else:
         raw = dict(config)
 

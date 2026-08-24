@@ -63,9 +63,7 @@ class _FakeClient:
 
 
 def test_openai_image_name_matches_job_template_convention() -> None:
-    assert pull_images.openai_image_name("jyangballin/swesmith.foo") == (
-        "jyangballin/swesmith.foo:openai"
-    )
+    assert pull_images.openai_image_name("jyangballin/swesmith.foo") == ("jyangballin/swesmith.foo:openai")
 
 
 def test_openai_image_name_rejects_already_tagged_sources() -> None:

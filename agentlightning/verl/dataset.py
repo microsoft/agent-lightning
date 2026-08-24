@@ -2,12 +2,12 @@
 
 # type: ignore
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import torch
 from datasets import Dataset as HuggingFaceDataset
 from verl.utils.dataset.rl_dataset import RLHFDataset
-
 
 __all__ = [
     "LoadedDataset",
