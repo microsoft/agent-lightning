@@ -16,11 +16,12 @@ import time
 import traceback
 from dataclasses import dataclass
 
+import httpx
 import structlog
 from omegaconf import DictConfig
 
 from agentlightning.client import AgentLightningAsyncClient
-from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState
+from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState, RolloutStatusPatch
 
 log = structlog.get_logger()
 
@@ -126,11 +127,10 @@ class LocalReconciler:
                 pass
 
     async def _reconcile_once(self) -> None:
-        params: list[tuple[str, str | int]] = [
-            ("state_in", RolloutState.QUEUING.value),
-            ("state_in", RolloutState.RUNNING.value),
-            ("limit", 50),
-        ]
+        params = httpx.QueryParams()
+        params = params.add("state_in", RolloutState.QUEUING.value)
+        params = params.add("state_in", RolloutState.RUNNING.value)
+        params = params.add("limit", 50)
         response = await self._api.get("/api/rollouts", params=params)
         response.raise_for_status()
         rollouts = [Rollout.model_validate(item) for item in response.json()]
@@ -161,9 +161,12 @@ class LocalReconciler:
                 continue
             rollout = rollouts_by_id.get(rollout_id)
             timeout = float(rollout.config.timeout_seconds) if rollout and rollout.config.timeout_seconds else None
-            if timeout is not None and (now - item.spawned_at) > timeout:
-                if await self._kill_process_group(rollout_id, item):
-                    await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
+            if (
+                timeout is not None
+                and (now - item.spawned_at) > timeout
+                and await self._kill_process_group(rollout_id, item)
+            ):
+                await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
 
     async def _finish_proc(self, rollout: Rollout, item: Proc) -> bool:
         if rollout.status.state == RolloutState.QUEUING:
@@ -210,8 +213,7 @@ class LocalReconciler:
                     f"/attempt/{attempt_id}/mode/{mode}/openai/v1"
                 ),
                 "AGL_EVENT_URL": (
-                    f"{self._config.agl_server.url}/api/rollouts/{rollout.rollout_id}"
-                    f"/attempt/{attempt_id}/events"
+                    f"{self._config.agl_server.url}/api/rollouts/{rollout.rollout_id}/attempt/{attempt_id}/events"
                 ),
             }
             env.update(_build_env_from_map(rollout.input, rollout.config.local.env_map))
@@ -263,11 +265,11 @@ class LocalReconciler:
         *,
         last_attempt_id: str | None = None,
     ) -> bool:
-        status: dict[str, object] = {"state": state}
+        status = RolloutStatusPatch(state=state)
         if error_message is not None:
-            status["error_message"] = error_message
+            status.error_message = error_message
         if last_attempt_id is not None:
-            status["last_attempt_id"] = last_attempt_id
+            status.last_attempt_id = last_attempt_id
         patch = RolloutPatch(status=status)
         try:
             response = await self._api.patch(
@@ -279,4 +281,3 @@ class LocalReconciler:
         except Exception as e:
             log.warning("Failed to patch rollout", rollout_id=rollout_id, error=str(e))
             return False
-

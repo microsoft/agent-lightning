@@ -188,9 +188,7 @@ def test_git_retry_sleeps_before_each_checkout(monkeypatch, tmp_path) -> None:
 def test_checkout_bug_commit_uses_swesmith_official_checkout(monkeypatch) -> None:
     calls: list[tuple[list[str], int, int]] = []
 
-    def fake_git_retry(
-        args: list[str], *, timeout: int = 120, attempts: int = 3
-    ) -> subprocess.CompletedProcess:
+    def fake_git_retry(args: list[str], *, timeout: int = 120, attempts: int = 3) -> subprocess.CompletedProcess:
         calls.append((args, timeout, attempts))
         return subprocess.CompletedProcess(["git", *args], 0, "ok", "")
 
@@ -298,7 +296,13 @@ def test_relocate_git_moves_worktree_git_and_routes_harness(monkeypatch, tmp_pat
     assert (hidden / "HEAD").read_text() == "ref: refs/heads/main\n"
     assert smith_agent._git_dir() == str(hidden)
     assert smith_agent._git_base() == [
-        "git", "--git-dir", str(hidden), "--work-tree", str(testbed), "-c", "safe.directory=*",
+        "git",
+        "--git-dir",
+        str(hidden),
+        "--work-tree",
+        str(testbed),
+        "-c",
+        "safe.directory=*",
     ]
 
 
@@ -354,8 +358,13 @@ def test_length_penalty_guards_degenerate_span() -> None:
 
 def _plp(reward, mpt, is_train=True, solved=True):
     return smith_agent.prompt_length_penalty(
-        reward, mpt, soft_start=50000, hard_cap=64000, max_pen=0.1,
-        is_train=is_train, solved=solved,
+        reward,
+        mpt,
+        soft_start=50000,
+        hard_cap=64000,
+        max_pen=0.1,
+        is_train=is_train,
+        solved=solved,
     )
 
 

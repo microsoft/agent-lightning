@@ -12,6 +12,7 @@ from the active Docker daemon.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import shlex
 from collections.abc import Sequence
@@ -182,10 +183,8 @@ def prepare_one(
         return ImagePreparationResult(source_image, target_image, f"{source_status},{status}")
     except Exception as exc:
         target = f"{source_image}:{OPENAI_IMAGE_SUFFIX}"
-        try:
+        with contextlib.suppress(Exception):
             target = openai_image_name(source_image)
-        except Exception:
-            pass
         return ImagePreparationResult(source_image, target, "failed", str(exc))
 
 

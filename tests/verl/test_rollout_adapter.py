@@ -230,7 +230,7 @@ def test_training_step_uploads_24_compact_rollout_trajectories_to_wandb_zip(
                 _triplet([index, index + 100, index + 200], [index + 300]),
             ],
         )
-            for index in range(1, 27)
+        for index in range(1, 27)
     ]
 
     _adapter().get_train_data_batch(rollouts, global_steps=23)

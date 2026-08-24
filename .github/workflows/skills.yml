@@ -1,4 +1,4 @@
-name: Validate Agent Lightning Skill
+name: Validate Agent Skills
 
 permissions:
   contents: read
@@ -8,11 +8,13 @@ on:
     branches: [main]
     paths:
       - 'skills/**'
+      - '.agents/skills/**'
       - '.github/workflows/skills.yml'
   pull_request:
     branches: [main]
     paths:
       - 'skills/**'
+      - '.agents/skills/**'
       - '.github/workflows/skills.yml'
   workflow_dispatch:
 
@@ -25,9 +27,40 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - name: Validate Agent Skills format
-        run: uvx --from 'skills-ref==0.1.1' agentskills validate skills/agent-lightning
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Published skills live in skills/ and repository-local agent skills in
+          # .agents/skills/. Both use the <root>/<name>/SKILL.md layout.
+          mapfile -t SKILLS < <(
+            find skills .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -printf '%h\n' | sort
+          )
+          if [ "${#SKILLS[@]}" -eq 0 ]; then
+            echo "No SKILL.md found under skills/ or .agents/skills/." >&2
+            exit 1
+          fi
+          for SKILL in "${SKILLS[@]}"; do
+            echo "::group::${SKILL}"
+            uvx --from 'skills-ref==0.1.1' agentskills validate "${SKILL}"
+            echo "::endgroup::"
+          done
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
-      - name: Validate Claude Code plugin
-        run: npx --yes @anthropic-ai/claude-code@2.1.218 plugin validate skills/agent-lightning
+      - name: Validate Claude Code plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t PLUGINS < <(
+            find skills .agents/skills -mindepth 1 -maxdepth 1 -type d \
+              -exec test -f '{}/.claude-plugin/plugin.json' \; -print | sort
+          )
+          if [ "${#PLUGINS[@]}" -eq 0 ]; then
+            echo "No Claude Code plugin found under skills/ or .agents/skills/." >&2
+            exit 1
+          fi
+          for PLUGIN in "${PLUGINS[@]}"; do
+            echo "::group::${PLUGIN}"
+            npx --yes @anthropic-ai/claude-code@2.1.218 plugin validate "${PLUGIN}"
+            echo "::endgroup::"
+          done

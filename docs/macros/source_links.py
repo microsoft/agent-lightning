@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import os
-from typing import Any, Dict
+from typing import Any
 
 
 def define_env(env: Any):
@@ -29,9 +29,9 @@ def define_env(env: Any):
         ```
     """
 
-    cfg: Dict[str, Any] = env.conf or {}
+    cfg: dict[str, Any] = env.conf or {}
     repo_url = cfg.get("repo_url", "").rstrip("/")
-    extra: Dict[str, Any] = cfg.get("extra", {}) or {}
+    extra: dict[str, Any] = cfg.get("extra", {}) or {}
     default_commit = extra.get("source_commit", "main")
     project_dir = env.project_dir
 
@@ -61,9 +61,7 @@ def define_env(env: Any):
         if not os.path.exists(abs_path):
             _warn(f"Source path not found: {path}. Rendering a visible broken-link marker.")
             label = html.escape(text or path)
-            return (
-                f'<span class="broken-source-link" title="Missing: {html.escape(url)}">' f"{label} (missing)" f"</span>"
-            )
+            return f'<span class="broken-source-link" title="Missing: {html.escape(url)}">{label} (missing)</span>'
 
         if text:
             return f"[{text}]({url})"

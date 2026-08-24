@@ -32,4 +32,3 @@ python "$SCRIPT_DIR/retrieval_server.py" \
     --port "$PORT" \
     --device "$DEVICE" \
     --faiss-gpu
-
