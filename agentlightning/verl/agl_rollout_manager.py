@@ -182,6 +182,12 @@ def _raw_prompt_response_token_ids(data: dict[str, Any]) -> tuple[list[int], lis
                 tids = choices[0].get("token_ids")
                 if tids:
                     response_token_ids.extend(tids)
+    # [multimodal-patch] Malformed/partial payloads may carry explicit nulls; normalize so
+    # callers can always tuple() the ids (mirrors the server-side isinstance guard).
+    if not isinstance(prompt_token_ids, list):
+        prompt_token_ids = []
+    if not isinstance(response_token_ids, list):
+        response_token_ids = []
     return prompt_token_ids, response_token_ids
 
 

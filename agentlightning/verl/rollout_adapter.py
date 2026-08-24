@@ -221,10 +221,27 @@ def _load_pil_image(url: str) -> Any:
     if url.startswith("file://"):
         return Image.open(url[len("file://") :]).convert("RGB")
     if url.startswith(("http://", "https://")):
+        # [multimodal-patch] Fetching arbitrary remote URLs from the trainer process is a
+        # SSRF / egress risk when rollout inputs are user-controlled: remote fetching is
+        # opt-in via env var, with content-type and size validation.
+        import os
+
+        if os.environ.get("AGENTLIGHTNING_ALLOW_REMOTE_IMAGE_FETCH", "0") != "1":
+            raise ValueError(
+                "[multimodal-patch] refusing to fetch a remote image URL in the trainer process; "
+                "embed images as data: URLs or set AGENTLIGHTNING_ALLOW_REMOTE_IMAGE_FETCH=1 "
+                f"to allow remote fetching: {url[:64]}"
+            )
         import httpx
 
         response = httpx.get(url, timeout=60.0, follow_redirects=True)
         response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            raise ValueError(f"[multimodal-patch] remote URL is not an image (content-type={content_type!r})")
+        max_bytes = 50 * 1024 * 1024
+        if len(response.content) > max_bytes:
+            raise ValueError(f"[multimodal-patch] remote image exceeds {max_bytes} bytes")
         return Image.open(io.BytesIO(response.content)).convert("RGB")
     raise ValueError(f"[multimodal-patch] unsupported image url scheme: {url[:64]}")
 

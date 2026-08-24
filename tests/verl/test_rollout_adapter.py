@@ -547,3 +547,11 @@ def test_load_pil_image_decodes_data_url() -> None:
 
     assert image.size == (2, 2)
     assert image.mode == "RGB"
+
+
+def test_load_pil_image_remote_fetch_requires_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("PIL")
+    monkeypatch.delenv("AGENTLIGHTNING_ALLOW_REMOTE_IMAGE_FETCH", raising=False)
+
+    with pytest.raises(ValueError, match="AGENTLIGHTNING_ALLOW_REMOTE_IMAGE_FETCH"):
+        rollout_adapter_module._load_pil_image("https://example.com/image.jpg")

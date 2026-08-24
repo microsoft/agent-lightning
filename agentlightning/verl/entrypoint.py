@@ -12,6 +12,7 @@ Customizations:
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 from collections.abc import Sequence
@@ -21,6 +22,8 @@ import ray
 from omegaconf import OmegaConf
 
 from .dataset import LoadedDataset
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "run_ppo",
@@ -128,7 +131,14 @@ class _AglTaskRunner:
                 fallback_processor = AutoProcessor.from_pretrained(
                     local_path, trust_remote_code=trust_remote_code, use_fast=True
                 )
-            except Exception:
+            except Exception as exc:
+                # [multimodal-patch] Don't fail silently: a None processor disables
+                # multimodal training inputs, which is otherwise invisible.
+                log.warning(
+                    "AutoProcessor fallback failed for %s; multimodal training inputs will be disabled: %s",
+                    local_path,
+                    exc,
+                )
                 fallback_processor = None
             if fallback_processor is not None and (
                 isinstance(fallback_processor, PreTrainedTokenizerBase)
