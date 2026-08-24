@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json  # [multimodal-patch]
 import time
 import traceback
 import uuid
@@ -44,6 +45,9 @@ class Triplet(BaseModel):
     response: Any
     reward: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # [multimodal-patch] Image URLs from the raw model_request payload, aligned with the
+    # prompt token ids of this turn. None for text-only turns (or when alignment failed).
+    image_urls: list[str] | None = None
 
 
 class EnqueuedRollout(BaseModel):
@@ -127,6 +131,107 @@ def _to_native(obj: Any) -> Any:
     if torch is not None and isinstance(obj, torch.Tensor):
         return obj.item() if obj.ndim == 0 else obj.tolist()
     return obj
+
+
+# [multimodal-patch] Extract image URLs from OpenAI-style chat messages, in order of
+# appearance (ported from agent-lightning v0.3.0 TripletAdapter.extract_prompt_image_urls).
+def _extract_image_urls_from_messages(messages: Any) -> list[str]:
+    if not isinstance(messages, list):
+        return []
+    image_urls: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)  # Some clients serialize content parts as JSON text.
+            except json.JSONDecodeError:
+                continue
+        if isinstance(content, list):
+            for content_part in content:
+                if not isinstance(content_part, dict) or content_part.get("type") != "image_url":
+                    continue
+                image_url = content_part.get("image_url")
+                if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
+                    image_urls.append(image_url["url"])
+    return image_urls
+
+
+# [multimodal-patch] Mirror the server-side _trim_model_request token-id extraction
+# (agentlightning/server/routes/events.py) on raw events, so raw model_request events
+# can be aligned with the trimmed triplet events.
+def _raw_prompt_response_token_ids(data: dict[str, Any]) -> tuple[list[int], list[int]]:
+    resp = data.get("response")
+    prompt_token_ids: list[int] = []
+    response_token_ids: list[int] = []
+    if isinstance(resp, dict):
+        prompt_token_ids = resp.get("prompt_token_ids", [])
+        choices = resp.get("choices", [])
+        if choices:
+            if not prompt_token_ids:
+                prompt_token_ids = choices[0].get("prompt_token_ids", [])
+            response_token_ids = choices[0].get("token_ids", [])
+    elif isinstance(resp, list):
+        # Legacy: raw SSE chunks (pre-assembly format, backward compat).
+        for chunk in resp:
+            if not prompt_token_ids and chunk.get("prompt_token_ids"):
+                prompt_token_ids = chunk["prompt_token_ids"]
+            choices = chunk.get("choices", [])
+            if choices:
+                tids = choices[0].get("token_ids")
+                if tids:
+                    response_token_ids.extend(tids)
+    return prompt_token_ids, response_token_ids
+
+
+# [multimodal-patch] Recover per-triplet image URLs from raw model_request events.
+# Replicates the server triplet view (dedupe by prompt_token_ids, keep last) and the
+# manager-side filtering below, so the result aligns one-to-one with the kept triplets.
+# Returns None when the rollout is text-only or when alignment cannot be guaranteed
+# (caller then leaves image_urls unset).
+def _aligned_image_urls(raw_events: list[Event], n_triplets: int) -> list[list[str] | None] | None:
+    raw_requests = [event for event in raw_events if event.event_type == "model_request"]
+
+    # Extract image URLs once per raw request. If no request carries an image the
+    # rollout is text-only: return early so the text-only path keeps the exact
+    # original behavior (no alignment attempt, no warnings).
+    extracted: list[list[str]] = []
+    for event in raw_requests:
+        request = event.data.get("request")
+        messages = request.get("messages") if isinstance(request, dict) else None
+        extracted.append(_extract_image_urls_from_messages(messages))
+    if not any(extracted):
+        return None
+
+    # Server-side _dedupe_model_requests_by_prompt_token_ids: keep last per prompt key.
+    last_index_by_prompt: dict[tuple[Any, ...], int] = {}
+    for index, event in enumerate(raw_requests):
+        prompt_token_ids, _ = _raw_prompt_response_token_ids(event.data)
+        last_index_by_prompt[tuple(prompt_token_ids)] = index
+    kept_indexes = set(last_index_by_prompt.values())
+
+    aligned: list[list[str] | None] = []
+    for index, event in enumerate(raw_requests):
+        if index not in kept_indexes:
+            continue
+        data = event.data
+        http_status = data.get("http_status")
+        _, response_token_ids = _raw_prompt_response_token_ids(data)
+        # Same skip rules as the triplet loop in _build_completed_rollout.
+        if data.get("status") == "error" or (isinstance(http_status, int) and http_status >= 400):
+            continue
+        if not response_token_ids:
+            continue
+        aligned.append(extracted[index] or None)
+
+    if len(aligned) != n_triplets:
+        print(
+            f"RolloutManager: [multimodal-patch] cannot align raw model_request events "
+            f"({len(aligned)}) with triplets ({n_triplets}); image_urls left unset."
+        )
+        return None
+    return aligned
 
 
 class AglRolloutManagerBase:
@@ -357,6 +462,15 @@ class AglRolloutManagerBase:
                     metadata={"server": data.get("server", {})},
                 )
             )
+
+        # [multimodal-patch] Attach image URLs recovered from the raw request payloads.
+        if triplets:
+            aligned_image_urls = _aligned_image_urls(raw_events, len(triplets))
+            if aligned_image_urls is not None and any(urls is not None for urls in aligned_image_urls):
+                triplets = [
+                    triplet.model_copy(update={"image_urls": image_urls})
+                    for triplet, image_urls in zip(triplets, aligned_image_urls, strict=True)
+                ]
 
         final_reward: float | None = None
         reward_events = [event for event in triplet_events if event.event_type == "reward"]
