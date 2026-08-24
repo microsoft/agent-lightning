@@ -15,9 +15,10 @@ public side effects, not one.
 
 1. Confirm the repository root, clean working tree, current branch, and remotes.
 2. Resolve the canonical `OWNER/REPO`, its default branch, and its permitted
-   merge methods with `gh repo view`. Identify the local remotes for that
-   repository and the contributor fork by their URLs; do not assume particular
-   remote names or merge settings.
+   merge methods with
+   `gh repo view OWNER/REPO --json nameWithOwner,defaultBranchRef,mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed`.
+   Identify the local remotes for that repository and the contributor fork by
+   their URLs; do not assume particular remote names or merge settings.
 3. Inspect the release contract in:
    - `.github/workflows/pypi-release.yml`
    - `.github/workflows/docs.yml`
@@ -26,10 +27,10 @@ public side effects, not one.
    - `pyproject.toml`
    - `agentlightning/__init__.py`
 4. Confirm the canonical default branch is already green before branching from
-   it. Resolve its current commit with `gh api repos/OWNER/REPO/commits/BRANCH`
-   and inspect that commit's check runs; a general recent-run listing can omit
-   or mix commits. A release branch inherits every failure that main is
-   carrying.
+   it. Resolve its current commit with
+   `gh api repos/OWNER/REPO/commits/<default-branch>` and inspect that commit's
+   check runs; a general recent-run listing can omit or mix commits. A release
+   branch inherits every failure that main is carrying.
 5. Query the canonical repository's tags and compare them with the versions
    published at `https://pypi.org/pypi/agentlightning/json`. Confirm the target
    version exists in neither place, and stop for an explicit release decision
@@ -56,11 +57,11 @@ git switch -c chore/release-vX.Y.Z <canonical-remote>/<default-branch>
 scripts/bump_version.sh patch  # or minor / major
 ```
 
-The bump updates `pyproject.toml` before uv finishes resolving and writing the
-lockfile. If resolution or network access fails, the command can exit after a
-partial bump. Inspect `git diff` after any failure and restore or reconcile all
-three version files before retrying; blindly rerunning a partial patch bump can
-advance the version twice.
+The script updates the project version with uv and then edits
+`agentlightning/__init__.py` separately. If it fails or is interrupted between
+those writes, only some of the three version files may be updated. Inspect
+`git diff` after any failure and restore or reconcile all three files before
+retrying; blindly rerunning a partial patch bump can advance the version twice.
 
 The bump rewrites exactly three files. Confirm that with `git diff --stat`:
 
@@ -101,14 +102,17 @@ Follow the pull request through its required checks with
 from that output, inspect it with
 `gh run view <run-id> --repo OWNER/REPO --log-failed`, correct the source on the
 same branch, and resume watching. Once every required check has succeeded,
-resolve the reviewed head with
-`gh pr view <pr> --repo OWNER/REPO --json headRefOid` and pass both an explicit
-permitted method and `--match-head-commit` to `gh pr merge`. The canonical
-repository currently permits only squash merges, for example:
+extract the reviewed head and pass both a permitted merge-method flag from step
+2 and `--match-head-commit` to `gh pr merge`:
 
 ```bash
-gh pr merge <pr> --repo OWNER/REPO --squash --match-head-commit <head-sha>
+HEAD_SHA="$(gh pr view <pr> --repo OWNER/REPO --json headRefOid --jq .headRefOid)"
+gh pr merge <pr> --repo OWNER/REPO <merge-method-flag> \
+  --match-head-commit "$HEAD_SHA"
 ```
+
+Replace `<merge-method-flag>` with one permitted flag discovered in step 2:
+`--merge`, `--rebase`, or `--squash`.
 
 Committing, pushing, opening the pull request, and merging are each distinct
 external actions and each requires authorization.
