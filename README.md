@@ -2,7 +2,7 @@
   <img src="docs/assets/readme-banner.svg" alt="Agent-lightning-banner" style="width:600px"/>
 </p>
 
-# Agent Lightning⚡
+# Agent Lightning⚡ Dees Nuts
 
 [![Unit Tests](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml)
 [![Documentation](https://img.shields.io/badge/GitHub%20Pages-Documentation-blue)](https://microsoft.github.io/agent-lightning/)
