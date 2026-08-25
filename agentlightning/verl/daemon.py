@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import random
 import socket
@@ -19,11 +20,26 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
+# =============================================================================
+# Tool Call Filtering Support (for filtering unexpected tool call turns)
+# Reference: Youtu-Agent implementation in contrib/youtu-agent-lightning branch
+# The ToolParser extracts tool calls from response tokens to detect cases where
+# the model continues generating after a tool call (hallucinated tool responses)
+# instead of properly stopping with </tool_call><|im_end|>
+# =============================================================================
+try:
+    from verl.experimental.agent_loop.tool_parser import ToolParser
+    TOOL_PARSER_AVAILABLE = True
+except ImportError:
+    TOOL_PARSER_AVAILABLE = False
+
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgentModeDaemon",
@@ -283,6 +299,11 @@ class AgentModeDaemon:
         self._proxy_thread: Optional[threading.Thread] = None
         self.is_train = True
 
+        # Tool Call Filtering Setup (config key: trace_aggregator["filter_unexpected_tool_calls"])
+        self.tool_parser = None
+        self.toolcall_candidate_token_last2_list = []
+        self._setup_tool_call_filter(train_information, tokenizer)
+
     def _internal_loop_runner(self):
         """Run the internal loop."""
         loop = asyncio.new_event_loop()
@@ -290,6 +311,112 @@ class AgentModeDaemon:
         self._internal_loop = loop
         loop.run_forever()
         loop.close()
+
+    # =========================================================================
+    # Tool Call Filtering Methods
+    # Reference: Youtu-Agent implementation (contrib/youtu-agent-lightning)
+    # Purpose: Filter out "unexpected tool call turns" where the model continues
+    #          generating text after a tool call instead of stopping properly.
+    # =========================================================================
+
+    def _setup_tool_call_filter(self, train_information: Dict[str, Any], tokenizer: Any) -> None:
+        """Initialize tool parser and valid ending token patterns for filtering.
+
+        Uses apply_chat_template to auto-detect the correct tool call ending tokens
+        rather than hardcoding token IDs. Also builds variants with eos/pad tokens
+        to allow various ending conditions and prevent over-filtering.
+
+        Args:
+            train_information: Training config containing 'format' for toolcall format
+            tokenizer: The tokenizer used for encoding/decoding
+        """
+        if not TOOL_PARSER_AVAILABLE:
+            print("Warning: ToolParser not available, tool call filtering disabled.")
+            self.tool_parser = None
+            return
+
+        toolcall_format = train_information.get("format", "hermes")
+        self.tool_parser = ToolParser.get_tool_parser(toolcall_format, tokenizer)
+
+        # Use chat template to detect the actual tool call ending token sequence
+        # Example uses calculator tool to match calc-x example for consistency
+        tools_examples = [{
+            "type": "function",
+            "name": "calculate",
+            "description": "Evaluate a mathematical expression",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string", "description": "Math expression, e.g., '2 + 3 * 4'"},
+                },
+                "required": ["expression"],
+            },
+        }]
+        toolcall_message_examples = [
+            {"role": "user", "content": "What is 15 + 27?"},
+            {"role": "assistant", "content": "", "tool_calls": [{
+                "id": "call_001",
+                "type": "function",
+                "function": {"name": "calculate", "arguments": '{"expression":"15 + 27"}'},
+            }]},
+        ]
+        toolcall_example_chat_template = tokenizer.apply_chat_template(
+            toolcall_message_examples, tools=tools_examples,
+            add_generation_prompt=False, tokenize=False,
+        )
+        # Extract the last 2 tokens from the chat template output (e.g., </tool_call><|im_end|>)
+        toolcall_example_token_last2 = tokenizer.encode(toolcall_example_chat_template.strip())[-2:]
+
+        eos_token_id = tokenizer.eos_token_id
+        pad_token_id = tokenizer.pad_token_id
+
+        # Build candidate list: the detected ending + variants with eos/pad
+        # This allows various tool-call ending conditions to prevent over-filtering
+        toolcall_candidate_token_last2_list = [toolcall_example_token_last2]
+        if toolcall_example_token_last2[-1] != eos_token_id:
+            toolcall_candidate_token_last2_list.append([toolcall_example_token_last2[0], eos_token_id])
+        if toolcall_example_token_last2[-1] != pad_token_id:
+            toolcall_candidate_token_last2_list.append([toolcall_example_token_last2[0], pad_token_id])
+
+        self.toolcall_candidate_token_last2_list = toolcall_candidate_token_last2_list
+        logger.info(
+            f"Tool call filter initialized: {eos_token_id=}, {pad_token_id=}, "
+            f"candidates={self.toolcall_candidate_token_last2_list}"
+        )
+
+
+    def _is_valid_tool_call_response(self, response_ids: List[int]) -> Tuple[bool, bool]:
+        """Check if a response with tool calls ends with valid ending tokens.
+
+        Uses strict last-2-token check (same as youtu branch): the response must end
+        with one of the candidate token pairs (e.g., </tool_call><|im_end|> or
+        </tool_call><|endoftext|>).
+
+        Args:
+            response_ids: List of token IDs from the model's response
+
+        Returns:
+            Tuple of (has_tool_calls, has_valid_ending):
+            - has_tool_calls: True if the response contains tool calls
+            - has_valid_ending: True if no tool calls, or tool calls with proper ending
+        """
+        if self.tool_parser is None:
+            return False, True
+
+        _, tool_calls = asyncio.run(self.tool_parser.extract_tool_calls(response_ids))
+
+        if not tool_calls:
+            return False, True
+
+        if len(response_ids) < 2:
+            return True, False
+
+        # Strict last-2 check against all valid ending candidates
+        for candidate in self.toolcall_candidate_token_last2_list:
+            if response_ids[-2] == candidate[0] and response_ids[-1] == candidate[1]:
+                return True, True
+
+        return True, False
 
     # Multimodal utilities for M-RoPE position embeddings
 
@@ -821,6 +948,12 @@ class AgentModeDaemon:
         finished_id_to_sample_info: Dict[str, Dict[str, Any]] = {}
         finished_id_to_final_reward: Dict[str, float] = {}
         sample_with_reward_count = 0
+
+        # Tool call filtering metrics
+        n_total_turns_before_filter = 0
+        n_unexpected_tool_calls = 0
+        n_skipped_rollouts_by_filter = 0
+
         for rollout_id, rollout in self._completed_rollouts_v0.items():
             original_sample = self._task_id_to_original_sample[rollout_id]
             sample_with_reward_count += int(rollout.final_reward is not None)
@@ -842,6 +975,41 @@ class AgentModeDaemon:
                 }
                 for t in rollout.triplets
             ]
+
+            # Filter void/unexpected tool call turns (Youtu-Agent style)
+            # When config is OFF: only count for metrics, no filtering
+            # When config is ON: apply both void and unexpected tool call filtering
+            if self.tool_parser is not None:
+                n_total_turns_before_filter += len(trace_list)
+
+                # Count unexpected tool calls (always, for metrics)
+                for trace in trace_list:
+                    if len(trace["prompt_ids"]) and len(trace["response_ids"]):
+                        has_tool_calls, has_valid_ending = self._is_valid_tool_call_response(trace["response_ids"])
+                        if has_tool_calls and not has_valid_ending:
+                            n_unexpected_tool_calls += 1
+
+                # Apply filtering only when config is enabled
+                if self.trace_aggregator.get("filter_unexpected_tool_calls", False):
+                    # 1. Filter void turns (empty prompt or response)
+                    trace_list = [
+                        t for t in trace_list
+                        if len(t["prompt_ids"]) and len(t["response_ids"])
+                    ]
+                    # 2. Filter unexpected tool call turns
+                    trace_list_filtered = []
+                    for trace in trace_list:
+                        has_tool_calls, has_valid_ending = self._is_valid_tool_call_response(trace["response_ids"])
+                        if has_tool_calls and not has_valid_ending:
+                            continue  # Skip invalid turns
+                        trace_list_filtered.append(trace)
+                    # 3. Skip rollout if only 1 or fewer valid turns remain
+                    if len(trace_list_filtered) <= 1:
+                        n_skipped_rollouts_by_filter += 1
+                        finished_id_to_final_reward[rollout_id] = final_reward
+                        continue
+                    trace_list = trace_list_filtered
+
             info = {
                 "reward": final_reward,
                 "trace_list": trace_list,
@@ -1123,6 +1291,14 @@ class AgentModeDaemon:
                 and self.trace_aggregator.get("debug", False)
                 else {}
             ),
+            "training/n_unexpected_tool_calls": n_unexpected_tool_calls,
+            "training/n_total_turns_before_filter": n_total_turns_before_filter,
+            "training/unexpected_tool_call_ratio": (
+                n_unexpected_tool_calls / n_total_turns_before_filter if n_total_turns_before_filter > 0 else 0.0
+            ),
+            "training/n_skipped_rollouts_by_filter": n_skipped_rollouts_by_filter,
+            "training/filter_enabled": float(self.trace_aggregator.get("filter_unexpected_tool_calls", False)),
+            "training/reward_std": np.std(list(finished_id_to_final_reward.values())),
         }
 
         # Add non-tensor data for advantage calculation and logging

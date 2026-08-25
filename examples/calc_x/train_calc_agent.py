@@ -40,6 +40,12 @@ from datasets import Dataset as HuggingFaceDataset
 import agentlightning as agl
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var, resolve_str_env_var
 
+# Ensure venv bin is in PATH (needed for uvx/mcp-server-calculator in Ray workers)
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_venv_bin = os.path.join(_script_dir, "..", "..", ".venv", "bin")
+if os.path.isdir(_venv_bin):
+    os.environ["PATH"] = os.path.abspath(_venv_bin) + ":" + os.environ.get("PATH", "")
+
 
 def verl_default_config() -> Dict[str, Any]:
     config = {
@@ -123,6 +129,11 @@ def train(
     trajectory_level: bool = False,
     weave: bool,
     mongo_uri: Optional[str],
+    filter_unexpected_tool_calls: bool = False,
+    experiment_name: Optional[str] = None,
+    n_gpus: int = 1,
+    checkpoint_dir: str = "/home/jovyan/msra/experiments/checkpoints",
+    resume: bool = False,
 ):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
 
@@ -141,6 +152,7 @@ def train(
         trajectory_level: Whether to enable trajectory level in trace aggregator.
         weave: Whether to enable Weave tracing.
         mongo_uri: MongoDB URI to use for the store.
+        experiment_name: Custom experiment name for W&B logging.
     """
     # Load datasets (respect CLI file paths)
     train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())  # type: ignore
@@ -155,6 +167,26 @@ def train(
 
     if model:
         config["actor_rollout_ref"]["model"]["path"] = model
+
+    # Override experiment name if provided (for W&B logging)
+    if experiment_name:
+        config["trainer"]["experiment_name"] = experiment_name
+        print(f"Using custom experiment name: {experiment_name}")
+
+    # Override n_gpus_per_node for multi-GPU training
+    if n_gpus > 1:
+        config["trainer"]["n_gpus_per_node"] = n_gpus
+        print(f"Multi-GPU training enabled: n_gpus_per_node={n_gpus}")
+
+    # Set checkpoint directory and conversation dump directory
+    config["trainer"]["default_local_dir"] = checkpoint_dir
+    config["trainer"]["resume_mode"] = "auto" if resume else "disable"
+    conversations_dir = checkpoint_dir.replace("checkpoints", "conversations")
+    config["trainer"]["rollout_data_dir"] = conversations_dir
+    os.makedirs(conversations_dir, exist_ok=True)
+    print(f"Checkpoint directory: {checkpoint_dir}")
+    print(f"Conversations directory: {conversations_dir}")
+    print(f"Resume mode: {config['trainer']['resume_mode']}")
 
     # Enable LoRA configuration if requested
     if lora:
@@ -174,6 +206,19 @@ def train(
             }
         }
         print("Trajectory level enabled in trace aggregator.")
+
+    # =========================================================================
+    # Tool Call Filtering (Youtu-Agent style)
+    # Filters out turns where the model generates unexpected content after
+    # a tool call (hallucinated tool responses). Helps prevent entropy explosion.
+    # =========================================================================
+    if filter_unexpected_tool_calls:
+        if "agentlightning" not in config:
+            config["agentlightning"] = {"trace_aggregator": {}}
+        if "trace_aggregator" not in config["agentlightning"]:
+            config["agentlightning"]["trace_aggregator"] = {}
+        config["agentlightning"]["trace_aggregator"]["filter_unexpected_tool_calls"] = True
+        print("Tool call filtering enabled (Youtu-Agent style).")
 
     # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
     if ci or ci_fast:
@@ -290,6 +335,35 @@ def main():
         default=None,
         help="MongoDB URI to use for the store.",
     )
+    parser.add_argument(
+        "--filter-unexpected-tool-calls",
+        action="store_true",
+        help="Enable Youtu-Agent style tool call filtering. "
+             "Filters out turns where the model generates unexpected content after a tool call.",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default=None,
+        help="Custom experiment name for W&B logging (default: calc_x or auto-generated for CI)",
+    )
+    parser.add_argument(
+        "--n-gpus",
+        type=int,
+        default=1,
+        help="Number of GPUs per node for distributed training (default: 1)",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default="/home/jovyan/msra/experiments/checkpoints",
+        help="Directory to save checkpoints (default: /home/jovyan/msra/experiments/checkpoints)",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume training from the latest checkpoint in checkpoint-dir",
+    )
 
     args = parser.parse_args()
 
@@ -321,6 +395,11 @@ def main():
         trajectory_level=args.trajectory_level,
         weave=args.weave,
         mongo_uri=args.mongo_uri,
+        filter_unexpected_tool_calls=args.filter_unexpected_tool_calls,
+        experiment_name=args.experiment_name,
+        n_gpus=args.n_gpus,
+        checkpoint_dir=args.checkpoint_dir,
+        resume=args.resume,
     )
 
 
