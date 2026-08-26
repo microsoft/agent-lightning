@@ -100,7 +100,7 @@ def verl_default_config() -> dict[str, Any]:
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
-                "path": "Qwen/Qwen2.5-VL-3B-Instruct",
+                "path": "Qwen/Qwen3.5-2B",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
@@ -239,7 +239,7 @@ def main() -> None:
         "--model",
         type=str,
         default=None,
-        help="HF model id or path (default: Qwen/Qwen2.5-VL-3B-Instruct)",
+        help="HF model id or path (default: Qwen/Qwen3.5-2B)",
     )
     parser.add_argument(
         "--agl-base-url",

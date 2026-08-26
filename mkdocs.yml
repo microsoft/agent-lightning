@@ -112,6 +112,7 @@ nav:
     - Search-R1: 65-example-search-r1.md
     - LLM-in-Sandbox: 70-example-llm-in-sandbox.md
     - Coding Agent: 75-example-coding-agent.md
+    - Multimodal QA: 80-example-multimodal-qa.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css

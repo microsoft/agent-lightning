@@ -6,7 +6,7 @@ set -euo pipefail
 
 AGL_SERVER_PORT=8181
 AGL_KEY=dummy
-MODEL="${MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
+MODEL="${MODEL:-Qwen/Qwen3.5-2B}"
 LOG_SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
 SERVER_LOG="/tmp/agl-multimodal-qa-server-$LOG_SUFFIX.log"
 CONTROLLER_LOG="/tmp/agl-multimodal-qa-controller-$LOG_SUFFIX.log"

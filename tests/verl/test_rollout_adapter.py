@@ -549,9 +549,25 @@ def test_load_pil_image_decodes_data_url() -> None:
     assert image.mode == "RGB"
 
 
-def test_load_pil_image_remote_fetch_requires_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_pil_image_fetches_remote_url_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("PIL")
-    monkeypatch.delenv("AGENTLIGHTNING_ALLOW_REMOTE_IMAGE_FETCH", raising=False)
+    httpx = pytest.importorskip("httpx")
+    from PIL import Image
 
-    with pytest.raises(ValueError, match="AGENTLIGHTNING_ALLOW_REMOTE_IMAGE_FETCH"):
-        rollout_adapter_module._load_pil_image("https://example.com/image.jpg")
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(buffer, format="PNG")
+
+    class _FakeResponse:
+        headers: ClassVar[dict[str, str]] = {"content-type": "image/png"}
+        content = buffer.getvalue()
+
+        def raise_for_status(self) -> None:
+            pass
+
+    # Remote fetching is allowed by default (no opt-in env var).
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: _FakeResponse())
+
+    image = rollout_adapter_module._load_pil_image("https://example.com/image.jpg")
+
+    assert image.size == (2, 2)
+    assert image.mode == "RGB"
