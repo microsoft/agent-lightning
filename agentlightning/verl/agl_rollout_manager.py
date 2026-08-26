@@ -255,6 +255,7 @@ class AglRolloutManagerBase:
         local_agent_class: str | None = None,
         local_env_map: dict[str, str] | None = None,
         k8s_job_template_path: str | None = None,
+        k8s_require_preloaded_images: bool = False,
     ) -> None:
         self._model = model
         self._step = step
@@ -268,7 +269,10 @@ class AglRolloutManagerBase:
                 "env_map": local_env_map or {},
             }
         if k8s_job_template_path:
-            self._rollout_config["k8s"] = {"job_template": Path(k8s_job_template_path).read_text()}
+            self._rollout_config["k8s"] = {
+                "job_template": Path(k8s_job_template_path).read_text(),
+                "require_preloaded_images": k8s_require_preloaded_images,
+            }
 
         self.client = AgentLightningSyncClient(
             base_url=agl_base_url,

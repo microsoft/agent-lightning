@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agentlightning.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
@@ -238,3 +240,32 @@ def test_aligned_image_urls_text_only_rollout_returns_none_without_warning(
     # Text-only rollouts keep the exact original behavior: no alignment, no warning.
     assert _aligned_image_urls(raw_events, 2) is None
     assert capsys.readouterr().out == ""
+
+
+def test_rollout_manager_propagates_preloaded_image_requirement(tmp_path: Path) -> None:
+    template_path = tmp_path / "job.yaml"
+    template_path.write_text(
+        """
+apiVersion: batch/v1
+kind: Job
+metadata: {}
+spec:
+  template:
+    spec:
+      containers:
+        - name: agent
+          image: example:v1
+"""
+    )
+    manager = AglRolloutManagerBase(
+        agl_base_url="http://server:8080",
+        agl_key="secret",
+        model="test-model",
+        step=0,
+        k8s_job_template_path=str(template_path),
+        k8s_require_preloaded_images=True,
+    )
+    try:
+        assert manager._rollout_config["k8s"]["require_preloaded_images"] is True
+    finally:
+        manager.client.close()

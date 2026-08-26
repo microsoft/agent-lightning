@@ -102,6 +102,23 @@ TERMINAL_STATES: frozenset[RolloutState] = frozenset(
 DEFAULT_ATTEMPT_ID = "0"
 
 
+class K8sImageReadinessReport(BaseModel):
+    """Controller report of images cached on every eligible K8s node."""
+
+    images: list[str] = Field(default_factory=list)
+    node_count: int = Field(ge=1)
+    lease_seconds: float = Field(gt=0, le=300)
+
+
+class K8sImageReadinessSnapshot(BaseModel):
+    """Server-timestamped, leased K8s image inventory."""
+
+    images: list[str] = Field(default_factory=list)
+    node_count: int = Field(ge=1)
+    observed_at: float
+    expires_at: float
+
+
 class RolloutLocalConfig(BaseModel):
     """Local runner config for a rollout."""
 
@@ -113,6 +130,7 @@ class RolloutK8sConfig(BaseModel):
     """K8s runner config for a rollout."""
 
     job_template: str | None = None
+    require_preloaded_images: bool = False
 
 
 class RolloutConfig(BaseModel):
