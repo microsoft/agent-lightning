@@ -416,6 +416,9 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             reward_fillna_value=self.config.agentlightning.reward_fillna_value,
             trace_aggregator_level=level,
             tokenizer=self.tokenizer,
+            # [multimodal-patch] RayPPOTrainer stores the processor from entrypoint; forwarding it
+            # enables pixel_values + mrope position ids for image-bearing training rows.
+            processor=getattr(self, "processor", None),
         )
 
         if is_train:

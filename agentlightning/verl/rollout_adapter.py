@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64  # [multimodal-patch]
 import io
 import json
 import zipfile
@@ -184,6 +185,162 @@ def get_right_padded_ids_and_attention_mask(
     return ids + [pad_token_id] * pad_len, [1] * seq_len + [0] * pad_len
 
 
+# ---------------------------------------------------------------------------
+# [multimodal-patch] Multimodal (image) support for mrope VLM training.
+# Mirrors verl 0.8.0's AgentLoopWorker._compute_multi_modal_inputs /
+# _compute_position_ids (verl/experimental/agent_loop/agent_loop.py) so the
+# FSDP engine receives per-row `multi_modal_inputs` (pixel_values +
+# image_grid_thw) and (batch, 4, seq_len) mrope position ids for rows whose
+# prompt contains images. Rows without images keep the plain behavior.
+# ---------------------------------------------------------------------------
+
+_MROPE_PROCESSOR_TAGS = ("Qwen2VL", "Qwen2_5_VL", "Qwen3VL", "Qwen3_5")
+
+
+def _is_mrope_processor(processor: Any) -> bool:
+    """Check whether the processor belongs to an mrope (Qwen-VL style) model."""
+    if processor is None:
+        return False
+    # verl.utils.tokenizer.hf_processor binds the HF model class' get_rope_index.
+    if getattr(processor, "get_rope_index", None) is not None:
+        return True
+    class_names = [processor.__class__.__name__]
+    image_processor = getattr(processor, "image_processor", None)
+    if image_processor is not None:
+        class_names.append(image_processor.__class__.__name__)
+    return any(tag in name for name in class_names for tag in _MROPE_PROCESSOR_TAGS)
+
+
+def _load_pil_image(url: str) -> Any:
+    """Decode one image URL (data: base64 / file:// / http(s)://) into a PIL image."""
+    from PIL import Image
+
+    if url.startswith("data:"):
+        _, _, payload = url.partition(",")
+        return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
+    if url.startswith("file://"):
+        return Image.open(url[len("file://") :]).convert("RGB")
+    if url.startswith(("http://", "https://")):
+        # [multimodal-patch] Remote images are fetched from the trainer process with
+        # content-type and size validation.
+        import httpx
+
+        response = httpx.get(url, timeout=60.0, follow_redirects=True)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            raise ValueError(f"[multimodal-patch] remote URL is not an image (content-type={content_type!r})")
+        max_bytes = 50 * 1024 * 1024
+        if len(response.content) > max_bytes:
+            raise ValueError(f"[multimodal-patch] remote image exceeds {max_bytes} bytes")
+        return Image.open(io.BytesIO(response.content)).convert("RGB")
+    raise ValueError(f"[multimodal-patch] unsupported image url scheme: {url[:64]}")
+
+
+def _build_multi_modal_inputs(processor: Any, image_urls: list[str]) -> tuple[dict[str, Any], bool]:
+    """Run the HF processor on the row's images.
+
+    Returns (multi_modal_inputs, has_mm_token_type_ids): the dict holds the vision
+    tensors for verl's extract_multi_modal_inputs (e.g. pixel_values, and
+    image_grid_thw for Qwen-VL style models); text-side keys are dropped.
+    image_grid_thw is optional so non-mrope VLMs whose processor only returns
+    pixel_values still get their vision features attached (their position_ids
+    stay on the plain 2D cumsum path). has_mm_token_type_ids flags
+    transformers>=5.3 processors, where mm_token_type_ids is needed (rebuilt
+    per row) for position ids.
+    """
+    images = [_load_pil_image(url) for url in image_urls]
+    model_inputs = processor(text=["dummy"], images=images, return_tensors="pt")
+    has_mm_token_type_ids = "mm_token_type_ids" in model_inputs
+    multi_modal_inputs = {
+        key: value
+        for key, value in dict(model_inputs).items()
+        if key not in ("input_ids", "attention_mask", "mm_token_type_ids")
+    }
+    if not multi_modal_inputs:
+        raise RuntimeError(
+            f"[multimodal-patch] processor returned no vision tensors for {len(images)} image(s), "
+            f"got keys: {sorted(dict(model_inputs))}"
+        )
+    return multi_modal_inputs, has_mm_token_type_ids
+
+
+def _compute_mrope_position_ids(
+    processor: Any,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    image_grid_thw: Any | None,
+    has_mm_token_type_ids: bool = False,
+) -> torch.Tensor:
+    """Compute (4, seq_len) mrope position ids for one padded row.
+
+    Row layout follows verl 0.8.0's agent loop: one text row + three vision rows
+    (get_rope_index output). image_grid_thw=None yields the pure-text variant.
+    """
+    bound_get_rope_index = getattr(processor, "get_rope_index", None)
+    if bound_get_rope_index is not None:
+        # HF model-class get_rope_index bound by hf_processor; takes batched input.
+        rope_kwargs: dict[str, Any] = {
+            "input_ids": input_ids.unsqueeze(0),
+            "attention_mask": attention_mask.unsqueeze(0),
+            "image_grid_thw": image_grid_thw,
+            "video_grid_thw": None,
+        }
+        if has_mm_token_type_ids:
+            rope_kwargs["mm_token_type_ids"] = _build_mm_token_type_ids(processor, input_ids).unsqueeze(0)
+        result = bound_get_rope_index(**rope_kwargs)
+        vision_position_ids = result[0] if isinstance(result, tuple) else result  # (3, 1, seq_len)
+        vision_position_ids = vision_position_ids[:, 0, :]
+    else:
+        # Fallback: verl's per-family helpers take a 1D single-example input.
+        class_names = processor.__class__.__name__
+        image_processor = getattr(processor, "image_processor", None)
+        if image_processor is not None:
+            class_names += image_processor.__class__.__name__
+        if "Qwen3VL" in class_names or "Qwen3_5" in class_names:
+            from verl.models.transformers.qwen3_vl import get_rope_index
+        else:
+            from verl.models.transformers.qwen2_vl import get_rope_index
+        vision_position_ids = get_rope_index(
+            processor,
+            input_ids=input_ids,
+            image_grid_thw=image_grid_thw,
+            attention_mask=attention_mask,
+        )  # (3, seq_len)
+
+    valid_mask = attention_mask.bool()
+    text_position_ids = torch.ones((1, input_ids.shape[0]), dtype=torch.long, device=input_ids.device)
+    text_position_ids[0, valid_mask] = torch.arange(int(valid_mask.sum().item()), device=input_ids.device)
+    return torch.cat([text_position_ids, vision_position_ids.to(device=input_ids.device, dtype=torch.long)], dim=0)
+
+
+def _text_only_mrope_position_ids(input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    """(4, seq_len) mrope position ids for a row treated as pure text.
+
+    All four rows hold the plain cumsum positions (1 on padding, matching the
+    text-row convention of _compute_mrope_position_ids). Last-resort fallback
+    when even get_rope_index(image_grid_thw=None) fails for a row.
+    """
+    valid_mask = attention_mask.bool()
+    positions = torch.ones(input_ids.shape[0], dtype=torch.long, device=input_ids.device)
+    positions[valid_mask] = torch.arange(int(valid_mask.sum().item()), device=input_ids.device)
+    return positions.unsqueeze(0).repeat(4, 1)
+
+
+def _build_mm_token_type_ids(processor: Any, input_ids: torch.Tensor) -> torch.Tensor:
+    """Build per-token modality ids (1=image, 2=video); only used for position ids."""
+    from verl.utils.tokenizer import get_processor_token_id
+
+    mm_token_type_ids = torch.zeros_like(input_ids)
+    image_token_id = get_processor_token_id(processor, "image")
+    video_token_id = get_processor_token_id(processor, "video")
+    if image_token_id is not None:
+        mm_token_type_ids[input_ids == image_token_id] = 1
+    if video_token_id is not None:
+        mm_token_type_ids[input_ids == video_token_id] = 2
+    return mm_token_type_ids
+
+
 class RolloutAdapter:
     """Convert completed rollout results into VERL data structures."""
 
@@ -197,6 +354,7 @@ class RolloutAdapter:
         reward_fillna_value: float = 0.0,
         trace_aggregator_level: str = "transition",
         tokenizer: Any | None = None,
+        processor: Any | None = None,  # [multimodal-patch] HF processor; None keeps text-only behavior
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
@@ -205,6 +363,7 @@ class RolloutAdapter:
         self.reward_fillna_value = reward_fillna_value
         self.trace_aggregator_level = trace_aggregator_level
         self.tokenizer = tokenizer
+        self.processor = processor  # [multimodal-patch]
 
     def get_train_data_batch(
         self,
@@ -219,6 +378,21 @@ class RolloutAdapter:
 
         # Keep rollout randomness within each sample instead of ordering samples by completion time.
         sorted_rollouts = sorted(completed_rollouts, key=lambda rollout: (rollout.step, rollout.sample_idx_in_step))
+
+        # [multimodal-patch] Image-to-row alignment is only implemented for the transition
+        # level: trajectory-level aggregation merges multi-turn prompts into one row, which
+        # breaks the correspondence between image placeholder tokens and image_urls, and
+        # append_training_row is never given image_urls on that path. Fail loudly instead of
+        # silently training without the vision signal.
+        if level == "trajectory" and any(
+            triplet.image_urls for rollout in sorted_rollouts for triplet in (rollout.triplets or [])
+        ):
+            raise ValueError(
+                "[multimodal-patch] Rollout traces contain images (triplets with image_urls), but "
+                "trace_aggregator level 'trajectory' merges multi-turn prompts and cannot keep the "
+                "image-to-token alignment. Set agentlightning.trace_aggregator.level: transition "
+                "in the config for multimodal training."
+            )
 
         final_rewards: list[float] = []
         sample_with_reward_count = 0
@@ -235,6 +409,7 @@ class RolloutAdapter:
         turn_index_list: list[int] = []
         is_drop_list: list[bool] = []
         response_log_probs_list: list[list[float] | None] = []
+        image_urls_list: list[list[str] | None] = []  # [multimodal-patch] per kept training row
         n_trunc_sample_because_of_response = 0
         n_skipped_empty_training_rows = 0
         unmerged_count = 0
@@ -251,6 +426,7 @@ class RolloutAdapter:
             reward: float,
             response_mask: list[int] | None = None,
             response_log_probs: list[float] | None = None,
+            image_urls: list[str] | None = None,  # [multimodal-patch]
         ) -> None:
             nonlocal n_skipped_empty_training_rows, n_trunc_sample_because_of_response
             if len(prompt_ids) > self.max_prompt_length:
@@ -286,6 +462,7 @@ class RolloutAdapter:
             response_ids_list.append(one_response_ids)
             response_attention_mask_list.append(one_response_attention_mask)
             is_drop_list.append(is_drop)
+            image_urls_list.append(image_urls)  # [multimodal-patch] stays aligned with kept rows
             if response_mask is not None:
                 one_response_mask, _ = get_right_padded_ids_and_attention_mask(
                     response_mask, self.max_response_length, 0
@@ -324,6 +501,7 @@ class RolloutAdapter:
                         response_ids=response_ids,
                         reward=final_reward,
                         response_log_probs=log_probs,
+                        image_urls=triplet.image_urls,  # [multimodal-patch]
                     )
                 continue
             else:
@@ -438,6 +616,104 @@ class RolloutAdapter:
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
         position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
 
+        # [multimodal-patch] Build per-row multi_modal_inputs and mrope position ids.
+        has_image_rows = any(image_urls for image_urls in image_urls_list)
+        multi_modal_inputs_list: list[dict[str, Any] | None] | None = None
+        if has_image_rows and self.processor is None:
+            print(
+                "Warning: [multimodal-patch] rollout traces contain images but RolloutAdapter has no "
+                "processor; training rows will NOT include pixel_values (vision signal is lost)."
+            )
+        elif has_image_rows:
+            use_mrope = _is_mrope_processor(self.processor)
+            if not use_mrope:
+                print(
+                    "Warning: [multimodal-patch] processor is not a recognized mrope (Qwen-VL) "
+                    "processor; multi_modal_inputs will be attached but position_ids stay 2D."
+                )
+            multi_modal_inputs_list = []
+            mrope_position_ids_list: list[torch.Tensor] = []
+            for row_index in range(n_sample):
+                image_urls = image_urls_list[row_index]
+                row_multi_modal_inputs: dict[str, Any] | None = None
+                row_image_grid_thw = None
+                row_has_mm_token_type_ids = False
+                if image_urls and is_drop_list[row_index]:
+                    # The over-long prompt was truncated and may have cut through the image
+                    # placeholder tokens, so the image grid metadata no longer matches the
+                    # token sequence. Fall back to a text-only row; this is safe because
+                    # is_drop rows are filtered out by is_drop_mask before the training
+                    # forward (see trainer.py) and never contribute gradients.
+                    print(
+                        f"Warning: [multimodal-patch] row {row_index} (rollout "
+                        f"{rollout_id_list[row_index]}) has a truncated (is_drop) prompt with "
+                        "images; falling back to text-only for this row."
+                    )
+                    image_urls = None
+                if image_urls:
+                    try:
+                        row_multi_modal_inputs, row_has_mm_token_type_ids = _build_multi_modal_inputs(
+                            self.processor, image_urls
+                        )
+                        row_image_grid_thw = row_multi_modal_inputs.get("image_grid_thw")
+                    except Exception as exc:
+                        # A broken row must not abort the whole step; it trains as text-only.
+                        print(
+                            f"Warning: [multimodal-patch] failed to process images for row {row_index} "
+                            f"(rollout {rollout_id_list[row_index]}): {exc}"
+                        )
+                        row_multi_modal_inputs = None
+                multi_modal_inputs_list.append(row_multi_modal_inputs)
+                if use_mrope:
+                    if image_urls and row_image_grid_thw is None and row_multi_modal_inputs is not None:
+                        # mrope processor but no image_grid_thw: vision position ids cannot be
+                        # computed for this row, only the text variant is possible.
+                        print(
+                            f"Warning: [multimodal-patch] row {row_index} (rollout "
+                            f"{rollout_id_list[row_index]}) has images but no image_grid_thw; "
+                            "using text-only mrope position ids for this row."
+                        )
+                    try:
+                        mrope_position_ids_list.append(
+                            _compute_mrope_position_ids(
+                                self.processor,
+                                input_ids=batch_seq[row_index],
+                                attention_mask=attention_mask[row_index],
+                                image_grid_thw=row_image_grid_thw,
+                                has_mm_token_type_ids=row_has_mm_token_type_ids,
+                            )
+                        )
+                    except Exception as exc:
+                        print(
+                            f"Warning: [multimodal-patch] mrope position ids failed for row {row_index} "
+                            f"(rollout {rollout_id_list[row_index]}), using text-only variant: {exc}"
+                        )
+                        try:
+                            mrope_position_ids_list.append(
+                                _compute_mrope_position_ids(
+                                    self.processor,
+                                    input_ids=batch_seq[row_index],
+                                    attention_mask=attention_mask[row_index],
+                                    image_grid_thw=None,
+                                )
+                            )
+                        except Exception:
+                            # Last resort (e.g. leftover image tokens in a truncated prompt make
+                            # even the text variant of get_rope_index fail): plain cumsum positions
+                            # on all four mrope rows. The row is almost always an is_drop row that
+                            # is filtered before the training forward anyway.
+                            print(
+                                f"Warning: [multimodal-patch] text-only mrope fallback also failed for "
+                                f"row {row_index} (rollout {rollout_id_list[row_index]}); "
+                                "using plain cumsum position ids."
+                            )
+                            mrope_position_ids_list.append(
+                                _text_only_mrope_position_ids(batch_seq[row_index], attention_mask[row_index])
+                            )
+            if use_mrope:
+                # (n_sample, 4, seq_len): verl's engine detects mrope via position_ids.dim() == 3.
+                position_ids = torch.stack(mrope_position_ids_list, dim=0)
+
         row_has_log_probs_list = [log_probs is not None for log_probs in response_log_probs_list]
         emit_rollout_log_probs = all(row_has_log_probs_list)
         if not emit_rollout_log_probs and any(row_has_log_probs_list):
@@ -478,6 +754,10 @@ class RolloutAdapter:
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)
         if level == "transition":
             data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)
+        if multi_modal_inputs_list is not None:
+            # [multimodal-patch] Per-row dict (or None for text rows), matching
+            # verl 0.8.0 extract_multi_modal_inputs expectations.
+            data_proto.non_tensor_batch["multi_modal_inputs"] = np.array(multi_modal_inputs_list, dtype=object)
 
         n_response_turns = len(response_len_per_turn_list)
         data_metrics = {

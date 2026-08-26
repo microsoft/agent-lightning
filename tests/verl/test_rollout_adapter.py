@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import sys
@@ -17,6 +18,7 @@ pytest.importorskip("verl")
 
 import torch
 
+from agentlightning.verl import rollout_adapter as rollout_adapter_module
 from agentlightning.verl.agl_rollout_manager import CompletedRollout, Triplet
 from agentlightning.verl.rollout_adapter import RolloutAdapter
 
@@ -320,3 +322,252 @@ def test_validation_uploads_all_compact_rollout_trajectories_to_wandb_zip(
     assert [record["rollout_id"] for record in records] == [f"vr{index}" for index in range(1, 8)]
     assert records[0] == {"rollout_id": "vr1", "reward": 1.0, "prompt": "1 11 21", "response": "31"}
     assert records[-1] == {"rollout_id": "vr7", "reward": 7.0, "prompt": "7 17 27", "response": "37"}
+
+
+# ---------------------------------------------------------------------------
+# Multimodal (image) support tests
+# ---------------------------------------------------------------------------
+
+
+class FakeMropeProcessor:
+    """Stand-in for a Qwen-VL style HF processor (mrope models)."""
+
+    def __call__(self, text: object = None, images: list | None = None, return_tensors: object = None) -> dict:
+        n_images = len(images or [])
+        return {
+            "input_ids": torch.zeros(1, 2, dtype=torch.long),
+            "attention_mask": torch.ones(1, 2, dtype=torch.long),
+            "pixel_values": torch.full((max(n_images, 1), 4), float(n_images)),
+            "image_grid_thw": torch.tensor([[1, 1, 1]] * n_images, dtype=torch.long),
+        }
+
+    def get_rope_index(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        image_grid_thw: object = None,
+        video_grid_thw: object = None,
+        **kwargs: object,
+    ) -> torch.Tensor:
+        # Deterministic stand-in for HF's get_rope_index: (3, batch, seq) cumsum positions.
+        positions = (attention_mask.cumsum(-1) - 1).clamp(min=0)
+        return positions.unsqueeze(0).expand(3, -1, -1).contiguous()
+
+
+class FakeNonMropeProcessor:
+    """Stand-in for a non-mrope VLM processor: pixel_values only, no image_grid_thw."""
+
+    def __call__(self, text: object = None, images: list | None = None, return_tensors: object = None) -> dict:
+        n_images = len(images or [])
+        return {
+            "input_ids": torch.zeros(1, 2, dtype=torch.long),
+            "attention_mask": torch.ones(1, 2, dtype=torch.long),
+            "pixel_values": torch.ones(max(n_images, 1), 3),
+        }
+
+
+class FakeEmptyProcessor:
+    """Stand-in for a processor that returns no vision tensors at all."""
+
+    def __call__(self, text: object = None, images: object = None, return_tensors: object = None) -> dict:
+        return {
+            "input_ids": torch.zeros(1, 2, dtype=torch.long),
+            "attention_mask": torch.ones(1, 2, dtype=torch.long),
+        }
+
+
+def _transition_adapter(
+    processor: object = None,
+    *,
+    max_prompt_length: int = 8,
+    max_response_length: int = 4,
+) -> RolloutAdapter:
+    return RolloutAdapter(
+        max_prompt_length=max_prompt_length,
+        max_response_length=max_response_length,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level="transition",
+        tokenizer=FakeTokenizer(),
+        processor=processor,
+    )
+
+
+def _image_triplet(prompt_ids: list[int], response_ids: list[int], image_urls: list[str] | None = None) -> Triplet:
+    return Triplet(
+        prompt={"token_ids": prompt_ids},
+        response={"token_ids": response_ids, "log_probs": [-0.1] * len(response_ids)},
+        image_urls=image_urls,
+    )
+
+
+def _transition_rollout(triplets: list[Triplet], rollout_id: str = "r1") -> CompletedRollout:
+    return CompletedRollout(
+        rollout_id=rollout_id,
+        data_id="data-1",
+        step=1,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=1.0,
+        triplets=triplets,
+    )
+
+
+def _stub_image_loading(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rollout_adapter_module, "_load_pil_image", lambda url: object())
+
+
+def test_transition_image_rows_attach_multi_modal_inputs_and_mrope_position_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_image_loading(monkeypatch)
+    rollout = _transition_rollout(
+        [
+            _image_triplet([1, 2, 3], [4, 5], image_urls=["data:image/jpeg;base64,QUJD"]),
+            _image_triplet([6], [7]),
+        ]
+    )
+
+    batch, _ = _transition_adapter(FakeMropeProcessor()).get_train_data_batch([rollout], global_steps=1)
+
+    assert "multi_modal_inputs" in batch.non_tensor_batch
+    multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
+    assert len(multi_modal_inputs) == 2
+    assert multi_modal_inputs[0] is not None
+    assert set(multi_modal_inputs[0]) == {"pixel_values", "image_grid_thw"}
+    assert torch.equal(multi_modal_inputs[0]["image_grid_thw"], torch.tensor([[1, 1, 1]]))
+    assert multi_modal_inputs[1] is None
+
+    # verl's FSDP engine detects mrope via position_ids.dim() == 3: (n_sample, 4, seq_len).
+    position_ids = batch.batch["position_ids"]
+    assert position_ids.dim() == 3
+    assert position_ids.shape == (2, 4, 12)  # max_prompt_length 8 + max_response_length 4
+
+
+def test_text_only_rows_keep_original_behavior_with_processor() -> None:
+    triplets = [_image_triplet([1, 2], [3, 4]), _image_triplet([5], [6, 7])]
+    rollouts = [_transition_rollout(triplets)]
+
+    batch_with, metrics_with = _transition_adapter(FakeMropeProcessor()).get_train_data_batch(rollouts, global_steps=1)
+    batch_without, metrics_without = _transition_adapter(None).get_train_data_batch(rollouts, global_steps=1)
+
+    # No images in the traces: a configured processor must not change anything.
+    assert batch_with.batch["position_ids"].dim() == 2
+    assert "multi_modal_inputs" not in batch_with.non_tensor_batch
+    assert set(batch_with.batch.keys()) == set(batch_without.batch.keys())
+    for key in set(batch_without.batch.keys()):
+        assert torch.equal(batch_with.batch[key], batch_without.batch[key])
+    assert set(batch_with.non_tensor_batch.keys()) == set(batch_without.non_tensor_batch.keys())
+    assert metrics_with == metrics_without
+
+
+def test_trajectory_level_with_image_triplets_raises() -> None:
+    rollout = _transition_rollout([_image_triplet([1], [2], image_urls=["data:image/jpeg;base64,QUJD"])])
+    adapter = RolloutAdapter(
+        max_prompt_length=8,
+        max_response_length=4,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level="trajectory",
+        tokenizer=FakeTokenizer(),
+        processor=FakeMropeProcessor(),
+    )
+
+    with pytest.raises(ValueError, match=r"trace_aggregator\.level: transition"):
+        adapter.get_train_data_batch([rollout], global_steps=1)
+
+
+def test_truncated_image_prompt_falls_back_to_text_only(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _stub_image_loading(monkeypatch)
+    adapter = _transition_adapter(FakeMropeProcessor(), max_prompt_length=2)
+    rollout = _transition_rollout([_image_triplet([1, 2, 3, 4], [5], image_urls=["data:image/jpeg;base64,QUJD"])])
+
+    batch, _ = adapter.get_train_data_batch([rollout], global_steps=1)
+
+    # The prompt is truncated (is_drop): the row trains as text-only and is
+    # filtered by is_drop_mask downstream.
+    assert batch.batch["is_drop_mask"].tolist() == [True]
+    multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
+    assert multi_modal_inputs[0] is None
+    assert "truncated (is_drop) prompt with images" in capsys.readouterr().out
+
+
+def test_non_mrope_processor_attaches_multi_modal_inputs_and_keeps_2d_position_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _stub_image_loading(monkeypatch)
+    rollout = _transition_rollout([_image_triplet([1, 2], [3], image_urls=["data:image/jpeg;base64,QUJD"])])
+
+    batch, _ = _transition_adapter(FakeNonMropeProcessor()).get_train_data_batch([rollout], global_steps=1)
+
+    multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
+    assert multi_modal_inputs[0] is not None
+    assert set(multi_modal_inputs[0]) == {"pixel_values"}
+    assert batch.batch["position_ids"].dim() == 2
+    assert "not a recognized mrope" in capsys.readouterr().out
+
+
+def test_processor_without_vision_output_falls_back_to_text_only(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _stub_image_loading(monkeypatch)
+    rollout = _transition_rollout([_image_triplet([1, 2], [3], image_urls=["data:image/jpeg;base64,QUJD"])])
+
+    batch, _ = _transition_adapter(FakeEmptyProcessor()).get_train_data_batch([rollout], global_steps=1)
+
+    multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
+    assert multi_modal_inputs[0] is None
+    assert "no vision tensors" in capsys.readouterr().out
+
+
+def test_is_mrope_processor_detection() -> None:
+    class Qwen2_5_VLProcessor:
+        pass
+
+    assert rollout_adapter_module._is_mrope_processor(None) is False
+    assert rollout_adapter_module._is_mrope_processor(FakeMropeProcessor()) is True
+    assert rollout_adapter_module._is_mrope_processor(Qwen2_5_VLProcessor()) is True
+    assert rollout_adapter_module._is_mrope_processor(FakeNonMropeProcessor()) is False
+
+
+def test_load_pil_image_decodes_data_url() -> None:
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(buffer, format="PNG")
+    url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+    image = rollout_adapter_module._load_pil_image(url)
+
+    assert image.size == (2, 2)
+    assert image.mode == "RGB"
+
+
+def test_load_pil_image_fetches_remote_url_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("PIL")
+    httpx = pytest.importorskip("httpx")
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(buffer, format="PNG")
+
+    class _FakeResponse:
+        headers: ClassVar[dict[str, str]] = {"content-type": "image/png"}
+        content = buffer.getvalue()
+
+        def raise_for_status(self) -> None:
+            pass
+
+    # Remote fetching is allowed by default (no opt-in env var).
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: _FakeResponse())
+
+    image = rollout_adapter_module._load_pil_image("https://example.com/image.jpg")
+
+    assert image.size == (2, 2)
+    assert image.mode == "RGB"

@@ -12,6 +12,7 @@ Customizations:
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 from collections.abc import Sequence
@@ -21,6 +22,8 @@ import ray
 from omegaconf import OmegaConf
 
 from .dataset import LoadedDataset
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "run_ppo",
@@ -118,6 +121,31 @@ class _AglTaskRunner:
         trust_remote_code = config.data.get("trust_remote_code", False)
         tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
         processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
+        # [multimodal-patch] verl's hf_processor only recognizes a fixed set of processor classes
+        # (Qwen2VL/Qwen2_5_VL/Qwen3VL/Glm4v) and silently returns None otherwise (e.g. Qwen3.5-VL).
+        # Fall back to a plain AutoProcessor load so the processor still reaches the trainer.
+        if processor is None:
+            from transformers import AutoProcessor, PreTrainedTokenizerBase
+
+            try:
+                fallback_processor = AutoProcessor.from_pretrained(
+                    local_path, trust_remote_code=trust_remote_code, use_fast=True
+                )
+            except Exception as exc:
+                # [multimodal-patch] Don't fail silently: a None processor disables
+                # multimodal training inputs, which is otherwise invisible.
+                log.warning(
+                    "AutoProcessor fallback failed for %s; multimodal training inputs will be disabled: %s",
+                    local_path,
+                    exc,
+                )
+                fallback_processor = None
+            if fallback_processor is not None and (
+                isinstance(fallback_processor, PreTrainedTokenizerBase)
+                or "Processor" not in fallback_processor.__class__.__name__
+            ):
+                fallback_processor = None
+            processor = fallback_processor
 
         resource_pool_manager = d.init_resource_pool_mgr(config)
 
