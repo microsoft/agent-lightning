@@ -332,7 +332,7 @@ def test_validation_uploads_all_compact_rollout_trajectories_to_wandb_zip(
 class FakeMropeProcessor:
     """Stand-in for a Qwen-VL style HF processor (mrope models)."""
 
-    def __call__(self, text: object = None, images: object = None, return_tensors: object = None) -> dict:
+    def __call__(self, text: object = None, images: list | None = None, return_tensors: object = None) -> dict:
         n_images = len(images or [])
         return {
             "input_ids": torch.zeros(1, 2, dtype=torch.long),
@@ -357,7 +357,7 @@ class FakeMropeProcessor:
 class FakeNonMropeProcessor:
     """Stand-in for a non-mrope VLM processor: pixel_values only, no image_grid_thw."""
 
-    def __call__(self, text: object = None, images: object = None, return_tensors: object = None) -> dict:
+    def __call__(self, text: object = None, images: list | None = None, return_tensors: object = None) -> dict:
         n_images = len(images or [])
         return {
             "input_ids": torch.zeros(1, 2, dtype=torch.long),
