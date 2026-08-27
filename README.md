@@ -16,6 +16,21 @@
 - 🧩 **Train with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with **ZERO changes**, while keeping tools, context, control flow, and environments in the loop.
 - ☸️ **Native Kubernetes support:** Run agents directly as Kubernetes Jobs without relying on external sandbox services.
 - 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts.
+- 🛠️ **Agent optimization skill:** Give Claude Code, Codex, or GitHub Copilot an editable agent and a benchmark. The bundled [Agent Lightning skill](https://microsoft.github.io/agent-lightning/stable/10-agent-lightning-skill/) guides measured improvements to quality, cost, latency, and reliability.
+
+## ⚡ Agent Lightning Skill
+
+Agent Lightning also ships as a skill for coding agents. It helps a coding agent inspect an underperforming AI agent, test changes to prompts, tools, workflows, models, and other settings, and keep only improvements that hold up under evaluation.
+
+Install it directly from this repository:
+
+```bash
+gh skill install microsoft/agent-lightning agent-lightning --agent claude-code
+gh skill install microsoft/agent-lightning agent-lightning --agent codex
+gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
+```
+
+See [Optimize Agents with the Agent Lightning Skill](https://microsoft.github.io/agent-lightning/stable/10-agent-lightning-skill/) for a starter prompt, workflow, and benchmark results.
 
 ## ⚡ Installation
 
@@ -59,6 +74,7 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 | [Installation](https://microsoft.github.io/agent-lightning/stable/00-installation/) | Base environment and `verl` GPU stack |
 | [Quick Start](https://microsoft.github.io/agent-lightning/stable/01-quick-start/) | Local first run and end-to-end flow |
 | [Basics](https://microsoft.github.io/agent-lightning/stable/05-basics/) | Components, rollouts, events, and trajectories |
+| [Agent Lightning Skill](https://microsoft.github.io/agent-lightning/stable/10-agent-lightning-skill/) | Optimize an editable AI agent against a benchmark with a coding agent |
 | [Trainer Configuration](https://microsoft.github.io/agent-lightning/stable/20-trainer-configuration/) | `verl` integration and trace aggregation |
 | [API Gateway Configuration](https://microsoft.github.io/agent-lightning/stable/25-api-gateway-configuration/) | Gateway and model proxy settings |
 | [Controller Configuration](https://microsoft.github.io/agent-lightning/stable/30-controller-configuration/) | Local and Kubernetes runners |
