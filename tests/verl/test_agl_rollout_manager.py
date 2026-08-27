@@ -115,7 +115,7 @@ _IMG2 = "data:image/png;base64,REVG"
 
 def _raw_model_request_event(
     urls: list[str],
-    prompt_token_ids: list[int],
+    prompt_token_ids: object,
     response_token_ids: list[int],
     status: str = "success",
     http_status: int = 200,
@@ -145,7 +145,7 @@ def _raw_model_request_event(
     )
 
 
-def _triplet_model_request_event(prompt_token_ids: list[int], response_token_ids: list[int]) -> Event:
+def _triplet_model_request_event(prompt_token_ids: object, response_token_ids: list[int]) -> Event:
     """Trimmed (triplet-view) model_request event as stored by the server."""
     return _event(
         "model_request",
@@ -218,6 +218,34 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
     assert completed.triplets is not None
     assert len(completed.triplets) == 3
     assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG], [_IMG, _IMG2], None]
+
+
+@pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True]])
+def test_build_completed_rollout_aligns_images_without_valid_prompt_token_ids(prompt_token_ids: object) -> None:
+    trimmed_prompt_token_ids = [] if prompt_token_ids is None else prompt_token_ids
+    raw_events = [
+        _raw_model_request_event([_IMG], prompt_token_ids, [1]),
+        _raw_model_request_event([_IMG2], prompt_token_ids, [2]),
+    ]
+    triplet_events = [
+        _triplet_model_request_event(trimmed_prompt_token_ids, [1]),
+        _triplet_model_request_event(trimmed_prompt_token_ids, [2]),
+    ]
+    manager = _ManagerWithViews(raw_events, triplet_events)
+
+    completed = manager._build_completed_rollout(
+        EnqueuedRollout(
+            data_id="data-1",
+            rollout_id="rollout-1",
+            step=0,
+            sample_idx_in_step=0,
+            enqueue_time=0.0,
+        ),
+        _rollout(),
+    )
+
+    assert completed.triplets is not None
+    assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG], [_IMG2]]
 
 
 def test_aligned_image_urls_count_mismatch_returns_none(capsys: pytest.CaptureFixture[str]) -> None:

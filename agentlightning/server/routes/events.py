@@ -169,18 +169,32 @@ def _to_triplet_format(event: Event) -> Event:
     return event
 
 
+def _prompt_dedupe_key(prompt_token_ids: Any) -> tuple[int, ...] | None:
+    """Return a prompt key only when token ids provide usable identity evidence."""
+    if not isinstance(prompt_token_ids, list) or not prompt_token_ids:
+        return None
+    # bool is an int subclass, but JSON booleans are not token ids.
+    if any(type(token_id) is not int for token_id in prompt_token_ids):
+        return None
+    return tuple(prompt_token_ids)
+
+
 def _dedupe_model_requests_by_prompt_token_ids(events: list[Event]) -> list[Event]:
-    """Keep only the last model_request event for each prompt_token_ids key."""
-    last_index_by_prompt: dict[tuple[Any, ...], int] = {}
+    """Keep the last request for each valid, non-empty prompt-token key."""
+    last_index_by_prompt: dict[tuple[int, ...], int] = {}
+    superseded_indexes: set[int] = set()
     for index, event in enumerate(events):
         if event.event_type != "model_request":
             continue
-        prompt_token_ids = event.data.get("prompt_token_ids", [])
-        prompt_key = tuple(prompt_token_ids) if isinstance(prompt_token_ids, list) else ()
+        prompt_key = _prompt_dedupe_key(event.data.get("prompt_token_ids"))
+        if prompt_key is None:
+            continue
+        previous_index = last_index_by_prompt.get(prompt_key)
+        if previous_index is not None:
+            superseded_indexes.add(previous_index)
         last_index_by_prompt[prompt_key] = index
 
-    last_indexes = set(last_index_by_prompt.values())
-    return [event for index, event in enumerate(events) if event.event_type != "model_request" or index in last_indexes]
+    return [event for index, event in enumerate(events) if index not in superseded_indexes]
 
 
 @router.post("/rollouts/{rollout_id}/attempt/{attempt_id}/events", response_model=Event)
