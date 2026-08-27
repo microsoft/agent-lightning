@@ -32,6 +32,7 @@ __all__ = [
     "make_tag_attributes",
     "extract_tags_from_attributes",
     "make_link_attributes",
+    "check_linked_span",
     "query_linked_spans",
     "extract_links_from_attributes",
     "filter_attributes",
@@ -229,7 +230,42 @@ def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
     return flatten_attributes({LightningSpanAttributes.LINK.value: link_list}, expand_leaf_lists=True)
 
 
-def query_linked_spans(spans: Sequence[T_SpanLike], links: List[LinkPydanticModel]) -> List[T_SpanLike]:
+def check_linked_span(span: SpanLike, links: Sequence[LinkPydanticModel]) -> bool:
+    """Check if a span matches a link attribute.
+
+    Args:
+        span: A span to check.
+        links: A list of link attributes to match.
+    """
+    span_attributes = span.attributes or {}
+    for link in links:
+        # trace_id and span_id must be full match.
+        if link.key_match == "trace_id":
+            if isinstance(span, ReadableSpan):
+                trace_id = trace_api.format_trace_id(span.context.trace_id) if span.context else None
+            else:
+                trace_id = span.trace_id
+            if trace_id != link.value_match:
+                return False
+
+        elif link.key_match == "span_id":
+            if isinstance(span, ReadableSpan):
+                span_id = trace_api.format_span_id(span.context.span_id) if span.context else None
+            else:
+                span_id = span.span_id
+            if span_id != link.value_match:
+                return False
+
+        else:
+            attribute = span_attributes.get(link.key_match)
+            # attributes must also be a full match currently.
+            if attribute != link.value_match:
+                return False
+
+    return True
+
+
+def query_linked_spans(spans: Sequence[T_SpanLike], links: Sequence[LinkPydanticModel]) -> List[T_SpanLike]:
     """Query spans that are linked by the given link attributes.
 
     Args:
@@ -239,42 +275,7 @@ def query_linked_spans(spans: Sequence[T_SpanLike], links: List[LinkPydanticMode
     Returns:
         A list of spans that match the given link attributes.
     """
-    matched_spans: List[T_SpanLike] = []
-
-    for span in spans:
-        span_attributes = span.attributes or {}
-        is_match = True
-        for link in links:
-            # trace_id and span_id must be full match.
-            if link.key_match == "trace_id":
-                if isinstance(span, ReadableSpan):
-                    trace_id = trace_api.format_trace_id(span.context.trace_id) if span.context else None
-                else:
-                    trace_id = span.trace_id
-                if trace_id != link.value_match:
-                    is_match = False
-                    break
-
-            elif link.key_match == "span_id":
-                if isinstance(span, ReadableSpan):
-                    span_id = trace_api.format_span_id(span.context.span_id) if span.context else None
-                else:
-                    span_id = span.span_id
-                if span_id != link.value_match:
-                    is_match = False
-                    break
-
-            else:
-                attribute = span_attributes.get(link.key_match)
-                # attributes must also be a full match currently.
-                if attribute != link.value_match:
-                    is_match = False
-                    break
-
-        if is_match:
-            matched_spans.append(span)
-
-    return matched_spans
+    return [span for span in spans if check_linked_span(span, links)]
 
 
 def extract_links_from_attributes(attributes: Dict[str, Any]) -> List[LinkPydanticModel]:
