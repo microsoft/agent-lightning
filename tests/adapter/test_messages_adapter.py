@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import json
+import logging
 from importlib.metadata import version
 from typing import Any, Dict, Optional
 
@@ -391,3 +392,114 @@ def test_trace_messages_adapter_handles_multiple_tool_calls():
     ]
 
     assert adapter.adapt(spans) == expected
+
+
+# Regression coverage for https://github.com/microsoft/agent-lightning/issues/425 and
+# https://github.com/microsoft/agent-lightning/issues/311. Some tracers (notably AgentOps when
+# re-emitting prior turns inside ``gen_ai.prompt.N.*``) drop the ``role`` key on assistant
+# tool-call entries and tool-response entries. The adapter must recover instead of crashing
+# the entire rollout adapter pass.
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
+def test_trace_messages_adapter_recovers_assistant_role_from_tool_calls() -> None:
+    tool_call_id = "call_AnIgZ6EdncSTDeJMn3rcKSDM"
+    tool_name = "get_rmc_percentage_of_sales"
+    tool_arguments = json.dumps({"category": "Scooter"})
+    tool_payload = json.dumps({"value": 0.42})
+
+    spans = [
+        make_span(
+            "openai.chat.completion",
+            {
+                "gen_ai.prompt.0.role": "system",
+                "gen_ai.prompt.0.content": "You are a financial data analyst.",
+                "gen_ai.prompt.1.role": "user",
+                "gen_ai.prompt.1.content": "How does Scooter compare?",
+                # Re-emitted assistant tool-call entry: ``tool_calls.*`` present, ``role`` missing.
+                "gen_ai.prompt.2.tool_calls.0.id": tool_call_id,
+                "gen_ai.prompt.2.tool_calls.0.name": tool_name,
+                "gen_ai.prompt.2.tool_calls.0.arguments": tool_arguments,
+                # Re-emitted tool response: ``tool_call_id`` + ``content`` present, ``role`` missing.
+                "gen_ai.prompt.3.tool_call_id": tool_call_id,
+                "gen_ai.prompt.3.content": tool_payload,
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "Scooter sales are up 4%.",
+                "gen_ai.completion.0.finish_reason": "stop",
+            },
+            0,
+        ),
+    ]
+
+    result = TraceToMessages().adapt(spans)
+
+    assert result == [
+        {
+            "messages": [
+                {"content": "You are a financial data analyst.", "role": "system"},
+                {"content": "How does Scooter compare?", "role": "user"},
+                {
+                    "content": None,
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {"name": tool_name, "arguments": tool_arguments},
+                        }
+                    ],
+                },
+                {
+                    "content": tool_payload,
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                },
+                {"content": "Scooter sales are up 4%.", "role": "assistant"},
+            ],
+            "tools": None,
+        }
+    ]
+
+
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
+def test_trace_messages_adapter_skips_unidentifiable_prompt_entry(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    spans = [
+        make_span(
+            "openai.chat.completion",
+            {
+                "gen_ai.prompt.0.role": "system",
+                "gen_ai.prompt.0.content": "You are helpful.",
+                "gen_ai.prompt.1.role": "user",
+                "gen_ai.prompt.1.content": "Hi.",
+                # Garbage entry with neither ``role`` nor any role hint; must not crash.
+                "gen_ai.prompt.2.unexpected": "noise",
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "Hello.",
+                "gen_ai.completion.0.finish_reason": "stop",
+            },
+            0,
+        ),
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="agentlightning.adapter.messages"):
+        result = TraceToMessages().adapt(spans)
+
+    assert result == [
+        {
+            "messages": [
+                {"content": "You are helpful.", "role": "system"},
+                {"content": "Hi.", "role": "user"},
+                {"content": "Hello.", "role": "assistant"},
+            ],
+            "tools": None,
+        }
+    ]
+    assert any(
+        "no inferable role hint" in record.getMessage() for record in caplog.records
+    ), "Expected a warning naming the malformed prompt entry"
