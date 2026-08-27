@@ -22,6 +22,8 @@ from .types import NamedResources, ResourcesUpdate, RolloutLegacy, Task, TaskIfA
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CACHE_CAPACITY = 100
+
 
 class AgentLightningClient:
     """Client wrapper for the legacy version-aware Agent Lightning server.
@@ -64,7 +66,10 @@ class AgentLightningClient:
         self.task_count = 0
         self.poll_interval = poll_interval
         self.timeout = timeout
-        self._resource_cache: Dict[str, ResourcesUpdate] = {}  # TODO: mechanism to evict cache
+
+        from agentlightning.utils.cache import LRUCache
+
+        self._resource_cache: Dict[str, ResourcesUpdate] = LRUCache(capacity=DEFAULT_CACHE_CAPACITY)
         self._default_headers = {"X-AgentLightning-Client": "true"}
 
     async def _request_json_async(self, url: str) -> Optional[Dict[str, Any]]:
