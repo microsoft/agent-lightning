@@ -89,7 +89,7 @@ async def apo_algorithm(*, store: agl.LightningStore):
         await log_llm_span(spans)
 
         # 4. The algorithm records the final reward for sorting
-        final_reward = agl.find_final_reward(spans)
+        final_reward = agl.find_final_reward(spans) # type: ignore
         assert final_reward is not None, "Expected a final reward from the client."
         console.print(f"{algo_marker} Final reward: {final_reward}")
         prompt_and_rewards.append((prompt, final_reward))

@@ -35,6 +35,11 @@ from typing import (
 import poml
 from openai import AsyncOpenAI
 
+try:
+    from litellm import acompletion as litellm_acompletion
+except ImportError:
+    litellm_acompletion = None
+
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import Algorithm
 from agentlightning.algorithm.utils import batch_iter_over_dataset, with_llm_proxy, with_store
@@ -100,8 +105,9 @@ class APO(Algorithm, Generic[T_task]):
 
     def __init__(
         self,
-        async_openai_client: AsyncOpenAI,
+        async_openai_client: Optional[AsyncOpenAI] = None,
         *,
+        use_litellm: bool = False,
         gradient_model: str = "gpt-5-mini",
         apply_edit_model: str = "gpt-4.1-mini",
         diversity_temperature: float = 1.0,
@@ -122,6 +128,8 @@ class APO(Algorithm, Generic[T_task]):
 
         Args:
             async_openai_client: AsyncOpenAI client for making LLM API calls.
+                Optional when ``use_litellm=True``.
+            use_litellm: If True, uses ``litellm.acompletion`` directly for LLM calls.
             gradient_model: Model name for computing textual gradients (critiques).
             apply_edit_model: Model name for applying edits based on critiques.
             diversity_temperature: Temperature parameter for LLM calls to control diversity.
@@ -137,7 +145,11 @@ class APO(Algorithm, Generic[T_task]):
             gradient_prompt_files: Prompt templates used to compute textual gradients (critiques).
             apply_edit_prompt_files: Prompt templates used to apply edits based on critiques.
         """
+        if use_litellm and litellm_acompletion is None:
+            raise ImportError("litellm is not installed but use_litellm=True was provided.")
+
         self.async_openai_client = async_openai_client
+        self.use_litellm = use_litellm
         self.gradient_model = gradient_model
         self.apply_edit_model = apply_edit_model
         self.diversity_temperature = diversity_temperature
@@ -158,6 +170,30 @@ class APO(Algorithm, Generic[T_task]):
         self._version_counter: int = 0
 
         self._poml_trace = _poml_trace
+
+    async def _chat_completion_create(
+        self,
+        *,
+        model: str,
+        messages: Any,
+        temperature: float,
+    ) -> Any:
+        if self.use_litellm:
+            assert litellm_acompletion is not None
+            return await litellm_acompletion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+            )
+
+        if self.async_openai_client is None:
+            raise ValueError("async_openai_client must be provided when use_litellm=False")
+
+        return await self.async_openai_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+        )
 
     def _create_versioned_prompt(
         self,
@@ -307,7 +343,7 @@ class APO(Algorithm, Generic[T_task]):
             f"Gradient computed with {self.gradient_model} prompt: {tg_msg}",
             prefix=prefix,
         )
-        critique_response = await self.async_openai_client.chat.completions.create(
+        critique_response = await self._chat_completion_create(
             model=self.gradient_model,
             messages=tg_msg["messages"],  # type: ignore
             temperature=self.diversity_temperature,
@@ -373,7 +409,7 @@ class APO(Algorithm, Generic[T_task]):
             format="openai_chat",
         )
 
-        ae_response = await self.async_openai_client.chat.completions.create(
+        ae_response = await self._chat_completion_create(
             model=self.apply_edit_model,
             messages=ae_msg["messages"],  # type: ignore
             temperature=self.diversity_temperature,

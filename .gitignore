@@ -5,6 +5,7 @@ meta-llama/**
 **/debug/**/*.json
 requirements-freeze*.txt
 /playground
+.env
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
