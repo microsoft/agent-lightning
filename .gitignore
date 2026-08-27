@@ -150,6 +150,8 @@ env.bak/
 venv.bak/
 .claude/
 auto_docs/
+.agents/skills/agent-lightning/
+.claude/skills/agent-lightning/
 
 # Spyder project settings
 .spyderproject
