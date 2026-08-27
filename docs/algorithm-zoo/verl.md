@@ -45,6 +45,30 @@ Internally, [VERL][agentlightning.algorithm.verl.VERL] decomposes each agent exe
 
 At present, [VERL][agentlightning.algorithm.verl.VERL] does not expose fine-grained control over its reward propagation or credit assignment mechanisms. Users requiring customized reward shaping or trajectory decomposition are advised to clone and modify the [VERL][agentlightning.algorithm.verl.VERL] source implementation directly.
 
+## Configuration compatibility
+
+`agl.VERL(config)` composes the supplied dictionary with the packaged VERL
+`ppo_trainer` defaults. The table below maps the settings that Agent Lightning
+reads or changes itself; other standard VERL settings continue to be consumed
+by the installed VERL trainer and workers.
+
+| Setting | Agent Lightning behavior |
+| --- | --- |
+| `agentlightning.port` and `agentlightning.trace_aggregator.*` | Agent Lightning-specific settings. They configure the proxy port and trace-to-training-example aggregation rather than a VERL worker. |
+| `actor_rollout_ref.model.path` | Selects the model exposed through `main_llm` and supplies the tokenizer and processor used for post-processing traces. |
+| `actor_rollout_ref.rollout.mode` and `.agent.custom_async_server` | Agent mode requires asynchronous rollout. The packaged overlay configures Agent Lightning's custom async server; retain it when running agent rollouts. |
+| `actor_rollout_ref.rollout.n` | Sets the number of agent rollouts enqueued for each training example. |
+| `actor_rollout_ref.rollout.temperature` | Forwarded as the default sampling temperature in the `main_llm` resource used by agent rollouts. The same value is used for training and validation. |
+| `actor_rollout_ref.rollout.top_p` and other rollout sampling knobs | Not forwarded to the agent-facing `main_llm` resource. Set them explicitly in the agent's model client when needed. |
+| `actor_rollout_ref.rollout.val_kwargs` | Not used for agent validation. Agent Lightning's validation loop queues agent rollouts through `AgentModeDaemon` instead of VERL's regular validation-generation path. |
+| `actor_rollout_ref.actor.ppo_mini_batch_size` | Sets the PPO mini-batch size used when Agent Lightning groups completed traces for training. |
+| `data.filter_overlong_prompts` | Defaults to `false` in the packaged overlay. If explicitly enabled, it filters file-backed data once while `AgentDataset` is created; it does not control an agent's live context window. |
+| `data.truncation` | Is not consulted by `AgentDataset`, so it cannot select an agent-rollout truncation policy. `data.max_prompt_length` and `data.max_response_length` still bound the traces retained for PPO training after a rollout completes. |
+
+Check the
+[VERL configuration reference](https://verl.readthedocs.io/en/latest/examples/config.html)
+for the version paired with your Agent Lightning installation.
+
 ## Tutorials Using VERL
 
 - [Train SQL Agent with RL](../how-to/train-sql-agent.md) - A practical example of training a SQL agent using VERL.
