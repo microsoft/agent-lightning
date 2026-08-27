@@ -24,9 +24,21 @@ Join our [Discord community](https://discord.gg/RYk7CdvDR7) to connect with othe
 
 Read more on our [documentation website](https://microsoft.github.io/agent-lightning/).
 
+## Why Tinker?
+
+- Running large scale LLM experiments locally can be difficult and resource intensive,especially for users without GPUs or complex infrastructure.
+
+- Tinker allows Agent Lightning users to offload experiment execution to a managed third party service.This removes the need for local GPU setup and reduces operational complexity.
+
+- Compared to the alternatives such as `verl`,Tinker provides a simpler API and easier integration,making it suitable for rapid experimentation and onboarding.
+
+- Use Tinker when you want fast setup and managed execution,use local backends when you need full control over infrastructure.
+
+
 <p align="center">
   <img src="docs/assets/readme-diff.svg" alt="Agent-Lightning Core Quickstart" style="width:100%"/>
 </p>
+
 
 ## ⚡ Installation
 
