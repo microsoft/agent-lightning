@@ -22,19 +22,11 @@
 
 Agent Lightning also ships as a skill for coding agents. It helps a coding agent inspect an underperforming AI agent, test changes to prompts, tools, workflows, models, and other settings, and keep only improvements that hold up under evaluation.
 
-Install it directly from this repository:
-
-```bash
-gh skill install microsoft/agent-lightning agent-lightning --agent claude-code
-gh skill install microsoft/agent-lightning agent-lightning --agent codex
-gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
-```
-
 See [Optimize Agents with the Agent Lightning Skill](https://microsoft.github.io/agent-lightning/stable/10-agent-lightning-skill/) for a starter prompt, workflow, and benchmark results.
 
 ## ⚡ Installation
 
-The following is an example installation on a CUDA 13.0 machine:
+To install the Agent Lightning training framework on a CUDA 13.0 machine:
 
 ```bash
 cd <this-repo>
@@ -42,7 +34,15 @@ uv sync
 bash scripts/setup_verl.sh 0.8.0 cu130
 ```
 
-See the [Installation Guide](https://microsoft.github.io/agent-lightning/stable/00-installation/) for details.
+The Agent Lightning skill installs separately from the training framework:
+
+```bash
+gh skill install microsoft/agent-lightning agent-lightning --agent claude-code
+gh skill install microsoft/agent-lightning agent-lightning --agent codex
+gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
+```
+
+See the [Installation Guide](https://microsoft.github.io/agent-lightning/stable/00-installation/) for details on both options.
 
 
 ## ⚡ Architecture

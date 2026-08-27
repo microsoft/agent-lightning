@@ -1,20 +1,10 @@
 # Optimize Agents with the Agent Lightning Skill
 
-Agent Lightning includes an [Agent Skill](https://github.com/microsoft/agent-lightning/tree/main/skills/agent-lightning) for Claude Code, Codex, and GitHub Copilot. Give a coding agent the source for an editable AI agent and a benchmark, and it can search for measured improvements to quality, cost, latency, and reliability without breaking the agent's deployment contract.
+Agent Lightning includes the [Agent Lightning Skill](https://github.com/microsoft/agent-lightning/tree/main/skills/agent-lightning) for Claude Code, Codex, and GitHub Copilot. Give a coding agent the source for an editable AI agent and a benchmark, and it can search for measured improvements to quality, cost, latency, and reliability without breaking the agent's deployment contract.
 
 The skill complements the Agent Lightning training framework. Use the skill when a coding agent can edit and evaluate the agent's implementation or configuration. Use the framework when you want to collect rollouts and train model weights with reinforcement learning.
 
-## Install the Skill
-
-Install the skill directly from the Agent Lightning repository:
-
-```bash
-gh skill install microsoft/agent-lightning agent-lightning --agent claude-code
-gh skill install microsoft/agent-lightning agent-lightning --agent codex
-gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
-```
-
-Choose the command for the coding agent you use. The source package is available in [`skills/agent-lightning`](https://github.com/microsoft/agent-lightning/tree/main/skills/agent-lightning).
+Install it by following the [Agent Lightning Skill installation instructions](00-installation.md#agent-lightning-skill).
 
 ## Start an Optimization Run
 
@@ -34,7 +24,7 @@ The workflow is most useful when the agent is editable, the benchmark is runnabl
 
 ## Measured Results
 
-We evaluated the skill with Claude Code, Codex, and GitHub Copilot optimizing agents for SpreadsheetBench, OfficeQA, and ALFWorld. The results below average all three coding agents, the tested optimization budgets, and repeated runs. Parentheses show the percentage-point improvement over the original agent on held-out data.
+We evaluated the skill with Claude Code, Codex, and GitHub Copilot optimizing agents for SpreadsheetBench, OfficeQA, and ALFWorld. The results below average all three coding agents, the tested optimization budgets, and repeated runs. Parentheses show the percentage-point improvement over the original agent on held-out data. The starting-agent row is not shown in the table.
 
 | Method | SpreadsheetBench accuracy (%) | OfficeQA correctness (%) | ALFWorld success (%) |
 | :--- | ---: | ---: | ---: |
