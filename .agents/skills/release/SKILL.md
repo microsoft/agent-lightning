@@ -193,7 +193,7 @@ result with `gh run watch <run-id> --repo OWNER/REPO --exit-status`. After
 `PyPI Release` succeeds, verify that PyPI exposes the exact version with both
 the expected wheel and source distribution. After `Deploy Documentation`
 succeeds, verify that the published site serves `X.Y.Z` and that `stable`
-serves that same release. Do not require an HTTP redirect: Mike aliases can
+serves that same release. Do not require an HTTP redirect: `mike` aliases can
 serve directly from the alias path with a `200` response. Fetch the versioned
 and `stable` entry pages and compare their content; byte-for-byte equality is
 the clearest proof for a static deployment. If path-dependent markup prevents
