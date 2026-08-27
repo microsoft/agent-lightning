@@ -1,0 +1,7 @@
+agentlightning>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-core>=0.3.0
+langgraph>=0.2.0
+newsapi-python>=0.2.7
+openai>=1.0.0
+python-dotenv>=1.0.0
