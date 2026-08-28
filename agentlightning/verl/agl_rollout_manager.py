@@ -158,16 +158,6 @@ def _extract_image_urls_from_messages(messages: Any) -> list[str]:
     return image_urls
 
 
-def _prompt_dedupe_key(prompt_token_ids: Any) -> tuple[int, ...] | None:
-    """Mirror server.routes.events._prompt_dedupe_key for raw-event alignment."""
-    if not isinstance(prompt_token_ids, list) or not prompt_token_ids:
-        return None
-    # bool is an int subclass, but JSON booleans are not token ids.
-    if any(type(token_id) is not int for token_id in prompt_token_ids):
-        return None
-    return tuple(prompt_token_ids)
-
-
 # [multimodal-patch] Recover per-triplet image URLs from raw model_request events.
 # Replicates the server triplet view (dedupe by prompt_token_ids, keep last) and the
 # manager-side filtering below, so the result aligns one-to-one with the kept triplets.
@@ -224,19 +214,17 @@ def _aligned_image_urls(raw_events: list[Event], n_triplets: int) -> list[list[s
     # Mirror the server-side dedupe: keep the last request for each valid prompt key.
     # Missing or malformed ids cannot establish that two requests are duplicates.
     last_index_by_prompt: dict[tuple[int, ...], int] = {}
-    superseded_indexes: set[int] = set()
+    kept_indexes: set[int] = set()
     for index, (_, prompt_token_ids, _, _) in enumerate(requests):
-        prompt_key = _prompt_dedupe_key(prompt_token_ids)
-        if prompt_key is None:
+        if not prompt_token_ids or any(type(token_id) is not int for token_id in prompt_token_ids):
+            kept_indexes.add(index)
             continue
-        previous_index = last_index_by_prompt.get(prompt_key)
-        if previous_index is not None:
-            superseded_indexes.add(previous_index)
-        last_index_by_prompt[prompt_key] = index
+        last_index_by_prompt[tuple(prompt_token_ids)] = index
+    kept_indexes.update(last_index_by_prompt.values())
 
     aligned: list[list[str] | None] = []
     for index, (data, _, response_token_ids, image_urls) in enumerate(requests):
-        if index in superseded_indexes:
+        if index not in kept_indexes:
             continue
         http_status = data.get("http_status")
         # Same skip rules as the triplet loop in _build_completed_rollout.

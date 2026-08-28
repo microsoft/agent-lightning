@@ -189,6 +189,7 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
         # Superseded retry (same prompt_token_ids, keep last) with an empty response.
         _raw_model_request_event([_IMG], [1, 2], []),
         _raw_model_request_event([_IMG], [1, 2], [3, 4]),
+        _raw_model_request_event([_IMG2], [1, 2], [30, 40]),
         # Filtered out: error status and http >= 400 are skipped like the triplet loop.
         _raw_model_request_event([_IMG], [5], [6], status="error"),
         _raw_model_request_event([_IMG], [50], [60], http_status=500),
@@ -197,7 +198,7 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
         _event("reward", {"value": 1.0}),
     ]
     triplet_events = [
-        _triplet_model_request_event([1, 2], [3, 4]),
+        _triplet_model_request_event([1, 2], [30, 40]),
         _triplet_model_request_event([7, 8], [9]),
         _triplet_model_request_event([10], [11]),
         _event("reward", {"value": 1.0}),
@@ -217,10 +218,10 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
 
     assert completed.triplets is not None
     assert len(completed.triplets) == 3
-    assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG], [_IMG, _IMG2], None]
+    assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG2], [_IMG, _IMG2], None]
 
 
-@pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True]])
+@pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True], [1.0], "bad-ids", {"token": 1}])
 def test_build_completed_rollout_aligns_images_without_valid_prompt_token_ids(prompt_token_ids: object) -> None:
     trimmed_prompt_token_ids = [] if prompt_token_ids is None else prompt_token_ids
     raw_events = [

@@ -244,7 +244,7 @@ def test_triplet_events_keep_last_model_request_for_duplicate_prompt(client: Tes
     assert [event["data"]["response_token_ids"] for event in triplet_events[1:]] == [[20], [30]]
 
 
-@pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True]])
+@pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True], [1.0], "bad-ids", {"token": 1}])
 def test_triplet_events_do_not_dedupe_without_valid_prompt_tokens(
     client: TestClient,
     auth_headers: dict[str, str],
