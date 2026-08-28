@@ -211,11 +211,16 @@ def _aligned_image_urls(raw_events: list[Event], n_triplets: int) -> list[list[s
     if not any(image_urls for _, _, _, image_urls in requests):
         return None
 
-    # Server-side _dedupe_model_requests_by_prompt_token_ids: keep last per prompt key.
-    last_index_by_prompt: dict[tuple[Any, ...], int] = {}
+    # Mirror the server-side dedupe: keep the last request for each valid prompt key.
+    # Missing or malformed ids cannot establish that two requests are duplicates.
+    last_index_by_prompt: dict[tuple[int, ...], int] = {}
+    kept_indexes: set[int] = set()
     for index, (_, prompt_token_ids, _, _) in enumerate(requests):
+        if not prompt_token_ids or any(type(token_id) is not int for token_id in prompt_token_ids):
+            kept_indexes.add(index)
+            continue
         last_index_by_prompt[tuple(prompt_token_ids)] = index
-    kept_indexes = set(last_index_by_prompt.values())
+    kept_indexes.update(last_index_by_prompt.values())
 
     aligned: list[list[str] | None] = []
     for index, (data, _, response_token_ids, image_urls) in enumerate(requests):

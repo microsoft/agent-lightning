@@ -170,17 +170,25 @@ def _to_triplet_format(event: Event) -> Event:
 
 
 def _dedupe_model_requests_by_prompt_token_ids(events: list[Event]) -> list[Event]:
-    """Keep only the last model_request event for each prompt_token_ids key."""
-    last_index_by_prompt: dict[tuple[Any, ...], int] = {}
+    """Keep the last request for each valid, non-empty prompt-token key."""
+    last_index_by_prompt: dict[tuple[int, ...], int] = {}
+    kept_indexes: set[int] = set()
     for index, event in enumerate(events):
         if event.event_type != "model_request":
             continue
         prompt_token_ids = event.data.get("prompt_token_ids", [])
-        prompt_key = tuple(prompt_token_ids) if isinstance(prompt_token_ids, list) else ()
-        last_index_by_prompt[prompt_key] = index
+        if (
+            not isinstance(prompt_token_ids, list)
+            or not prompt_token_ids
+            or any(type(token_id) is not int for token_id in prompt_token_ids)
+        ):
+            # Skip deduplication, not the request, when no valid key exists.
+            kept_indexes.add(index)
+            continue
+        last_index_by_prompt[tuple(prompt_token_ids)] = index
 
-    last_indexes = set(last_index_by_prompt.values())
-    return [event for index, event in enumerate(events) if event.event_type != "model_request" or index in last_indexes]
+    kept_indexes.update(last_index_by_prompt.values())
+    return [event for index, event in enumerate(events) if event.event_type != "model_request" or index in kept_indexes]
 
 
 @router.post("/rollouts/{rollout_id}/attempt/{attempt_id}/events", response_model=Event)
