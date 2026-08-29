@@ -132,6 +132,9 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(tids, list):
                     response_token_ids.extend(tids)
 
+    if not isinstance(response_token_ids, list):
+        response_token_ids = []
+
     srv = data.get("server", {})
     if not isinstance(srv, dict):
         srv = {}

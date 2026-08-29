@@ -293,6 +293,13 @@ def test_triplet_events_do_not_dedupe_without_valid_prompt_tokens(
         pytest.param([None], {"model": MODEL_NAME, "version": 3}, [], [], id="null-legacy-chunk"),
         pytest.param({"choices": "invalid"}, {"model": MODEL_NAME, "version": 3}, [], [], id="invalid-choices"),
         pytest.param(
+            {"choices": [{"token_ids": 2}]},
+            {"model": MODEL_NAME, "version": 3},
+            [],
+            [],
+            id="invalid-non-stream-token-ids",
+        ),
+        pytest.param(
             [{"choices": [{"token_ids": 2}]}],
             {"model": MODEL_NAME, "version": 3},
             [],
