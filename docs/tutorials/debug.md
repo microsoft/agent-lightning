@@ -102,6 +102,80 @@ Swap in an [`AgentOpsTracer`][agentlightning.AgentOpsTracer] instead of [`OtelTr
 
     You can also call [`Runner.step`][agentlightning.Runner.step] to inject ad-hoc rollouts into a running store being used by another algorithm, so that the rollouts can be consumed by the algorithms. This is very recently known as the paradigm of ["online RL"](https://cursor.com/blog/tab-rl). At the moment, no algorithm in the [algorithm zoo](../algorithm-zoo/index.md) consumes externally generated rollouts, but the data flow is available there if you need it.
 
+## Handle Failed Rollouts and Retries
+
+An agent can finish without a usable training trajectory for several different reasons. The runner treats these cases differently:
+
+* Returning `None` means that the runner should use the spans collected by the active tracer. It does not automatically discard the rollout. Returning an empty list means that no additional spans are reported, but the attempt can still finish as `succeeded`.
+* If the rollout raises an exception, the runner records the attempt as `failed`. Use [`emit_exception`][agentlightning.emit_exception] before re-raising when you want the error to be visible in the trace.
+* When the store watchdog health check runs, it can mark an attempt as `timeout` or `unresponsive` when its [`RolloutConfig`][agentlightning.RolloutConfig] limits are exceeded.
+
+Configure retries for an individual rollout with [`RolloutConfig`][agentlightning.RolloutConfig]:
+
+```python
+import agentlightning as agl
+
+config = agl.RolloutConfig(
+    timeout_seconds=600,
+    unresponsive_seconds=120,
+    max_attempts=3,
+    retry_condition=["failed", "timeout", "unresponsive"],
+)
+
+rollout = await store.enqueue_rollout(
+    input={"prompt": "classify this support request"},
+    config=config,
+)
+```
+
+`max_attempts` is the total number of attempts, including the first attempt. The default configuration has `max_attempts=1` and an empty `retry_condition`, so it does not retry. Retry policy is applied per rollout; it does not restart or skip a whole batch.
+
+If a failed rollout should contribute no training data, record the exception and make the adapter return an empty trajectory for traces containing an exception span. This leaves the rollout status and its diagnostic spans available in the store while preventing the partial trajectory from reaching an algorithm:
+
+```python
+from typing import Sequence, Union
+
+import agentlightning as agl
+from agentlightning.semconv import AGL_EXCEPTION
+from agentlightning.types import Span, Triplet
+from opentelemetry.sdk.trace import ReadableSpan
+
+
+class DropExceptionRollouts(agl.TracerTraceToTriplet):
+    def adapt(self, source: Union[Sequence[Span], Sequence[ReadableSpan]], /) -> list[Triplet]:
+        if any(span.name == AGL_EXCEPTION for span in source):
+            return []
+        return super().adapt(source)
+
+
+@agl.rollout
+async def agent(task, llm: agl.LLM):
+    try:
+        return await call_model(task, llm)  # application-specific model call
+    except Exception as exc:
+        agl.emit_exception(exc)
+        raise
+
+
+trainer = agl.Trainer(adapter=DropExceptionRollouts())
+```
+
+Here, `task` and `call_model` stand in for your application-specific task type and model invocation.
+
+This adapter controls what is exported to the algorithm; it does not change the rollout's `failed` status or retry policy. Check how the selected algorithm handles an empty adapted result before enabling this in production. Agent-lightning currently has no built-in failure-ratio threshold for skipping an entire batch. To add one, wait for the batch's rollouts, inspect their statuses, and have the algorithm decide whether to discard the batch, enqueue replacement tasks, or stop the run.
+
+When retries are enabled, make sure the adapter sees only the attempt you want to train on. For example, query spans with `attempt_id="latest"`, or group spans by attempt before applying an exception policy. Querying every attempt can include an exception from an earlier failed attempt and cause a later successful retry to be discarded as well. If a failure should be dropped without retrying, keep the default `max_attempts=1` (or leave `retry_condition` empty).
+
+When diagnosing a failure, inspect the rollout, all of its attempts, and its spans separately:
+
+```python
+rollout = await store.get_rollout_by_id(rollout_id)
+attempts = await store.query_attempts(rollout_id)
+spans = await store.query_spans(rollout_id)
+```
+
+The [store transition map](../deep-dive/store.md#rollout-transition-map) explains how attempt statuses become rollout statuses and when a retry is scheduled. Dashboard traces and `DEBUG` logs are useful for checking whether an exception span was emitted and whether a timeout or missing heartbeat caused the failure.
+
 ## Debug with LLM Proxy
 
 If you are dealing with LLM optimization like Reinforcement Learning, we generally recommend using an online stable LLM service for your debugging purposes, like `openai/gpt-4.1-nano`. After the debugging is done, you can switch to a local training endpoint.
