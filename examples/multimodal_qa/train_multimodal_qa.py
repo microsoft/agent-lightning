@@ -80,6 +80,11 @@ def verl_default_config() -> dict[str, Any]:
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.6,
+                # vLLM's prefix cache can desync from the multimodal receiver cache
+                # across sleep/wake cycles (`AssertionError: Expected a cached item
+                # for mm_hash=...`, or a silent rollout hang). Keep it off for
+                # multimodal training. See https://github.com/vllm-project/vllm/issues/42995
+                "enable_prefix_caching": False,
             },
             "actor": {
                 "ppo_mini_batch_size": 8,
