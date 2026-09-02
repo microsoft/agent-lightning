@@ -1068,7 +1068,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 12, 2026 09:10:22 UTC"><span class="timeago" datetime="2026-08-12T09:10:22+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 12, 2026 09:10:22 UTC">2026-08-12</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="September 2, 2026 04:47:22 UTC"><span class="timeago" datetime="2026-09-02T04:47:22+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 2, 2026 04:47:22 UTC">2026-09-02</span>
   </span>
 
     
@@ -1093,6 +1093,7 @@
     </span>
     <nav>
       
+        <a href="mailto:52408936+rioyu123@users.noreply.github.com">Rio Yu</a>, 
         <a href="mailto:yuge.zhang@microsoft.com">Yuge Zhang</a>, 
         <a href="mailto:362583303@qq.com">Zhiyuan He</a>
     </nav>
@@ -1234,6 +1235,7 @@
 </tbody>
 </table>
 <p>When the process pool reaches <code>maximum_size</code>, queued rollouts wait until capacity becomes available.</p>
+<p><strong>Platform support:</strong> The local runner requires POSIX process-group signals, so <code>runner_type=local</code> is not supported on native Windows. The Controller exits at startup, before it queries or dispatches any rollouts. Run the local controller from Linux (for example, WSL) instead; <code>runner_type=k8s</code> is unaffected.</p>
 <h2 id="how-agents-are-launched">How agents are launched<a class="headerlink" href="#how-agents-are-launched" title="Permanent link">&para;</a></h2>
 <p>In <code>k8s</code> mode, the Controller reads the Jinja Job template stored in each rollout. The template originates from <code>agentlightning.k8s.job_template_path</code> in the Trainer configuration. The Controller renders the template with the rollout's <code>input</code>, applies the Controller settings such as namespace, timeout, and cleanup TTL, and submits the resulting Kubernetes Job. It also injects rollout-specific <code>AGL_OPENAI_BASE_URL</code>, <code>AGL_EVENT_URL</code>, and <code>AGL_KEY</code> values into every container. See <a href="../20-trainer-configuration/#rollout-execution">Trainer Configuration</a> for the template configuration and Jinja examples, and <code>agentlightning/controller/k8s_reconciler.py</code> for the implementation.</p>
 <p>In <code>local</code> mode, the Controller reads <code>agent_class</code> and <code>env_map</code> from the rollout. It imports the Agent class, starts it in a local subprocess, and uses <code>env_map</code> to replace environment-variable values with fields from the rollout's <code>input</code>. The same rollout-specific Gateway URL, event URL, and key are injected automatically.</p>
