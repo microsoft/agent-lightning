@@ -205,16 +205,15 @@ class LocalReconciler:
                 raise ValueError("invalid rollout config: missing config.local.agent_class")
             agent_class = rollout.config.local.agent_class
             mode = "train" if rollout.is_train else "val"
+            agent_url = self._config.agl_server.get("agent_url", None)
+            agent_base_url = str(agent_url or self._config.agl_server.url).rstrip("/")
             env = {
                 **os.environ,
                 "AGL_KEY": str(self._config.agl_server.key or ""),
                 "AGL_OPENAI_BASE_URL": (
-                    f"{self._config.agl_server.url}/proxy/rollout/{rollout.rollout_id}"
-                    f"/attempt/{attempt_id}/mode/{mode}/openai/v1"
+                    f"{agent_base_url}/proxy/rollout/{rollout.rollout_id}/attempt/{attempt_id}/mode/{mode}/openai/v1"
                 ),
-                "AGL_EVENT_URL": (
-                    f"{self._config.agl_server.url}/api/rollouts/{rollout.rollout_id}/attempt/{attempt_id}/events"
-                ),
+                "AGL_EVENT_URL": (f"{agent_base_url}/api/rollouts/{rollout.rollout_id}/attempt/{attempt_id}/events"),
             }
             env.update(_build_env_from_map(rollout.input, rollout.config.local.env_map))
             proc = await asyncio.create_subprocess_exec(
