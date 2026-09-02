@@ -13,6 +13,10 @@ k8s_runner:
   ttl_after_finished: 1200
   max_jobs_per_minute: 100
   poll_interval: 5
+  image_readiness:
+    enabled: true
+    heartbeat_seconds: 5
+    lease_seconds: 30
 
 local_runner:
   maximum_size: 50

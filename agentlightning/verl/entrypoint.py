@@ -22,6 +22,7 @@ import ray
 from omegaconf import OmegaConf
 
 from .dataset import LoadedDataset
+from .k8s_image_filter import PreparedDatasets, prepare_datasets
 
 log = logging.getLogger(__name__)
 
@@ -34,15 +35,27 @@ def run_ppo(
     config: Any,
     train_dataset: Sequence[Any],
     val_dataset: Sequence[Any],
+    *,
+    max_val_instances: int | None = None,
 ) -> None:
     """Launch VERL PPO training with Agent Lightning agent orchestration.
 
     Datasets must be passed as non-empty in-memory sequences.
     """
-    from verl.trainer.main_ppo import get_ppo_ray_runtime_env
+    prepared = prepare_datasets(
+        config,
+        train_dataset,
+        val_dataset,
+        max_val_instances=max_val_instances,
+    )
+    train_dataset = prepared.train
+    val_dataset = prepared.val
+    _log_dataset_preparation(prepared)
 
     assert train_dataset is not None and len(train_dataset) > 0, "train_dataset must be non-empty"
     assert val_dataset is not None and len(val_dataset) > 0, "val_dataset must be non-empty"
+
+    from verl.trainer.main_ppo import get_ppo_ray_runtime_env
 
     if not ray.is_initialized():
         default_runtime_env = cast(dict[str, Any], get_ppo_ray_runtime_env())
@@ -70,6 +83,34 @@ def run_ppo(
 
     runner = cast(Any, _AglTaskRunner).remote()
     ray.get(runner.run.remote(config, train_ds, val_ds))
+
+
+def _log_dataset_preparation(prepared: PreparedDatasets) -> None:
+    if prepared.readiness is None:
+        return
+    print(
+        "K8s image readiness: "
+        f"{len(prepared.readiness.images)} normalized images on "
+        f"{prepared.readiness.node_count} eligible node(s); snapshot=fresh",
+        flush=True,
+    )
+    for report in (prepared.train_report, prepared.val_report):
+        if report is None:
+            continue
+        suffix = f" final={len(prepared.val)}" if report.split == "val" else ""
+        print(
+            f"Image filter {report.split}: source={report.source_count} "
+            f"kept={report.kept_count} dropped={report.dropped_count}{suffix}",
+            flush=True,
+        )
+        if report.missing_image_counts:
+            counts = ", ".join(f"{image}={count}" for image, count in report.missing_image_counts.items())
+            print(f"Missing image counts ({report.split}): {counts}", flush=True)
+        if report.dropped_data_ids:
+            print(
+                f"Dropped ids ({report.split}, first 20): " + ", ".join(report.dropped_data_ids),
+                flush=True,
+            )
 
 
 @ray.remote(num_cpus=1)

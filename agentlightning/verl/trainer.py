@@ -145,6 +145,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             local_agent_class=al.local.agent_class,
             local_env_map=al.local.env_map,
             k8s_job_template_path=al.k8s.job_template_path,
+            k8s_require_preloaded_images=bool(al.k8s.filter_unavailable_images),
         )
 
     def _rollout_replicas(self) -> list[Any]:
