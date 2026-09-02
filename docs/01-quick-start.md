@@ -7,6 +7,8 @@ This quick start requires only one machine with one A100 GPU. It runs Agent Ligh
 Complete [Installation](00-installation.md), including the `verl` GPU stack.
 
 > AGL v1.0 itself is lightweight, but policy inference and GRPO updates still require the GPU stack used by `verl` and vLLM.
+>
+> This quick start uses `runner_type=local`, which is not supported on native Windows. On Windows, run it from a Linux environment such as WSL. See [Local runner limits](30-controller-configuration.md#local-runner-limits) for details.
 
 ## 1. Prepare the example
 

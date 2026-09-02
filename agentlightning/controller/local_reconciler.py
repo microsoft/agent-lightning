@@ -28,6 +28,10 @@ log = structlog.get_logger()
 _SHUTDOWN_WAIT_TIMEOUT = 5.0
 
 
+def _is_native_windows() -> bool:
+    return os.name == "nt"
+
+
 def _run_local_reconciler_worker(agent_class_path: str) -> int:
     try:
         if ":" in agent_class_path:
@@ -105,6 +109,10 @@ class LocalReconciler:
         self._stop = asyncio.Event()
 
     async def run(self) -> None:
+        if _is_native_windows():
+            raise RuntimeError(
+                "runner_type=local is not supported on native Windows; use Linux (for example, WSL) instead."
+            )
         log.info("LocalReconciler starting", pool_size=self._pool_size, tick=self._tick_interval)
         try:
             await self._reconcile_loop()
