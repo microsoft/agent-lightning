@@ -86,6 +86,8 @@ The local runner limits concurrent processes and periodically synchronizes their
 
 When the process pool reaches `maximum_size`, queued rollouts wait until capacity becomes available.
 
+**Platform support:** The local runner requires POSIX process-group signals, so `runner_type=local` is not supported on native Windows. The Controller exits at startup, before it queries or dispatches any rollouts. Run the local controller from Linux (for example, WSL) instead; `runner_type=k8s` is unaffected.
+
 ## How agents are launched
 
 In `k8s` mode, the Controller reads the Jinja Job template stored in each rollout. The template originates from `agentlightning.k8s.job_template_path` in the Trainer configuration. The Controller renders the template with the rollout's `input`, applies the Controller settings such as namespace, timeout, and cleanup TTL, and submits the resulting Kubernetes Job. It also injects rollout-specific `AGL_OPENAI_BASE_URL`, `AGL_EVENT_URL`, and `AGL_KEY` values into every container. See [Trainer Configuration](20-trainer-configuration.md#rollout-execution) for the template configuration and Jinja examples, and `agentlightning/controller/k8s_reconciler.py` for the implementation.
