@@ -126,7 +126,7 @@ class LocalReconciler:
             except TimeoutError:
                 pass
 
-    async def _reconcile_once(self) -> None:
+    async def _reconcile_once(self, *, spawn_queued: bool = True) -> None:
         params = httpx.QueryParams()
         params = params.add("state_in", RolloutState.QUEUING.value)
         params = params.add("state_in", RolloutState.RUNNING.value)
@@ -141,7 +141,12 @@ class LocalReconciler:
             item = self._rid_to_proc.get(rollout.rollout_id)
 
             if item is None:
-                if rollout.status.state == RolloutState.QUEUING and live_count < self._pool_size:
+                if (
+                    spawn_queued
+                    and not self._stop.is_set()
+                    and rollout.status.state == RolloutState.QUEUING
+                    and live_count < self._pool_size
+                ):
                     if await self._spawn_for(rollout):
                         live_count += 1
                 elif rollout.status.state == RolloutState.RUNNING:
@@ -249,7 +254,7 @@ class LocalReconciler:
     async def _shutdown(self) -> None:
         """Kill live subprocesses and mark them failed."""
         try:
-            await self._reconcile_once()
+            await self._reconcile_once(spawn_queued=False)
         except Exception:
             log.exception("Final reconcile during shutdown failed")
 
