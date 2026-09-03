@@ -1,6 +1,10 @@
 # Installation
 
-This guide sets up a single-node environment for Agent Lightning v1.0. After completing it, you can run single-machine training jobs.
+This guide covers the Agent Lightning v1.0 training framework and the Agent Lightning skill for coding agents. They are installed separately and can be used independently.
+
+## Training Framework
+
+The following steps set up a single-node environment for Agent Lightning v1.0. After completing them, you can run single-machine training jobs.
 
 Before getting started, install `uv` and NVIDIA CUDA. We support CUDA `12.9` or `13.0`.
 
@@ -39,3 +43,15 @@ By default, all tasks upload logs and trajectories to Weights & Biases. Log in t
 ```bash
 uv run wandb login
 ```
+
+## Agent Lightning Skill
+
+Install the Agent Lightning skill directly from this repository for Claude Code, Codex, or GitHub Copilot:
+
+```bash
+gh skill install microsoft/agent-lightning agent-lightning --agent claude-code
+gh skill install microsoft/agent-lightning agent-lightning --agent codex
+gh skill install microsoft/agent-lightning agent-lightning --agent github-copilot
+```
+
+Choose the command for the coding agent you use. The skill does not require the training framework or its CUDA environment. See [Optimize Agents with the Agent Lightning Skill](10-agent-lightning-skill.md) for a starter prompt, workflow, and benchmark results.
