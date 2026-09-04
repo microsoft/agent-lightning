@@ -10,8 +10,8 @@ from typing import Any
 import httpx
 
 
-def _headers_with_key(headers: httpx.Headers | dict[str, str] | None, key: str | None) -> dict[str, str]:
-    merged = dict(headers or {})
+def _headers_with_key(headers: httpx.Headers | dict[str, str] | None, key: str | None) -> httpx.Headers:
+    merged = httpx.Headers(headers)
     if key:
         merged["Authorization"] = f"Bearer {key}"
     return merged
