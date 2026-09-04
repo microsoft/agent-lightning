@@ -113,23 +113,31 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(resp, dict):
         prompt_token_ids = resp.get("prompt_token_ids", [])
         choices = resp.get("choices", [])
-        if choices:
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            choice = choices[0]
             if not prompt_token_ids:
-                prompt_token_ids = choices[0].get("prompt_token_ids", [])
-            response_token_ids = choices[0].get("token_ids", [])
-            response_log_probs = _extract_choice_log_probs(choices[0])
+                prompt_token_ids = choice.get("prompt_token_ids", [])
+            response_token_ids = choice.get("token_ids", [])
+            response_log_probs = _extract_choice_log_probs(choice)
     elif isinstance(resp, list):
         # Legacy: raw SSE chunks (pre-assembly format, backward compat).
         for chunk in resp:
+            if not isinstance(chunk, dict):
+                continue
             if not prompt_token_ids and chunk.get("prompt_token_ids"):
                 prompt_token_ids = chunk["prompt_token_ids"]
             choices = chunk.get("choices", [])
-            if choices:
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
                 tids = choices[0].get("token_ids")
-                if tids:
+                if isinstance(tids, list):
                     response_token_ids.extend(tids)
 
+    if not isinstance(response_token_ids, list):
+        response_token_ids = []
+
     srv = data.get("server", {})
+    if not isinstance(srv, dict):
+        srv = {}
     trimmed = {
         "prompt_token_ids": prompt_token_ids,
         "response_token_ids": response_token_ids,
