@@ -56,6 +56,8 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, upstream_path: 
         body = json.loads(raw_body) if raw_body else {}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in request body") from None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
 
     # Select server.
     model_name = proxy_router.model_name
