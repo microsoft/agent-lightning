@@ -1,0 +1,52 @@
+CURRENT PLANNER SKILL
+=====================
+{current_skill}
+
+FROZEN CONTEXT HARNESS (READ-ONLY)
+==================================
+{frozen_harness}
+
+OFFICIAL DEVELOPMENT RESULT
+===========================
+Candidate: {candidate_name}
+Official exact-match score: {n_correct}/{n_scored} = {score}
+Valid trajectories: {n_valid}
+Environment-invalid trajectories: {n_environment_invalid}
+
+NEUTRAL BATCH SUMMARY
+=====================
+{batch_summary}
+
+REPRESENTATIVE TASK INTERFACES
+==============================
+The following anonymized excerpts contain task contracts, evidence interfaces,
+and legal action spaces but no ground-truth answers:
+
+{representative_task_interfaces}
+
+REPRESENTATIVE DIAGNOSTIC JUDGER REPORTS
+========================================
+{representative_judger_reports}
+
+REPRESENTATIVE REASON/ACTION TRACE EXCERPTS
+===========================================
+{representative_trace_excerpts}
+
+OPTIMIZATION HISTORY
+====================
+{optimization_history}
+
+Produce one improved planner skill for the next candidate. The context harness
+is frozen and read-only. Address systematic planner-policy failures without
+hard-coding development questions or assuming unavailable evidence.
+
+The returned `new_artifact` must preserve the literal placeholder
+{{task_prompt}} exactly once and must remain compatible with the official
+Reason/Action interface.
+
+Return exactly one JSON object:
+
+{{
+  "rationale": "<why these skill changes follow from the feedback>",
+  "new_artifact": "<complete replacement planner skill>"
+}}

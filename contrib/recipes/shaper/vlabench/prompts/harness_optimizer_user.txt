@@ -1,0 +1,14 @@
+## Current Planner Prompt (READ-ONLY — do not modify)
+```
+{current_prompt}
+```
+
+## Current Context Management Code
+```python
+{current_context_code}
+```
+
+{episode_context}
+
+## Episode Summaries
+{critique}

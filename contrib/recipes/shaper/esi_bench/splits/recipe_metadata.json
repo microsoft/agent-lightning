@@ -1,0 +1,29 @@
+{
+  "upstream_repository": "https://github.com/ESI-Bench/ESI-Bench",
+  "upstream_commit": "3c1756396f32b1a90c1f72356a7fde45f418e179",
+  "status": "deterministic recipe split; not claimed as the paper's original 10/10 manifest",
+  "train": [
+    {"id": "0028", "big_task": "Action Sequencing", "small_task": "Action Order Inference", "runner_task": "action"},
+    {"id": "0197", "big_task": "Cognitive Mapping", "small_task": "Long-Term Navigation", "runner_task": "cognitivemap"},
+    {"id": "0460", "big_task": "Enumerative Perception", "small_task": "Illumination Variability", "runner_task": "counting"},
+    {"id": "0636", "big_task": "Metric Comparison", "small_task": "Dimensional Size", "runner_task": "size"},
+    {"id": "1025", "big_task": "Perceptual Grounding", "small_task": "Material Transparency", "runner_task": "transparent"},
+    {"id": "1826", "big_task": "Physical Dynamics", "small_task": "Stacking & Stability", "runner_task": "stacking"},
+    {"id": "1847", "big_task": "Physical Structure", "small_task": "Deformable", "runner_task": "deformable"},
+    {"id": "2905", "big_task": "Spatial Relations", "small_task": "Physical Contact", "runner_task": "touching"},
+    {"id": "3071", "big_task": "Specular Reflection", "small_task": "Reflection Authoring", "runner_task": "mirror"},
+    {"id": "3287", "big_task": "Temporal Understanding", "small_task": "Agent Observation", "runner_task": "multiagent"}
+  ],
+  "validation": [
+    {"id": "0001", "big_task": "Action Sequencing", "small_task": "Action Order Inference", "runner_task": "action"},
+    {"id": "0078", "big_task": "Cognitive Mapping", "small_task": "Connectivity", "runner_task": "cognitivemap"},
+    {"id": "0338", "big_task": "Enumerative Perception", "small_task": "Category Ambiguity", "runner_task": "counting"},
+    {"id": "0608", "big_task": "Metric Comparison", "small_task": "Dimensional Size", "runner_task": "size"},
+    {"id": "1171", "big_task": "Perceptual Grounding", "small_task": "Partial Occlusion", "runner_task": "occlusion"},
+    {"id": "1731", "big_task": "Physical Dynamics", "small_task": "Inclined Plane", "runner_task": "slope"},
+    {"id": "2061", "big_task": "Physical Structure", "small_task": "Rigid Containment", "runner_task": "storage"},
+    {"id": "2394", "big_task": "Spatial Relations", "small_task": "Geometric Configuration", "runner_task": "triangle"},
+    {"id": "3166", "big_task": "Specular Reflection", "small_task": "Spatial Relations", "runner_task": "mirror"},
+    {"id": "3422", "big_task": "Temporal Understanding", "small_task": "Unobserved Change", "runner_task": "unobserved_changes"}
+  ]
+}

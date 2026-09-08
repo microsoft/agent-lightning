@@ -1,0 +1,12 @@
+diff --git a/asset_pipeline/b1k_pipeline/usd_conversion/make_maps.py b/asset_pipeline/b1k_pipeline/usd_conversion/make_maps.py
+--- a/asset_pipeline/b1k_pipeline/usd_conversion/make_maps.py
++++ b/asset_pipeline/b1k_pipeline/usd_conversion/make_maps.py
+@@ -19,7 +19,7 @@ WALL_CATEGORIES = ["walls", "rail_fence"]
+ FLOOR_CATEGORIES = ["floors", "driveway", "lawn"]
+ DOOR_CATEGORIES = ["door", "sliding_door", "garage_door", "gate"]
+ IGNORE_CATEGORIES = ["carpet"]
+-NEEDED_STRUCTURE_CATEGORIES = FLOOR_CATEGORIES + WALL_CATEGORIES
++NEEDED_STRUCTURE_CATEGORIES = FLOOR_CATEGORIES
+
+ # Segmentation maps will be generated with the data from the below map's overlap query
+ GENERATE_SEG_MAPS_DURING_FNAME = "floor_trav_no_obj_0.png"

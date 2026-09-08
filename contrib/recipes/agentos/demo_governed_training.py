@@ -185,7 +185,7 @@ def main():
 
 
 class _StubKernel:
-    """Minimal stub for demo when agent-os is not installed."""
+    """Minimal stub for demo when agent-os-kernel is not installed."""
 
     def check_action(self, action_type, params):
         blocked = any(kw in params.get("query", "").upper() for kw in ("DROP", "DELETE", "TRUNCATE", "ALTER"))

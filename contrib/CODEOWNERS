@@ -2,3 +2,7 @@
 
 # Recipes
 recipes/search_r1 @SiyunZhao @JiahangXu
+recipes/shaper @Control-derek
+
+# Runtime extensions
+agentlightning/contrib/shaper @Control-derek

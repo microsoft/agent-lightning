@@ -14,7 +14,7 @@ for AI agents. This integration enables:
 ## Installation
 
 ```bash
-pip install agentlightning agent-os
+pip install agentlightning agent-os-kernel
 ```
 
 ## Quick Start

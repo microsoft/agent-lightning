@@ -1,0 +1,6 @@
+Original task instruction: {overall_task}
+Episode result: {episode_result}
+Total rounds: {total_rounds}
+
+## Round-by-round execution:
+{rounds_detail}

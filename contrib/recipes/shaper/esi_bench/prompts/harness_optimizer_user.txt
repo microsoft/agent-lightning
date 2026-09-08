@@ -1,0 +1,67 @@
+FROZEN PLANNER SKILL (READ-ONLY)
+================================
+{frozen_planner_skill}
+
+CURRENT CONTEXT-HARNESS MODULE
+==============================
+{current_context_code}
+
+OFFICIAL DEVELOPMENT RESULT
+===========================
+Candidate: {candidate_name}
+Official exact-match score: {n_correct}/{n_scored} = {score}
+Valid trajectories: {n_valid}
+Environment-invalid trajectories: {n_environment_invalid}
+
+NEUTRAL BATCH SUMMARY
+=====================
+{batch_summary}
+
+REPRESENTATIVE OFFICIAL TASK INTERFACES
+=======================================
+The following anonymized excerpts contain task questions, reference-image
+availability, legal action vocabularies, and output contracts, but no
+ground-truth answers:
+
+{representative_task_interfaces}
+
+REPRESENTATIVE DIAGNOSTIC JUDGER REPORTS
+========================================
+{representative_judger_reports}
+
+REPRESENTATIVE CONTEXT-EXECUTION TRACES
+=======================================
+Each excerpt describes the observable input history and the actual ordered
+text/image payload emitted by the current harness at selected planner steps.
+Image entries include source step, dimensions, derivative lineage, and compact
+pixel statistics when available:
+
+{representative_context_payloads}
+
+REPRESENTATIVE PLANNER/ACTION TRACE EXCERPTS
+============================================
+{representative_trace_excerpts}
+
+ARTIFACT VALIDATION AND SMOKE-TEST FEEDBACK
+===========================================
+{artifact_validation_feedback}
+
+OPTIMIZATION HISTORY
+====================
+{optimization_history}
+
+Produce one improved context-harness module for the next candidate. The
+planner skill is frozen and read-only. Address systematic payload failures
+without hard-coding development questions or using privileged simulator
+information.
+
+The returned `new_artifact` must expose an interface compatible with:
+
+def build_context(image_path, history, prompt, reference_image_paths=None) -> list
+
+Return exactly one JSON object:
+
+{{
+  "rationale": "<why these harness changes follow from the feedback>",
+  "new_artifact": "<complete replacement Python module>"
+}}

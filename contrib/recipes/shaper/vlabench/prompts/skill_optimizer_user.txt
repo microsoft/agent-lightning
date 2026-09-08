@@ -1,0 +1,16 @@
+## Current Prompt
+```
+{current_prompt}
+```
+
+## Current Context Code
+```python
+{current_context_code}
+```
+
+The context code above is READ-ONLY for this prompt edit. You may use it to understand what information the planner receives, but your output must be only a new planner prompt.
+
+{episode_context}
+
+## Episode Summaries
+{critique}

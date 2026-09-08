@@ -1,0 +1,39 @@
+Task family: {task_family}
+Scene: {scene}
+Question ID: {question_id}
+
+Question:
+{question}
+
+Answer options:
+{options}
+
+Official task contract:
+{task_contract}
+
+Final answer: {final_answer}
+Final confidence: {final_confidence}
+Termination: {termination}
+Official ground truth: {ground_truth}
+Official exact-match result: {official_correct}
+
+Environment diagnostics:
+{environment_diagnostics}
+
+Planner prompt augmentation:
+{planner_prompt}
+
+Actual context supplied at the final decision:
+{final_context}
+
+Per-step Reason/Action trajectory:
+{trajectory}
+
+Images follow in this order:
+1. Official question-reference images, if any
+2. Evidence-bearing historical observations from the trajectory audit
+3. Final/current observations
+
+Diagnose the complete trajectory without changing the official correctness
+label. Use the ground truth only for post-hoc development diagnosis, never to
+recommend a question-specific rule.

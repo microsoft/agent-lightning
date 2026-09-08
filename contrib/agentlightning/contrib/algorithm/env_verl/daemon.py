@@ -1,12 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import copy
 import json
+import logging
 import random
 import socket
 import threading
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
@@ -18,8 +22,8 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
+import contrib.agentlightning.contrib.algorithm.env_verl.core_empo2 as core_empo2
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
-from agentlightning.adapter.triplet import TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.reward import find_final_reward
 from agentlightning.store.base import LightningStore
@@ -145,7 +149,7 @@ class EnvAgentModeDaemon:
         mode: Literal["v0", "v1"] = "v1",
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
-        adapter: TraceToTripletBase | None = None,
+        adapter: TracerTraceToTripletGroup | None = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -449,7 +453,7 @@ class EnvAgentModeDaemon:
                 raise RuntimeError("Internal loop is not running.")
             future = asyncio.run_coroutine_threadsafe(coro, self._internal_loop)
         try:
-            future.result(timeout=60)  # Wait for completion with a timeout
+            future.result(timeout=600)  # Wait for completion with a timeout
         except Exception as e:
             print(f"Failed to set up data on server: {e}")
             raise
@@ -658,9 +662,11 @@ class EnvAgentModeDaemon:
         max_prompt_length: int,
         max_response_length: int,
         device: torch.device,
+        max_train_length: int = -1,
         use_final_reward_as_step_reward: bool = True,
         use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
+        empo2_train_mode: Literal["off-policy", "on-policy-with-tips", "on-policy"] | None = None,
     ):
         """
         Processes completed rollouts to generate a training data batch.
@@ -734,6 +740,9 @@ class EnvAgentModeDaemon:
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
+        if empo2_train_mode == "off-policy":
+            old_input_ids_list: List[List[int]] = []
+            old_input_attention_mask_list: List[List[int]] = []
 
         # optional fields
         step_intrinsic_reward_list: List[float] = []
@@ -741,13 +750,29 @@ class EnvAgentModeDaemon:
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
+                prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
+
+                if max_train_length > -1 and len(prompt_ids) + len(response_ids) > max_train_length:
+                    logger.debug(
+                        "Skipping sample: prompt_len=%d, response_len=%d, total=%d > max_train_length=%d",
+                        len(prompt_ids),
+                        len(response_ids),
+                        len(prompt_ids) + len(response_ids),
+                        max_train_length,
+                    )
+                    continue
 
                 final_reward_list.append(sample_info["final_reward"])
                 step_reward_list.append(trace["step_reward"])
                 step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
                 message_list.append(trace["message"])
 
-                prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
+                if empo2_train_mode == "off-policy":
+                    old_prompt_ids = copy.deepcopy(prompt_ids)
+                    START_PATTERN = self.tokenizer.encode("<tip>")
+                    END_PATTERN = self.tokenizer.encode("</tip>\n\n")
+                    if core_empo2.is_sublist(START_PATTERN, prompt_ids):
+                        prompt_ids = core_empo2.remove_pattern_ranges(prompt_ids, START_PATTERN, END_PATTERN)
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
                 if len(prompt_ids) > max_prompt_length:
@@ -777,7 +802,16 @@ class EnvAgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
+                if empo2_train_mode == "off-policy":
+                    old_prompt_ids = old_prompt_ids[:max_prompt_length]
+                    one_old_input_ids, one_old_input_attention_mask = get_left_padded_ids_and_attention_mask(
+                        old_prompt_ids, max_prompt_length, self.pad_token_id
+                    )
+                    old_input_ids_list.append(one_old_input_ids)
+                    old_input_attention_mask_list.append(one_old_input_attention_mask)
+
         n_transition = len(input_ids_list)
+        logger.info("get_train_data_batch: n_transition=%d (max_train_length=%d)", n_transition, max_train_length)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
@@ -787,6 +821,14 @@ class EnvAgentModeDaemon:
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
         position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
+
+        if empo2_train_mode == "off-policy":
+            old_batch_input_ids = torch.LongTensor(old_input_ids_list).to(device)
+            old_batch_seq = torch.cat([old_batch_input_ids, batch_response_ids], dim=-1)
+            old_input_attention_mask = torch.LongTensor(old_input_attention_mask_list).to(device)
+            old_attention_mask = torch.cat([old_input_attention_mask, response_attention_mask], dim=-1)
+            old_position_ids = torch.clamp(torch.cumsum(old_attention_mask, dim=-1) - 1, min=0)
+
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
         if use_final_reward_as_step_reward:
             scores = torch.tensor(final_reward_list, dtype=torch.float32).to(device)
@@ -827,6 +869,15 @@ class EnvAgentModeDaemon:
                 np.array(step_intrinsic_reward_list), dtype=torch.float32
             ).to(device)
             batch_dict["token_level_intrinsic_rewards"] = token_level_intrinsic_rewards.contiguous()
+
+        if empo2_train_mode == "off-policy":
+            batch_dict.update(
+                {
+                    "old_input_ids": old_batch_seq,
+                    "old_attention_mask": old_attention_mask,
+                    "old_position_ids": old_position_ids,
+                }
+            )
 
         batch = TensorDict(batch_dict, batch_size=n_transition)
         data_proto = DataProto(batch=batch)
