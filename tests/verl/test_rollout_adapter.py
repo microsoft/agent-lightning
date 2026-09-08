@@ -430,6 +430,7 @@ def test_transition_image_rows_attach_multi_modal_inputs_and_mrope_position_ids(
 
     batch, _ = _transition_adapter(FakeMropeProcessor()).get_train_data_batch([rollout], global_steps=1)
 
+    assert batch.batch["is_drop_mask"].tolist() == [False, False]
     assert "multi_modal_inputs" in batch.non_tensor_batch
     multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
     assert len(multi_modal_inputs) == 2
@@ -507,11 +508,12 @@ def test_non_mrope_processor_attaches_multi_modal_inputs_and_keeps_2d_position_i
     multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
     assert multi_modal_inputs[0] is not None
     assert set(multi_modal_inputs[0]) == {"pixel_values"}
+    assert batch.batch["is_drop_mask"].tolist() == [False]
     assert batch.batch["position_ids"].dim() == 2
     assert "not a recognized mrope" in capsys.readouterr().out
 
 
-def test_processor_without_vision_output_falls_back_to_text_only(
+def test_processor_without_vision_output_marks_image_row_for_drop(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -522,7 +524,50 @@ def test_processor_without_vision_output_falls_back_to_text_only(
 
     multi_modal_inputs = list(batch.non_tensor_batch["multi_modal_inputs"])
     assert multi_modal_inputs[0] is None
+    assert batch.batch["is_drop_mask"].tolist() == [True]
+    keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
+    assert batch[keep].non_tensor_batch["rollout_id_list"].tolist() == []
     assert "no vision tensors" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("failure", ["missing_processor", "image_decode", "missing_grid", "mrope"])
+def test_failed_image_rows_are_removed_by_trainer_filter(failure: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    processor = FakeMropeProcessor() if failure != "missing_processor" else None
+    if failure == "missing_grid":
+        monkeypatch.setattr(FakeMropeProcessor, "__call__", FakeNonMropeProcessor.__call__)
+    if failure == "mrope":
+        assert processor is not None
+        original_get_rope_index = processor.get_rope_index
+
+        def fail_image_positions(
+            input_ids: torch.Tensor,
+            attention_mask: torch.Tensor,
+            image_grid_thw: object = None,
+            **kwargs: object,
+        ) -> torch.Tensor:
+            if image_grid_thw is not None:
+                raise ValueError("image token count does not match the image grid")
+            return original_get_rope_index(input_ids, attention_mask, **kwargs)
+
+        monkeypatch.setattr(processor, "get_rope_index", fail_image_positions)
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(buffer, format="PNG")
+    payload = "QUJD" if failure == "image_decode" else base64.b64encode(buffer.getvalue()).decode()
+    image_url = f"data:image/png;base64,{payload}"
+    bad = _transition_rollout([_image_triplet([1, 2], [3], image_urls=[image_url])], rollout_id="bad-image")
+    good = _transition_rollout([_image_triplet([1, 2], [4])], rollout_id="good-text")
+    batch, _ = _transition_adapter(processor).get_train_data_batch([bad, good])
+
+    assert batch.batch["is_drop_mask"].tolist() == [True, False]
+    # The trainer applies this DataProto selection before building PPO minibatches.
+    keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
+    train_batch = batch[keep]
+    assert train_batch.non_tensor_batch["rollout_id_list"].tolist() == ["good-text"]
+    assert train_batch.batch["responses"].tolist() == [[4, 0, 0, 0]]
+    assert train_batch.batch["token_level_scores"].sum(-1).tolist() == [1.0]
 
 
 def test_is_mrope_processor_detection() -> None:
