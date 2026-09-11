@@ -91,3 +91,6 @@ def compute_policy_loss_per_rollout_mean(
 
 def register_in_worker() -> None:
     """Import hook used by Ray actor processes."""
+    from agentlightning.verl.vllm_compat import apply_vllm_compat_patches
+
+    apply_vllm_compat_patches()
