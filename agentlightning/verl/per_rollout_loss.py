@@ -17,14 +17,16 @@ def normalize_advantages_by_rollout(
     advantages: torch.Tensor,
     response_mask: torch.Tensor,
     rollout_ids: Any,
-    *,
-    num_trained_rows: int,
 ) -> torch.Tensor:
-    """Normalize each row by its rollout's token count and batch size."""
+    """Normalize each row by its rollout's token count and the rollout count.
+
+    Every rollout contributes a total advantage mass of ``1 / n_rollouts``,
+    independently of how many training rows that rollout was split into.
+    """
     if len(rollout_ids) != advantages.shape[0]:
         raise ValueError(f"rollout_ids length ({len(rollout_ids)}) must match advantages rows ({advantages.shape[0]})")
-    if num_trained_rows <= 0:
-        raise ValueError("num_trained_rows must be positive")
+    if len(rollout_ids) == 0:
+        raise ValueError("rollout_ids must not be empty")
 
     row_token_counts = response_mask.sum(dim=-1).to(dtype=advantages.dtype)
     rollout_token_counts: dict[Any, float] = {}
@@ -32,9 +34,10 @@ def normalize_advantages_by_rollout(
         rollout_token_counts[rollout_id] = rollout_token_counts.get(rollout_id, 0.0) + float(
             row_token_counts[row_index].item()
         )
+    n_rollouts = len(rollout_token_counts)
 
     row_divisors = torch.tensor(
-        [rollout_token_counts[rollout_id] * num_trained_rows for rollout_id in rollout_ids],
+        [rollout_token_counts[rollout_id] * n_rollouts for rollout_id in rollout_ids],
         dtype=advantages.dtype,
         device=advantages.device,
     ).clamp_min(1.0)

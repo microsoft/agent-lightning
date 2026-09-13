@@ -622,7 +622,6 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                 batch.batch["advantages"],
                 batch.batch["response_mask"],
                 rollout_ids,
-                num_trained_rows=len(batch),
             )
 
         if self.use_critic:

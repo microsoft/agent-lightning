@@ -48,13 +48,36 @@ def test_normalize_advantages_by_rollout() -> None:
         advantages,
         response_mask,
         ["A", "A", "B"],
-        num_trained_rows=3,
     )
 
     a_mass = (scaled[:2] * response_mask[:2]).sum().item()
     b_mass = (scaled[2:] * response_mask[2:]).sum().item()
-    assert a_mass == pytest.approx(1 / 3)
-    assert b_mass == pytest.approx(1 / 3)
+    assert a_mass == pytest.approx(1 / 2)
+    assert b_mass == pytest.approx(1 / 2)
+
+
+def test_normalize_advantages_by_rollout_is_row_count_invariant() -> None:
+    """A rollout keeps a mass of 1 / n_rollouts however many rows it is split into."""
+    advantages_by_rows = {
+        1: (["A", "B"], [[1, 1, 0], [1, 1, 1]]),
+        2: (["A", "A", "B"], [[1, 1, 0], [1, 0, 0], [1, 1, 1]]),
+        3: (["A", "A", "A", "B"], [[1, 1, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1]]),
+    }
+    for rows_per_a, (rollout_ids, mask) in advantages_by_rows.items():
+        response_mask = torch.tensor(mask, dtype=torch.long)
+        advantages = torch.ones_like(response_mask, dtype=torch.float32)
+        scaled = normalize_advantages_by_rollout(advantages, response_mask, rollout_ids)
+
+        a_rows = [index for index, rollout_id in enumerate(rollout_ids) if rollout_id == "A"]
+        b_rows = [index for index, rollout_id in enumerate(rollout_ids) if rollout_id == "B"]
+        a_mass = (scaled[a_rows] * response_mask[a_rows]).sum().item()
+        b_mass = (scaled[b_rows] * response_mask[b_rows]).sum().item()
+        total = (scaled * response_mask).sum().item()
+
+        assert a_rows == list(range(rows_per_a))
+        assert a_mass == pytest.approx(1 / 2)
+        assert b_mass == pytest.approx(1 / 2)
+        assert total == pytest.approx(1.0)
 
 
 def test_policy_loss_matches_masked_sum() -> None:
@@ -79,6 +102,6 @@ def test_normalize_advantages_validates_inputs() -> None:
     advantages = torch.ones(2, 3)
 
     with pytest.raises(ValueError, match="rollout_ids length"):
-        normalize_advantages_by_rollout(advantages, mask, ["A"], num_trained_rows=2)
-    with pytest.raises(ValueError, match="num_trained_rows"):
-        normalize_advantages_by_rollout(advantages, mask, ["A", "B"], num_trained_rows=0)
+        normalize_advantages_by_rollout(advantages, mask, ["A"])
+    with pytest.raises(ValueError, match="must not be empty"):
+        normalize_advantages_by_rollout(advantages[:0], mask[:0], [])
