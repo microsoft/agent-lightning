@@ -34,7 +34,7 @@ apo = [
 # It's not recommended to use agentlightning[verl] to install VERL and its dependencies.
 # though it's listed here for completeness.
 verl = [
-  "verl>=0.5.0",
+  "verl>=0.5.0,<0.7.0",
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
 
@@ -140,7 +140,9 @@ torch-gpu-stable = [
   {include-group = "torch-cu128"},
   "flash-attn>=2.8.3",
   "tensordict>=0.9.1",
-  "verl>=0.6.0",
+  # verl 0.7.0 has breaking API changes (SPMD rollout removal, ResourcePool changes)
+  # that are incompatible with the current codebase
+  "verl>=0.6.0,<0.7.0",
 ]
 # Use this instead of --group torch-legacy --group torch-gpu
 torch-gpu-legacy = [
