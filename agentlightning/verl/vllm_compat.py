@@ -22,7 +22,7 @@ def _patch_make_request_output_pooling_output() -> None:
     # vLLM >= 0.9; on older vLLM the resulting TypeError is swallowed and
     # aborts silently do nothing. Drop the kwarg when the signature lacks it.
     try:
-        from vllm.v1.engine.output_processor import RequestState
+        from vllm.v1.engine.output_processor import RequestState  # pyright: ignore[reportMissingImports]
     except ImportError:
         return
 
