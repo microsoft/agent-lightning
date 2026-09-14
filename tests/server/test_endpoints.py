@@ -340,6 +340,24 @@ def test_proxy_completion_endpoint(client: TestClient, auth_headers: dict[str, s
     assert events[0]["data"]["response_token_ids"] == [2]
 
 
+@pytest.mark.parametrize("payload", ['"bad"', "[]", "42", "null"])
+def test_proxy_rejects_non_object_json_body(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    payload: str,
+):
+    rollout = _rollout(client, auth_headers)
+
+    proxied = client.post(
+        f"/proxy/rollout/{rollout['rollout_id']}/attempt/0/mode/train/openai/v1/chat/completions",
+        content=payload,
+        headers={**auth_headers, "Content-Type": "application/json"},
+    )
+
+    assert proxied.status_code == 400
+    assert proxied.json() == {"detail": "Request body must be a JSON object"}
+
+
 def test_proxy_error_triplet_preserves_status(client: TestClient, auth_headers: dict[str, str], monkeypatch):
     async def fake_upstream(*, client: httpx.AsyncClient, url: str, body: dict) -> httpx.Response:
         return httpx.Response(
