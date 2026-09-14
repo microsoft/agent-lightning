@@ -34,6 +34,31 @@ trainer = agl.Trainer(
 trainer.fit(calc_agent, train_dataset=train_dataset, val_dataset=val_dataset)
 ```
 
+### Choosing a runner count
+
+`n_runners` is the number of agent runner replicas that execute rollouts concurrently. Older
+code may pass the same value as `n_workers`; that constructor argument is deprecated and is kept
+as a compatibility alias. Use `n_runners` for new code. This setting controls rollout runners only;
+it does not add algorithm processes or change the worker count of the store server or LLM proxy.
+
+There is no universal best value because the right setting depends on the agent, model server, and
+machine. A useful first sweep is `1`, `2`, `4`, and so on, up to the number of physical CPU cores
+available to runners. For mostly I/O-bound LLM rollouts, test values above that point only when the
+model endpoint has enough concurrency and rate-limit headroom. Keep the smallest value that reaches
+the desired throughput without making latency or error rates worse:
+
+- Measure completed rollouts per second on a representative training batch at each setting.
+- Increase the count while throughput improves; stop when it plateaus, queue wait grows, or requests
+  begin hitting rate limits and timeouts.
+- Leave CPU and memory headroom for the algorithm, store, and proxy. Each process can hold agent,
+  framework, and model-client state, so memory usage can grow roughly with the runner count.
+- If the model server is GPU-bound, more runners can improve utilization through batching, but can
+  also exhaust its KV cache or saturate its request limit. Coordinate the runner count with the
+  server's own concurrency settings.
+
+Use `n_runners=1` while debugging or establishing a baseline, then tune upward after the rollout
+logic is working.
+
 In [`Trainer`][agentlightning.Trainer], there are multiple other initialization parameters that you can use to customize the training process. For example, you can use `max_rollouts` to keep smoke tests short. Pass a concrete [`LightningStore`][agentlightning.LightningStore] instance when you need persistence or want to share the queue across multiple scripts.
 
 !!! tip
