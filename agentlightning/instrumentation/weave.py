@@ -6,7 +6,7 @@ import logging
 import threading
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterator, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List
 
 import weave.trace.weave_init
 from pydantic import validate_call
@@ -16,6 +16,12 @@ from weave.trace_server_bindings.client_interface import TraceServerClientInterf
 from weave.trace_server_bindings.models import ServerInfoRes
 
 logger = logging.getLogger(__name__)
+
+# Backward compat: OtelExportReq/Res was renamed to OTelExportReq/Res in weave 0.52.27
+if not TYPE_CHECKING:
+    if not hasattr(tsi, "OTelExportReq"):
+        tsi.OTelExportReq = tsi.OtelExportReq
+        tsi.OTelExportRes = tsi.OtelExportRes
 
 __all__ = [
     "instrument_weave",
@@ -303,8 +309,8 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
     # --- OTEL API ---
 
-    def otel_export(self, req: tsi.OtelExportReq) -> tsi.OtelExportRes:
-        return tsi.OtelExportRes()
+    def otel_export(self, req: tsi.OTelExportReq) -> tsi.OTelExportRes:
+        return tsi.OTelExportRes()
 
     # ==========================================
     # Object Interface (V2 APIs)
@@ -363,6 +369,9 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
     def evaluation_delete(self, req: tsi.EvaluationDeleteReq) -> tsi.EvaluationDeleteRes:
         return tsi.EvaluationDeleteRes(num_deleted=0)
+
+    def eval_results_query(self, req: tsi.EvalResultsQueryReq) -> tsi.EvalResultsQueryRes:
+        return tsi.EvalResultsQueryRes(rows=[], total_rows=0)
 
     # --- Models ---
     def model_create(self, req: tsi.ModelCreateReq) -> tsi.ModelCreateRes:
@@ -433,6 +442,12 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         raise NotImplementedError()
 
     def annotation_queue_read(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_delete(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_update(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError()
 
     def annotation_queue_add_calls(self, *args: Any, **kwargs: Any) -> Any:
