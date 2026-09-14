@@ -620,10 +620,10 @@ class RolloutAdapter:
         has_image_rows = any(image_urls for image_urls in image_urls_list)
         multi_modal_inputs_list: list[dict[str, Any] | None] | None = None
         if has_image_rows and self.processor is None:
-            print(
-                "Warning: [multimodal-patch] rollout traces contain images but RolloutAdapter has no "
-                "processor; training rows will NOT include pixel_values (vision signal is lost)."
-            )
+            for row_index, image_urls in enumerate(image_urls_list):
+                if image_urls:
+                    is_drop_list[row_index] = True
+            print("Warning: [multimodal-patch] marking image rows for drop because RolloutAdapter has no processor.")
         elif has_image_rows:
             use_mrope = _is_mrope_processor(self.processor)
             if not use_mrope:
@@ -657,21 +657,19 @@ class RolloutAdapter:
                         )
                         row_image_grid_thw = row_multi_modal_inputs.get("image_grid_thw")
                     except Exception as exc:
-                        # A broken row must not abort the whole step; it trains as text-only.
+                        is_drop_list[row_index] = True
                         print(
-                            f"Warning: [multimodal-patch] failed to process images for row {row_index} "
+                            f"Warning: [multimodal-patch] image processing failed; marking row {row_index} for drop "
                             f"(rollout {rollout_id_list[row_index]}): {exc}"
                         )
                         row_multi_modal_inputs = None
                 multi_modal_inputs_list.append(row_multi_modal_inputs)
                 if use_mrope:
                     if image_urls and row_image_grid_thw is None and row_multi_modal_inputs is not None:
-                        # mrope processor but no image_grid_thw: vision position ids cannot be
-                        # computed for this row, only the text variant is possible.
+                        is_drop_list[row_index] = True
                         print(
                             f"Warning: [multimodal-patch] row {row_index} (rollout "
-                            f"{rollout_id_list[row_index]}) has images but no image_grid_thw; "
-                            "using text-only mrope position ids for this row."
+                            f"{rollout_id_list[row_index]}) is missing image_grid_thw; marking it for drop."
                         )
                     try:
                         mrope_position_ids_list.append(
@@ -684,6 +682,8 @@ class RolloutAdapter:
                             )
                         )
                     except Exception as exc:
+                        if image_urls:
+                            is_drop_list[row_index] = True
                         print(
                             f"Warning: [multimodal-patch] mrope position ids failed for row {row_index} "
                             f"(rollout {rollout_id_list[row_index]}), using text-only variant: {exc}"
