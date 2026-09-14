@@ -46,3 +46,7 @@ Multimodal training requires `agentlightning.trace_aggregator.level: transition`
 - Rollout replies converge towards the correct count and `training/reward` climbs from chance level (~0.2) towards 1.0.
 - At each training step the batch carries `multi_modal_inputs` in `non_tensor_batch` and `position_ids` with `dim() == 3` (mrope). To see the vision tensors reach the model forward, log `model_inputs` keys in verl's `prepare_model_inputs` — `pixel_values` and `image_grid_thw` should be present.
 - Without the multimodal data path (or with images silently dropped), training still runs but the warning `rollout traces contain images but RolloutAdapter has no processor` appears and the vision signal never reaches the training forward.
+
+## Troubleshooting
+
+- **`AssertionError: Expected a cached item for mm_hash=...`, or rollouts hanging after a sleep/wake cycle**: on vLLM < 0.22.0 the prefix cache can desync from the multimodal receiver cache across the trainer's sleep/wake cycles ([vllm#42995](https://github.com/vllm-project/vllm/issues/42995), fixed upstream by [vllm#43001](https://github.com/vllm-project/vllm/pull/43001)). This is a vLLM version issue, not an Agent Lightning bug. On affected versions, keep `actor_rollout_ref.rollout.enable_prefix_caching: False` (the default in this example) and restart the run — resuming from the latest checkpoint if you have checkpointing enabled.
