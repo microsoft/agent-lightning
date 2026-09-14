@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, Generator, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
@@ -11,6 +12,8 @@ from pydantic import TypeAdapter
 from agentlightning.types import Span
 
 from .base import TraceAdapter
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from openai.types.chat import (
@@ -103,6 +106,30 @@ def group_genai_dict(data: Dict[str, Any], prefix: str) -> Union[Dict[str, Any],
     return result
 
 
+def _infer_missing_role(msg: Dict[str, Any]) -> Optional[str]:
+    """Infer an OpenAI chat role for a prompt entry whose ``role`` field is missing.
+
+    Some tracers (notably AgentOps when re-emitting prior turns inside ``gen_ai.prompt.N.*``)
+    serialize the nested ``tool_calls`` / ``tool_call_id`` subtree without the sibling ``role``
+    key. The role is still unambiguous in those cases:
+
+    - A message carrying ``tool_calls`` can only have come from the assistant.
+    - A message carrying ``tool_call_id`` can only have come from a tool response.
+
+    Args:
+        msg: A prompt entry parsed from ``gen_ai.prompt.*`` attributes.
+
+    Returns:
+        ``"assistant"`` or ``"tool"`` when the role can be inferred unambiguously,
+        otherwise ``None``.
+    """
+    if "tool_calls" in msg:
+        return "assistant"
+    if "tool_call_id" in msg:
+        return "tool"
+    return None
+
+
 def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Generator[OpenAIMessages, None, None]:
     """Convert raw trace payloads into OpenAI-style chat messages.
 
@@ -131,7 +158,19 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
 
         # Extract messages
         for msg in pc_entry["prompt"]:
-            role = msg["role"]
+            role = msg.get("role")
+            if role is None:
+                # Some tracers omit ``role`` on re-emitted assistant/tool turns; recover when the
+                # role is unambiguous, otherwise drop just this message instead of crashing the
+                # whole rollout's adapter pass.
+                role = _infer_missing_role(msg)
+                if role is None:
+                    logger.warning(
+                        "Skipping prompt message with no 'role' and no inferable role hint: %r",
+                        msg,
+                    )
+                    continue
+                logger.debug("Inferred missing role %r for prompt message: %r", role, msg)
 
             if role == "assistant" and "tool_calls" in msg:
                 # Use the tool_calls directly
