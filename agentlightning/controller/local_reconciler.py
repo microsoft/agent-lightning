@@ -166,8 +166,7 @@ class LocalReconciler:
                     await self._patch(rollout.rollout_id, RolloutState.RUNNING, last_attempt_id=item.attempt_id)
                 continue
 
-            if await self._finish_proc(rollout, item):
-                self._rid_to_proc.pop(rollout.rollout_id)
+            await self._finish_proc(rollout, item)
 
         now = time.monotonic()
         for rollout_id, item in list(self._rid_to_proc.items()):
@@ -179,15 +178,15 @@ class LocalReconciler:
                 timeout is not None
                 and (now - item.spawned_at) > timeout
                 and await self._kill_process_group(rollout_id, item)
-                and await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
             ):
-                self._rid_to_proc.pop(rollout_id)
+                await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
 
     async def _finish_proc(self, rollout: Rollout, item: Proc) -> bool:
         if rollout.status.state == RolloutState.QUEUING:
             patched = await self._patch(rollout.rollout_id, RolloutState.RUNNING, last_attempt_id=item.attempt_id)
             if not patched:
                 return False
+        # Normal timeouts reach here; shutdown kills happen after final reconciliation.
         if item.killed:
             return await self._patch(rollout.rollout_id, RolloutState.FAILED, "local subprocess timed out")
         if item.proc.returncode == 0:
