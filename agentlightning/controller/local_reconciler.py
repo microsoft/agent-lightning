@@ -186,6 +186,9 @@ class LocalReconciler:
             patched = await self._patch(rollout.rollout_id, RolloutState.RUNNING, last_attempt_id=item.attempt_id)
             if not patched:
                 return False
+        # Normal timeouts reach here; shutdown kills happen after final reconciliation.
+        if item.killed:
+            return await self._patch(rollout.rollout_id, RolloutState.FAILED, "local subprocess timed out")
         if item.proc.returncode == 0:
             return await self._patch(rollout.rollout_id, RolloutState.SUCCEEDED, last_attempt_id=item.attempt_id)
         return await self._patch(
