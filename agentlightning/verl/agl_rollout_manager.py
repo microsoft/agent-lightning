@@ -133,6 +133,14 @@ def _to_native(obj: Any) -> Any:
     return obj
 
 
+def _without_routed_experts(event: Event) -> Event:
+    if event.event_type != "model_request" or "routed_experts" not in event.data:
+        return event
+    data = dict(event.data)
+    data.pop("routed_experts")
+    return event.model_copy(update={"data": data})
+
+
 # [multimodal-patch] Extract image URLs from OpenAI-style chat messages, in order of
 # appearance (ported from agent-lightning v0.3.0 TripletAdapter.extract_prompt_image_urls).
 def _extract_image_urls_from_messages(messages: Any) -> list[str]:
@@ -339,9 +347,22 @@ class AglRolloutManagerBase:
         if state in TERMINAL_STATES:
             enqueued_rollout.finished_at = updated_at
 
-    def _get_events(self, rollout_id: str, *, event_type: str | None = None, format: str | None = None) -> list[Event]:
+    def _get_events(
+        self,
+        rollout_id: str,
+        *,
+        event_type: str | None = None,
+        format: str | None = None,
+        include_routed_experts: bool = True,
+    ) -> list[Event]:
         params = {
-            key: value for key, value in {"event_type": event_type, "format": format}.items() if value is not None
+            key: value
+            for key, value in {
+                "event_type": event_type,
+                "format": format,
+                "include_routed_experts": include_routed_experts,
+            }.items()
+            if value is not None
         }
         response = self.client.get(f"/api/rollouts/{rollout_id}/events", params=params)
         response.raise_for_status()
@@ -407,7 +428,7 @@ class AglRolloutManagerBase:
         ]
 
     def _fetch_rollout_events(self, rollout_id: str) -> tuple[list[Event], list[Event]]:
-        raw_events = self._get_events(rollout_id)
+        raw_events = self._get_events(rollout_id, include_routed_experts=False)
         triplet_events = self._get_events(rollout_id, format="triplet")
         return raw_events, triplet_events
 
@@ -425,7 +446,7 @@ class AglRolloutManagerBase:
             return
         attempt_id = rollout.status.last_attempt_id or "unknown"
         trace_event_helper = _TraceEventHelper()
-        raw_events = self._get_events(rollout.rollout_id)
+        raw_events = self._get_events(rollout.rollout_id, include_routed_experts=False)
         events_by_attempt = self._events_by_attempt(raw_events, attempt_id)
         try:
             self._hooks.on_succeeded(rollout, events_by_attempt, trace_event_helper)
@@ -466,6 +487,7 @@ class AglRolloutManagerBase:
                     response={
                         "token_ids": response_token_ids,
                         "log_probs": data.get("response_log_probs"),
+                        "routed_experts": data.get("routed_experts"),
                     },
                     reward=None,
                     metadata={"server": data.get("server", {})},
@@ -494,6 +516,7 @@ class AglRolloutManagerBase:
         finished_at = enqueued_rollout.finished_at
         if finished_at is None:
             finished_at = rollout.status.updated_at
+        diagnostic_triplet_events = [_without_routed_experts(event).model_dump() for event in triplet_events]
         return CompletedRollout(
             rollout_id=enqueued_rollout.rollout_id,
             data_id=enqueued_rollout.data_id,
@@ -507,7 +530,7 @@ class AglRolloutManagerBase:
             triplets=triplets,
             metadata=metadata,
             events=[event.model_dump() for event in raw_events],
-            triplet_events=[event.model_dump() for event in triplet_events],
+            triplet_events=diagnostic_triplet_events,
             rollout_state=rollout.status.state,
             error_message=rollout.status.error_message,
         )
