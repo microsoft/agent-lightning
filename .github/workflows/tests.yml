@@ -236,3 +236,21 @@ jobs:
         run: cd dashboard && npm ci
       - name: Run vitest
         run: cd dashboard && npm run vitest
+
+  langgraph-example:
+    name: LangGraph Example
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: Sync dependencies
+        run: uv sync --frozen --no-default-groups --group langchain
+      - name: Run LangGraph tracing example
+        run: |
+          source .venv/bin/activate
+          cd examples/langgraph
+          python trace_langgraph.py
