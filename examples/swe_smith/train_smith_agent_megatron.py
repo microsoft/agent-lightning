@@ -11,13 +11,13 @@ from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
 from train_smith_agent import (
-    DEFAULT_MODEL,
     EXAMPLE_DIR,
     load_split_file,
     log,
 )
 
 CHAT_TEMPLATE_PATH = str(EXAMPLE_DIR / "swe_smith_chat_template.jinja")
+DEFAULT_MODEL = "Qwen/Qwen3.5-35B-A3B"
 TRAIN_BACKEND = "megatron"
 
 
@@ -26,22 +26,32 @@ def verl_megatron_config() -> dict[str, Any]:
         "algorithm": {
             "adv_estimator": "grpo",
             "use_kl_in_reward": False,
+            "enable_rollout_level_advantage": True,
+            "rollout_correction": {
+                "bypass_mode": False,
+                "loss_type": "ppo_clip",
+                "rollout_is": None,
+                "rollout_is_threshold": 2.0,
+                "rollout_is_batch_normalize": False,
+                "rollout_rs": None,
+                "rollout_rs_threshold": None,
+            },
         },
         "data": {
-            "train_batch_size": 32,
-            "max_prompt_length": 32768,
-            "max_response_length": 32768,
+            "train_batch_size": 16,
+            "max_prompt_length": 65536,
+            "max_response_length": 65536,
             "truncation": "error",
         },
         "actor_rollout_ref": {
             "rollout": {
                 "mode": "async",
                 "name": "vllm",
-                "tensor_model_parallel_size": 2,
+                "tensor_model_parallel_size": 1,
                 "n": 8,
-                "gpu_memory_utilization": 0.7,
-                "max_model_len": 32768,
-                "enforce_eager": True,
+                "gpu_memory_utilization": 0.8,
+                "max_model_len": 81920,
+                "enforce_eager": False,
                 "enable_rollout_routing_replay": True,
                 "calculate_log_probs": True,
                 "log_prob_micro_batch_size_per_gpu": 1,
@@ -56,14 +66,14 @@ def verl_megatron_config() -> dict[str, Any]:
                     }
                 },
                 "temperature": 1,
-                "val_kwargs": {"temperature": 0, "do_sample": False},
+                "val_kwargs": {"temperature": 0.7, "do_sample": True},
                 "enable_prefix_caching": True,
-                "enable_chunked_prefill": False,
+                "enable_chunked_prefill": True,
             },
             "actor": {
                 "strategy": "megatron",
                 "model_engine": "megatron",
-                "ppo_mini_batch_size": 32,
+                "ppo_mini_batch_size": 16,
                 "ppo_micro_batch_size_per_gpu": 1,
                 "use_dynamic_bsz": False,
                 "optim": {"lr": 1e-6},
@@ -73,9 +83,10 @@ def verl_megatron_config() -> dict[str, Any]:
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.28,
                 "loss_agg_mode": "seq-mean-token-sum",
+                "policy_loss": {"loss_mode": "per_rollout_mean"},
                 "megatron": {
                     "pipeline_model_parallel_size": 1,
-                    "tensor_model_parallel_size": 2,
+                    "tensor_model_parallel_size": 1,
                     "expert_model_parallel_size": 4,
                     "expert_tensor_parallel_size": 1,
                     "param_offload": True,
@@ -102,7 +113,7 @@ def verl_megatron_config() -> dict[str, Any]:
                 "log_prob_use_dynamic_bsz": False,
                 "megatron": {
                     "pipeline_model_parallel_size": 1,
-                    "tensor_model_parallel_size": 2,
+                    "tensor_model_parallel_size": 1,
                     "expert_model_parallel_size": 4,
                     "expert_tensor_parallel_size": 1,
                     "param_offload": True,
@@ -121,14 +132,14 @@ def verl_megatron_config() -> dict[str, Any]:
             "nnodes": 1,
             "val_before_train": False,
             "critic_warmup": 0,
-            "balance_batch": False,
+            "balance_batch": True,
             "logger": ["console", "wandb"],
             "project_name": "agentlightning",
             "experiment_name": "swe_smith_megatron_r3",
             "nccl_timeout": 1800,
-            "test_freq": 8,
-            "save_freq": 32,
-            "total_epochs": 2,
+            "test_freq": 16,
+            "save_freq": 16,
+            "total_epochs": 4,
             "total_training_steps": 1000,
         },
         "agentlightning": {
@@ -136,14 +147,15 @@ def verl_megatron_config() -> dict[str, Any]:
             "agl_key": "",
             "rollout_timeout_seconds": 5400,
             "reward_fillna_value": 0.0,
+            "max_ppo_update_times": 2,
             "trace_aggregator": {
                 "level": "trajectory",
-                "trajectory_max_prompt_length": 24000,
-                "trajectory_max_response_length": 24000,
+                "trajectory_max_prompt_length": 65536,
+                "trajectory_max_response_length": 65536,
             },
             "async_rollout": {
-                "enabled": True,
-                "async_train_batch_size": 48,
+                "enabled": False,
+                "async_train_batch_size": None,
             },
             "k8s": {
                 "job_template_path": str(EXAMPLE_DIR / "job-template-openai.yaml"),
@@ -159,6 +171,7 @@ def build_config(
     agl_key: str | None = None,
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
+    ci: bool = False,
 ) -> DictConfig:
     verl_pkg = importlib.resources.files("agentlightning.verl")
     from hydra import compose, initialize_config_dir
@@ -174,17 +187,38 @@ def build_config(
     if agl_key is not None:
         overrides["agentlightning"]["agl_key"] = agl_key
 
+    if ci:
+        overrides["trainer"]["project_name"] = "agentlightning-CI"
+        overrides["trainer"]["logger"] = ["console"]
+        overrides["trainer"]["total_epochs"] = 1
+        overrides["trainer"]["total_training_steps"] = 1
+        overrides["trainer"]["test_freq"] = -1
+        overrides["trainer"]["save_freq"] = -1
+        overrides["data"]["train_batch_size"] = 1
+        overrides["data"]["max_prompt_length"] = 4096
+        overrides["data"]["max_response_length"] = 4096
+        overrides["actor_rollout_ref"]["rollout"]["n"] = 2
+        overrides["actor_rollout_ref"]["rollout"]["max_model_len"] = 8192
+        overrides["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 1
+        overrides["agentlightning"]["rollout_timeout_seconds"] = 1800
+        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_prompt_length"] = 4096
+        overrides["agentlightning"]["trace_aggregator"]["trajectory_max_response_length"] = 4096
+
     rollout_mode = overrides["actor_rollout_ref"]["rollout"]["mode"]
     model_path = overrides["actor_rollout_ref"]["model"]["path"]
     overrides["trainer"]["experiment_name"] = f"swe_smith_{rollout_mode}_{model_path.split('/')[-1]}_{TRAIN_BACKEND}"
     if run_name:
         overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_{run_name}"
+    if ci:
+        overrides["trainer"]["experiment_name"] = f"{overrides['trainer']['experiment_name']}_ci"
 
     override_conf = OmegaConf.create(overrides)
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
     OmegaConf.set_struct(base_cfg, False)
     config = OmegaConf.merge(base_cfg, override_conf, cli_override_conf)
     OmegaConf.set_struct(config, False)
+    if not isinstance(config, DictConfig):
+        raise TypeError("Expected merged trainer config to be a DictConfig")
     return config
 
 
@@ -198,14 +232,17 @@ def train(
     agl_key: str | None = None,
     run_name: str | None = None,
     config_overrides: Sequence[str] = (),
+    ci: bool = False,
 ) -> None:
     from agentlightning.verl.entrypoint import run_ppo
 
     if not agl_key:
         raise RuntimeError("AGL_KEY is required")
 
-    train_dataset = load_split_file(train_dataset_path)
-    val_dataset = load_split_file(val_dataset_path, max_instances=max_val_instances)
+    train_cap = 2 if ci else None
+    val_cap = min(max_val_instances or 2, 2) if ci else max_val_instances
+    train_dataset = load_split_file(train_dataset_path, max_instances=train_cap)
+    val_dataset = load_split_file(val_dataset_path, max_instances=val_cap)
     instances = train_dataset + val_dataset
     distinct_repos = sorted({row["repo"] for row in instances})
 
@@ -223,6 +260,7 @@ def train(
         agl_key=agl_key,
         run_name=run_name,
         config_overrides=config_overrides,
+        ci=ci,
     )
     log("\n=== VERL config ===")
     pprint(OmegaConf.to_container(config, resolve=True))
@@ -258,6 +296,11 @@ def parse_args():
     parser.add_argument("--agl-base-url", default="http://localhost:8080")
     parser.add_argument("--agl-key", default="")
     parser.add_argument("--run-name", default=None)
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="Smoke mode: use two train/validation rows and run one training step.",
+    )
     return parser.parse_known_args()
 
 
@@ -272,6 +315,7 @@ def main() -> None:
         agl_key=args.agl_key,
         run_name=args.run_name,
         config_overrides=config_overrides,
+        ci=args.ci,
     )
 
 

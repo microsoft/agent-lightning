@@ -7,7 +7,7 @@ if [ "$ROLE" != "server" ] && [ "$ROLE" != "controller" ] && [ "$ROLE" != "train
   echo "Usage: $0 {server|controller|trainer} [extra args passed to trainer]"
   echo "  server      → Machine B: agl-server (store + API only, no model backend)"
   echo "  controller  → Machine A: agent ConfigMap + agl-controller (k8s runner)"
-  echo "  trainer     → Machine B: VERL trainer (enqueues rollouts)"
+  echo "  trainer     → Machine B: Qwen3.5-35B-A3B Megatron/R3 trainer (sync rollouts)"
   echo ""
   echo "Start order: server → controller → trainer."
   exit 1
@@ -17,7 +17,7 @@ cd "$(dirname "$0")/../.."
 EXAMPLE_DIR="examples/swe_smith"
 AGL_SERVER_PORT="${AGL_SERVER_PORT:-8080}"
 AGL_KEY="${AGL_KEY:-dummy}"
-AGL_MODEL_NAME="${AGL_MODEL_NAME:-Qwen/Qwen3-8B}"
+AGL_MODEL_NAME="${AGL_MODEL_NAME:-Qwen/Qwen3.5-35B-A3B}"
 AGL_NAMESPACE="${AGL_NAMESPACE:-default}"
 PUBLIC_HOST="${AGL_SERVER_PUBLIC_HOST:-0.0.0.0}"
 SERVER_URL="http://${PUBLIC_HOST}:${AGL_SERVER_PORT}"
@@ -72,15 +72,16 @@ if [ "$ROLE" = "server" ]; then
   echo "  Next: start the controller on Machine A, then './run.sh trainer' here."
   wait "$SERVER_PID"
 elif [ "$ROLE" = "trainer" ]; then
-  echo "=== SWE-smith :: trainer (Machine B) ==="
+  echo "=== SWE-smith :: Megatron/R3 trainer (Machine B) ==="
   echo "  Server: http://localhost:$AGL_SERVER_PORT"
   echo "  Model: $AGL_MODEL_NAME"
+  echo "  Rollout: synchronous Agent Lightning batches (vLLM server mode remains async)"
   if ! curl -sf "http://localhost:$AGL_SERVER_PORT/healthz" >/dev/null 2>&1; then
     echo "ERROR: server not reachable at http://localhost:$AGL_SERVER_PORT — start './run.sh server' first."
     exit 1
   fi
-  echo "=== Running SWE-smith training ==="
-  python "$EXAMPLE_DIR/train_smith_agent.py" \
+  echo "=== Running SWE-smith training (Megatron + R3) ==="
+  python "$EXAMPLE_DIR/train_smith_agent_megatron.py" \
     --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
     --agl-key "$AGL_KEY" \
     --train-dataset-path "$TRAIN_DATASET_PATH" \
