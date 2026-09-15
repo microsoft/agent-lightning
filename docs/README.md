@@ -22,6 +22,7 @@ For the legacy Agent Lightning releases earlier than v1.0, see the [`v0.x` code 
 | [Installation](00-installation.md) | Set up the base environment and the tested `verl` GPU stack. |
 | [Quick Start](01-quick-start.md) | Run a local end-to-end rollout-driven training job. |
 | [Basics](05-basics.md) | Learn the core components, rollouts, events, and trajectories. |
+| [Agent Lightning Skill](10-agent-lightning-skill.md) | Use a coding agent to improve an editable AI agent against a benchmark. |
 
 ## Configuration
 
