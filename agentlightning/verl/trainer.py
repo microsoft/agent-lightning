@@ -416,6 +416,9 @@ class AgentLightningTrainer(RayPPOTrainer):
                 with _timer("dump_rollout_generations", timing_raw):
                     inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
                     outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
+                    sample_gts = [
+                        item.non_tensor_batch.get("reward_model", {}).get("ground_truth", None) for item in batch
+                    ]
                     scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
                     sample_gts = [
                         item.non_tensor_batch.get("reward_model", {}).get("ground_truth", None) for item in batch
