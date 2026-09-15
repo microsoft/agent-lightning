@@ -21,21 +21,6 @@ actor_rollout_ref.rollout.enable_rollout_routing_replay=true
 actor_rollout_ref.actor.megatron.router_replay.mode=R3
 ```
 
-## Install
-
-Prepare the controller, data, and images as described in the [Coding Agent](75-example-coding-agent.md)
-page. On the GPU trainer machine, install the VERL 0.8.0 stack:
-
-```bash
-uv sync
-source .venv/bin/activate
-bash scripts/setup_verl.sh 0.8.0 cu130
-```
-
-The setup script installs VERL from the pinned R3 commit
-[`f5561c608`](https://github.com/volcengine/verl/commit/f5561c608569bd9bdaf1b72b0de9b99ef9a2f7ee).
-No vLLM source monkey patch is applied.
-
 ## Run
 
 Use the MoE wrapper for all three roles:

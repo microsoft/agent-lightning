@@ -5,7 +5,6 @@
 set -euo pipefail
 
 FLASH_ATTN_VERSION="2.8.3"
-VERL_R3_COMMIT="f5561c608569bd9bdaf1b72b0de9b99ef9a2f7ee"
 
 usage() {
     echo "Usage: bash scripts/setup_verl.sh <0.7.1|0.8.0> <cu129|cu130> [venv_path]"
@@ -41,7 +40,6 @@ if [ "$VERL_VERSION" = "0.7.1" ]; then
     VLLM_VERSION="0.12.0"
 else
     VLLM_VERSION="0.20.2"
-    VERL_PACKAGE="verl @ git+https://github.com/volcengine/verl.git@$VERL_R3_COMMIT"
 fi
 
 echo "Using Python executable: $PYTHON_BIN"
@@ -65,7 +63,7 @@ else
         --extra-index-url "https://download.pytorch.org/whl/$CUDA_VARIANT" \
         --index-strategy unsafe-best-match
 
-    uv pip install --python "$PYTHON_BIN" "$VERL_PACKAGE"
+    uv pip install --python "$PYTHON_BIN" "verl==$VERL_VERSION"
 fi
 
 # flash-attn is built from source against torch's CUDA runtime. For cu130 the system

@@ -30,10 +30,7 @@ bash scripts/setup_verl.sh 0.8.0 cu130
 bash scripts/setup_verl.sh 0.7.1 cu129
 ```
 
-For `verl==0.7.1`, the script installs `vllm==0.12.0`. For the `0.8.0` path, it installs
-`vllm==0.20.2` and the pinned VERL commit used by the Qwen3.5 MoE/R3 example. Both paths build
-`flash-attn==2.8.3` locally against the selected environment. Depending on the number of CPU cores
-available, the script can take 10-30 minutes to complete.
+For `verl==0.7.1`, the script installs `vllm==0.12.0`. For `verl==0.8.0`, it installs `vllm==0.20.2` first, then installs `verl==0.8.0`. Both paths build `flash-attn==2.8.3` locally against the selected environment. Depending on the number of CPU cores available, the script can take 10-30 minutes to complete.
 
 #### Step 3: W&B Login
 
