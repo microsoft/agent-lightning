@@ -254,7 +254,11 @@ class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
             if not isinstance(prompt, list):
                 raise ValueError(f"Extracted prompt from trace is not a list: {prompt}")
             if not isinstance(completion, list):
-                raise ValueError(f"Extracted completion from trace is not a list: {completion}")
+                raise ValueError(
+                    f"Expected completion to be a list, got {type(completion)}. "
+                    f"Value: {repr(completion)[:200]}. "
+                    "If the trace contains a single completion, wrap it in a list before passing it."
+                )
             if not isinstance(request, dict):
                 raise ValueError(f"Extracted request from trace is not a dict: {request}")
             if not isinstance(response, dict):
