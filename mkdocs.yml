@@ -113,6 +113,8 @@ nav:
     - LLM-in-Sandbox: 70-example-llm-in-sandbox.md
     - Coding Agent: 75-example-coding-agent.md
     - Multimodal QA: 80-example-multimodal-qa.md
+  - Community:
+    - Contributing: community/contributing.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css
