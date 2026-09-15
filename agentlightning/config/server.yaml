@@ -4,6 +4,7 @@ key: ""
 default_proxy:
   model_name: "Qwen/Qwen2.5-7B-Instruct"
   include_log_probs: True
+  include_routed_experts: False
   train:
     temperature: 1
   val:
