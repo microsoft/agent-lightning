@@ -185,6 +185,34 @@ def get_right_padded_ids_and_attention_mask(
     return ids + [pad_token_id] * pad_len, [1] * seq_len + [0] * pad_len
 
 
+def _build_routed_experts_batch(
+    rows: list[tuple[str, int, int, int]],
+    max_prompt_length: int,
+    max_response_length: int,
+    device: torch.device,
+) -> torch.Tensor:
+    decoded = [np.load(io.BytesIO(base64.b64decode(payload)), allow_pickle=False) for payload, _, _, _ in rows]
+    batch = torch.zeros(
+        (len(rows), max_prompt_length + max_response_length, *decoded[0].shape[1:]),
+        dtype=torch.uint8,
+        device=device,
+    )
+    for index, (routes, (_, original_prompt_length, prompt_length, response_length)) in enumerate(
+        zip(decoded, rows, strict=True)
+    ):
+        if len(routes) < original_prompt_length + response_length - 1:
+            raise RuntimeError("R3 routed_experts is shorter than its token sequence")
+        routes = torch.from_numpy(routes).to(device=device, dtype=torch.uint8)
+        prompt_routes = min(prompt_length, len(routes))
+        prompt_start = max_prompt_length - prompt_length
+        batch[index, prompt_start : prompt_start + prompt_routes] = routes[:prompt_routes]
+        response_routes = min(response_length, max(len(routes) - original_prompt_length, 0))
+        batch[index, max_prompt_length : max_prompt_length + response_routes] = routes[
+            original_prompt_length : original_prompt_length + response_routes
+        ]
+    return batch
+
+
 # ---------------------------------------------------------------------------
 # [multimodal-patch] Multimodal (image) support for mrope VLM training.
 # Mirrors verl 0.8.0's AgentLoopWorker._compute_multi_modal_inputs /
@@ -349,21 +377,25 @@ class RolloutAdapter:
         *,
         max_prompt_length: int,
         max_response_length: int,
+        max_total_length: int | None = None,
         device: torch.device,
         pad_token_id: int,
         reward_fillna_value: float = 0.0,
         trace_aggregator_level: str = "transition",
         tokenizer: Any | None = None,
         processor: Any | None = None,  # [multimodal-patch] HF processor; None keeps text-only behavior
+        require_routed_experts: bool = False,
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
+        self.max_total_length = max_total_length
         self.device = device
         self.pad_token_id = pad_token_id
         self.reward_fillna_value = reward_fillna_value
         self.trace_aggregator_level = trace_aggregator_level
         self.tokenizer = tokenizer
         self.processor = processor  # [multimodal-patch]
+        self.require_routed_experts = require_routed_experts
 
     def get_train_data_batch(
         self,
@@ -409,6 +441,7 @@ class RolloutAdapter:
         turn_index_list: list[int] = []
         is_drop_list: list[bool] = []
         response_log_probs_list: list[list[float] | None] = []
+        routed_experts_rows: list[tuple[str, int, int, int] | None] = []
         image_urls_list: list[list[str] | None] = []  # [multimodal-patch] per kept training row
         n_trunc_sample_because_of_response = 0
         n_skipped_empty_training_rows = 0
@@ -426,21 +459,26 @@ class RolloutAdapter:
             reward: float,
             response_mask: list[int] | None = None,
             response_log_probs: list[float] | None = None,
+            routed_experts: str | None = None,
             image_urls: list[str] | None = None,  # [multimodal-patch]
         ) -> None:
             nonlocal n_skipped_empty_training_rows, n_trunc_sample_because_of_response
+            original_prompt_length = len(prompt_ids)
             if len(prompt_ids) > self.max_prompt_length:
                 prompt_ids = prompt_ids[: self.max_prompt_length]
                 is_drop = True
             else:
                 is_drop = False
 
-            if len(response_ids) > self.max_response_length:
-                response_ids = response_ids[: self.max_response_length]
+            response_limit = self.max_response_length
+            if self.max_total_length is not None:
+                response_limit = min(response_limit, max(self.max_total_length - len(prompt_ids), 0))
+            if len(response_ids) > response_limit:
+                response_ids = response_ids[:response_limit]
                 if response_mask is not None:
-                    response_mask = response_mask[: self.max_response_length]
+                    response_mask = response_mask[:response_limit]
                 if response_log_probs is not None:
-                    response_log_probs = response_log_probs[: self.max_response_length]
+                    response_log_probs = response_log_probs[:response_limit]
                 n_trunc_sample_because_of_response += 1
 
             if response_log_probs is not None and len(response_log_probs) != len(response_ids):
@@ -450,6 +488,8 @@ class RolloutAdapter:
             if train_token_count == 0:
                 n_skipped_empty_training_rows += 1
                 return
+            if self.require_routed_experts and routed_experts is None:
+                raise RuntimeError(f"R3 requires routed_experts for rollout {rollout_id}")
 
             one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
                 prompt_ids, self.max_prompt_length, self.pad_token_id
@@ -470,6 +510,11 @@ class RolloutAdapter:
                 response_mask_list.append(one_response_mask)
 
             response_log_probs_list.append(response_log_probs)
+            routed_experts_rows.append(
+                (routed_experts, original_prompt_length, len(prompt_ids), len(response_ids))
+                if routed_experts is not None
+                else None
+            )
 
             reward_list.append(reward)
             data_id_list.append(data_id)
@@ -501,6 +546,7 @@ class RolloutAdapter:
                         response_ids=response_ids,
                         reward=final_reward,
                         response_log_probs=log_probs,
+                        routed_experts=triplet.response.get("routed_experts"),
                         image_urls=triplet.image_urls,  # [multimodal-patch]
                     )
                 continue
@@ -512,6 +558,7 @@ class RolloutAdapter:
                 current_context = current_prompt_ids + current_response_ids
                 current_response_mask = [1] * len(current_response_ids)
                 current_response_log_probs: list[float] | None = first_triplet.response["log_probs"]
+                current_routed_experts = first_triplet.response.get("routed_experts")
                 response_len_per_turn_list.append(len(current_response_ids))
                 merged_group_count = 0
 
@@ -537,6 +584,7 @@ class RolloutAdapter:
                             else:
                                 current_response_log_probs += list(log_probs)
                         current_context = next_context
+                        current_routed_experts = triplet.response.get("routed_experts")
                         continue
 
                     if len(merge_mismatch_rows) < _TRACE_MERGE_MISMATCH_WANDB_LIMIT:
@@ -568,6 +616,7 @@ class RolloutAdapter:
                         reward=final_reward,
                         response_mask=current_response_mask,
                         response_log_probs=current_response_log_probs,
+                        routed_experts=current_routed_experts,
                     )
                     merged_group_count += 1
 
@@ -577,6 +626,7 @@ class RolloutAdapter:
                     current_response_ids = list(response_ids)
                     current_response_mask = [1] * len(response_ids)
                     current_response_log_probs = log_probs
+                    current_routed_experts = triplet.response.get("routed_experts")
 
                 append_training_row(
                     rollout_id=rollout.rollout_id,
@@ -587,6 +637,7 @@ class RolloutAdapter:
                     reward=final_reward,
                     response_mask=current_response_mask,
                     response_log_probs=current_response_log_probs,
+                    routed_experts=current_routed_experts,
                 )
                 merged_group_count += 1
 
@@ -747,6 +798,13 @@ class RolloutAdapter:
                 if log_probs is not None
             ]
             batch_dict["rollout_log_probs"] = torch.tensor(padded_log_probs_list, dtype=torch.float32).to(self.device)
+        if routed_experts_rows and all(row is not None for row in routed_experts_rows):
+            batch_dict["routed_experts"] = _build_routed_experts_batch(
+                [row for row in routed_experts_rows if row is not None],
+                self.max_prompt_length,
+                self.max_response_length,
+                self.device,
+            )
 
         batch = TensorDict(batch_dict, batch_size=n_sample)  # type: ignore[arg-type]
         data_proto = DataProto(batch=batch)
