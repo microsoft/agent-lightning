@@ -407,10 +407,14 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             if str(level).startswith("trajectory")
             else self.config.data.max_response_length
         )
+        max_total_length = (
+            trace_aggregator.get("trajectory_max_total_length") if str(level).startswith("trajectory") else None
+        )
         pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
         rollout_adapter = RolloutAdapter(
             max_prompt_length=max_prompt_length,
             max_response_length=max_response_length,
+            max_total_length=max_total_length,
             device=torch.device("cpu"),
             pad_token_id=pad_token_id,
             reward_fillna_value=self.config.agentlightning.reward_fillna_value,
@@ -419,6 +423,14 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             # [multimodal-patch] RayPPOTrainer stores the processor from entrypoint; forwarding it
             # enables pixel_values + mrope position ids for image-bearing training rows.
             processor=getattr(self, "processor", None),
+            require_routed_experts=(
+                OmegaConf.select(
+                    self.config,
+                    "actor_rollout_ref.actor.megatron.router_replay.mode",
+                    default="disabled",
+                )
+                == "R3"
+            ),
         )
 
         if is_train:

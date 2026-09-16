@@ -21,10 +21,38 @@ def _not_found(rollout_id: str) -> HTTPException:
     return HTTPException(status_code=404, detail=f"Rollout not found: {rollout_id}")
 
 
+def _drop_superseded_routed_experts(events: list[Event], event_type: str, data: dict[str, Any]) -> None:
+    """Keep only the last route tensor in each mergeable trajectory."""
+    if event_type != "model_request" or data.get("routed_experts") is None:
+        return
+
+    current = _trim_model_request(data)
+    prompt_ids = current["prompt_token_ids"]
+    for index in range(len(events) - 1, -1, -1):
+        previous = events[index]
+        if previous.event_type != "model_request":
+            continue
+        previous_data = _trim_model_request(previous.data)
+        previous_context = previous_data["prompt_token_ids"] + previous_data["response_token_ids"]
+        same_prompt = prompt_ids == previous_data["prompt_token_ids"]
+        extends_context = prompt_ids[: len(previous_context)] == previous_context
+        if (same_prompt or extends_context) and "routed_experts" in previous.data:
+            data_without_routes = dict(previous.data)
+            data_without_routes.pop("routed_experts")
+            events[index] = previous.model_copy(update={"data": data_without_routes})
+        return
+
+
 def record_event(rollout_id: str, attempt_id: str, event_type: str, data: dict[str, Any]) -> Event:
     """Append a single event for an existing rollout."""
     if rollout_id not in _rollouts:
         raise _not_found(rollout_id)
+
+    rid_events = _events[rollout_id]
+    if attempt_id not in rid_events:
+        rid_events[attempt_id] = []
+    attempt_events = rid_events[attempt_id]
+    _drop_superseded_routed_experts(attempt_events, event_type, data)
 
     event = Event(
         event_type=event_type,
@@ -34,10 +62,7 @@ def record_event(rollout_id: str, attempt_id: str, event_type: str, data: dict[s
         data=data,
     )
 
-    rid_events = _events[rollout_id]
-    if attempt_id not in rid_events:
-        rid_events[attempt_id] = []
-    rid_events[attempt_id].append(event)
+    attempt_events.append(event)
     return event
 
 
@@ -109,6 +134,7 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     prompt_token_ids: list[int] = []
     response_token_ids: list[int] = []
     response_log_probs: list[float] | None = None
+    routed_experts = data.get("routed_experts")
 
     if isinstance(resp, dict):
         prompt_token_ids = resp.get("prompt_token_ids", [])
@@ -136,6 +162,8 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
         "response_log_probs": response_log_probs,
         "server": {"model": srv.get("model"), "version": srv.get("version")},
     }
+    if routed_experts is not None:
+        trimmed["routed_experts"] = routed_experts
     for key in ("http_status", "status"):
         if key in data:
             trimmed[key] = data[key]
@@ -167,6 +195,14 @@ def _to_triplet_format(event: Event) -> Event:
         trimmed = _trim_reward(event.data)
         return event.model_copy(update={"data": trimmed})
     return event
+
+
+def _without_routed_experts(event: Event) -> Event:
+    if event.event_type != "model_request" or "routed_experts" not in event.data:
+        return event
+    data = dict(event.data)
+    data.pop("routed_experts")
+    return event.model_copy(update={"data": data})
 
 
 def _dedupe_model_requests_by_prompt_token_ids(events: list[Event]) -> list[Event]:
@@ -202,6 +238,7 @@ async def query_events(
     rollout_id: str,
     event_type: str | None = None,
     format: str | None = Query(None, description="Set to 'triplet' to trim events for RL training"),
+    include_routed_experts: bool = True,
 ) -> list[Event]:
     """Query events for the default rollout attempt."""
     events = _query_events(
@@ -211,4 +248,6 @@ async def query_events(
     if format == "triplet":
         events = [_to_triplet_format(e) for e in events]
         events = _dedupe_model_requests_by_prompt_token_ids(events)
+    if not include_routed_experts:
+        events = [_without_routed_experts(event) for event in events]
     return events
