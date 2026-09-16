@@ -44,6 +44,7 @@ class ProxyRouter:
         self._train_temperature = float(default_proxy["train"]["temperature"])
         self._val_temperature = float(default_proxy["val"]["temperature"])
         self._include_log_probs = bool(default_proxy.get("include_log_probs", True))
+        self._include_routed_experts = bool(default_proxy.get("include_routed_experts", False))
 
     @property
     def model_name(self) -> str:
@@ -69,6 +70,8 @@ class ProxyRouter:
             }
             if self._include_log_probs:
                 prepared["logprobs"] = True
+            if self._include_routed_experts:
+                prepared["return_routed_experts"] = True
             return prepared
         if mode == "val":
             prepared = {
@@ -126,6 +129,7 @@ async def forward_request(
         response_body = (
             response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
         )
+        routed_experts = _pop_routed_experts(response_body)
 
         _capture_event(
             rollout_id=rollout_id,
@@ -137,11 +141,22 @@ async def forward_request(
             http_status=response.status_code,
             status=_status_from_http_status(response.status_code),
             retry_count=int(response.extensions.get("agl_retry_count", 0)),
+            routed_experts=routed_experts,
         )
         return JSONResponse(content=response_body, status_code=response.status_code)
     finally:
         if pause_state is not None:
             await _dec_inflight(pause_state)
+
+
+def _pop_routed_experts(response_body: dict[str, Any]) -> Any:
+    choices = response_body.get("choices")
+    if not isinstance(choices, list):
+        return None
+    for choice in choices:
+        if isinstance(choice, dict) and (routed_experts := choice.pop("routed_experts", None)) is not None:
+            return routed_experts
+    return None
 
 
 async def _send_upstream_with_retries(
@@ -216,6 +231,7 @@ def _capture_event(
     http_status: int,
     status: str,
     retry_count: int,
+    routed_experts: Any = None,
 ) -> None:
     record_event(
         rollout_id,
@@ -231,6 +247,7 @@ def _capture_event(
             "http_status": http_status,
             "status": status,
             "retry_count": retry_count,
+            "routed_experts": routed_experts,
             "usage": _extract_usage(response_body),
             "finish_reason": _extract_finish_reason(response_body),
         },
