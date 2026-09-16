@@ -44,8 +44,10 @@ uv run --locked --no-sync pyright
 uv run --locked --no-sync pytest -v --durations=20 tests
 ```
 
-The whole test suite runs on CPU — no GPU is needed to run `pytest tests`. GPU hardware only becomes
-necessary when you actually train with VERL on a real cluster.
+The whole test suite runs on CPU — no GPU is needed for `pytest tests`. That is only true of the
+tests: any real rollout-driven training needs the `verl` GPU stack, although no cluster is required
+for the simplest path — the [Quick Start](https://github.com/microsoft/agent-lightning/blob/main/docs/01-quick-start.md)
+trains on a single machine with one A100 using the local controller.
 
 If you changed `docs/`, build them the way CI does:
 
@@ -59,7 +61,7 @@ uv run --locked --no-sync mkdocs build --strict
 | Path | What lives there |
 | --- | --- |
 | `agentlightning/server/` | The Agent Lightning server: rollout lifecycle, event storage, the LLM proxy and its routes. |
-| `agentlightning/controller/` | In-cluster rollout controllers (Kubernetes and local) that keep workers in sync with queued rollouts. |
+| `agentlightning/controller/` | Rollout controllers. In `k8s` mode each rollout runs as a Kubernetes Job; in `local` mode each rollout runs as a subprocess on the Controller machine, so no cluster is needed. |
 | `agentlightning/verl/` | The VERL integration: rollout management, trace-to-training-row adapters, advantage and loss normalization. |
 | `agentlightning/client.py`, `agentlightning/schemas.py` | Client used by the trainer and the shared request/response schemas. |
 | `examples/` | Runnable harnesses (Calc-X, GSM8K, ScienceWorld, Search-R1, Coding Agent, Multimodal QA, ...). |
@@ -69,6 +71,9 @@ uv run --locked --no-sync mkdocs build --strict
 
 ## Pull requests
 
+- **Branch off `main`** with a short kebab-case name that says what the branch does, for example
+  `fix/per-rollout-mean-normalization` or `docs/contributing-guide`, and keep it rebased on `main`
+  while it is open. Do not open a pull request from your own `main`.
 - **Keep it focused.** One problem per pull request; split unrelated cleanups out. Small diffs get
   reviewed much faster than large ones.
 - **Link the issue.** Reference the issue your change addresses in the description, using
