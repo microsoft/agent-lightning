@@ -19,6 +19,10 @@ k8s_runner:
   ttl_after_finished: 1200
   max_jobs_per_minute: 100
   poll_interval: 5
+  image_readiness:
+    enabled: true
+    heartbeat_seconds: 5
+    lease_seconds: 30
 
 local_runner:
   maximum_size: 50
@@ -74,6 +78,20 @@ The K8s runner provides settings that limit Job creation and clean up completed 
 | `k8s_runner.ttl_after_finished` | `1200` | Number of seconds a completed Job is retained before Kubernetes removes it automatically. |
 
 `max_jobs_per_minute` prevents the Controller from creating too many Jobs in a short period. `ttl_after_finished` prevents completed Jobs from accumulating and overloading the Kubernetes API server.
+
+## K8s image readiness
+
+The K8s Controller publishes a leased inventory for trainer preflight. It reads `status.images` from Ready, schedulable Kubernetes Nodes and publishes the intersection across those nodes, so a reported image is safe regardless of which eligible node receives a Job. The Controller identity therefore needs permission to list cluster-scoped Node objects.
+
+Kubelet caps `Node.status.images` at 50 entries by default. Clusters that use this preflight with a larger image set should configure [`nodeStatusMaxImages: -1`](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/#KubeletConfiguration) on every eligible node so the reported inventory is complete. With a capped inventory, filtering remains conservative but can exclude images that are cached but omitted from Node status.
+
+| Key | Default | Description |
+|---|---:|---|
+| `k8s_runner.image_readiness.enabled` | `true` | Publish Kubernetes node image readiness to the API Gateway. |
+| `k8s_runner.image_readiness.heartbeat_seconds` | `5` | Interval between node inventory scans and publications. |
+| `k8s_runner.image_readiness.lease_seconds` | `30` | How long a successful publication remains fresh. |
+
+The heartbeat must be shorter than the lease. A failed scan or publication does not renew stale readiness. Rollouts created by a trainer with image filtering enabled also carry an admission guard that checks the Controller's latest fresh inventory, catching image changes observed after trainer preflight. As with any preflight, an image removed only after Job submission is a residual race and the normal rollout timeout remains the fallback.
 
 ## Local runner limits
 
