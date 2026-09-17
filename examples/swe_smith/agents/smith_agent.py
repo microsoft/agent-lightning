@@ -31,6 +31,10 @@ _HIDDEN_GIT_DIR = os.environ.get("SMITH_HIDDEN_GIT_DIR", "/opt/agl_tmp")
 _STATUS_RE = re.compile(
     r"(?:^|\s)(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\s+(\S+)|(\S+)\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)(?:\s|$)"
 )
+# pytest --color=yes (or a repo that forces color) wraps PASSED in ANSI codes.
+# Without stripping them, parse_test_statuses never sees a bare "PASSED" token
+# and a fully passing suite is scored 0/N.
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 SUBMIT_MARKER = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
 
@@ -571,7 +575,7 @@ def capture_patch() -> str:
 
 def parse_test_statuses(test_output: str) -> dict[str, str]:
     statuses: dict[str, str] = {}
-    for line in test_output.splitlines():
+    for line in _ANSI_ESCAPE_RE.sub("", test_output).splitlines():
         m = _STATUS_RE.search(line)
         if not m:
             continue
@@ -603,7 +607,7 @@ def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> 
     # needs xdist, so probe first and fall back to serial `-p no:xdist` when absent.
     xdist_flag = "-n4" if _run("python -c 'import xdist'", 30)[1] == 0 else "-p no:xdist"
     output, rc = _run(
-        "python -m pytest -rA -p no:cacheprovider " + xdist_flag + " " + " ".join(map(_shq, nodes)),
+        "python -m pytest --color=no -rA -p no:cacheprovider " + xdist_flag + " " + " ".join(map(_shq, nodes)),
         timeout,
     )
     # rc 124 == subprocess.TimeoutExpired (see _run); pytest itself never exits 124.
