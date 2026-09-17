@@ -11,6 +11,7 @@ import verl.utils.torch_functional as verl_F
 from verl.trainer.ppo.core_algos import register_policy_loss
 
 PER_ROLLOUT_MEAN_LOSS_MODE = "per_rollout_mean"
+CISPO_PER_ROLLOUT_MEAN_LOSS_MODE = "cispo_per_rollout_mean"
 
 
 def normalize_advantages_by_rollout(
@@ -89,8 +90,54 @@ def compute_policy_loss_per_rollout_mean(
     return pg_loss, metrics
 
 
+@register_policy_loss(CISPO_PER_ROLLOUT_MEAN_LOSS_MODE)
+def compute_policy_loss_cispo_per_rollout_mean(
+    old_log_prob: torch.Tensor,
+    log_prob: torch.Tensor,
+    advantages: torch.Tensor,
+    response_mask: torch.Tensor,
+    loss_agg_mode: str = "token-mean",
+    config: Any | None = None,
+    rollout_is_weights: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Compute CISPO with rollout-normalized advantages.
+
+    The clipped importance-sampling ratio is detached, so clipped tokens keep
+    their policy-gradient signal while no gradient flows through the ratio.
+    """
+    assert config is not None, "cispo_per_rollout_mean loss requires the actor config"
+
+    clip_ratio = config.clip_ratio
+    clip_ratio_low = config.clip_ratio_low if config.clip_ratio_low is not None else clip_ratio
+    clip_ratio_high = config.clip_ratio_high if config.clip_ratio_high is not None else clip_ratio
+
+    negative_approx_kl = torch.clamp(log_prob - old_log_prob, min=-20.0, max=20.0)
+    ratio = torch.exp(negative_approx_kl)
+    ppo_kl = verl_F.masked_mean(-negative_approx_kl, response_mask)
+
+    clipped_ratio = torch.clamp(ratio, 1 - clip_ratio_low, 1 + clip_ratio_high)
+    pg_losses = -clipped_ratio.detach() * advantages * log_prob
+    pg_clipfrac = verl_F.masked_mean((ratio != clipped_ratio).float(), response_mask)
+
+    if rollout_is_weights is not None:
+        pg_losses = pg_losses * rollout_is_weights
+
+    dp_size = config.global_batch_info.get("dp_size", 1) if config.global_batch_info else 1
+    pg_loss = verl_F.masked_sum(pg_losses, response_mask) * (dp_size or 1)
+    metrics = {
+        "actor/pg_clipfrac": pg_clipfrac.detach().item(),
+        "actor/ppo_kl": ppo_kl.detach().item(),
+        "actor/pg_clipfrac_lower": 0.0,
+    }
+    return pg_loss, metrics
+
+
 def register_in_worker() -> None:
     """Import hook used by Ray actor processes."""
     from agentlightning.verl.vllm_compat import apply_vllm_compat_patches
 
     apply_vllm_compat_patches()
+    from verl.trainer.ppo.core_algos import POLICY_LOSS_REGISTRY
+
+    assert PER_ROLLOUT_MEAN_LOSS_MODE in POLICY_LOSS_REGISTRY
+    assert CISPO_PER_ROLLOUT_MEAN_LOSS_MODE in POLICY_LOSS_REGISTRY

@@ -1,8 +1,8 @@
 # Coding Agent: MoE
 
-| GPU | Model | Actor | Rollout | Router replay |
-|---|---|---|---|---|
-| 4× B200 | `Qwen/Qwen3.5-35B-A3B` | Megatron | vLLM | R3 |
+| GPU | Model | Actor | Policy loss | Rollout | Router replay |
+|---|---|---|---|---|---|
+| 4× B200 | `Qwen/Qwen3.5-35B-A3B` | Megatron | CISPO | vLLM | R3 |
 
 This is the MoE variant of the [Coding Agent](75-example-coding-agent.md) example. It reuses the same
 SWE-smith data, Kubernetes controller, repository images, agent, and reward. The existing
@@ -13,6 +13,8 @@ SWE-smith data, Kubernetes controller, repository images, agent, and reward. The
 An MoE token can select different experts during rollout and training. R3 records vLLM's rollout
 routing and passes it through the Agent Lightning event, triplet, and `DataProto` pipeline so the
 Megatron actor update replays the same experts.
+The actor uses group-relative advantages with CISPO's detached, clipped
+importance-sampling ratio and per-rollout-mean aggregation.
 
 The MoE launcher enables both sides:
 
@@ -22,6 +24,9 @@ actor_rollout_ref.actor.megatron.router_replay.mode=R3
 ```
 
 ## Run
+
+Prepare the VERL 0.8 Megatron environment as described in the installation guide. This installs
+vLLM 0.22.0 and the `mcore` dependencies required by mbridge.
 
 Use the MoE wrapper for all three roles:
 
@@ -52,5 +57,5 @@ examples/swe_smith/run_moe.sh trainer \
     actor_rollout_ref.rollout.n=4
 ```
 
-The default topology is PP=1, TP=1, EP=4, and ETP=1 with parameter, optimizer, and gradient offload.
+The default topology is PP=1, TP=4, EP=4, and ETP=1 with parameter, optimizer, and gradient offload.
 Treat it as a four-B200 starting point and tune batch sizes for the available memory.

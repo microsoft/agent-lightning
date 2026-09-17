@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# pyright: reportCallIssue=false
+
 from __future__ import annotations
 
 import pytest
@@ -10,7 +12,9 @@ pytest.importorskip("verl")
 import torch
 
 from agentlightning.verl.per_rollout_loss import (
+    CISPO_PER_ROLLOUT_MEAN_LOSS_MODE,
     PER_ROLLOUT_MEAN_LOSS_MODE,
+    compute_policy_loss_cispo_per_rollout_mean,
     compute_policy_loss_per_rollout_mean,
     normalize_advantages_by_rollout,
 )
@@ -31,6 +35,7 @@ def test_loss_is_registered() -> None:
     from verl.trainer.ppo.core_algos import POLICY_LOSS_REGISTRY
 
     assert PER_ROLLOUT_MEAN_LOSS_MODE in POLICY_LOSS_REGISTRY
+    assert CISPO_PER_ROLLOUT_MEAN_LOSS_MODE in POLICY_LOSS_REGISTRY
 
 
 def test_normalize_advantages_by_rollout() -> None:
@@ -72,6 +77,48 @@ def test_policy_loss_matches_masked_sum() -> None:
 
     assert loss.item() == pytest.approx((-(advantages * response_mask).sum() * 2).item())
     assert metrics["actor/ppo_kl"] == pytest.approx(0.0)
+
+
+def test_cispo_keeps_clipped_token_gradients_and_stops_ratio_gradient() -> None:
+    ratios = torch.tensor([[2.0, 0.5, 1.1]])
+    log_prob = ratios.log().requires_grad_()
+    old_log_prob = torch.zeros_like(log_prob)
+    advantages = torch.tensor([[2.0, -3.0, 4.0]])
+    response_mask = torch.ones_like(log_prob, dtype=torch.bool)
+
+    loss, metrics = compute_policy_loss_cispo_per_rollout_mean(
+        old_log_prob=old_log_prob,
+        log_prob=log_prob,
+        advantages=advantages,
+        response_mask=response_mask,
+        config=_Config(),  # pyright: ignore[reportCallIssue]
+    )
+    loss.backward()
+
+    expected_gradient = -torch.tensor([[1.2, 0.8, 1.1]]) * advantages
+    assert log_prob.grad is not None
+    assert torch.allclose(log_prob.grad, expected_gradient)
+    assert metrics["actor/pg_clipfrac"] == pytest.approx(2 / 3)
+
+
+def test_cispo_respects_mask_and_rollout_is_weights() -> None:
+    log_prob = torch.tensor([[torch.log(torch.tensor(2.0)), torch.log(torch.tensor(2.0))]], requires_grad=True)
+    old_log_prob = torch.zeros_like(log_prob)
+    advantages = torch.ones_like(log_prob)
+    response_mask = torch.tensor([[True, False]])
+
+    loss, _ = compute_policy_loss_cispo_per_rollout_mean(
+        old_log_prob=old_log_prob,
+        log_prob=log_prob,
+        advantages=advantages,
+        response_mask=response_mask,
+        config=_Config(dp_size=2),
+        rollout_is_weights=torch.tensor([[0.5, 100.0]]),  # pyright: ignore[reportCallIssue]
+    )
+    loss.backward()
+
+    assert log_prob.grad is not None
+    assert torch.allclose(log_prob.grad, torch.tensor([[-1.2, 0.0]]))
 
 
 def test_normalize_advantages_validates_inputs() -> None:

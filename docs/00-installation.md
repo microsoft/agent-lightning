@@ -30,7 +30,11 @@ bash scripts/setup_verl.sh 0.8.0 cu130
 bash scripts/setup_verl.sh 0.7.1 cu129
 ```
 
-For `verl==0.7.1`, the script installs `vllm==0.12.0`. For `verl==0.8.0`, it installs `vllm==0.20.2` first, then installs `verl==0.8.0`. Both paths build `flash-attn==2.8.3` locally against the selected environment. Depending on the number of CPU cores available, the script can take 10-30 minutes to complete.
+For `verl==0.7.1`, the script installs `vllm==0.12.0`. For `verl==0.8.0`, it installs
+`vllm==0.22.0` and `verl[mcore]==0.8.0`; the `mcore` extra supplies mbridge for Megatron actors,
+and vLLM 0.22.0 provides correctly sized R3 routing capture for hybrid-attention models such as
+Qwen3.5. Both paths build `flash-attn==2.8.3` locally against the selected environment. Depending
+on the number of CPU cores available, the script can take 10-30 minutes to complete.
 
 #### Step 3: W&B Login
 

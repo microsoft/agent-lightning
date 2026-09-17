@@ -20,7 +20,7 @@ import torch
 
 from agentlightning.verl import rollout_adapter as rollout_adapter_module
 from agentlightning.verl.agl_rollout_manager import CompletedRollout, Triplet
-from agentlightning.verl.rollout_adapter import RolloutAdapter
+from agentlightning.verl.rollout_adapter import RolloutAdapter, _build_routed_experts_batch
 
 
 class FakeTokenizer:
@@ -139,6 +139,37 @@ def _triplet(prompt_ids: list[int], response_ids: list[int]) -> Triplet:
         prompt={"token_ids": prompt_ids},
         response={"token_ids": response_ids, "log_probs": [-0.1] * len(response_ids)},
     )
+
+
+def _encoded_routes(values: list[int]) -> str:
+    import numpy as np
+
+    buffer = io.BytesIO()
+    np.save(buffer, np.asarray(values, dtype=np.uint8).reshape(-1, 1, 1), allow_pickle=False)
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def test_routed_experts_batch_aligns_truncated_prompt_and_response() -> None:
+    routes = _build_routed_experts_batch(
+        [(_encoded_routes([1, 2, 3, 4]), 3, 2, 2)],
+        max_prompt_length=2,
+        max_response_length=3,
+        device=torch.device("cpu"),
+    )
+
+    assert routes.dtype == torch.uint8
+    assert routes.shape == (1, 5, 1, 1)
+    assert routes[:, :, 0, 0].tolist() == [[1, 2, 4, 0, 0]]
+
+
+def test_routed_experts_batch_rejects_missing_input_route() -> None:
+    with pytest.raises(RuntimeError, match="shorter than its token sequence"):
+        _build_routed_experts_batch(
+            [(_encoded_routes([1, 2]), 2, 2, 2)],
+            max_prompt_length=2,
+            max_response_length=2,
+            device=torch.device("cpu"),
+        )
 
 
 def test_trajectory_prefix_mismatch_uploads_trace_merge_table_to_wandb(

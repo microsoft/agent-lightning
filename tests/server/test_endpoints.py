@@ -8,6 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from agentlightning.server.app import create_app
 from tests.server.conftest import MODEL_NAME
 
 
@@ -244,6 +245,46 @@ def test_triplet_events_keep_last_model_request_for_duplicate_prompt(client: Tes
     assert [event["data"]["response_token_ids"] for event in triplet_events[1:]] == [[20], [30]]
 
 
+def test_routed_experts_keep_only_final_mergeable_snapshot_and_can_be_filtered(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    rollout_id = _rollout(client, auth_headers)["rollout_id"]
+
+    for prompt_ids, response_ids, routes in (
+        ([1, 2], [3], "first-routes"),
+        ([1, 2, 3, 4], [5], "final-routes"),
+    ):
+        response = client.post(
+            f"/api/rollouts/{rollout_id}/attempt/0/events",
+            json={
+                "event_type": "model_request",
+                "data": {
+                    "response": {
+                        "prompt_token_ids": prompt_ids,
+                        "choices": [{"token_ids": response_ids}],
+                    },
+                    "routed_experts": routes,
+                    "server": {"model": MODEL_NAME, "version": 3},
+                },
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+    triplets = client.get(
+        f"/api/rollouts/{rollout_id}/events", params={"format": "triplet"}, headers=auth_headers
+    ).json()
+    assert "routed_experts" not in triplets[0]["data"]
+    assert triplets[1]["data"]["routed_experts"] == "final-routes"
+
+    filtered = client.get(
+        f"/api/rollouts/{rollout_id}/events",
+        params={"format": "triplet", "include_routed_experts": False},
+        headers=auth_headers,
+    ).json()
+    assert all("routed_experts" not in event["data"] for event in filtered)
+
+
 @pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True], [1.0], "bad-ids", {"token": 1}])
 def test_triplet_events_do_not_dedupe_without_valid_prompt_tokens(
     client: TestClient,
@@ -338,6 +379,45 @@ def test_proxy_completion_endpoint(client: TestClient, auth_headers: dict[str, s
     ).json()
     assert events[0]["data"]["prompt_token_ids"] == [1]
     assert events[0]["data"]["response_token_ids"] == [2]
+
+
+def test_proxy_strips_routed_experts_from_client_response_but_records_them(
+    server_config: dict, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_config["default_proxy"]["include_routed_experts"] = True
+
+    async def fake_upstream(*, client: httpx.AsyncClient, url: str, body: dict) -> httpx.Response:
+        assert body["return_routed_experts"] is True
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "ok"}, "token_ids": [2], "routed_experts": "routes"}],
+                "prompt_token_ids": [1],
+            },
+            headers={"content-type": "application/json"},
+        )
+
+    monkeypatch.setattr("agentlightning.server.proxy._send_upstream_with_retries", fake_upstream)
+    with TestClient(create_app(server_config)) as r3_client:
+        rollout = _rollout(r3_client, auth_headers)
+        r3_client.post(
+            "/api/models",
+            json=[{"model": MODEL_NAME, "endpoint": "http://model.test/v1", "version": 3}],
+            headers=auth_headers,
+        )
+        response = r3_client.post(
+            f"/proxy/rollout/{rollout['rollout_id']}/attempt/0/mode/train/openai/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert "routed_experts" not in response.json()["choices"][0]
+        triplet = r3_client.get(
+            f"/api/rollouts/{rollout['rollout_id']}/events",
+            params={"format": "triplet"},
+            headers=auth_headers,
+        ).json()[0]
+        assert triplet["data"]["routed_experts"] == "routes"
 
 
 @pytest.mark.parametrize("payload", ['"bad"', "[]", "42", "null"])
