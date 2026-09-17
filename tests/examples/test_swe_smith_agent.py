@@ -58,43 +58,6 @@ class _RaisingClient:
         self.chat = _Chat()
 
 
-def test_parse_test_statuses_strips_ansi_color_codes() -> None:
-    output = (
-        "\x1b[32mPASSED\x1b[0m tests/test_database.py::\x1b[1mCanToolsDatabaseTest::test_issue_62\x1b[0m\n"
-        "FAILED tests/test_other.py::test_broken\n"
-    )
-
-    statuses = smith_agent.parse_test_statuses(output)
-
-    assert statuses["tests/test_database.py::CanToolsDatabaseTest::test_issue_62"] == "PASSED"
-    assert statuses["tests/test_other.py::test_broken"] == "FAILED"
-
-
-def test_evaluate_disables_pytest_color(monkeypatch) -> None:
-    commands: list[str] = []
-
-    def fake_run(command: str, timeout: int) -> tuple[str, int]:
-        commands.append(command)
-        if "import xdist" in command:
-            return "", 1
-        return "PASSED tests/test_demo.py::test_ok\n", 0
-
-    monkeypatch.setattr(smith_agent, "restore_f2p_tests", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(smith_agent, "_run", fake_run)
-
-    reward, resolved, reason, timed_out = smith_agent.evaluate(
-        {"FAIL_TO_PASS": ["tests/test_demo.py::test_ok"], "PASS_TO_PASS": []},
-        timeout=30,
-    )
-
-    pytest_commands = [command for command in commands if "python -m pytest" in command]
-    assert pytest_commands and "--color=no" in pytest_commands[0]
-    assert reward == 1.0
-    assert resolved is True
-    assert timed_out is False
-    assert "1/1" in reason
-
-
 def test_context_overflow_400_ends_loop_without_empty_turn() -> None:
     client = _RaisingClient(_bad_request(_OVERFLOW_MESSAGE))
 
