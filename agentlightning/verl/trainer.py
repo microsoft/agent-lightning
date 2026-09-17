@@ -42,7 +42,11 @@ from .agl_rollout_manager import (
     CompletedRollout,
     EnqueuedRollout,
 )
-from .per_rollout_loss import PER_ROLLOUT_MEAN_LOSS_MODE, normalize_advantages_by_rollout
+from .per_rollout_loss import (
+    CISPO_PER_ROLLOUT_MEAN_LOSS_MODE,
+    PER_ROLLOUT_MEAN_LOSS_MODE,
+    normalize_advantages_by_rollout,
+)
 from .rollout_adapter import RolloutAdapter
 from .rollout_level_advantage import compute_rollout_level_advantage
 
@@ -626,7 +630,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
 
         loss_mode = self.config.actor_rollout_ref.actor.policy_loss.get("loss_mode", "vanilla")
-        if loss_mode == PER_ROLLOUT_MEAN_LOSS_MODE:
+        if loss_mode in {PER_ROLLOUT_MEAN_LOSS_MODE, CISPO_PER_ROLLOUT_MEAN_LOSS_MODE}:
             rollout_ids = batch.non_tensor_batch.get("rollout_id_list")
             if rollout_ids is None:
                 raise RuntimeError("per_rollout_mean loss requires rollout_id_list")

@@ -39,7 +39,7 @@ fi
 if [ "$VERL_VERSION" = "0.7.1" ]; then
     VLLM_VERSION="0.12.0"
 else
-    VLLM_VERSION="0.20.2"
+    VLLM_VERSION="0.22.0"
 fi
 
 echo "Using Python executable: $PYTHON_BIN"
@@ -63,7 +63,7 @@ else
         --extra-index-url "https://download.pytorch.org/whl/$CUDA_VARIANT" \
         --index-strategy unsafe-best-match
 
-    uv pip install --python "$PYTHON_BIN" "verl==$VERL_VERSION"
+    uv pip install --python "$PYTHON_BIN" "verl[mcore]==$VERL_VERSION"
 fi
 
 # flash-attn is built from source against torch's CUDA runtime. For cu130 the system
