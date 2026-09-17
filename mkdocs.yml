@@ -101,6 +101,7 @@ nav:
     - Installation: 00-installation.md
     - Quick Start: 01-quick-start.md
     - Basics: 05-basics.md
+    - Agent Lightning Skill: 10-agent-lightning-skill.md
     - Trainer Configuration: 20-trainer-configuration.md
     - API Gateway Configuration: 25-api-gateway-configuration.md
     - Controller Configuration: 30-controller-configuration.md
