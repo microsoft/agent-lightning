@@ -18,6 +18,8 @@ EXAMPLE_DIR="examples/swe_smith"
 AGL_SERVER_PORT="${AGL_SERVER_PORT:-8080}"
 AGL_KEY="${AGL_KEY:-dummy}"
 AGL_MODEL_NAME="${AGL_MODEL_NAME:-Qwen/Qwen3-8B}"
+AGL_TRAIN_SCRIPT="${AGL_TRAIN_SCRIPT:-$EXAMPLE_DIR/train_smith_agent.py}"
+AGL_INCLUDE_ROUTED_EXPERTS="${AGL_INCLUDE_ROUTED_EXPERTS:-false}"
 AGL_NAMESPACE="${AGL_NAMESPACE:-default}"
 PUBLIC_HOST="${AGL_SERVER_PUBLIC_HOST:-0.0.0.0}"
 SERVER_URL="http://${PUBLIC_HOST}:${AGL_SERVER_PORT}"
@@ -44,7 +46,8 @@ if [ "$ROLE" = "server" ]; then
     port="$AGL_SERVER_PORT" \
     host="${AGL_SERVER_BIND:-0.0.0.0}" \
     key="$AGL_KEY" \
-    default_proxy.model_name="$AGL_MODEL_NAME" &
+    default_proxy.model_name="$AGL_MODEL_NAME" \
+    default_proxy.include_routed_experts="$AGL_INCLUDE_ROUTED_EXPERTS" &
   SERVER_PID=$!
   cleanup() {
     if kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -80,7 +83,7 @@ elif [ "$ROLE" = "trainer" ]; then
     exit 1
   fi
   echo "=== Running SWE-smith training ==="
-  python "$EXAMPLE_DIR/train_smith_agent.py" \
+  python "$AGL_TRAIN_SCRIPT" \
     --agl-base-url "http://localhost:$AGL_SERVER_PORT" \
     --agl-key "$AGL_KEY" \
     --train-dataset-path "$TRAIN_DATASET_PATH" \
