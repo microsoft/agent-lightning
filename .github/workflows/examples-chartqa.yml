@@ -99,7 +99,7 @@ jobs:
           set -euo pipefail
           source .venv/bin/activate
           cd examples/chartqa
-          uv run --no-sync vllm serve Qwen/Qwen2-VL-2B-Instruct \
+          uv run --no-sync vllm serve Qwen/Qwen2.5-VL-3B-Instruct \
             --gpu-memory-utilization 0.9 \
             --max-model-len 4096 \
             --allowed-local-media-path "$(pwd)/data" \
@@ -131,7 +131,7 @@ jobs:
         env:
           USE_LLM_PROXY: "1"
           OPENAI_API_BASE: http://localhost:8088/v1
-          OPENAI_MODEL: Qwen/Qwen2-VL-2B-Instruct
+          OPENAI_MODEL: Qwen/Qwen2.5-VL-3B-Instruct
 
       - name: Stop vLLM Server
         run: |
