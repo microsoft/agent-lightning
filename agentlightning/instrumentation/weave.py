@@ -303,8 +303,10 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
     # --- OTEL API ---
 
-    def otel_export(self, req: tsi.OtelExportReq) -> tsi.OtelExportRes:
-        return tsi.OtelExportRes()
+    def otel_export(self, req: Any) -> Any:
+        # OtelExportReq/OtelExportRes were removed from tsi in newer weave versions.
+        # Use Any to maintain backward compatibility across weave releases.
+        return None
 
     # ==========================================
     # Object Interface (V2 APIs)
@@ -463,6 +465,16 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         raise NotImplementedError()
 
     def calls_usage(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    # Methods added in newer weave releases to satisfy the abstract interface.
+    def annotation_queue_delete(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def annotation_queue_update(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError()
+
+    def eval_results_query(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError()
 
 
