@@ -286,6 +286,82 @@ def test_triplet_events_do_not_dedupe_without_valid_prompt_tokens(
     assert [event["data"]["response_token_ids"] for event in model_requests] == [[10], [20], [50]]
 
 
+@pytest.mark.parametrize(
+    ("response_data", "server", "expected_prompt_ids", "expected_response_ids"),
+    [
+        pytest.param({"choices": [None]}, {"model": MODEL_NAME, "version": 3}, [], [], id="null-choice"),
+        pytest.param([None], {"model": MODEL_NAME, "version": 3}, [], [], id="null-legacy-chunk"),
+        pytest.param({"choices": "invalid"}, {"model": MODEL_NAME, "version": 3}, [], [], id="invalid-choices"),
+        pytest.param(
+            {"choices": [{"token_ids": 2}]},
+            {"model": MODEL_NAME, "version": 3},
+            [],
+            [],
+            id="invalid-non-stream-token-ids",
+        ),
+        pytest.param(
+            [{"choices": [{"token_ids": 2}]}],
+            {"model": MODEL_NAME, "version": 3},
+            [],
+            [],
+            id="invalid-legacy-token-ids",
+        ),
+        pytest.param({}, None, [], [], id="null-server"),
+        pytest.param(
+            [
+                None,
+                {"prompt_token_ids": [1], "choices": [None]},
+                {"choices": [{"token_ids": [2]}]},
+            ],
+            {"model": MODEL_NAME, "version": 3},
+            [1],
+            [2],
+            id="mixed-legacy-chunks",
+        ),
+    ],
+)
+def test_triplet_events_tolerate_malformed_response_shapes(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    response_data: object,
+    server: object,
+    expected_prompt_ids: list[int],
+    expected_response_ids: list[int],
+):
+    rollout = _rollout(client, auth_headers)
+    rollout_id = rollout["rollout_id"]
+    posted = client.post(
+        f"/api/rollouts/{rollout_id}/attempt/0/events",
+        json={
+            "event_type": "model_request",
+            "data": {
+                "response": response_data,
+                "server": server,
+                "http_status": 502,
+                "status": "error",
+            },
+        },
+        headers=auth_headers,
+    )
+    assert posted.status_code == 200
+
+    response = client.get(
+        f"/api/rollouts/{rollout_id}/events",
+        params={"event_type": "model_request", "format": "triplet"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()[0]["data"]
+    assert data["prompt_token_ids"] == expected_prompt_ids
+    assert data["response_token_ids"] == expected_response_ids
+    assert data["response_log_probs"] is None
+    assert data["http_status"] == 502
+    assert data["status"] == "error"
+    expected_server = server if isinstance(server, dict) else {"model": None, "version": None}
+    assert data["server"] == expected_server
+
+
 def test_model_endpoints(client: TestClient, auth_headers: dict[str, str]):
     created = client.post(
         "/api/models",
