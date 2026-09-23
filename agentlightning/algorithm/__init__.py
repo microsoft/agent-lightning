@@ -10,9 +10,10 @@ from .fast import Baseline, FastAlgorithm
 
 if TYPE_CHECKING:
     from .apo import APO as APOType
+    from .gepa import GEPA as GEPAType
     from .verl import VERL as VERLType
 
-__all__ = ["Algorithm", "algo", "FastAlgorithm", "Baseline", "APO", "VERL"]
+__all__ = ["Algorithm", "algo", "FastAlgorithm", "Baseline", "APO", "VERL", "GEPA"]
 
 # Shortcuts for usages like algo.APO(...)
 
@@ -27,3 +28,9 @@ def VERL(*args: Any, **kwargs: Any) -> VERLType:
     from .verl import VERL as VERLImplementation
 
     return VERLImplementation(*args, **kwargs)
+
+
+def GEPA(*args: Any, **kwargs: Any) -> GEPAType:
+    from .gepa import GEPA as GEPAImplementation
+
+    return GEPAImplementation(*args, **kwargs)
