@@ -123,14 +123,15 @@ def _install_fake_wandb(monkeypatch: pytest.MonkeyPatch, logged: list[tuple[dict
     return run
 
 
-def _adapter() -> RolloutAdapter:
+def _adapter(*, max_response_length: int = 3, require_rollout_log_probs: bool = False) -> RolloutAdapter:
     return RolloutAdapter(
         max_prompt_length=4,
-        max_response_length=3,
+        max_response_length=max_response_length,
         device=torch.device("cpu"),
         pad_token_id=0,
         trace_aggregator_level="trajectory",
         tokenizer=FakeTokenizer(),
+        require_rollout_log_probs=require_rollout_log_probs,
     )
 
 
@@ -138,6 +139,17 @@ def _triplet(prompt_ids: list[int], response_ids: list[int]) -> Triplet:
     return Triplet(
         prompt={"token_ids": prompt_ids},
         response={"token_ids": response_ids, "log_probs": [-0.1] * len(response_ids)},
+    )
+
+
+def _triplet_with_log_probs(
+    prompt_ids: list[int],
+    response_ids: list[int],
+    log_probs: list[float] | None,
+) -> Triplet:
+    return Triplet(
+        prompt={"token_ids": prompt_ids},
+        response={"token_ids": response_ids, "log_probs": log_probs},
     )
 
 
@@ -381,6 +393,7 @@ def _transition_adapter(
     *,
     max_prompt_length: int = 8,
     max_response_length: int = 4,
+    require_rollout_log_probs: bool = False,
 ) -> RolloutAdapter:
     return RolloutAdapter(
         max_prompt_length=max_prompt_length,
@@ -390,6 +403,7 @@ def _transition_adapter(
         trace_aggregator_level="transition",
         tokenizer=FakeTokenizer(),
         processor=processor,
+        require_rollout_log_probs=require_rollout_log_probs,
     )
 
 
@@ -411,6 +425,133 @@ def _transition_rollout(triplets: list[Triplet], rollout_id: str = "r1") -> Comp
         final_reward=1.0,
         triplets=triplets,
     )
+
+
+def test_strict_transition_rollout_log_probs_emit_aligned_validity() -> None:
+    rollout = _transition_rollout(
+        [
+            _triplet_with_log_probs([1], [2, 3], [-0.25, -0.5]),
+            _triplet_with_log_probs([1], [4], None),
+            _triplet_with_log_probs([1], [5, 6], [-0.75]),
+            _triplet_with_log_probs([1], [7], [float("nan")]),
+        ]
+    )
+
+    batch, _ = _transition_adapter(require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["rollout_log_probs"].dtype == torch.float32
+    assert batch.batch["rollout_log_probs"].shape == (4, 4)
+    assert batch.batch["rollout_log_probs"].tolist() == [
+        [-0.25, -0.5, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ]
+    assert batch.batch["rollout_log_probs_valid_mask"].dtype == torch.bool
+    assert batch.batch["rollout_log_probs_valid_mask"].shape == (4,)
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [True, False, False, False]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == [
+        "valid",
+        "missing",
+        "length_mismatch",
+        "non_finite",
+    ]
+
+
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), -float("inf")])
+def test_strict_transition_rollout_log_probs_reject_non_finite_values(non_finite: float) -> None:
+    rollout = _transition_rollout([_triplet_with_log_probs([1], [2, 3], [-0.25, non_finite])])
+
+    batch, _ = _transition_adapter(require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["rollout_log_probs"].tolist() == [[0.0, 0.0, 0.0, 0.0]]
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [False]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == ["non_finite"]
+
+
+def test_transition_rollout_log_probs_default_omits_mixed_values_and_metadata() -> None:
+    rollout = _transition_rollout([_triplet_with_log_probs([1], [2], [-0.25]), _triplet_with_log_probs([1], [3], None)])
+
+    batch, _ = _transition_adapter().get_train_data_batch([rollout])
+
+    assert "rollout_log_probs" not in batch.batch
+    assert "rollout_log_probs_valid_mask" not in batch.batch
+    assert "rollout_log_probs_invalid_reason_list" not in batch.non_tensor_batch
+
+
+def test_strict_transition_rollout_log_probs_classifies_retained_tokens_after_truncation() -> None:
+    rollout = _transition_rollout(
+        [_triplet_with_log_probs([1], [2, 3, 4, 5, 6], [-0.25, -0.5, -0.75, -1.0, -1.25, -1.5])]
+    )
+
+    batch, _ = _transition_adapter(require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["responses"].tolist() == [[2, 3, 4, 5]]
+    assert batch.batch["rollout_log_probs"].tolist() == [[-0.25, -0.5, -0.75, -1.0]]
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [True]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == ["valid"]
+
+
+def test_strict_trajectory_uses_first_invalid_component_reason() -> None:
+    rollout = _transition_rollout(
+        [
+            _triplet_with_log_probs([1], [2, 3], [-0.25]),
+            _triplet_with_log_probs([1, 2, 3], [4], None),
+        ]
+    )
+
+    batch, _ = _adapter(max_response_length=4, require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["responses"].tolist() == [[2, 3, 4, 0]]
+    assert batch.batch["rollout_log_probs"].tolist() == [[0.0, 0.0, 0.0, 0.0]]
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [False]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == ["length_mismatch"]
+
+
+def test_strict_trajectory_rollout_log_probs_classifies_retained_tokens_after_truncation() -> None:
+    rollout = _transition_rollout(
+        [_triplet_with_log_probs([1], [2, 3, 4, 5, 6], [-0.25, -0.5, -0.75, -1.0, -1.25, -1.5])]
+    )
+
+    batch, _ = _adapter(max_response_length=4, require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["responses"].tolist() == [[2, 3, 4, 5]]
+    assert batch.batch["rollout_log_probs"].tolist() == [[-0.25, -0.5, -0.75, -1.0]]
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [True]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == ["valid"]
+
+
+def test_strict_trajectory_ignores_invalid_component_after_retained_limit() -> None:
+    rollout = _transition_rollout(
+        [
+            _triplet_with_log_probs([1], [2, 3, 4, 5], [-0.25, -0.5, -0.75, -1.0]),
+            _triplet_with_log_probs([1, 2, 3, 4, 5], [6], None),
+        ]
+    )
+
+    batch, _ = _adapter(max_response_length=4, require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["responses"].tolist() == [[2, 3, 4, 5]]
+    assert batch.batch["rollout_log_probs"].tolist() == [[-0.25, -0.5, -0.75, -1.0]]
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [True]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == ["valid"]
+
+
+def test_strict_trajectory_observation_tokens_are_zero_padded_but_valid() -> None:
+    rollout = _transition_rollout(
+        [
+            _triplet_with_log_probs([1], [2], [-0.25]),
+            _triplet_with_log_probs([1, 2, 3, 4], [5], [-0.5]),
+        ]
+    )
+
+    batch, _ = _adapter(max_response_length=4, require_rollout_log_probs=True).get_train_data_batch([rollout])
+
+    assert batch.batch["responses"].tolist() == [[2, 3, 4, 5]]
+    assert batch.batch["response_mask"].tolist() == [[1, 0, 0, 1]]
+    assert batch.batch["rollout_log_probs"].tolist() == [[-0.25, 0.0, 0.0, -0.5]]
+    assert batch.batch["rollout_log_probs_valid_mask"].tolist() == [True]
+    assert batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"].tolist() == ["valid"]
 
 
 def _stub_image_loading(monkeypatch: pytest.MonkeyPatch) -> None:

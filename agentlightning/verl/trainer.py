@@ -97,6 +97,60 @@ def _same_reward_uid_indices(batch: DataProto) -> list[int]:
     return same_reward_indices
 
 
+_INVALID_LOG_PROB_METRIC_KEYS = (
+    "training/rollout_correction/n_groups_dropped_invalid_log_probs",
+    "training/rollout_correction/n_rollouts_dropped_invalid_log_probs",
+    "training/rollout_correction/n_rows_dropped_invalid_log_probs",
+    "training/rollout_correction/n_invalid_rows/missing",
+    "training/rollout_correction/n_invalid_rows/length_mismatch",
+    "training/rollout_correction/n_invalid_rows/non_finite",
+)
+
+
+def _filter_invalid_rollout_log_prob_groups(batch: DataProto) -> tuple[DataProto, dict[str, int]]:
+    """Drop every prompt group containing an invalid rollout-log-prob row."""
+    n_rows = len(batch)
+    for field in ("rollout_log_probs", "rollout_log_probs_valid_mask"):
+        if field not in batch.batch:
+            raise KeyError(field)
+        if batch.batch[field].shape[0] != n_rows:
+            raise ValueError(f"{field} must have {n_rows} rows")
+    for field in ("data_id_list", "rollout_id_list", "rollout_log_probs_invalid_reason_list"):
+        if field not in batch.non_tensor_batch:
+            raise KeyError(field)
+        if len(batch.non_tensor_batch[field]) != n_rows:
+            raise ValueError(f"{field} must have {n_rows} rows")
+
+    valid_mask = batch.batch["rollout_log_probs_valid_mask"]
+    data_ids = batch.non_tensor_batch["data_id_list"]
+    rollout_ids = batch.non_tensor_batch["rollout_id_list"]
+    reasons = batch.non_tensor_batch["rollout_log_probs_invalid_reason_list"]
+    allowed_reasons = {"valid", "missing", "length_mismatch", "non_finite"}
+    for reason in reasons:
+        if reason not in allowed_reasons:
+            raise ValueError(f"unknown rollout_log_probs invalid reason: {reason!r}")
+
+    invalid_row_indices = (~valid_mask.bool()).nonzero(as_tuple=True)[0].tolist()
+    invalid_data_ids = {data_ids[index] for index in invalid_row_indices}
+    keep_indices = [index for index, data_id in enumerate(data_ids) if data_id not in invalid_data_ids]
+    dropped_indices = [index for index, data_id in enumerate(data_ids) if data_id in invalid_data_ids]
+    metrics: dict[str, int] = dict.fromkeys(_INVALID_LOG_PROB_METRIC_KEYS, 0)
+    metrics[_INVALID_LOG_PROB_METRIC_KEYS[0]] = len(invalid_data_ids)
+    metrics[_INVALID_LOG_PROB_METRIC_KEYS[1]] = len({rollout_ids[index] for index in dropped_indices})
+    metrics[_INVALID_LOG_PROB_METRIC_KEYS[2]] = len(dropped_indices)
+    for index in invalid_row_indices:
+        reason = reasons[index]
+        if reason != "valid":
+            metrics[f"training/rollout_correction/n_invalid_rows/{reason}"] += 1
+
+    filtered_batch: DataProto = batch[keep_indices]  # pyright: ignore[reportAssignmentType]
+    filtered_batch.batch.pop("rollout_log_probs_valid_mask")
+    filtered_batch.non_tensor_batch.pop("rollout_log_probs_invalid_reason_list")
+    if not torch.isfinite(filtered_batch.batch["rollout_log_probs"]).all():
+        raise ValueError("surviving rollout_log_probs contain non-finite values")
+    return filtered_batch, metrics
+
+
 class AgentLightningRayPPOTrainer(RayPPOTrainer):
     """RayPPOTrainer that drives train and validation rollouts via Agent Lightning."""
 
@@ -435,6 +489,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                 )
                 == "R3"
             ),
+            require_rollout_log_probs=(is_train and self.config.algorithm.get("rollout_correction", None) is not None),
         )
 
         if is_train:
@@ -462,7 +517,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         self,
         timing_raw: dict[str, float],
         curr_step_profile: bool,
-    ) -> tuple[dict[str, Any], DataProto] | None:
+    ) -> tuple[dict[str, Any], DataProto | None]:
         metrics: dict[str, Any] = {}
         self._step_start_wall = time.time()
         metrics["timing/step_start_wall"] = self._step_start_wall
@@ -510,6 +565,14 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
         metrics["training/n_sample_collected"] = len(batch)
+        rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
+        if rollout_corr_config is not None:
+            batch, correction_input_metrics = _filter_invalid_rollout_log_prob_groups(batch)
+            metrics.update(correction_input_metrics)
+            if len(batch) == 0:
+                metrics["training/n_sample_trained"] = 0
+                print("WARNING: no valid rollout-correction groups; skipping this training step.")
+                return metrics, None
         if "is_drop_mask" in batch.batch:
             keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
             metrics["training/n_sample_dropped/marked"] = len(batch) - len(keep)
@@ -550,7 +613,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         metrics["training/n_sample_trained"] = len(batch)
         if len(batch) == 0:
             print("WARNING: no trainable batch after drop+floor; skipping this training step.")
-            return None
+            return metrics, None
 
         print("AgentLightningRayPPOTrainer: sleeping rollout replicas.")
         self.checkpoint_manager.sleep_replicas()  # pyright: ignore[reportOptionalMemberAccess]
@@ -559,7 +622,6 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         if self.config.trainer.balance_batch:
             self._balance_batch(batch, metrics=metrics)
 
-        rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
         bypass_mode = bool(rollout_corr_config and rollout_corr_config.get("bypass_mode", False))
 
         if bypass_mode:
@@ -602,7 +664,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             else:
                 batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
-            if rollout_corr_config is not None and not bypass_mode and "rollout_log_probs" in batch.batch:
+            if rollout_corr_config is not None and not bypass_mode:
                 from verl.trainer.ppo.rollout_corr_helper import (
                     compute_rollout_correction_and_add_to_batch,
                 )
@@ -705,11 +767,13 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
 
             with marked_timer("step", timing_raw):
                 result = self._train_step(timing_raw, curr_step_profile)
-            if result is None:
-                print("AgentLightningRayPPOTrainer: train step returned no batch; advancing step.")
+            metrics, step_batch = result
+            if step_batch is None:
+                logger.log(data=metrics, step=self.global_steps)
+                print("AgentLightningRayPPOTrainer: train step produced no optimizer batch; advancing step.")
+                progress_bar.update(1)
                 self.global_steps += 1
                 continue
-            metrics, step_batch = result
 
             # Compute timing and throughput after the step timer records its total duration.
             metrics.update(compute_timing_metrics(batch=step_batch, timing_raw=timing_raw))

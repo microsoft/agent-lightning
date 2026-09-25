@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64  # [multimodal-patch]
 import io
 import json
+import math
 import zipfile
 from typing import Any, cast
 
@@ -45,6 +46,19 @@ _ROLLOUT_TRAJECTORY_COLUMNS = [
 
 def ids_startswith(full_ids: list[int], prefix_ids: list[int]) -> bool:
     return full_ids[: len(prefix_ids)] == prefix_ids
+
+
+def _rollout_log_probs_invalid_reason(
+    response_ids: list[int],
+    response_log_probs: list[float] | None,
+) -> str:
+    if response_log_probs is None:
+        return "missing"
+    if len(response_log_probs) != len(response_ids):
+        return "length_mismatch"
+    if not all(math.isfinite(log_prob) for log_prob in response_log_probs):
+        return "non_finite"
+    return "valid"
 
 
 def _decode_token_ids(tokenizer: Any | None, ids: list[int]) -> str:
@@ -385,6 +399,7 @@ class RolloutAdapter:
         tokenizer: Any | None = None,
         processor: Any | None = None,  # [multimodal-patch] HF processor; None keeps text-only behavior
         require_routed_experts: bool = False,
+        require_rollout_log_probs: bool = False,
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
@@ -396,6 +411,7 @@ class RolloutAdapter:
         self.tokenizer = tokenizer
         self.processor = processor  # [multimodal-patch]
         self.require_routed_experts = require_routed_experts
+        self.require_rollout_log_probs = require_rollout_log_probs
 
     def get_train_data_batch(
         self,
@@ -441,6 +457,7 @@ class RolloutAdapter:
         turn_index_list: list[int] = []
         is_drop_list: list[bool] = []
         response_log_probs_list: list[list[float] | None] = []
+        response_log_probs_invalid_reason_list: list[str] = []
         routed_experts_rows: list[tuple[str, int, int, int] | None] = []
         image_urls_list: list[list[str] | None] = []  # [multimodal-patch] per kept training row
         n_trunc_sample_because_of_response = 0
@@ -459,6 +476,7 @@ class RolloutAdapter:
             reward: float,
             response_mask: list[int] | None = None,
             response_log_probs: list[float] | None = None,
+            response_log_probs_components: list[tuple[int, list[int], list[float] | None]] | None = None,
             routed_experts: str | None = None,
             image_urls: list[str] | None = None,  # [multimodal-patch]
         ) -> None:
@@ -481,7 +499,31 @@ class RolloutAdapter:
                     response_log_probs = response_log_probs[:response_limit]
                 n_trunc_sample_because_of_response += 1
 
-            if response_log_probs is not None and len(response_log_probs) != len(response_ids):
+            response_log_probs_invalid_reason: str | None = None
+            if self.require_rollout_log_probs:
+                if response_log_probs_components is None:
+                    response_log_probs_invalid_reason = _rollout_log_probs_invalid_reason(
+                        response_ids, response_log_probs
+                    )
+                else:
+                    retained_log_probs = [0.0] * len(response_ids)
+                    response_log_probs_invalid_reason = "valid"
+                    for start, component_ids, component_log_probs in response_log_probs_components:
+                        retained_count = min(len(component_ids), max(len(response_ids) - start, 0))
+                        if retained_count == 0:
+                            continue
+                        retained_component_log_probs = component_log_probs
+                        if component_log_probs is not None and retained_count < len(component_ids):
+                            retained_component_log_probs = component_log_probs[:retained_count]
+                        component_reason = _rollout_log_probs_invalid_reason(
+                            component_ids[:retained_count], retained_component_log_probs
+                        )
+                        if response_log_probs_invalid_reason == "valid" and component_reason != "valid":
+                            response_log_probs_invalid_reason = component_reason
+                        if component_reason == "valid" and retained_component_log_probs is not None:
+                            retained_log_probs[start : start + retained_count] = retained_component_log_probs
+                    response_log_probs = retained_log_probs
+            elif response_log_probs is not None and len(response_log_probs) != len(response_ids):
                 response_log_probs = None
 
             train_token_count = sum(response_mask) if response_mask is not None else len(response_ids)
@@ -510,6 +552,9 @@ class RolloutAdapter:
                 response_mask_list.append(one_response_mask)
 
             response_log_probs_list.append(response_log_probs)
+            if self.require_rollout_log_probs:
+                assert response_log_probs_invalid_reason is not None
+                response_log_probs_invalid_reason_list.append(response_log_probs_invalid_reason)
             routed_experts_rows.append(
                 (routed_experts, original_prompt_length, len(prompt_ids), len(response_ids))
                 if routed_experts is not None
@@ -558,6 +603,17 @@ class RolloutAdapter:
                 current_context = current_prompt_ids + current_response_ids
                 current_response_mask = [1] * len(current_response_ids)
                 current_response_log_probs: list[float] | None = first_triplet.response["log_probs"]
+                current_response_log_probs_components = (
+                    [
+                        (
+                            0,
+                            list(current_response_ids),
+                            list(current_response_log_probs) if current_response_log_probs is not None else None,
+                        )
+                    ]
+                    if self.require_rollout_log_probs
+                    else None
+                )
                 current_routed_experts = first_triplet.response.get("routed_experts")
                 response_len_per_turn_list.append(len(current_response_ids))
                 merged_group_count = 0
@@ -576,6 +632,14 @@ class RolloutAdapter:
                             current_response_mask += [0] * len(observation_ids)
                             if current_response_log_probs is not None:
                                 current_response_log_probs += [0.0] * len(observation_ids)
+                        if current_response_log_probs_components is not None:
+                            current_response_log_probs_components.append(
+                                (
+                                    len(current_response_ids),
+                                    list(response_ids),
+                                    list(log_probs) if log_probs is not None else None,
+                                )
+                            )
                         current_response_ids += response_ids
                         current_response_mask += [1] * len(response_ids)
                         if current_response_log_probs is not None:
@@ -616,6 +680,7 @@ class RolloutAdapter:
                         reward=final_reward,
                         response_mask=current_response_mask,
                         response_log_probs=current_response_log_probs,
+                        response_log_probs_components=current_response_log_probs_components,
                         routed_experts=current_routed_experts,
                     )
                     merged_group_count += 1
@@ -626,6 +691,11 @@ class RolloutAdapter:
                     current_response_ids = list(response_ids)
                     current_response_mask = [1] * len(response_ids)
                     current_response_log_probs = log_probs
+                    current_response_log_probs_components = (
+                        [(0, list(response_ids), list(log_probs) if log_probs is not None else None)]
+                        if self.require_rollout_log_probs
+                        else None
+                    )
                     current_routed_experts = triplet.response.get("routed_experts")
 
                 append_training_row(
@@ -637,6 +707,7 @@ class RolloutAdapter:
                     reward=final_reward,
                     response_mask=current_response_mask,
                     response_log_probs=current_response_log_probs,
+                    response_log_probs_components=current_response_log_probs_components,
                     routed_experts=current_routed_experts,
                 )
                 merged_group_count += 1
@@ -765,10 +836,12 @@ class RolloutAdapter:
                 # (n_sample, 4, seq_len): verl's engine detects mrope via position_ids.dim() == 3.
                 position_ids = torch.stack(mrope_position_ids_list, dim=0)
 
-        row_has_log_probs_list = [log_probs is not None for log_probs in response_log_probs_list]
-        emit_rollout_log_probs = all(row_has_log_probs_list)
-        if not emit_rollout_log_probs and any(row_has_log_probs_list):
-            print("Warning: Mixed rollout log_probs availability, omitting rollout_log_probs from batch.")
+        emit_rollout_log_probs = False
+        if not self.require_rollout_log_probs:
+            row_has_log_probs_list = [log_probs is not None for log_probs in response_log_probs_list]
+            emit_rollout_log_probs = all(row_has_log_probs_list)
+            if not emit_rollout_log_probs and any(row_has_log_probs_list):
+                print("Warning: Mixed rollout log_probs availability, omitting rollout_log_probs from batch.")
 
         is_drop_mask = torch.BoolTensor(is_drop_list).to(self.device)
         scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(self.device)
@@ -791,7 +864,26 @@ class RolloutAdapter:
         if level == "trajectory":
             assert batch_response_mask is not None
             batch_dict["response_mask"] = batch_response_mask
-        if emit_rollout_log_probs:
+        if self.require_rollout_log_probs:
+            padded_log_probs_list = [
+                log_probs + [0.0] * (self.max_response_length - len(log_probs))
+                if reason == "valid" and log_probs is not None
+                else [0.0] * self.max_response_length
+                for log_probs, reason in zip(
+                    response_log_probs_list,
+                    response_log_probs_invalid_reason_list,
+                    strict=True,
+                )
+            ]
+            batch_dict["rollout_log_probs"] = torch.tensor(
+                padded_log_probs_list, dtype=torch.float32, device=self.device
+            )
+            batch_dict["rollout_log_probs_valid_mask"] = torch.tensor(
+                [reason == "valid" for reason in response_log_probs_invalid_reason_list],
+                dtype=torch.bool,
+                device=self.device,
+            )
+        elif emit_rollout_log_probs:
             padded_log_probs_list = [
                 log_probs + [0.0] * (self.max_response_length - len(log_probs))
                 for log_probs in response_log_probs_list
@@ -810,6 +902,10 @@ class RolloutAdapter:
         data_proto = DataProto(batch=batch)
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)
+        if self.require_rollout_log_probs:
+            data_proto.non_tensor_batch["rollout_log_probs_invalid_reason_list"] = np.array(
+                response_log_probs_invalid_reason_list
+            )
         if level == "transition":
             data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)
         if multi_modal_inputs_list is not None:
