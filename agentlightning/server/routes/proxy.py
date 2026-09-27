@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import structlog
@@ -25,6 +26,12 @@ def _get_pause_state(request: Request) -> ProxyPauseState:
     if state is None:
         raise HTTPException(status_code=503, detail="Gateway pause state not configured")
     return state
+
+
+async def _wait_for_disconnect(request: Request) -> None:
+    """Wait for the client to disconnect after the request body has been read."""
+    while (await request.receive())["type"] != "http.disconnect":
+        pass
 
 
 @router.post(
@@ -69,15 +76,30 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, upstream_path: 
     prepared_body = proxy_router.prepare_body(body, mode)
 
     # Server endpoint includes the OpenAI base path (e.g., "http://vllm:8000/v1").
-    return await forward_request(
-        client=http_client,
-        server=server,
-        body=prepared_body,
-        upstream_path=upstream_path,
-        rollout_id=rollout_id,
-        attempt_id=attempt_id,
-        pause_state=pause_state,
+    forwarding = asyncio.create_task(
+        forward_request(
+            client=http_client,
+            server=server,
+            body=prepared_body,
+            upstream_path=upstream_path,
+            rollout_id=rollout_id,
+            attempt_id=attempt_id,
+            pause_state=pause_state,
+        )
     )
+    disconnected = asyncio.create_task(_wait_for_disconnect(request))
+    try:
+        done, _ = await asyncio.wait((forwarding, disconnected), return_when=asyncio.FIRST_COMPLETED)
+        if forwarding in done:
+            return forwarding.result()
+        disconnected.result()
+        log.info("Agent disconnected; cancelling model request", rollout_id=rollout_id, attempt_id=attempt_id)
+        return Response(status_code=499)
+    finally:
+        for task in (forwarding, disconnected):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(forwarding, disconnected, return_exceptions=True)
 
 
 # --- Management routes ------------------------------------------------------

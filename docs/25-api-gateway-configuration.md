@@ -58,3 +58,9 @@ A mismatch produces a “model not found” error even if the vLLM endpoint itse
 The train and validation temperatures configured here are the values actually used for model requests. Note that `verl` has similar temperature settings, but those values are not used for proxied requests because the proxy replaces them automatically.
 
 We recommend keeping `default_proxy.include_log_probs: true`. This records rollout log probabilities and allows `verl` to report rollout-correction metrics. Some rollout-correction features also require these log probabilities.
+
+## Client disconnects
+
+When an agent disconnects during a model request, the gateway cancels its upstream request and any pending retry, then releases the request's in-flight slot. An interrupted request does not produce a successful model-request event. Requests that finish before the disconnect is observed retain their recorded result.
+
+Pausing the gateway still allows connected agents' in-flight requests to finish normally before a model update.
