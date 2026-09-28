@@ -21,7 +21,7 @@ def normalize_advantages_by_rollout(
     *,
     num_trained_rows: int,
 ) -> torch.Tensor:
-    """Normalize each row by its rollout's token count and batch size."""
+    """Normalize each row by its rollout's total token count and by the trained batch's row count."""
     if len(rollout_ids) != advantages.shape[0]:
         raise ValueError(f"rollout_ids length ({len(rollout_ids)}) must match advantages rows ({advantages.shape[0]})")
     if num_trained_rows <= 0:
