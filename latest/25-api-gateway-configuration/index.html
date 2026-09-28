@@ -555,6 +555,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#client-disconnects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client disconnects
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1032,6 +1043,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#client-disconnects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client disconnects
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1091,7 +1113,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 12, 2026 06:27:23 UTC"><span class="timeago" datetime="2026-08-12T06:27:23+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 12, 2026 06:27:23 UTC">2026-08-12</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="September 28, 2026 06:28:31 UTC"><span class="timeago" datetime="2026-09-28T06:28:31+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 28, 2026 06:28:31 UTC">2026-09-28</span>
   </span>
 
     
@@ -1111,11 +1133,12 @@
   <span class="md-source-file__fact">
     <span class="md-icon" title="Contributors">
       
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4a4 4 0 0 1 4 4 4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 5.5A3.5 3.5 0 0 1 15.5 9a3.5 3.5 0 0 1-3.5 3.5A3.5 3.5 0 0 1 8.5 9 3.5 3.5 0 0 1 12 5.5M5 8c.56 0 1.08.15 1.53.42-.15 1.43.27 2.85 1.13 3.96C7.16 13.34 6.16 14 5 14a3 3 0 0 1-3-3 3 3 0 0 1 3-3m14 0a3 3 0 0 1 3 3 3 3 0 0 1-3 3c-1.16 0-2.16-.66-2.66-1.62a5.54 5.54 0 0 0 1.13-3.96c.45-.27.97-.42 1.53-.42M5.5 18.25c0-2.07 2.91-3.75 6.5-3.75s6.5 1.68 6.5 3.75V20h-13zM0 20v-1.5c0-1.39 1.89-2.56 4.45-2.9-.59.68-.95 1.62-.95 2.65V20zm24 0h-3.5v-1.75c0-1.03-.36-1.97-.95-2.65 2.56.34 4.45 1.51 4.45 2.9z"/></svg>
       
     </span>
     <nav>
       
+        <a href="mailto:42286547+kiteretsu903@users.noreply.github.com">Bozhen Peng</a>, 
         <a href="mailto:362583303@qq.com">Zhiyuan He</a>
     </nav>
   </span>
@@ -1214,6 +1237,9 @@
 <p>A mismatch produces a “model not found” error even if the vLLM endpoint itself is healthy.</p>
 <p>The train and validation temperatures configured here are the values actually used for model requests. Note that <code>verl</code> has similar temperature settings, but those values are not used for proxied requests because the proxy replaces them automatically.</p>
 <p>We recommend keeping <code>default_proxy.include_log_probs: true</code>. This records rollout log probabilities and allows <code>verl</code> to report rollout-correction metrics. Some rollout-correction features also require these log probabilities.</p>
+<h2 id="client-disconnects">Client disconnects<a class="headerlink" href="#client-disconnects" title="Permanent link">&para;</a></h2>
+<p>When an agent disconnects during a model request, the gateway cancels its upstream request and any pending retry, then releases the request's in-flight slot. An interrupted request does not produce a successful model-request event. Requests that finish before the disconnect is observed retain their recorded result.</p>
+<p>Pausing the gateway still allows connected agents' in-flight requests to finish normally before a model update.</p>
 
 <!-- Was this page helpful? -->
 
