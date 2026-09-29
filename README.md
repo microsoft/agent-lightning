@@ -10,6 +10,13 @@
 
 > Agent Lightning was completely refactored in v1.0. For legacy releases earlier than v1.0, see [this branch](https://github.com/microsoft/agent-lightning/tree/v0.x).
 
+## ⚡ News
+
+- [2026/09] We release [a new coding agent example based on an MoE model](https://microsoft.github.io/agent-lightning/stable/76-example-coding-agent-moe/). Pure RL improves Qwen3.5-35B-A3B on SWE-bench Verified from 47.8% to 61.6% after training it on only 1.8K training examples!
+- [2026/08] [Agent Lightning Skill](https://github.com/microsoft/agent-lightning/tree/main/skills#agent-lightning-skill) is released. It helps a coding agent improve another AI agent against a benchmark.
+- [2026/08] [Agent Lightning v1.0 technical report](https://arxiv.org/abs/2608.17528) is released!
+- [2026/08] We open source Agent Lightning v1.0!
+
 ## ⚡ Key Features
 
 - 🪶 **~3,500 lines of code:** We treat simplicity as the first principle.
@@ -74,6 +81,7 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 | [Search-R1](https://microsoft.github.io/agent-lightning/stable/65-example-search-r1/) | Multi-turn retrieval and reasoning agent. |
 | [LLM-in-Sandbox](https://microsoft.github.io/agent-lightning/stable/70-example-llm-in-sandbox/) | General agent with computer and code execution tools. |
 | [Coding Agent](https://microsoft.github.io/agent-lightning/stable/75-example-coding-agent/) | Coding agent trained with repository tests. |
+| [Coding Agent: MoE](https://microsoft.github.io/agent-lightning/stable/76-example-coding-agent-moe/) | Train Qwen3.5-35B-A3B with Megatron and R3. |
 
 ## ⚡ Articles
 

@@ -8,6 +8,20 @@ This is the MoE variant of the [Coding Agent](75-example-coding-agent.md) exampl
 SWE-smith data, Kubernetes controller, repository images, agent, and reward. The existing
 `Qwen/Qwen3.5-9B` FSDP path remains available through `examples/swe_smith/run.sh`.
 
+## Results
+
+With pure RL, Qwen3.5-35B-A3B improves from 47.8% to 61.6% on SWE-bench Verified after
+1,792 training examples (about 1.8K), a gain of 13.8 percentage points. Results use the
+official SWE-bench Verified harness on all 500 instances; trained example counts assume
+16 examples per step.
+
+| Step | Trained examples | Result on SWE-bench Verified |
+|---|---:|---:|
+| 0 (base) | 0 | 47.8% (239/500) |
+| 64 | 1,024 | 58.8% (294/500) |
+| 112 | 1,792 | 61.6% (308/500) |
+| 176 | 2,816 | 60.6% (303/500) |
+
 ## Why R3
 
 An MoE token can select different experts during rollout and training. R3 records vLLM's rollout
