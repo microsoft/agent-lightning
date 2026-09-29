@@ -8,13 +8,13 @@
       
       
       
-        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/70-example-llm-in-sandbox/">
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/76-example-coding-agent-moe/">
       
       
-        <link rel="prev" href="../65-example-search-r1/">
+        <link rel="prev" href="../75-example-coding-agent/">
       
       
-        <link rel="next" href="../75-example-coding-agent/">
+        <link rel="next" href="../80-example-multimodal-qa/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>LLM-in-Sandbox - Agent Lightning v1.0</title>
+        <title>Coding Agent (MoE) - Agent Lightning v1.0</title>
       
     
     
@@ -84,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#llm-in-sandbox" class="md-skip">
+        <a href="#coding-agent-moe" class="md-skip">
           Skip to content
         </a>
       
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              LLM-in-Sandbox
+              Coding Agent (MoE)
             
           </span>
         </div>
@@ -717,37 +717,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LLM-in-Sandbox
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../70-example-llm-in-sandbox/" class="md-nav__link">
         
   
   
@@ -763,59 +736,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#environment-preparation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Environment Preparation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#data-preparation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Preparation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#training" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Training
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -853,10 +773,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../76-example-coding-agent-moe/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Agent (MoE)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -872,6 +819,48 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-r3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why R3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1028,10 +1017,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#environment-preparation" class="md-nav__link">
+  <a href="#why-r3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Environment Preparation
+        Why R3
       
     </span>
   </a>
@@ -1039,21 +1028,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#data-preparation" class="md-nav__link">
+  <a href="#run" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Data Preparation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#training" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Training
+        Run
       
     </span>
   </a>
@@ -1119,7 +1097,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 12, 2026 09:10:22 UTC"><span class="timeago" datetime="2026-08-12T09:10:22+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 12, 2026 09:10:22 UTC">2026-08-12</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="September 29, 2026 07:31:37 UTC"><span class="timeago" datetime="2026-09-29T07:31:37+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 29, 2026 07:31:37 UTC">2026-09-29</span>
   </span>
 
     
@@ -1129,7 +1107,7 @@
     <span class="md-icon" title="Created">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="August 11, 2026 10:30:09 UTC"><span class="timeago" datetime="2026-08-11T10:30:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 11, 2026 10:30:09 UTC">2026-08-11</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="September 29, 2026 07:31:37 UTC"><span class="timeago" datetime="2026-09-29T07:31:37+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 29, 2026 07:31:37 UTC">2026-09-29</span>
   </span>
 
     
@@ -1154,104 +1132,64 @@
 
 
 <!-- Page content -->
-<h1 id="llm-in-sandbox">LLM-in-Sandbox<a class="headerlink" href="#llm-in-sandbox" title="Permanent link">&para;</a></h1>
+<h1 id="coding-agent-moe">Coding Agent: MoE<a class="headerlink" href="#coding-agent-moe" title="Permanent link">&para;</a></h1>
 <table>
 <thead>
 <tr>
 <th>GPU</th>
 <th>Model</th>
-<th>Controller Mode</th>
-<th>Trainer Mode</th>
-<th>Code</th>
+<th>Actor</th>
+<th>Rollout</th>
+<th>Router replay</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>4× A100 80GB</td>
-<td><code>Qwen/Qwen3-4B-Instruct-2507</code></td>
-<td>K8s</td>
-<td>Sync only</td>
-<td><a href="https://github.com/microsoft/agent-lightning/tree/main/examples/llm-in-sandbox">Source</a></td>
+<td>4× B200</td>
+<td><code>Qwen/Qwen3.5-35B-A3B</code></td>
+<td>Megatron</td>
+<td>vLLM</td>
+<td>R3</td>
 </tr>
 </tbody>
 </table>
-<p>LLM-in-Sandbox trains a general instruction-following agent with <code>verl</code> and Agent Lightning &gt;=v1.0. The agent can manage files, execute code, and use external resources inside an isolated container sandbox.</p>
-<p>This example is based on <a href="https://arxiv.org/abs/2601.16206"><em>Computer Environments Elicit General Agentic Intelligence in LLMs</em></a> by Cheng et al. (2026).</p>
-<p>This example uses the K8s controller in synchronous trainer mode. Each rollout runs as a Kubernetes Job, while model calls pass through the AGL Gateway to the <code>verl</code>-managed vLLM server. The agent dependencies remain isolated from the trainer environment.</p>
-<h2 id="environment-preparation">Environment Preparation<a class="headerlink" href="#environment-preparation" title="Permanent link">&para;</a></h2>
-<p>Use Python 3.12 and install the project environment before running the example. You also need:</p>
-<ul>
-<li>Docker</li>
-<li>Minikube</li>
-<li><code>kubectl</code></li>
-<li>Image build support inside Minikube</li>
-</ul>
-<p>The bundled Minikube setup is intended for testing only. For production deployments, replace it with a production-grade Kubernetes cluster.</p>
-<h2 id="data-preparation">Data Preparation<a class="headerlink" href="#data-preparation" title="Permanent link">&para;</a></h2>
-<p>The public training and validation data is hosted in the <a href="https://huggingface.co/datasets/daixuancheng/llm-in-sandbox-rl"><code>daixuancheng/llm-in-sandbox-rl</code></a> dataset on Hugging Face. The upstream <a href="https://github.com/llm-in-sandbox/llm-in-sandbox-rl"><code>llm-in-sandbox-rl</code></a> repository provides the conversion script used to generate the JSON files expected by this example.</p>
-<p>From the repository root, clone the upstream repository and convert all dataset configurations:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/llm-in-sandbox/llm-in-sandbox-rl.git<span class="w"> </span>/tmp/llm-in-sandbox-rl
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python<span class="w"> </span>/tmp/llm-in-sandbox-rl/examples/llm_in_sandbox/convert_llm_sandbox_dataset.py<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--all<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--output-dir<span class="w"> </span>examples/llm-in-sandbox/data
+<p>This is the MoE variant of the <a href="../75-example-coding-agent/">Coding Agent</a> example. It reuses the same
+SWE-smith data, Kubernetes controller, repository images, agent, and reward. The existing
+<code>Qwen/Qwen3.5-9B</code> FSDP path remains available through <code>examples/swe_smith/run.sh</code>.</p>
+<h2 id="why-r3">Why R3<a class="headerlink" href="#why-r3" title="Permanent link">&para;</a></h2>
+<p>An MoE token can select different experts during rollout and training. R3 records vLLM's rollout
+routing and passes it through the Agent Lightning event, triplet, and <code>DataProto</code> pipeline so the
+Megatron actor update replays the same experts.</p>
+<p>The MoE launcher enables both sides:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>actor_rollout_ref.rollout.enable_rollout_routing_replay=true
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>actor_rollout_ref.actor.megatron.router_replay.mode=R3
 </code></pre></div>
-<p>The converter downloads the following Hugging Face configurations:</p>
-<ul>
-<li>Training: <code>instruct_pretrain</code> (<code>train</code> split, 3,600 samples)</li>
-<li>Validation: <code>math_mini</code>, <code>biomed_mini</code>, and <code>long_context_mini</code> (<code>test</code> splits)</li>
-</ul>
-<p>The default files used by this example are:</p>
-<table>
-<thead>
-<tr>
-<th>Split</th>
-<th>Path</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Training</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_instruct_pretrain/train_verl.json</code></td>
-</tr>
-<tr>
-<td>Validation</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_math_mini/test_verl.json</code></td>
-</tr>
-<tr>
-<td>Validation</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_biomed_mini/test_verl.json</code></td>
-</tr>
-<tr>
-<td>Validation</td>
-<td><code>examples/llm-in-sandbox/data/llm_sandbox_long_context_mini/test_verl.json</code></td>
-</tr>
-</tbody>
-</table>
-<p>The command above creates these directories directly; no manual file move is needed. If you generate or download the files separately, place <code>train_verl.json</code> and <code>test_verl.json</code> in their corresponding directories, or pass those directories to the launcher.</p>
-<p>For validation, select any one or more of <code>math_mini</code>, <code>biomed_mini</code>, and <code>long_context_mini</code>. Separate multiple directories with commas:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>examples/llm-in-sandbox/run.sh<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--train-data-dir<span class="w"> </span>/path/to/train-data<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--val-data-dir<span class="w"> </span>/path/to/math-data,/path/to/biomed-data,/path/to/long-context-data
+<h2 id="run">Run<a class="headerlink" href="#run" title="Permanent link">&para;</a></h2>
+<p>Use the MoE wrapper for all three roles:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Machine B</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PUBLIC_HOST</span><span class="o">=</span>&lt;address-reachable-from-controller-and-pods&gt;
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;shared-secret&gt;
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>examples/swe_smith/run_moe.sh<span class="w"> </span>server
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># Machine A</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_SERVER_PUBLIC_HOST</span><span class="o">=</span>&lt;gateway-address&gt;
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;same-shared-secret&gt;
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_NAMESPACE</span><span class="o">=</span>agents
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>examples/swe_smith/run_moe.sh<span class="w"> </span>controller
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="c1"># Machine B</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nb">export</span><span class="w"> </span><span class="nv">AGL_KEY</span><span class="o">=</span>&lt;same-shared-secret&gt;
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>examples/swe_smith/run_moe.sh<span class="w"> </span>trainer
 </code></pre></div>
-<h2 id="training">Training<a class="headerlink" href="#training" title="Permanent link">&para;</a></h2>
-<p>Start training from the repository root:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>examples/llm-in-sandbox/run.sh
+<p><code>run_moe.sh</code> selects <code>train_smith_agent_moe.py</code>, requests routed experts from the Gateway, and keeps
+the standard 9B launcher unchanged. R3 route compaction requires the default trajectory aggregator;
+do not override it to <code>transition</code>. Other additional arguments are VERL dotlist overrides:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>examples/swe_smith/run_moe.sh<span class="w"> </span>trainer<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>trainer.total_training_steps<span class="o">=</span><span class="m">100</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">4</span>
 </code></pre></div>
-<p>The launcher:</p>
-<ol>
-<li>creates a local Minikube cluster;</li>
-<li>builds the <code>llm-in-sandbox-agent:dev</code> image;</li>
-<li>starts <code>agl-server</code> and the K8s <code>agl-controller</code>;</li>
-<li>starts the <code>verl</code> trainer;</li>
-<li>cleans up the server, controller, and Ray processes when it exits.</li>
-</ol>
-<p>The controller creates one Kubernetes Job for each rollout. Inside the Job, the adapter runs the sandbox agent, routes model calls through the AGL Gateway, evaluates the final answer, and reports the reward.</p>
-<p>Additional <code>verl</code> settings can be passed as dotlist overrides:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>examples/llm-in-sandbox/run.sh<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>trainer.total_epochs<span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>actor_rollout_ref.rollout.n<span class="o">=</span><span class="m">2</span>
-</code></pre></div>
-<p>Use <code>Ctrl+C</code> to stop training and clean up the processes started by the launcher.</p>
+<p>The default topology is PP=1, TP=1, EP=4, and ETP=1 with parameter, optimizer, and gradient offload.
+Treat it as a four-B200 starting point and tune batch sizes for the available memory.</p>
 
 <!-- Was this page helpful? -->
 
