@@ -22,7 +22,7 @@
 - 🪶 **~3,500 lines of code:** We treat simplicity as the first principle.
 - 🧩 **Train with real agent harnesses:** Agents interact with the model through the Agent Lightning v1.0 proxy with **ZERO changes**, while keeping tools, context, control flow, and environments in the loop.
 - ☸️ **Native Kubernetes support:** Run agents directly as Kubernetes Jobs without relying on external sandbox services.
-- 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts. **Update:** We release a [new coding agent training example](https://microsoft.github.io/agent-lightning/stable/76-example-coding-agent-moe/) based on Qwen3.5-35B-A3B. With pure RL, the model improves SWE-bench Verified from **47.8% to 61.6%** after only **1.8K training examples**, a gain of **13.8 percentage points**.
+- 💻 **Full coding agent training example:** Using only **6K training samples**, an end-to-end Qwen3.5-9B workflow improves SWE-bench Verified from **41.8% to 56.4%**, a gain of **14.6 percentage points**. We release the full pipeline, including data cleaning, reward-hacking prevention, and training scripts. **Update:** We release a [new coding agent training example](https://microsoft.github.io/agent-lightning/stable/76-example-coding-agent-moe/) based on Qwen3.5-35B-A3B. Pure RL improves Qwen3.5-35B-A3B on SWE-bench Verified from **47.8% to 61.6%** after only **1.8K training examples**, a gain of **13.8 percentage points**.
 
 ## ⚡ Installation
 
