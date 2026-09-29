@@ -836,6 +836,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#why-r3" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1017,6 +1028,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#why-r3" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1097,7 +1119,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="September 29, 2026 07:31:37 UTC"><span class="timeago" datetime="2026-09-29T07:31:37+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 29, 2026 07:31:37 UTC">2026-09-29</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="September 29, 2026 07:56:05 UTC"><span class="timeago" datetime="2026-09-29T07:56:05+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 29, 2026 07:56:05 UTC">2026-09-29</span>
   </span>
 
     
@@ -1156,6 +1178,42 @@
 <p>This is the MoE variant of the <a href="../75-example-coding-agent/">Coding Agent</a> example. It reuses the same
 SWE-smith data, Kubernetes controller, repository images, agent, and reward. The existing
 <code>Qwen/Qwen3.5-9B</code> FSDP path remains available through <code>examples/swe_smith/run.sh</code>.</p>
+<h2 id="results">Results<a class="headerlink" href="#results" title="Permanent link">&para;</a></h2>
+<p>With pure RL, Qwen3.5-35B-A3B improves from 47.8% to 61.6% on SWE-bench Verified after
+1,792 training examples (about 1.8K), a gain of 13.8 percentage points. Results use the
+official SWE-bench Verified harness on all 500 instances; trained example counts assume
+16 examples per step.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th style="text-align: right;">Trained examples</th>
+<th style="text-align: right;">Result on SWE-bench Verified</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0 (base)</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">47.8% (239/500)</td>
+</tr>
+<tr>
+<td>64</td>
+<td style="text-align: right;">1,024</td>
+<td style="text-align: right;">58.8% (294/500)</td>
+</tr>
+<tr>
+<td>112</td>
+<td style="text-align: right;">1,792</td>
+<td style="text-align: right;">61.6% (308/500)</td>
+</tr>
+<tr>
+<td>176</td>
+<td style="text-align: right;">2,816</td>
+<td style="text-align: right;">60.6% (303/500)</td>
+</tr>
+</tbody>
+</table>
 <h2 id="why-r3">Why R3<a class="headerlink" href="#why-r3" title="Permanent link">&para;</a></h2>
 <p>An MoE token can select different experts during rollout and training. R3 records vLLM's rollout
 routing and passes it through the Agent Lightning event, triplet, and <code>DataProto</code> pipeline so the
