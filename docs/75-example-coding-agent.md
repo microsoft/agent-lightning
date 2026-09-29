@@ -102,9 +102,15 @@ The launcher passes additional arguments to `train_smith_agent.py`, including `v
 
 ```bash
 examples/swe_smith/run.sh trainer \
+    --max-val-instances 1 \
     trainer.total_training_steps=100 \
-    actor_rollout_ref.rollout.n=4
+    actor_rollout_ref.rollout.n=4 \
+    agentlightning.k8s.filter_unavailable_images=true
 ```
+
+The image filter compares each row's rendered `job-template-openai.yaml` images with the fresh inventory published by the Controller before Ray allocates GPU resources. Rows whose `:openai` image was not prepared are excluded from both in-memory splits for that run; the JSONL files remain unchanged. Disable the option to retain the original unfiltered behavior.
+
+Because SWE-Smith uses more images than Kubelet reports by default, configure `nodeStatusMaxImages: -1` on the Kubernetes nodes as described in [K8s image readiness](30-controller-configuration.md#k8s-image-readiness). The validation cap above is applied after image filtering.
 
 ## Preventing Reward Hacking
 

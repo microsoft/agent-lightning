@@ -12,22 +12,28 @@ Uses AgentLightningAsyncClient for store access and kr8s for K8s API.
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections import deque
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import httpx
 import kr8s
 import kr8s.asyncio
 import structlog
-import yaml
-from jinja2 import Environment
 from kr8s.asyncio import objects as k8s_objects
 from omegaconf import DictConfig
 
 from agentlightning.client import AgentLightningAsyncClient
-from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Rollout, RolloutPatch, RolloutState, RolloutStatusPatch
+from agentlightning.k8s import extract_pod_images, normalize_image_reference, render_job_template
+from agentlightning.schemas import (
+    DEFAULT_ATTEMPT_ID,
+    K8sImageReadinessReport,
+    Rollout,
+    RolloutPatch,
+    RolloutState,
+    RolloutStatusPatch,
+)
 
 log = structlog.get_logger()
 
@@ -40,25 +46,49 @@ def build_job_name(rollout_id: str) -> str:
     return f"agl-rollout-{rollout_id}"
 
 
+def images_available_on_all_ready_nodes(
+    nodes: Sequence[Mapping[str, Any]],
+) -> tuple[frozenset[str], int]:
+    """Return the image-name intersection for Ready, schedulable nodes."""
+    eligible: list[Mapping[str, Any]] = []
+    for node in nodes:
+        if node.get("spec", {}).get("unschedulable", False):
+            continue
+        conditions = node.get("status", {}).get("conditions", [])
+        if not any(condition.get("type") == "Ready" and condition.get("status") == "True" for condition in conditions):
+            continue
+        eligible.append(node)
+
+    if not eligible:
+        raise RuntimeError("no Ready schedulable Kubernetes nodes found")
+
+    per_node: list[set[str]] = []
+    for node in eligible:
+        names = {
+            normalize_image_reference(name)
+            for image in node.get("status", {}).get("images", [])
+            for name in image.get("names", [])
+            if isinstance(name, str) and name.strip()
+        }
+        per_node.append(names)
+
+    common = set(per_node[0])
+    for names in per_node[1:]:
+        common.intersection_update(names)
+    return frozenset(common), len(eligible)
+
+
 def build_job_spec(rollout: Rollout, controller_config: DictConfig) -> dict[str, Any]:
     """Build a K8s Job manifest from the rollout's complete Jinja2 Job template."""
     template = rollout.config.k8s.job_template if rollout.config.k8s else None
     if not template:
         raise ValueError("invalid rollout config: missing config.k8s.job_template")
 
-    env = Environment()
-    env.filters["yaml_escape"] = lambda value: json.dumps(str(value), ensure_ascii=True)
-    rendered = env.from_string(template).render(
+    job = render_job_template(
+        template,
         job_name=build_job_name(rollout.rollout_id),
-        input=rollout.input,
+        input_data=rollout.input,
     )
-    docs = [doc for doc in yaml.safe_load_all(rendered) if doc is not None]
-    if len(docs) != 1:
-        raise ValueError("invalid rollout config: config.k8s.job_template must render exactly one YAML document")
-
-    job = docs[0]
-    if not isinstance(job, dict) or job.get("kind") != "Job":
-        raise ValueError("invalid rollout config: config.k8s.job_template must render a Kubernetes Job")
 
     metadata = job.setdefault("metadata", {})
     metadata["name"] = build_job_name(rollout.rollout_id)
@@ -117,6 +147,15 @@ class K8sReconciler:
         self._k8s_api: Any | None = None
         self._stop = asyncio.Event()
         self._job_creation_timestamps: deque[float] = deque()
+        self._ready_images: frozenset[str] | None = None
+        self._ready_images_expires_at = 0.0
+
+        readiness_config = self._runner_config.image_readiness
+        if readiness_config.enabled:
+            heartbeat = float(readiness_config.heartbeat_seconds)
+            lease = float(readiness_config.lease_seconds)
+            if not 0 < heartbeat < lease <= 300:
+                raise ValueError("k8s_runner.image_readiness requires 0 < heartbeat_seconds < lease_seconds <= 300")
 
     async def _get_k8s_api(self) -> Any:
         if self._k8s_api is None:
@@ -131,16 +170,66 @@ class K8sReconciler:
             poll_interval=self._runner_config.poll_interval,
         )
         try:
-            await asyncio.gather(
-                self._periodic_reconcile_loop(),
-                self._watch_jobs_loop(),
+            tasks = []
+            if self._runner_config.image_readiness.enabled:
+                try:
+                    await self._publish_image_readiness_once()
+                except Exception:
+                    log.exception("Initial K8s image readiness publish failed")
+                tasks.append(self._image_readiness_loop())
+            tasks.extend(
+                [
+                    self._periodic_reconcile_loop(),
+                    self._watch_jobs_loop(),
+                ]
             )
+            await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             log.info("Controller stopped")
 
     def stop(self) -> None:
         """Signal the controller to stop."""
         self._stop.set()
+
+    async def _scan_preloaded_images(self) -> tuple[frozenset[str], int]:
+        api = await self._get_k8s_api()
+        nodes = [cast(k8s_objects.Node, node).raw async for node in k8s_objects.Node.async_list(api=api)]
+        return images_available_on_all_ready_nodes(nodes)
+
+    async def _publish_image_readiness_once(self) -> None:
+        images, node_count = await self._scan_preloaded_images()
+        lease_seconds = float(self._runner_config.image_readiness.lease_seconds)
+        scanned_at = time.monotonic()
+        report = K8sImageReadinessReport(
+            images=sorted(images),
+            node_count=node_count,
+            lease_seconds=lease_seconds,
+        )
+        response = await self._api.put(
+            "/api/runner-readiness/k8s",
+            json=report.model_dump(mode="json"),
+        )
+        response.raise_for_status()
+        self._ready_images = images
+        self._ready_images_expires_at = scanned_at + lease_seconds
+
+    async def _image_readiness_loop(self) -> None:
+        heartbeat = float(self._runner_config.image_readiness.heartbeat_seconds)
+        while not self._stop.is_set():
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=heartbeat)
+                return
+            except TimeoutError:
+                pass
+            try:
+                await self._publish_image_readiness_once()
+            except Exception:
+                log.exception("K8s image readiness publish failed")
+
+    def _fresh_ready_images(self) -> frozenset[str] | None:
+        if self._ready_images is None or time.monotonic() >= self._ready_images_expires_at:
+            return None
+        return self._ready_images
 
     # --- Periodic reconcile ---
 
@@ -242,27 +331,54 @@ class K8sReconciler:
     async def _create_job(self, rollout: Rollout) -> None:
         """Create a K8s Job for a queuing rollout without changing rollout state."""
         job_name = build_job_name(rollout.rollout_id)
-        now = time.monotonic()
-        window_start = now - JOB_CREATION_WINDOW_SECONDS
-        while self._job_creation_timestamps and self._job_creation_timestamps[0] <= window_start:
-            self._job_creation_timestamps.popleft()
-        if len(self._job_creation_timestamps) >= self._runner_config.max_jobs_per_minute:
-            log.info(
-                "Job creation rate limit reached — deferring queued rollouts",
-                rollout_id=rollout.rollout_id,
-                jobs_in_last_minute=len(self._job_creation_timestamps),
-                max_jobs_per_minute=self._runner_config.max_jobs_per_minute,
-            )
-            return
-
         try:
             manifest = build_job_spec(rollout, self._config)
             attempt_id = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
+            requires_preloaded = bool(rollout.config.k8s and rollout.config.k8s.require_preloaded_images)
+            if requires_preloaded:
+                ready_images = self._fresh_ready_images()
+                if ready_images is None:
+                    await self._patch_status(
+                        rollout.rollout_id,
+                        state=RolloutState.FAILED,
+                        error_message="Fresh Kubernetes image readiness is unavailable",
+                    )
+                    return
+                missing_images = sorted(extract_pod_images(manifest) - ready_images)
+                if missing_images:
+                    await self._patch_status(
+                        rollout.rollout_id,
+                        state=RolloutState.FAILED,
+                        error_message=("Required Kubernetes image(s) are not preloaded: " + ", ".join(missing_images)),
+                    )
+                    return
+
+            now = time.monotonic()
+            window_start = now - JOB_CREATION_WINDOW_SECONDS
+            while self._job_creation_timestamps and self._job_creation_timestamps[0] <= window_start:
+                self._job_creation_timestamps.popleft()
+            if len(self._job_creation_timestamps) >= self._runner_config.max_jobs_per_minute:
+                log.info(
+                    "Job creation rate limit reached — deferring queued rollouts",
+                    rollout_id=rollout.rollout_id,
+                    jobs_in_last_minute=len(self._job_creation_timestamps),
+                    max_jobs_per_minute=self._runner_config.max_jobs_per_minute,
+                )
+                return
+
             api = await self._get_k8s_api()
             job = k8s_objects.Job(manifest, api=api)
             await job.async_create()
             self._job_creation_timestamps.append(time.monotonic())
             log.info("Job created", rollout_id=rollout.rollout_id, job_name=job_name, attempt_id=attempt_id)
+        except ValueError as exc:
+            error_str = str(exc)
+            log.error("Invalid Job spec — marking failed", rollout_id=rollout.rollout_id, error=error_str)
+            await self._patch_status(
+                rollout.rollout_id,
+                state=RolloutState.FAILED,
+                error_message=f"Invalid Job spec: {error_str}",
+            )
         except Exception as exc:
             error_str = str(exc)
             lower_error = error_str.lower()
