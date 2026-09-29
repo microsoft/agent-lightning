@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div id="version-warning" class="version-warning" style="display: none;">
+    ⚠️ You are viewing development documentation. For stable documentation, please visit
+    <a href="https://microsoft.github.io/agent-lightning/stable/">https://microsoft.github.io/agent-lightning/stable/</a>
+  </div>
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    // Show warning banner if not viewing stable documentation
+    document.addEventListener("DOMContentLoaded", function() {
+      const currentURL = window.location.href;
+      const warningDiv = document.getElementById("version-warning");
+
+      // Check if we're on the stable docs or the redirect page
+      if (currentURL.includes('agent-lightning/latest/')) {
+        // Show warning for explicitly latest docs
+        warningDiv.style.display = "block";
+      }
+    });
+  </script>
+{% endblock %}
