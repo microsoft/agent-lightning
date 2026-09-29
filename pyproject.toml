@@ -1,6 +1,6 @@
 [project]
 name = "agentlightning"
-version = "1.0.1"
+version = "1.0.2"
 description = "Agent Lightning — agentic RL infrastructure"
 readme = "README.md"
 license = "MIT"
