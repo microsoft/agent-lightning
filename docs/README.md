@@ -42,4 +42,5 @@ For the legacy Agent Lightning releases earlier than v1.0, see the [`v0.x` code 
 | [Search-R1](65-example-search-r1.md) | Train a multi-turn retrieval and reasoning agent. |
 | [LLM-in-Sandbox](70-example-llm-in-sandbox.md) | Train a general agent with computer and code execution tools. |
 | [Coding Agent](75-example-coding-agent.md) | Train a coding agent using repository tests as feedback. |
+| [Coding Agent: MoE](76-example-coding-agent-moe.md) | Train Qwen3.5-35B-A3B with Megatron and R3. |
 | [Multimodal QA](80-example-multimodal-qa.md) | Train a vision-language model on synthetic image QA. |
