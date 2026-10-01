@@ -8,11 +8,12 @@ import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Body, Query
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from agentlightning.schemas import (
+    MAX_ROLLOUT_STATUS_BATCH_SIZE,
     TERMINAL_STATES,
     VALID_TRANSITIONS,
     Rollout,
@@ -169,6 +170,14 @@ async def list_terminal_rollouts(after: int = 0, limit: int = 1000) -> TerminalR
             )
         )
     return TerminalRolloutsPage(items=items, next_after=after + len(slice_ids), total_terminal=total)
+
+
+@router.post("/rollouts/status", response_model=dict[str, RolloutLifecycleStatus])
+async def get_rollout_statuses(
+    rollout_ids: Annotated[list[str], Body(max_length=MAX_ROLLOUT_STATUS_BATCH_SIZE)],
+) -> dict[str, RolloutLifecycleStatus]:
+    """Read lifecycle statuses without inputs, configs or attempt histories."""
+    return {rollout_id: _get_rollout(rollout_id).status for rollout_id in rollout_ids}
 
 
 @router.get("/rollouts/{rollout_id}", response_model=RolloutDetail)
