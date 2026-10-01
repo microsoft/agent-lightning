@@ -169,6 +169,8 @@ class RolloutStatusPatch(BaseModel):
 class RolloutPatch(BaseModel):
     """Partial rollout update. Only nested status may be patched."""
 
+    model_config = ConfigDict(extra="forbid")
+
     status: RolloutStatusPatch | None = None
 
 

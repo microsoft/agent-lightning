@@ -70,6 +70,32 @@ def test_rollout_endpoints(client: TestClient, auth_headers: dict[str, str]):
     assert cancel_requested.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Status patch sent one level too high: the rollout must not be silently left untouched.
+        {"state": "running"},
+        # Unknown top-level field next to a valid status patch: nothing must be applied.
+        {"status": {"state": "running"}, "is_train": False},
+        {"stats": {"a": 1}},
+    ],
+)
+def test_patch_rollout_rejects_unknown_top_level_fields(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    body: dict,
+):
+    rollout = _rollout(client, auth_headers)
+    rollout_id = rollout["rollout_id"]
+
+    patched = client.patch(f"/api/rollouts/{rollout_id}", json=body, headers=auth_headers)
+    assert patched.status_code == 422
+
+    detail = client.get(f"/api/rollouts/{rollout_id}", headers=auth_headers)
+    assert detail.json()["rollout"]["status"]["state"] == "queuing"
+    assert detail.json()["rollout"]["is_train"] is True
+
+
 def test_list_rollouts_filters_by_state_in(client: TestClient, auth_headers: dict[str, str]):
     queuing_rollout = _rollout(client, auth_headers)
     running_rollout = _rollout(client, auth_headers)
