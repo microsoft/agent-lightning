@@ -43,7 +43,8 @@ done
 
 agl-controller \
     runner_type=k8s \
-    agl_server.url="http://host.minikube.internal:$AGL_SERVER_PORT" \
+    agl_server.url="http://localhost:$AGL_SERVER_PORT" \
+    agl_server.agent_url="http://host.minikube.internal:$AGL_SERVER_PORT" \
     agl_server.key="$AGL_KEY" \
     k8s_runner.ttl_after_finished=600 \
     >"$CONTROLLER_LOG" 2>&1 &
