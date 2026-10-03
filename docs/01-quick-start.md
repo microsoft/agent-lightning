@@ -40,10 +40,10 @@ examples/calc_x/run_local.sh
 
 The launcher performs four operations:
 
-1. starts Ray and the `verl`/vLLM model backend;
+1. starts Ray;
 2. starts `agl-server` on port `8181`;
 3. starts `agl-controller runner_type=local`;
-4. runs the Calc-X training entrypoint.
+4. runs the Calc-X training entrypoint, which initializes the `verl`/vLLM model backend.
 
 Service logs are written under `/tmp/`.
 
