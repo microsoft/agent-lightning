@@ -51,6 +51,54 @@ def test_sync_without_key_preserves_authorization(key: str | None) -> None:
         assert client.headers.get_list("Authorization") == ["Bearer old-test-key"]
 
 
+@pytest.mark.parametrize("max_retries", [-1, -10])
+def test_sync_rejects_negative_max_retries(max_retries: int) -> None:
+    with pytest.raises(ValueError, match="max_retries must be non-negative"):
+        AgentLightningSyncClient(max_retries=max_retries)
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_sync_zero_retries_attempts_get_once(fails: bool) -> None:
+    attempts = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if fails:
+            raise httpx.ConnectError("test failure", request=request)
+        return httpx.Response(200)
+
+    with AgentLightningSyncClient(max_retries=0, transport=httpx.MockTransport(handle)) as client:
+        if fails:
+            with pytest.raises(httpx.ConnectError, match="test failure"):
+                client.get("https://example.test")
+        else:
+            assert client.get("https://example.test").status_code == 200
+
+    assert attempts == 1
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_sync_zero_retries_attempts_idempotent_post_once(fails: bool) -> None:
+    attempts = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if fails:
+            raise httpx.ConnectError("test failure", request=request)
+        return httpx.Response(200)
+
+    with AgentLightningSyncClient(max_retries=0, transport=httpx.MockTransport(handle)) as client:
+        if fails:
+            with pytest.raises(httpx.ConnectError, match="test failure"):
+                client.post_with_retry("https://example.test")
+        else:
+            assert client.post_with_retry("https://example.test").status_code == 200
+
+    assert attempts == 1
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("key", [None, ""])
 async def test_async_without_key_preserves_authorization(key: str | None) -> None:
