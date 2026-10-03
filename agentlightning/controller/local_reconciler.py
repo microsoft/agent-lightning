@@ -60,6 +60,16 @@ class Proc:
     killed: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class CompletedProc:
+    """Compact history for a subprocess whose terminal status was reported."""
+
+    attempt_id: str
+    returncode: int
+    spawned_at: float
+    killed: bool
+
+
 def _build_env_from_map(task_input: object, env_map: dict[str, str]) -> dict[str, str]:
     env: dict[str, str] = {}
     for name, path in env_map.items():
@@ -106,6 +116,7 @@ class LocalReconciler:
         self._pool_size = int(self._runner_config.maximum_size)
         self._tick_interval = float(self._runner_config.poll_interval)
         self._rid_to_proc: dict[str, Proc] = {}
+        self._completed_procs: dict[str, CompletedProc] = {}
         self._stop = asyncio.Event()
 
     async def run(self) -> None:
@@ -146,6 +157,8 @@ class LocalReconciler:
         live_count = sum(1 for item in self._rid_to_proc.values() if item.proc.returncode is None)
 
         for rollout in rollouts:
+            if rollout.rollout_id in self._completed_procs:
+                continue
             item = self._rid_to_proc.get(rollout.rollout_id)
 
             if item is None:
@@ -179,7 +192,9 @@ class LocalReconciler:
                 and (now - item.spawned_at) > timeout
                 and await self._kill_process_group(rollout_id, item)
             ):
-                await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
+                patched = await self._patch(rollout_id, RolloutState.FAILED, "local subprocess timed out")
+                if patched:
+                    self._archive_proc(rollout_id, item)
 
     async def _finish_proc(self, rollout: Rollout, item: Proc) -> bool:
         if rollout.status.state == RolloutState.QUEUING:
@@ -188,14 +203,38 @@ class LocalReconciler:
                 return False
         # Normal timeouts reach here; shutdown kills happen after final reconciliation.
         if item.killed:
-            return await self._patch(rollout.rollout_id, RolloutState.FAILED, "local subprocess timed out")
-        if item.proc.returncode == 0:
-            return await self._patch(rollout.rollout_id, RolloutState.SUCCEEDED, last_attempt_id=item.attempt_id)
-        return await self._patch(
-            rollout.rollout_id,
-            RolloutState.FAILED,
-            f"subprocess exited with code {item.proc.returncode}",
+            patched = await self._patch(rollout.rollout_id, RolloutState.FAILED, "local subprocess timed out")
+        elif item.proc.returncode == 0:
+            patched = await self._patch(
+                rollout.rollout_id,
+                RolloutState.SUCCEEDED,
+                last_attempt_id=item.attempt_id,
+            )
+        else:
+            patched = await self._patch(
+                rollout.rollout_id,
+                RolloutState.FAILED,
+                f"subprocess exited with code {item.proc.returncode}",
+            )
+        if patched:
+            self._archive_proc(rollout.rollout_id, item)
+        return patched
+
+    def _archive_proc(self, rollout_id: str, item: Proc) -> None:
+        """Replace a reported terminal process with compact history."""
+        if self._rid_to_proc.get(rollout_id) is not item:
+            return
+        returncode = item.proc.returncode
+        if returncode is None:
+            log.warning("Refusing to archive running subprocess", rollout_id=rollout_id, pid=item.proc.pid)
+            return
+        self._completed_procs[rollout_id] = CompletedProc(
+            attempt_id=item.attempt_id,
+            returncode=returncode,
+            spawned_at=item.spawned_at,
+            killed=item.killed,
         )
+        del self._rid_to_proc[rollout_id]
 
     async def _kill_process_group(self, rollout_id: str, item: Proc) -> bool:
         """SIGKILL the worker process group and wait for exit."""
@@ -270,7 +309,9 @@ class LocalReconciler:
 
         for rollout_id, item in list(self._rid_to_proc.items()):
             if item.proc.returncode is None and await self._kill_process_group(rollout_id, item):
-                await self._patch(rollout_id, RolloutState.FAILED, "local controller shutdown")
+                patched = await self._patch(rollout_id, RolloutState.FAILED, "local controller shutdown")
+                if patched:
+                    self._archive_proc(rollout_id, item)
 
     async def _patch(
         self,
