@@ -19,17 +19,30 @@ TEST_URL="https://huggingface.co/datasets/PeterJinGo/nq_hotpotqa_train/resolve/m
 download() {
     local url="$1"
     local output="$2"
+    local temporary
     if [[ -s "$output" ]]; then
         echo "skip existing $output"
         return
     fi
+    temporary="$(mktemp "${output}.tmp.XXXXXX")"
     if command -v curl >/dev/null 2>&1; then
-        curl -L --fail --retry 5 -o "$output" "$url"
+        if ! curl -L --fail --retry 5 -o "$temporary" "$url"; then
+            rm -f "$temporary"
+            return 1
+        fi
     elif command -v wget >/dev/null 2>&1; then
-        wget -O "$output" "$url"
+        if ! wget -O "$temporary" "$url"; then
+            rm -f "$temporary"
+            return 1
+        fi
     else
         echo "curl or wget is required to download $url" >&2
-        exit 1
+        rm -f "$temporary"
+        return 1
+    fi
+    if ! mv -f "$temporary" "$output"; then
+        rm -f "$temporary"
+        return 1
     fi
 }
 
@@ -66,7 +79,15 @@ download "$TRAIN_URL" "$DATA_DIR/train.parquet"
 download "$TEST_URL" "$DATA_DIR/test.parquet"
 
 if [[ ! -s "$DATA_DIR/e5_Flat.index" ]]; then
-    cat "$DATA_DIR"/part_* > "$DATA_DIR/e5_Flat.index"
+    INDEX_TEMPORARY="$(mktemp "$DATA_DIR/e5_Flat.index.tmp.XXXXXX")"
+    if ! cat "$DATA_DIR/part_aa" "$DATA_DIR/part_ab" > "$INDEX_TEMPORARY"; then
+        rm -f "$INDEX_TEMPORARY"
+        exit 1
+    fi
+    if ! mv -f "$INDEX_TEMPORARY" "$DATA_DIR/e5_Flat.index"; then
+        rm -f "$INDEX_TEMPORARY"
+        exit 1
+    fi
 fi
 
 if [[ ! -s "$DATA_DIR/wiki-18.jsonl" ]]; then
