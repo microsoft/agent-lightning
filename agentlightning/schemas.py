@@ -7,7 +7,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Event(BaseModel):
@@ -141,6 +141,14 @@ class RolloutCreate(BaseModel):
     metadata: RolloutMetadata | dict[str, Any] | None = None
     # A caller-supplied id makes rollout creation idempotent and safe to retry.
     rollout_id: str | None = None
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, value: Any) -> Any:
+        """Validate known fields before the permissive dict union branch can match."""
+        if isinstance(value, dict):
+            return RolloutMetadata.model_validate(value)
+        return value
 
 
 class RolloutLifecycleStatus(BaseModel):

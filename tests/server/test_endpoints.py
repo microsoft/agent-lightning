@@ -8,6 +8,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from agentlightning.schemas import RolloutCreate, RolloutMetadata
+from agentlightning.server.store import _events, _rollouts
 from tests.server.conftest import MODEL_NAME
 
 
@@ -68,6 +70,63 @@ def test_rollout_endpoints(client: TestClient, auth_headers: dict[str, str]):
         headers=auth_headers,
     )
     assert cancel_requested.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "invalid_metadata",
+    [
+        {"batch_idx": "not-an-integer"},
+        {"sample_idx_in_batch": {"nested": "object"}},
+    ],
+)
+def test_enqueue_rejects_invalid_metadata_atomically(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    invalid_metadata: dict,
+) -> None:
+    response = client.post(
+        "/api/rollouts",
+        json=[
+            {"rollout_id": "valid-before-invalid", "input": {"prompt": "valid"}},
+            {"rollout_id": "invalid-metadata", "input": {"prompt": "invalid"}, "metadata": invalid_metadata},
+        ],
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert _rollouts == {}
+    assert _events == {}
+
+
+def test_rollout_metadata_preserves_compatible_inputs(client: TestClient, auth_headers: dict[str, str]) -> None:
+    response = client.post(
+        "/api/rollouts",
+        json=[
+            {
+                "input": {"prompt": "coerced"},
+                "metadata": {
+                    "batch_idx": "7",
+                    "sample_idx_in_batch": "3",
+                    "custom": {"nested": ["value"]},
+                },
+            },
+            {"input": {"prompt": "none"}, "metadata": None},
+        ],
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    created = response.json()
+    assert created[0]["metadata"] == {
+        "batch_idx": 7,
+        "sample_idx_in_batch": 3,
+        "custom": {"nested": ["value"]},
+    }
+    assert created[1]["metadata"] == {"batch_idx": None, "sample_idx_in_batch": None}
+
+    metadata = RolloutMetadata.model_validate({"batch_idx": 2, "custom": {"source": "model-instance"}})
+    request = RolloutCreate(input={"prompt": "model"}, metadata=metadata)
+    assert request.metadata is metadata
 
 
 def test_list_rollouts_filters_by_state_in(client: TestClient, auth_headers: dict[str, str]):
