@@ -21,6 +21,7 @@ trap cleanup EXIT INT TERM
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
+cd "$REPO_ROOT/examples/calc_x"
 
 printf 'agl-server log: %s\n' "$SERVER_LOG"
 printf 'agl-controller log: %s\n' "$CONTROLLER_LOG"
