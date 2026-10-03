@@ -27,6 +27,7 @@ LAUNCHERS = [
     Launcher("examples/calc_x/run_local.sh", "examples/calc_x"),
     Launcher("examples/calc_x/run_minikube.sh", "examples/calc_x"),
     Launcher("examples/gsm8k/run_local.sh", "examples/gsm8k"),
+    Launcher("examples/multimodal_qa/run_local.sh", "examples/multimodal_qa"),
     Launcher("examples/science_world/run_local.sh", "."),
     Launcher("examples/search_r1/run.sh", "."),
     Launcher("examples/llm-in-sandbox/run.sh", "."),
@@ -103,7 +104,7 @@ def _run(
         "MOCK_CURL_SUCCEED_AT": str(succeed_at),
     }
     result = subprocess.run(
-        [BASH, str(script), "--marker", "value"],
+        [BASH, str(script), "--marker", "value with spaces"],
         cwd=cwd,
         env=env,
         capture_output=True,
@@ -137,7 +138,7 @@ def test_launcher_continues_after_later_success_and_preserves_arguments(tmp_path
     assert result.returncode == 0, result.stderr
     assert any(command.startswith("agl-controller") for command in commands)
     trainer = next(command for command in commands if command.startswith("python "))
-    assert trainer.endswith(" <--marker> <value>")
+    assert trainer.endswith(" <--marker> <value with spaces>")
     assert (tmp_path / "curl-count").read_text(encoding="utf-8").strip() == "3"
     assert all("--max-time 1" in call for call in curls)
 
