@@ -9,6 +9,7 @@ key: ""
 default_proxy:
   model_name: "Qwen/Qwen2.5-7B-Instruct"
   include_log_probs: true
+  include_routed_experts: false
   train:
     temperature: 1
   val:
@@ -43,6 +44,7 @@ Use the same non-empty key in the trainer and Controller.
 |---|---:|---|
 | `default_proxy.model_name` | `Qwen/Qwen2.5-7B-Instruct` | Registered model name selected for forwarded requests. |
 | `default_proxy.include_log_probs` | `true` | Ask the train backend for chosen-token log probabilities and token IDs. |
+| `default_proxy.include_routed_experts` | `false` | Ask the train backend for routed-expert tensors, required for MoE routing replay (R3). |
 | `default_proxy.train.temperature` | `1` | Temperature forced for training rollouts. |
 | `default_proxy.val.temperature` | `0.7` | Temperature forced for validation rollouts. |
 
@@ -58,6 +60,8 @@ A mismatch produces a “model not found” error even if the vLLM endpoint itse
 The train and validation temperatures configured here are the values actually used for model requests. Note that `verl` has similar temperature settings, but those values are not used for proxied requests because the proxy replaces them automatically.
 
 We recommend keeping `default_proxy.include_log_probs: true`. This records rollout log probabilities and allows `verl` to report rollout-correction metrics. Some rollout-correction features also require these log probabilities.
+
+For MoE routing replay, set `default_proxy.include_routed_experts: true` and use a backend that supports `return_routed_experts`. The gateway stores the returned tensor in the `model_request` event's `routed_experts` field and removes it from the response forwarded to the agent. This setting adds the request parameter only for training rollouts; validation requests are forwarded without that override.
 
 ## Client disconnects
 
