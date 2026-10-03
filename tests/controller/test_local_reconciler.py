@@ -3,8 +3,10 @@
 """Unit tests for local subprocess reconciliation."""
 
 import asyncio
+import gc
 import signal
 import time
+import weakref
 from typing import cast
 from unittest.mock import AsyncMock, Mock
 
@@ -132,7 +134,7 @@ async def test_shutdown_still_fails_running_rollout_without_local_process() -> N
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failed_terminal_patches", [0, 1, 2])
 @pytest.mark.parametrize("returncode", [-9, 0])
-async def test_timeout_reconciliation_retries_and_retains_process_record(
+async def test_timeout_reconciliation_retries_then_archives_process_record(
     monkeypatch: pytest.MonkeyPatch,
     failed_terminal_patches: int,
     returncode: int,
@@ -156,12 +158,20 @@ async def test_timeout_reconciliation_retries_and_retains_process_record(
     spawn_for = AsyncMock(return_value=True)
     monkeypatch.setattr(reconciler, "_spawn_for", spawn_for)
 
-    for _ in range(failed_terminal_patches + 1):
+    for _ in range(failed_terminal_patches):
         await reconciler._reconcile_once()
+        assert reconciler._rid_to_proc[rollout.rollout_id] is item
+        assert rollout.rollout_id not in reconciler._completed_procs
+
+    await reconciler._reconcile_once()
 
     assert item.killed
-    assert reconciler._rid_to_proc[rollout.rollout_id] is item
-    assert item.attempt_id == "attempt-1"
+    assert rollout.rollout_id not in reconciler._rid_to_proc
+    history = reconciler._completed_procs[rollout.rollout_id]
+    assert history.attempt_id == "attempt-1"
+    assert history.returncode == returncode
+    assert history.spawned_at == 0.0
+    assert history.killed
     process.wait.assert_awaited_once_with()
     killpg.assert_called_once_with(process.pid, signal.SIGKILL)
     spawn_for.assert_not_awaited()
@@ -171,7 +181,7 @@ async def test_timeout_reconciliation_retries_and_retains_process_record(
 
     api.get.return_value = _response([])
     await reconciler._reconcile_once()
-    assert reconciler._rid_to_proc[rollout.rollout_id] is item
+    assert rollout.rollout_id not in reconciler._rid_to_proc
 
 
 @pytest.mark.asyncio
@@ -184,7 +194,7 @@ async def test_timeout_reconciliation_retries_and_retains_process_record(
     ],
 )
 @pytest.mark.parametrize("failed_terminal_patches", [0, 1])
-async def test_unmarked_terminal_process_retries_and_retains_record(
+async def test_unmarked_terminal_process_retries_then_archives_record(
     returncode: int,
     expected: dict[str, str],
     failed_terminal_patches: int,
@@ -198,16 +208,80 @@ async def test_unmarked_terminal_process_retries_and_retains_record(
         _response({}),
     ]
 
-    for _ in range(failed_terminal_patches + 1):
+    for _ in range(failed_terminal_patches):
         await reconciler._reconcile_once()
+        assert reconciler._rid_to_proc[rollout.rollout_id] is item
+        assert rollout.rollout_id not in reconciler._completed_procs
 
-    assert reconciler._rid_to_proc[rollout.rollout_id] is item
+    await reconciler._reconcile_once()
+
+    assert rollout.rollout_id not in reconciler._rid_to_proc
+    history = reconciler._completed_procs[rollout.rollout_id]
+    assert history.attempt_id == "attempt-1"
+    assert history.returncode == returncode
+    assert history.spawned_at == item.spawned_at
+    assert not history.killed
     assert [call.kwargs["json"]["status"] for call in api.patch.await_args_list] == [expected] * (
         failed_terminal_patches + 1
     )
     api.get.return_value = _response([])
     await reconciler._reconcile_once()
-    assert reconciler._rid_to_proc[rollout.rollout_id] is item
+    assert rollout.rollout_id not in reconciler._rid_to_proc
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale_state", [RolloutState.QUEUING, RolloutState.RUNNING])
+async def test_completed_rollout_ignores_stale_active_state(
+    monkeypatch: pytest.MonkeyPatch,
+    stale_state: RolloutState,
+) -> None:
+    reconciler, api = _reconciler(state=RolloutState.RUNNING)
+    rollout = Rollout.model_validate(api.get.return_value.json()[0])
+    item, _ = _proc(returncode=0)
+    reconciler._rid_to_proc[rollout.rollout_id] = item
+
+    await reconciler._reconcile_once()
+    api.patch.reset_mock()
+    rollout.status.state = stale_state
+    api.get.return_value = _response([rollout.model_dump(mode="json")])
+    spawn_for = AsyncMock(return_value=True)
+    monkeypatch.setattr(reconciler, "_spawn_for", spawn_for)
+
+    await reconciler._reconcile_once()
+
+    assert rollout.rollout_id not in reconciler._rid_to_proc
+    assert rollout.rollout_id in reconciler._completed_procs
+    spawn_for.assert_not_awaited()
+    api.patch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_live_process_remains_active() -> None:
+    reconciler, api = _reconciler(state=RolloutState.RUNNING)
+    item, _ = _proc(returncode=None)
+    reconciler._rid_to_proc["rollout-1"] = item
+
+    await reconciler._reconcile_once()
+    reconciler._archive_proc("rollout-1", item)
+
+    assert reconciler._rid_to_proc["rollout-1"] is item
+    assert "rollout-1" not in reconciler._completed_procs
+    api.patch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_archived_process_does_not_keep_process_object_alive() -> None:
+    reconciler, api = _reconciler(state=RolloutState.RUNNING)
+    rollout = Rollout.model_validate(api.get.return_value.json()[0])
+    item, process = _proc(returncode=0)
+    process_ref = weakref.ref(process)
+    reconciler._rid_to_proc[rollout.rollout_id] = item
+
+    await reconciler._reconcile_once()
+    del item, process
+    gc.collect()
+
+    assert process_ref() is None
 
 
 @pytest.mark.asyncio
@@ -241,7 +315,12 @@ async def test_run_stops_then_shutdown_kills_after_final_reconcile(
 
     assert events == ["reconcile", "reconcile", "kill"]
     assert item.killed
-    assert reconciler._rid_to_proc["rollout-1"] is item
+    if patch_fails:
+        assert reconciler._rid_to_proc["rollout-1"] is item
+        assert "rollout-1" not in reconciler._completed_procs
+    else:
+        assert "rollout-1" not in reconciler._rid_to_proc
+        assert reconciler._completed_procs["rollout-1"].killed
     assert api.patch.await_args.kwargs["json"]["status"] == {
         "state": "failed",
         "error_message": "local controller shutdown",
@@ -277,9 +356,25 @@ async def test_timeout_during_run_retries_original_reason_during_shutdown_withou
     await reconciler.run()
 
     assert events == ["reconcile", "kill", "reconcile"]
-    assert reconciler._rid_to_proc[rollout.rollout_id] is item
+    assert rollout.rollout_id not in reconciler._rid_to_proc
+    assert reconciler._completed_procs[rollout.rollout_id].killed
     process.wait.assert_awaited_once_with()
     assert [call.kwargs["json"]["status"] for call in api.patch.await_args_list] == [
         {"state": "failed", "error_message": "local subprocess timed out"},
         {"state": "failed", "error_message": "local subprocess timed out"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_retains_live_process_when_kill_wait_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    reconciler, api = _reconciler(state=RolloutState.RUNNING)
+    item, process = _proc(returncode=None)
+    reconciler._rid_to_proc["rollout-1"] = item
+    process.wait.side_effect = TimeoutError
+    monkeypatch.setattr("agentlightning.controller.local_reconciler.os.killpg", Mock())
+
+    await reconciler._shutdown()
+
+    assert reconciler._rid_to_proc["rollout-1"] is item
+    assert "rollout-1" not in reconciler._completed_procs
+    api.patch.assert_not_awaited()
