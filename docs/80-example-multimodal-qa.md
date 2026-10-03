@@ -20,7 +20,13 @@ Any mrope VLM supported by verl works; pass `--model` to change the default mode
 
 ## Training
 
-Make sure you have activated a GPU environment with the VERL extra installed (`pip install agentlightning[verl]`), plus `openai` and `Pillow`. Then start training:
+Set up and activate the GPU environment following the [Installation guide](00-installation.md), which installs the compatible VERL, vLLM, and FlashAttention stack. Install the example's additional dependencies in that environment:
+
+```bash
+pip install openai Pillow
+```
+
+Then start training:
 
 ```bash
 cd examples/multimodal_qa
