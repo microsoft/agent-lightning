@@ -79,7 +79,15 @@ download "$TRAIN_URL" "$DATA_DIR/train.parquet"
 download "$TEST_URL" "$DATA_DIR/test.parquet"
 
 if [[ ! -s "$DATA_DIR/e5_Flat.index" ]]; then
-    cat "$DATA_DIR/part_aa" "$DATA_DIR/part_ab" > "$DATA_DIR/e5_Flat.index"
+    INDEX_TEMPORARY="$(mktemp "$DATA_DIR/e5_Flat.index.tmp.XXXXXX")"
+    if ! cat "$DATA_DIR/part_aa" "$DATA_DIR/part_ab" > "$INDEX_TEMPORARY"; then
+        rm -f "$INDEX_TEMPORARY"
+        exit 1
+    fi
+    if ! mv -f "$INDEX_TEMPORARY" "$DATA_DIR/e5_Flat.index"; then
+        rm -f "$INDEX_TEMPORARY"
+        exit 1
+    fi
 fi
 
 if [[ ! -s "$DATA_DIR/wiki-18.jsonl" ]]; then

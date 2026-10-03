@@ -25,10 +25,24 @@ def _write_executable(path: Path, content: str) -> None:
 def _tool_path(tmp_path: Path, downloader: str) -> Path:
     tools = tmp_path / "bin"
     tools.mkdir()
-    for name in ("awk", "cat", "dirname", "grep", "gzip", "mkdir", "mktemp", "mv", "rm"):
+    for name in ("awk", "dirname", "grep", "gzip", "mkdir", "mktemp", "mv", "rm"):
         target = shutil.which(name)
         assert target is not None
         (tools / name).symlink_to(target)
+
+    cat = shutil.which("cat")
+    assert cat is not None
+    _write_executable(
+        tools / "cat",
+        f"""#!/bin/sh
+if [ "${{MOCK_CAT_MODE:-success}}" = "fail-index" ] && [ "$#" -eq 2 ] && \
+   [ "${{1##*/}}" = "part_aa" ] && [ "${{2##*/}}" = "part_ab" ]; then
+    {cat} "$1"
+    exit 23
+fi
+exec {cat} "$@"
+""",
+    )
 
     _write_executable(
         tools / "conda",
@@ -107,6 +121,7 @@ def _environment(tmp_path: Path, downloader: str) -> tuple[dict[str, str], Path,
         "MOCK_DOWNLOAD_MODE": "success",
         "MOCK_DOWNLOAD_LOG": str(log),
         "MOCK_FIXTURE_DIR": str(_fixtures(tmp_path)),
+        "MOCK_CAT_MODE": "success",
     }
     return env, data, log
 
@@ -148,4 +163,21 @@ def test_index_ignores_unrelated_part_files(tmp_path: Path) -> None:
     result = _run(env)
 
     assert result.returncode == 0, result.stderr
+    assert (data / "e5_Flat.index").read_bytes() == b"AAAB"
+
+
+@LINUX_ONLY
+def test_failed_index_concatenation_does_not_poison_cache_and_can_retry(tmp_path: Path) -> None:
+    env, data, _ = _environment(tmp_path, "curl")
+    env["MOCK_CAT_MODE"] = "fail-index"
+
+    failed = _run(env)
+
+    assert failed.returncode != 0
+    assert not (data / "e5_Flat.index").exists()
+    assert list(data.glob("e5_Flat.index.tmp.*")) == []
+
+    env["MOCK_CAT_MODE"] = "success"
+    retried = _run(env)
+    assert retried.returncode == 0, retried.stderr
     assert (data / "e5_Flat.index").read_bytes() == b"AAAB"
