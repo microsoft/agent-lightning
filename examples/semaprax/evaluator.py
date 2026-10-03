@@ -239,13 +239,15 @@ def _evaluate_record(record: dict[str, Any]) -> Metrics:
         accepted = [
             event
             for event in policy_events
-            if event.get("kind") == "action_accepted" and event.get("tool_id") == TOOL_ID
+            if event.get("kind") == "action_accepted"
+            and (event.get("status") == "tool" or event.get("tool_id") is not None)
         ]
         authorized = [event for event in policy_events if event.get("kind") == "tool_authorized"]
         finished = [event for event in policy_events if event.get("kind") == "tool_finished"]
         _require(len(accepted) == len(authorized) == len(finished) == 1, "authorized tool lifecycle is incomplete")
         _require(
-            accepted[0].get("input_digest") == action_digest
+            accepted[0].get("tool_id") == TOOL_ID
+            and accepted[0].get("input_digest") == action_digest
             and accepted[0].get("turn") == turn
             and accepted[0].get("status") == "tool",
             "accepted action mismatch",
@@ -327,6 +329,7 @@ def evaluate_records(records: list[dict[str, Any]]) -> list[Metrics]:
     _require(isinstance(records, list), "records must be a list")
     case_ids = [record.get("case_id") for record in records if isinstance(record, dict)]
     _require(len(case_ids) == len(records), "record must be an object")
+    _require(all(isinstance(case_id, str) for case_id in case_ids), "case_id must be a string")
     _require(len(case_ids) == len(set(case_ids)), "duplicate case_id")
     _require(set(case_ids) == EXPECTED_CASES, "batch must contain exactly the three example cases")
     return [evaluate_record(record) for record in records]

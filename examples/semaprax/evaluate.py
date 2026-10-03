@@ -66,49 +66,63 @@ def publish_records(
             ).json()[0]
             rollout_id = created["rollout_id"]
             rollout_ids.append(rollout_id)
-            _checked(active_client.patch(f"/api/rollouts/{rollout_id}", json={"status": {"state": "running"}}))
+            try:
+                _checked(active_client.patch(f"/api/rollouts/{rollout_id}", json={"status": {"state": "running"}}))
 
-            event_url = f"/api/rollouts/{rollout_id}/attempt/0/events"
-            event_payloads = (
-                (
-                    "semaprax_proposal",
-                    {
-                        "schema": record["proposal"]["schema"],
-                        "stable_action_id": record["proposal"]["stable_action_id"],
-                        "turn": record["proposal"]["turn"],
-                        "tool_id": record["proposal"]["tool_id"],
-                        "arguments_json": record["proposal"]["arguments_json"],
-                        "provider_response_digest": record["proposal"]["provider_response_digest"],
-                    },
-                ),
-                (
-                    "semaprax_decision",
-                    {
-                        "status": record["decision"]["status"],
-                        "trace_digest": record["decision"]["trace_digest"],
-                        "evidence_digest": record["decision"]["evidence_digest"],
-                    },
-                ),
-                ("semaprax_dispatch", record["dispatch"]),
-                (
-                    "semaprax_metrics",
-                    {
-                        "task_outcome": score.task_outcome,
-                        "policy_conformance": score.policy_conformance,
-                    },
-                ),
-                ("reward", {"value": score.reward}),
-            )
-            # Event POSTs are deliberately never retried: a transport failure may
-            # happen after the server committed a non-idempotent event.
-            for event_type, data in event_payloads:
-                _checked(active_client.post(event_url, json={"event_type": event_type, "data": data}))
-            _checked(
-                active_client.patch(
-                    f"/api/rollouts/{rollout_id}",
-                    json={"status": {"state": "succeeded", "last_attempt_id": "0"}},
+                event_url = f"/api/rollouts/{rollout_id}/attempt/0/events"
+                event_payloads = (
+                    (
+                        "semaprax_proposal",
+                        {
+                            "schema": record["proposal"]["schema"],
+                            "stable_action_id": record["proposal"]["stable_action_id"],
+                            "turn": record["proposal"]["turn"],
+                            "tool_id": record["proposal"]["tool_id"],
+                            "arguments_json": record["proposal"]["arguments_json"],
+                            "provider_response_digest": record["proposal"]["provider_response_digest"],
+                        },
+                    ),
+                    (
+                        "semaprax_decision",
+                        {
+                            "status": record["decision"]["status"],
+                            "trace_digest": record["decision"]["trace_digest"],
+                            "evidence_digest": record["decision"]["evidence_digest"],
+                        },
+                    ),
+                    ("semaprax_dispatch", record["dispatch"]),
+                    (
+                        "semaprax_metrics",
+                        {
+                            "task_outcome": score.task_outcome,
+                            "policy_conformance": score.policy_conformance,
+                        },
+                    ),
+                    ("reward", {"value": score.reward}),
                 )
-            )
+                # Event POSTs are deliberately never retried: a transport failure may
+                # happen after the server committed a non-idempotent event.
+                for event_type, data in event_payloads:
+                    _checked(active_client.post(event_url, json={"event_type": event_type, "data": data}))
+                _checked(
+                    active_client.patch(
+                        f"/api/rollouts/{rollout_id}",
+                        json={"status": {"state": "succeeded", "last_attempt_id": "0"}},
+                    )
+                )
+            except Exception as error:
+                # A success response can be lost after commit. The server rejects
+                # changing that terminal state; preserve the publication error.
+                try:
+                    _checked(
+                        active_client.patch(
+                            f"/api/rollouts/{rollout_id}",
+                            json={"status": {"state": "failed", "error_message": "Semaprax publication failed"}},
+                        )
+                    )
+                except Exception:
+                    error.add_note(f"Could not mark rollout {rollout_id} failed after publication failed.")
+                raise
     finally:
         if owned_client is not None:
             owned_client.close()

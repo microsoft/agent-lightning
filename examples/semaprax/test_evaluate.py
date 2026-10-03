@@ -129,3 +129,139 @@ def test_invalid_batch_makes_no_http_calls(records: list[dict]) -> None:
     with pytest.raises(ValidationError):
         publish_records(invalid, client=client)
     assert client.calls == []
+
+
+@pytest.mark.parametrize("case_id", [[], {}, None, 123, True])
+def test_non_string_case_id_makes_no_http_calls(records: list[dict], case_id: object) -> None:
+    client = _FailureClient()
+    records[0]["case_id"] = case_id
+    with pytest.raises(ValidationError, match="case_id must be a string"):
+        publish_records(records, client=client)
+    assert client.calls == []
+
+
+class _PublicationFailureClient:
+    """Inject failures around requests to the real in-process rollout store."""
+
+    def __init__(
+        self, client: TestClient, failure: str, cleanup_failure: str | None = None, failure_on_case: int = 0
+    ) -> None:
+        self.client = client
+        self.failure = failure
+        self.cleanup_failure = cleanup_failure
+        self.failure_on_case = failure_on_case
+        self.calls: list[tuple[str, str, Any]] = []
+        self.created_ids: list[str] = []
+        self.rollout_id: str | None = None
+        self.close_calls = 0
+
+    def _failure_response(self, method: str, url: str) -> httpx.Response:
+        return httpx.Response(503, request=httpx.Request(method, f"http://test{url}"))
+
+    def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.calls.append(("POST", url, kwargs["json"]))
+        if url == "/api/rollouts":
+            response = self.client.post(url, **kwargs)
+            rollout_id = response.json()[0]["rollout_id"]
+            assert isinstance(rollout_id, str)
+            self.rollout_id = rollout_id
+            self.created_ids.append(rollout_id)
+            return response
+        should_fail = len(self.created_ids) - 1 == self.failure_on_case
+        if should_fail and self.failure == "event_http":
+            return self._failure_response("POST", url)
+        response = self.client.post(url, **kwargs)
+        if should_fail and self.failure == "event_transport_after_commit":
+            raise httpx.ReadTimeout("publication response lost", request=response.request)
+        return response
+
+    def patch(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.calls.append(("PATCH", url, kwargs["json"]))
+        state = kwargs["json"]["status"]["state"]
+        if len(self.created_ids) - 1 != self.failure_on_case:
+            return self.client.patch(url, **kwargs)
+        if self.failure == f"{state}_http" or (state == "failed" and self.cleanup_failure == "http"):
+            return self._failure_response("PATCH", url)
+        if state == "failed" and self.cleanup_failure == "transport":
+            raise httpx.ConnectError("cleanup unavailable", request=httpx.Request("PATCH", f"http://test{url}"))
+        response = self.client.patch(url, **kwargs)
+        if state == "succeeded" and self.failure == "succeeded_transport_after_commit":
+            raise httpx.ReadTimeout("publication response lost", request=response.request)
+        return response
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_state", "expected_events"),
+    [
+        ("running_http", "failed", 0),
+        ("event_http", "failed", 0),
+        ("event_transport_after_commit", "failed", 1),
+        ("succeeded_http", "failed", 5),
+        ("succeeded_transport_after_commit", "succeeded", 5),
+    ],
+)
+def test_publication_failure_attempts_terminal_cleanup_without_event_retry(
+    records: list[dict], client: TestClient, failure: str, expected_state: str, expected_events: int
+) -> None:
+    failing = _PublicationFailureClient(client, failure)
+    error_type = httpx.ReadTimeout if "transport" in failure else httpx.HTTPStatusError
+    with pytest.raises(error_type):
+        publish_records(records, client=failing)
+
+    assert failing.rollout_id is not None
+    rollout_id = failing.rollout_id
+    rollout = client.get(f"/api/rollouts/{rollout_id}").json()["rollout"]
+    assert rollout["status"]["state"] == expected_state
+    assert len(_rollouts) == 1
+    events = client.get(f"/api/rollouts/{rollout_id}/events").json()
+    assert len(events) == expected_events
+    event_types = [
+        payload["event_type"] for method, url, payload in failing.calls if method == "POST" and "events" in url
+    ]
+    assert len(event_types) == len(set(event_types))
+    assert (
+        sum(method == "PATCH" and payload["status"]["state"] == "failed" for method, _, payload in failing.calls) == 1
+    )
+
+
+@pytest.mark.parametrize("cleanup_failure", ["http", "transport"])
+def test_failed_cleanup_preserves_original_publication_error(
+    records: list[dict], client: TestClient, cleanup_failure: str
+) -> None:
+    failing = _PublicationFailureClient(client, "event_http", cleanup_failure)
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        publish_records(records, client=failing)
+
+    assert failing.rollout_id is not None
+    assert caught.value.request.url.path == f"/api/rollouts/{failing.rollout_id}/attempt/0/events"
+    assert (
+        sum(method == "PATCH" and payload["status"]["state"] == "failed" for method, _, payload in failing.calls) == 1
+    )
+    assert [method for method, url, _ in failing.calls if "events" in url] == ["POST"]
+    assert any(failing.rollout_id in note for note in caught.value.__notes__)
+
+
+def test_later_publication_failure_preserves_prior_success(records: list[dict], client: TestClient) -> None:
+    failing = _PublicationFailureClient(client, "event_http", failure_on_case=1)
+    with pytest.raises(httpx.HTTPStatusError):
+        publish_records(records, client=failing)
+
+    assert len(failing.created_ids) == 2
+    states = [
+        client.get(f"/api/rollouts/{rollout_id}").json()["rollout"]["status"]["state"]
+        for rollout_id in failing.created_ids
+    ]
+    assert states == ["succeeded", "failed"]
+
+
+def test_owned_client_closes_after_publication_failure(
+    records: list[dict], client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failing = _PublicationFailureClient(client, "event_http")
+    monkeypatch.setattr("examples.semaprax.evaluate.AgentLightningSyncClient", lambda **kwargs: failing)
+    with pytest.raises(httpx.HTTPStatusError):
+        publish_records(records, base_url="http://test", key=KEY)
+    assert failing.close_calls == 1

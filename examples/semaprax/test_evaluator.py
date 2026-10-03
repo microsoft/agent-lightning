@@ -118,6 +118,24 @@ def test_rejects_duplicate_proposal_even_when_trace_is_resealed(records: list[di
         evaluate_record(record)
 
 
+@pytest.mark.parametrize("tool_id", ["fixture.other", None])
+def test_rejects_extra_tool_acceptance_when_trace_is_resealed(records: list[dict], tool_id: str | None) -> None:
+    record = copy.deepcopy(records[0])
+    trace = json.loads(record["decision"]["trace"])
+    accepted = next(
+        event for event in trace["events"] if event["kind"] == "action_accepted" and event["status"] == "tool"
+    )
+    extra = copy.deepcopy(accepted)
+    extra["tool_id"] = tool_id
+    trace["events"].insert(accepted["index"], extra)
+    for index, event in enumerate(trace["events"]):
+        event["index"] = index
+    _reseal_trace(record, trace)
+
+    with pytest.raises(ValidationError, match="authorized tool lifecycle is incomplete"):
+        evaluate_record(record)
+
+
 def test_rejects_resealed_run_id_and_event_status_tampering(records: list[dict]) -> None:
     run_id_record = copy.deepcopy(records[0])
     trace = json.loads(run_id_record["decision"]["trace"])
@@ -166,4 +184,11 @@ def test_missing_required_field_is_a_validation_error(records: list[dict]) -> No
 def test_rejects_duplicate_case_in_batch(records: list[dict]) -> None:
     records[2]["case_id"] = records[1]["case_id"]
     with pytest.raises(ValidationError, match="duplicate case_id"):
+        evaluate_records(records)
+
+
+@pytest.mark.parametrize("case_id", [[], {}, None, 123, True])
+def test_rejects_non_string_case_id_before_batch_set(records: list[dict], case_id: object) -> None:
+    records[0]["case_id"] = case_id
+    with pytest.raises(ValidationError, match="case_id must be a string"):
         evaluate_records(records)
