@@ -24,10 +24,18 @@ agl-server \
     key="$AGL_KEY" \
     default_proxy.model_name="$SEARCH_R1_MODEL" &
 
+server_ready=0
 for _ in $(seq 1 60); do
-    curl -sf "http://localhost:$AGL_SERVER_PORT/healthz" >/dev/null && break
+    if curl --max-time 1 -sf "http://localhost:$AGL_SERVER_PORT/healthz" >/dev/null; then
+        server_ready=1
+        break
+    fi
     sleep 1
 done
+if [[ "$server_ready" -ne 1 ]]; then
+    echo "Agent Lightning server did not become ready on port $AGL_SERVER_PORT after 60 attempts" >&2
+    exit 1
+fi
 
 agl-controller \
     runner_type=local \
