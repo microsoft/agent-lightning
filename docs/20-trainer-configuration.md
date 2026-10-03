@@ -1,8 +1,8 @@
 # Trainer Configuration
 
-Agent Lightning v1.0 adds its configuration on top of `verl`'s `ppo_trainer` Hydra configuration. The complete default configuration from `agentlightning/verl/config.yaml` is shown below. The following sections explain these settings in detail.
+Agent Lightning v1.0 adds its configuration on top of `verl`'s `ppo_trainer` Hydra configuration. The excerpt below shows selected defaults added by Agent Lightning. The full [configuration]({{ src('agentlightning/verl/config.yaml') }}) also includes Hydra setup and additional `verl` overrides. The following sections explain these settings in detail.
 
-Complete default configuration added by Agent Lightning:
+Selected defaults added by Agent Lightning:
 
 ```yaml
 algorithm:
