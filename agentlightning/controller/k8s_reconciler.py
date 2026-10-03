@@ -258,6 +258,17 @@ class K8sReconciler:
         try:
             manifest = build_job_spec(rollout, self._config)
             attempt_id = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
+        except Exception as exc:
+            error_str = str(exc)
+            log.error("Invalid Job spec — marking failed", rollout_id=rollout.rollout_id, error=error_str)
+            await self._patch_status(
+                rollout.rollout_id,
+                state=RolloutState.FAILED,
+                error_message=f"Invalid Job spec: {error_str}",
+            )
+            return
+
+        try:
             api = await self._get_k8s_api()
             job = k8s_objects.Job(manifest, api=api)
             await job.async_create()
