@@ -130,13 +130,23 @@ class K8sReconciler:
             namespace=self._namespace,
             poll_interval=self._runner_config.poll_interval,
         )
+        workers = [
+            asyncio.create_task(self._periodic_reconcile_loop()),
+            asyncio.create_task(self._watch_jobs_loop()),
+        ]
+        stop_waiter = asyncio.create_task(self._stop.wait())
+        owned_tasks = [*workers, stop_waiter]
         try:
-            await asyncio.gather(
-                self._periodic_reconcile_loop(),
-                self._watch_jobs_loop(),
-            )
+            done, _ = await asyncio.wait(owned_tasks, return_when=asyncio.FIRST_COMPLETED)
+            for worker in workers:
+                if worker in done:
+                    await worker
         except asyncio.CancelledError:
             log.info("Controller stopped")
+        finally:
+            for task in owned_tasks:
+                task.cancel()
+            await asyncio.gather(*owned_tasks, return_exceptions=True)
 
     def stop(self) -> None:
         """Signal the controller to stop."""
