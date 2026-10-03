@@ -44,6 +44,8 @@ class AgentLightningSyncClient(httpx.Client):
         max_retries: int = 10,
         **kwargs: Any,
     ) -> None:
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
         self.max_retries = max_retries
         super().__init__(
             headers=_headers_with_key(headers, key),
