@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agentlightning.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
@@ -32,6 +34,24 @@ class _ManagerWithViews(AglRolloutManagerBase):
 
     def _fetch_rollout_events(self, rollout_id: str) -> tuple[list[Event], list[Event]]:
         return self._raw_events, self._triplet_view_events
+
+
+def test_manager_loads_k8s_job_template_as_utf8(tmp_path: Path) -> None:
+    template = "kind: Job\n# UTF-8 comment — fixture\nspec: {}\n"
+    template_path = tmp_path / "job-template.yaml"
+    template_path.write_text(template, encoding="utf-8")
+
+    manager = AglRolloutManagerBase(
+        agl_base_url="http://localhost:8181",
+        agl_key="test-key",
+        model="test-model",
+        step=0,
+        k8s_job_template_path=str(template_path),
+    )
+    try:
+        assert manager._rollout_config["k8s"]["job_template"] == template
+    finally:
+        manager.client.close()
 
 
 def _event(event_type: str, data: dict) -> Event:

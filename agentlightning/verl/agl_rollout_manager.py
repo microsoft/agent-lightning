@@ -281,7 +281,7 @@ class AglRolloutManagerBase:
                 "env_map": local_env_map or {},
             }
         if k8s_job_template_path:
-            self._rollout_config["k8s"] = {"job_template": Path(k8s_job_template_path).read_text()}
+            self._rollout_config["k8s"] = {"job_template": Path(k8s_job_template_path).read_text(encoding="utf-8")}
 
         self.client = AgentLightningSyncClient(
             base_url=agl_base_url,
