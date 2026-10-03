@@ -23,7 +23,7 @@ async def _run_controller(config: DictConfig) -> None:
             try:
                 from agentlightning.controller.k8s_reconciler import K8sReconciler
             except ImportError:
-                raise RuntimeError("kr8s unavailable - install agentlightning[controller]") from None
+                raise RuntimeError("kr8s unavailable - install agentlightning") from None
 
             reconciler = K8sReconciler(api=api, config=config)
         elif config.runner_type == "local":
