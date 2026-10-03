@@ -138,7 +138,7 @@ class LocalReconciler:
         params = httpx.QueryParams()
         params = params.add("state_in", RolloutState.QUEUING.value)
         params = params.add("state_in", RolloutState.RUNNING.value)
-        params = params.add("limit", 50)
+        params = params.add("limit", max(50, self._pool_size))
         response = await self._api.get("/api/rollouts", params=params)
         response.raise_for_status()
         rollouts = [Rollout.model_validate(item) for item in response.json()]

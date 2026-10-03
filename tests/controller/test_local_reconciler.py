@@ -92,6 +92,60 @@ async def test_normal_reconcile_still_spawns_queued_rollouts(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("pool_size", "expected_limit"),
+    [(25, 50), (50, 50), (60, 60), (128, 128)],
+)
+async def test_reconcile_fetches_enough_rollouts_to_fill_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    pool_size: int,
+    expected_limit: int,
+) -> None:
+    rollouts = [
+        Rollout(
+            rollout_id=f"rollout-{index}",
+            input={"index": index},
+            config=RolloutConfig(),
+            status=RolloutLifecycleStatus(created_at=1.0, updated_at=1.0),
+        )
+        for index in range(128)
+    ]
+    requested_limits: list[int] = []
+    api = AsyncMock(spec=AgentLightningAsyncClient)
+
+    async def get(*args: object, **kwargs: object) -> httpx.Response:
+        del args
+        params = kwargs["params"]
+        assert isinstance(params, httpx.QueryParams)
+        limit = int(params["limit"])
+        requested_limits.append(limit)
+        return _response([rollout.model_dump(mode="json") for rollout in rollouts[:limit]])
+
+    api.get.side_effect = get
+    api.patch.return_value = _response({})
+    config = OmegaConf.create(
+        {
+            "runner_type": "local",
+            "local_runner": {"maximum_size": pool_size, "poll_interval": 0.01},
+        }
+    )
+    reconciler = LocalReconciler(api, config)
+
+    async def spawn(rollout: Rollout) -> bool:
+        item, _ = _proc(returncode=None)
+        reconciler._rid_to_proc[rollout.rollout_id] = item
+        return True
+
+    monkeypatch.setattr(reconciler, "_spawn_for", spawn)
+
+    await reconciler._reconcile_once()
+    await reconciler._reconcile_once()
+
+    assert len(reconciler._rid_to_proc) == pool_size
+    assert requested_limits == [expected_limit, expected_limit]
+
+
+@pytest.mark.asyncio
 async def test_reconcile_does_not_spawn_after_stop_requested_during_poll(monkeypatch: pytest.MonkeyPatch) -> None:
     reconciler, api = _reconciler()
     spawn_for = AsyncMock(return_value=True)
