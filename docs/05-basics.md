@@ -57,6 +57,8 @@ POST /proxy/rollout/{rollout_id}/attempt/{attempt_id}/mode/train/openai/v1/chat/
 
 The corresponding validation path uses `mode/val`. OpenAI-compatible clients can use the path through `/openai/v1` as their base URL and append `/chat/completions` normally.
 
+The v1 Gateway supports non-streaming Chat Completions and Completions requests. Keep `stream=false` when configuring your client. The Responses API and other OpenAI endpoints are not forwarded; choose Chat Completions explicitly in clients that default to Responses.
+
 Because the rollout ID is part of the proxy URL, every model call is automatically associated with the correct execution. An existing agent only needs to use the provided endpoint; it does not need to implement Agent Lightning's rollout or training logic.
 
 ## Rollout Controller
