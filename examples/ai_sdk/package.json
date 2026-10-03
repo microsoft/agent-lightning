@@ -1,0 +1,22 @@
+{
+  "name": "agent-lightning-ai-sdk-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "npm run build && node --test dist/test/agent.test.js"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "3.0.124",
+    "ai": "6.0.300",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.13",
+    "typescript": "7.0.2"
+  }
+}
