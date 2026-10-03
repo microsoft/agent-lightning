@@ -2,10 +2,96 @@
 
 """Unit tests for controller manifests; no cluster or GPU is required."""
 
+import asyncio
+from unittest.mock import AsyncMock
+
+import pytest
 from omegaconf import OmegaConf
 
-from agentlightning.controller.k8s_reconciler import MANAGED_BY_SELECTOR, build_job_spec
+from agentlightning.controller.k8s_reconciler import MANAGED_BY_SELECTOR, K8sReconciler, build_job_spec
 from agentlightning.schemas import Rollout, RolloutConfig, RolloutK8sConfig, RolloutLifecycleStatus
+
+
+def _reconciler() -> K8sReconciler:
+    config = OmegaConf.create(
+        {
+            "k8s_runner": {
+                "namespace": "default",
+                "poll_interval": 0.01,
+            }
+        }
+    )
+    reconciler = K8sReconciler(AsyncMock(), config)
+    reconciler._get_k8s_api = AsyncMock(return_value=object())  # type: ignore[method-assign]
+    reconciler._reconcile_once = AsyncMock()  # type: ignore[method-assign]
+    return reconciler
+
+
+def _idle_watch(entered: asyncio.Event, closed: asyncio.Event):
+    async def watch(*args: object, **kwargs: object):
+        del args, kwargs
+        try:
+            entered.set()
+            await asyncio.Event().wait()
+            yield None
+        finally:
+            closed.set()
+
+    return watch
+
+
+@pytest.mark.asyncio
+async def test_stop_closes_idle_k8s_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    reconciler = _reconciler()
+    monkeypatch.setattr("agentlightning.controller.k8s_reconciler.kr8s.asyncio.watch", _idle_watch(entered, closed))
+    running = asyncio.create_task(reconciler.run())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+
+    try:
+        reconciler.stop()
+        await asyncio.wait_for(asyncio.shield(running), timeout=0.5)
+    finally:
+        if not running.done():
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+
+    assert closed.is_set()
+
+
+@pytest.mark.asyncio
+async def test_external_cancellation_closes_idle_k8s_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    reconciler = _reconciler()
+    monkeypatch.setattr("agentlightning.controller.k8s_reconciler.kr8s.asyncio.watch", _idle_watch(entered, closed))
+    running = asyncio.create_task(reconciler.run())
+    await asyncio.wait_for(entered.wait(), timeout=1)
+
+    running.cancel()
+    await asyncio.wait_for(running, timeout=1)
+
+    assert closed.is_set()
+
+
+@pytest.mark.asyncio
+async def test_worker_error_propagates_and_closes_idle_k8s_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    reconciler = _reconciler()
+    monkeypatch.setattr("agentlightning.controller.k8s_reconciler.kr8s.asyncio.watch", _idle_watch(entered, closed))
+
+    async def fail_after_watch_starts() -> None:
+        await entered.wait()
+        raise RuntimeError("periodic worker failed")
+
+    monkeypatch.setattr(reconciler, "_periodic_reconcile_loop", fail_after_watch_starts)
+
+    with pytest.raises(RuntimeError, match="periodic worker failed"):
+        await asyncio.wait_for(reconciler.run(), timeout=1)
+
+    assert closed.is_set()
 
 
 def test_build_job_spec_uses_agentlightning_labels() -> None:
