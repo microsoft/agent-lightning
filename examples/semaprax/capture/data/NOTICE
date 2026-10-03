@@ -1,0 +1,9 @@
+The JSON profile and task fixtures in this directory are adapted from the
+Semaprax Agent Runtime tests, licensed under Apache License 2.0:
+
+https://github.com/wavect/semaprax/blob/eec951eb1cce83e5e0f42edf97cbb5b8f3cffa2c/src/agent_runtime/tests.rs
+
+This example changes profile/task identifiers, task nonces, and the denied
+profile's allowed tool list. The accompanying LICENSE is reproduced from that
+revision. The same profile/task data and runtime nonclaims appear in the
+generated records at ../../fixtures/records.json.

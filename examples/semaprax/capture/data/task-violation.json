@@ -1,0 +1,1 @@
+{"schema":"semaprax.agent-runtime-task.v1","nonce":"2222222222222222222222222222222222222222222222222222222222222222","objective":"Return one bounded answer.","context":[{"label":"input","provenance":"caller_untrusted","content":"alpha"}]}
