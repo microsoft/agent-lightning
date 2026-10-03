@@ -114,6 +114,7 @@ nav:
     - Coding Agent: 75-example-coding-agent.md
     - Coding Agent (MoE): 76-example-coding-agent-moe.md
     - Multimodal QA: 80-example-multimodal-qa.md
+    - Semaprax Policy Evaluation: 86-example-semaprax.md
   - Community:
     - Contributing: community/contributing.md
 
