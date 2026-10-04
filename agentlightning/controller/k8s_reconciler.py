@@ -161,6 +161,17 @@ class K8sReconciler:
     async def _reconcile_once(self) -> None:
         """One reconcile cycle: align queuing/running rollouts with K8s Jobs."""
         rollouts = await self._query_rollouts(state_in=[RolloutState.QUEUING, RolloutState.RUNNING], limit=500)
+        prepared_rollouts: list[tuple[Rollout, dict[str, Any] | None]] = []
+        for rollout in rollouts:
+            manifest = None
+            if rollout.status.state == RolloutState.QUEUING:
+                manifest = await self._prepare_job_manifest(rollout)
+                if manifest is None:
+                    continue
+            prepared_rollouts.append((rollout, manifest))
+        if not prepared_rollouts:
+            return
+
         api = await self._get_k8s_api()
         jobs = [
             cast(k8s_objects.Job, job).raw
@@ -172,13 +183,13 @@ class K8sReconciler:
         ]
         jobs_by_name = {job.get("metadata", {}).get("name", ""): job for job in jobs}
 
-        for rollout in rollouts:
+        for rollout, manifest in prepared_rollouts:
             job_name = rollout.status.k8s_job_name or build_job_name(rollout.rollout_id)
             job = jobs_by_name.get(job_name)
 
             if job is None:
                 if rollout.status.state == RolloutState.QUEUING:
-                    await self._create_job(rollout)
+                    await self._create_job(rollout, manifest=manifest)
                     continue
                 log.warning("Orphaned running rollout — Job gone", rollout_id=rollout.rollout_id, job_name=job_name)
                 await self._patch_status(rollout.rollout_id, state=RolloutState.FAILED, error_message="Job disappeared")
@@ -239,8 +250,33 @@ class K8sReconciler:
                 error_message=error_message,
             )
 
-    async def _create_job(self, rollout: Rollout) -> None:
-        """Create a K8s Job for a queuing rollout without changing rollout state."""
+    async def _prepare_job_manifest(self, rollout: Rollout) -> dict[str, Any] | None:
+        """Validate locally and report invalid templates as FAILED before cluster or quota checks."""
+        try:
+            manifest = build_job_spec(rollout, self._config)
+            _ = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
+            return manifest
+        except Exception as exc:
+            error_str = str(exc)
+            log.error("Invalid Job spec — marking failed", rollout_id=rollout.rollout_id, error=error_str)
+            await self._patch_status(
+                rollout.rollout_id,
+                state=RolloutState.FAILED,
+                error_message=f"Invalid Job spec: {error_str}",
+            )
+            return None
+
+    async def _create_job(self, rollout: Rollout, *, manifest: dict[str, Any] | None = None) -> None:
+        """Submit a queuing rollout's Job, marking invalid specs FAILED.
+
+        Valid rollouts remain QUEUING until Job observations update their state.
+        Rate limits and transient cluster failures defer submission for retry.
+        """
+        if manifest is None:
+            manifest = await self._prepare_job_manifest(rollout)
+            if manifest is None:
+                return
+        attempt_id = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
         job_name = build_job_name(rollout.rollout_id)
         now = time.monotonic()
         window_start = now - JOB_CREATION_WINDOW_SECONDS
@@ -252,19 +288,6 @@ class K8sReconciler:
                 rollout_id=rollout.rollout_id,
                 jobs_in_last_minute=len(self._job_creation_timestamps),
                 max_jobs_per_minute=self._runner_config.max_jobs_per_minute,
-            )
-            return
-
-        try:
-            manifest = build_job_spec(rollout, self._config)
-            attempt_id = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
-        except Exception as exc:
-            error_str = str(exc)
-            log.error("Invalid Job spec — marking failed", rollout_id=rollout.rollout_id, error=error_str)
-            await self._patch_status(
-                rollout.rollout_id,
-                state=RolloutState.FAILED,
-                error_message=f"Invalid Job spec: {error_str}",
             )
             return
 
