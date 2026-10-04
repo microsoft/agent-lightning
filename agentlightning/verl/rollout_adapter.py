@@ -191,15 +191,15 @@ def _build_routed_experts_batch(
     max_response_length: int,
     device: torch.device,
 ) -> torch.Tensor:
-    decoded = [np.load(io.BytesIO(base64.b64decode(payload)), allow_pickle=False) for payload, _, _, _ in rows]
-    batch = torch.zeros(
-        (len(rows), max_prompt_length + max_response_length, *decoded[0].shape[1:]),
-        dtype=torch.uint8,
-        device=device,
-    )
-    for index, (routes, (_, original_prompt_length, prompt_length, response_length)) in enumerate(
-        zip(decoded, rows, strict=True)
-    ):
+    batch: torch.Tensor | None = None
+    for index, (payload, original_prompt_length, prompt_length, response_length) in enumerate(rows):
+        routes = np.load(io.BytesIO(base64.b64decode(payload)), allow_pickle=False)
+        if batch is None:
+            batch = torch.zeros(
+                (len(rows), max_prompt_length + max_response_length, *routes.shape[1:]),
+                dtype=torch.uint8,
+                device=device,
+            )
         if len(routes) < original_prompt_length + response_length - 1:
             raise RuntimeError("R3 routed_experts is shorter than its token sequence")
         routes = torch.from_numpy(routes).to(device=device, dtype=torch.uint8)
@@ -210,6 +210,9 @@ def _build_routed_experts_batch(
         batch[index, max_prompt_length : max_prompt_length + response_routes] = routes[
             original_prompt_length : original_prompt_length + response_routes
         ]
+        # Release the NumPy-backed tensor before decoding the next row.
+        del routes
+    assert batch is not None
     return batch
 
 

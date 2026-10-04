@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import sys
+import weakref
 import zipfile
 from types import SimpleNamespace
 from typing import ClassVar
@@ -16,11 +17,12 @@ pytest.importorskip("torch")
 pytest.importorskip("tensordict")
 pytest.importorskip("verl")
 
+import numpy as np
 import torch
 
 from agentlightning.verl import rollout_adapter as rollout_adapter_module
 from agentlightning.verl.agl_rollout_manager import CompletedRollout, Triplet
-from agentlightning.verl.rollout_adapter import RolloutAdapter
+from agentlightning.verl.rollout_adapter import RolloutAdapter, _build_routed_experts_batch
 
 
 class FakeTokenizer:
@@ -28,6 +30,60 @@ class FakeTokenizer:
 
     def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
         return " ".join(str(i) for i in ids)
+
+
+def _encode_routes(routes: np.ndarray) -> str:
+    buffer = io.BytesIO()
+    np.save(buffer, routes, allow_pickle=False)
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.int64])
+def test_routed_experts_batch_preserves_padding_and_truncation(dtype: type[np.generic]) -> None:
+    rows = []
+    for tokens, original_prompt_length, prompt_length, response_length in [
+        ([10, 11, 12, 13], 2, 2, 3),
+        ([20, 21, 22, 23, 24, 25, 26], 6, 4, 2),
+        ([30, 31, 32, 33, 34, 35, 36], 1, 1, 3),
+    ]:
+        routes = (np.array(tokens)[:, None, None] * 4 + np.arange(4).reshape(1, 2, 2)).astype(dtype)
+        rows.append((_encode_routes(routes), original_prompt_length, prompt_length, response_length))
+
+    batch = _build_routed_experts_batch(rows, 4, 3, torch.device("cpu"))
+
+    expected = torch.zeros((3, 7, 2, 2), dtype=torch.uint8)
+    for row, tokens in enumerate([[0, 0, 10, 11, 12, 13, 0], [20, 21, 22, 23, 26, 0, 0], [0, 0, 0, 30, 31, 32, 33]]):
+        for position, token in enumerate(tokens):
+            if token:
+                expected[row, position] = torch.arange(4, dtype=torch.uint8).reshape(2, 2) + token * 4
+    torch.testing.assert_close(batch, expected, rtol=0, atol=0)
+
+
+def test_routed_experts_batch_releases_decoded_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = _encode_routes(np.arange(48, dtype=np.uint8).reshape(12, 2, 2))
+    decoded: list[weakref.ReferenceType[np.ndarray]] = []
+    load = np.load
+
+    def tracked_load(*args, **kwargs):
+        assert all(ref() is None for ref in decoded), "Previous decoded routes are still retained"
+        routes = load(*args, **kwargs)
+        decoded.append(weakref.ref(routes))
+        return routes
+
+    monkeypatch.setattr(rollout_adapter_module.np, "load", tracked_load)
+    batch = _build_routed_experts_batch([(payload, 4, 4, 3)] * 4, 4, 3, torch.device("cpu"))
+
+    assert len(decoded) == 4
+    assert all(ref() is None for ref in decoded)
+    expected = torch.arange(28, dtype=torch.uint8).reshape(7, 2, 2).expand(4, -1, -1, -1)
+    torch.testing.assert_close(batch, expected, rtol=0, atol=0)
+
+
+def test_routed_experts_batch_rejects_short_route_sequence() -> None:
+    valid = _encode_routes(np.zeros((4, 2, 2), dtype=np.uint8))
+    short = _encode_routes(np.zeros((3, 2, 2), dtype=np.uint8))
+    with pytest.raises(RuntimeError, match="R3 routed_experts is shorter than its token sequence"):
+        _build_routed_experts_batch([(valid, 2, 2, 3), (short, 2, 2, 3)], 4, 3, torch.device("cpu"))
 
 
 class FakeTable:
