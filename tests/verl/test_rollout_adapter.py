@@ -7,6 +7,7 @@ import io
 import json
 import sys
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
 
@@ -592,6 +593,38 @@ def test_load_pil_image_decodes_data_url() -> None:
 
     assert image.size == (2, 2)
     assert image.mode == "RGB"
+
+
+@pytest.mark.parametrize("filename", ["plain.png", "frame one.png", "图像.png", "frame%20.png"])
+def test_load_pil_image_decodes_file_uri(tmp_path: Path, filename: str) -> None:
+    from PIL import Image
+
+    image_path = tmp_path / filename
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(image_path)
+    # A second unquote would load the wrong image for the literal-percent case.
+    if filename == "frame%20.png":
+        Image.new("RGB", (2, 2), (0, 0, 255)).save(tmp_path / "frame .png")
+
+    image = rollout_adapter_module._load_pil_image(image_path.as_uri())
+
+    assert image.size == (2, 2)
+    assert image.mode == "RGB"
+    assert image.getpixel((0, 0)) == (255, 0, 0)
+
+
+def test_file_uri_image_row_is_kept_for_training(tmp_path: Path) -> None:
+    from PIL import Image
+
+    image_path = tmp_path / "frame 50%.png"
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(image_path)
+    rollout = _transition_rollout([_image_triplet([1, 2], [3], image_urls=[image_path.as_uri()])])
+
+    batch, _ = _transition_adapter(FakeMropeProcessor()).get_train_data_batch([rollout])
+
+    assert batch.batch["is_drop_mask"].tolist() == [False]
+    assert batch.non_tensor_batch["multi_modal_inputs"][0] is not None
+    keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
+    assert batch[keep].non_tensor_batch["rollout_id_list"].tolist() == [rollout.rollout_id]
 
 
 def test_load_pil_image_fetches_remote_url_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
