@@ -774,7 +774,8 @@ class RolloutAdapter:
             print("Warning: Mixed rollout log_probs availability, omitting rollout_log_probs from batch.")
 
         is_drop_mask = torch.BoolTensor(is_drop_list).to(self.device)
-        scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(self.device)
+        # Preserve fractional reward differences used by advantage estimators.
+        scores = torch.tensor(reward_list, dtype=torch.float32).to(self.device)
 
         token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
         token_positions = torch.arange(attention_mask.shape[-1], device=attention_mask.device).unsqueeze(0)
