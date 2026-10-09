@@ -20,12 +20,14 @@ from pydantic import BaseModel, Field
 
 from agentlightning.client import AgentLightningSyncClient
 from agentlightning.schemas import (
+    MAX_ROLLOUT_STATUS_BATCH_SIZE,
     TERMINAL_STATES,
     Event,
     EventCreate,
     Model,
     Rollout,
     RolloutCreate,
+    RolloutLifecycleStatus,
     RolloutState,
 )
 
@@ -325,8 +327,21 @@ class AglRolloutManagerBase:
         except Exception as exc:
             print(f"RolloutManager: failed to delete rollout {rollout_id}: {exc}")
 
+    def _get_rollout_statuses(self, rollout_ids: list[str]) -> dict[str, RolloutLifecycleStatus]:
+        statuses: dict[str, RolloutLifecycleStatus] = {}
+        for offset in range(0, len(rollout_ids), MAX_ROLLOUT_STATUS_BATCH_SIZE):
+            batch = rollout_ids[offset : offset + MAX_ROLLOUT_STATUS_BATCH_SIZE]
+            response = self.client.post_with_retry(
+                "/api/rollouts/status", json=batch, retry_status_codes=Retry.RETRYABLE_STATUS_CODES
+            )
+            payload = response.json()
+            statuses.update(
+                {rollout_id: RolloutLifecycleStatus.model_validate(payload[rollout_id]) for rollout_id in batch}
+            )
+        return statuses
+
     @staticmethod
-    def _record_lifecycle_timestamps(enqueued_rollout: EnqueuedRollout, rollout: Rollout) -> None:
+    def _record_lifecycle_timestamps(enqueued_rollout: EnqueuedRollout, status: RolloutLifecycleStatus) -> None:
         """Capture server-authoritative running/finished timestamps in place.
 
         Pods are launched in CPU-limited batches, so a rollout can sit QUEUING
@@ -336,8 +351,8 @@ class AglRolloutManagerBase:
         terminal state, the terminal updated_at) so running_at - enqueue_time
         reflects the real queue/startup wait.
         """
-        state = rollout.status.state
-        updated_at = rollout.status.updated_at
+        state = status.state
+        updated_at = status.updated_at
         if enqueued_rollout.running_at is None and state in (
             RolloutState.RUNNING,
             RolloutState.SUCCEEDED,
@@ -557,14 +572,16 @@ class AglRolloutManager(AglRolloutManagerBase):
                 self._delete_rollout(completed_rollout.rollout_id)
             num_deleted = len(completed_rollouts)
 
+            statuses = self._get_rollout_statuses([rollout.rollout_id for rollout in pending_rollouts])
             for enqueued_rollout in list(pending_rollouts):
                 rollout_id = enqueued_rollout.rollout_id
-                rollout = self._get_rollout(rollout_id)
-                state = rollout.status.state
-                self._record_lifecycle_timestamps(enqueued_rollout, rollout)
+                status = statuses[rollout_id]
+                state = status.state
+                self._record_lifecycle_timestamps(enqueued_rollout, status)
                 if state not in TERMINAL_STATES:
                     continue
 
+                rollout = self._get_rollout(rollout_id)
                 pending_rollouts.remove(enqueued_rollout)
                 if state == RolloutState.SUCCEEDED:
                     num_succeeded += 1
@@ -623,6 +640,9 @@ class AglAsyncRolloutManager(AglRolloutManagerBase):
         num_failed = 0
 
         while len(completed_group_keys) < target_finished_group_num:
+            statuses = self._get_rollout_statuses(
+                [rollout.rollout_id for rollout in active_rollouts if rollout.rollout_id not in finished_rollout_ids]
+            )
             for data_id, group in grouped_rollouts.items():
                 if data_id in completed_group_keys:
                     continue
@@ -631,12 +651,13 @@ class AglAsyncRolloutManager(AglRolloutManagerBase):
                     if enqueued_rollout.rollout_id in finished_rollout_ids:
                         continue
 
-                    rollout = self._get_rollout(enqueued_rollout.rollout_id)
-                    state = rollout.status.state
-                    self._record_lifecycle_timestamps(enqueued_rollout, rollout)
+                    status = statuses[enqueued_rollout.rollout_id]
+                    state = status.state
+                    self._record_lifecycle_timestamps(enqueued_rollout, status)
                     if state not in TERMINAL_STATES:
                         continue
 
+                    rollout = self._get_rollout(enqueued_rollout.rollout_id)
                     finished_rollout_ids.add(enqueued_rollout.rollout_id)
                     terminal_rollouts[enqueued_rollout.rollout_id] = rollout
                     if state == RolloutState.SUCCEEDED:
