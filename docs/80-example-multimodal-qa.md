@@ -16,6 +16,8 @@ The dataset is generated with PIL at startup — there is nothing to download:
 - The agent sends the image (as a base64 `image_url` content part) plus the question "How many red circles are in the image?" to the proxied VLM.
 - A rule-based reward scores the answer: 1.0 if the first integer in the reply equals the true circle count, 0.0 otherwise.
 
+For images already stored on the trainer host, construct each `image_url` with `Path("images/frame 1.png").resolve().as_uri()` (from `pathlib`). Local file URIs preserve spaces, Unicode, and literal percent characters in filenames.
+
 Any mrope VLM supported by verl works; pass `--model` to change the default model.
 
 ## Training

@@ -9,6 +9,7 @@ import io
 import json
 import zipfile
 from typing import Any, cast
+from urllib.request import url2pathname
 
 import numpy as np
 import torch
@@ -250,7 +251,7 @@ def _load_pil_image(url: str) -> Any:
         _, _, payload = url.partition(",")
         return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
     if url.startswith("file://"):
-        return Image.open(url[len("file://") :]).convert("RGB")
+        return Image.open(url2pathname(url.removeprefix("file:"))).convert("RGB")
     if url.startswith(("http://", "https://")):
         # [multimodal-patch] Remote images are fetched from the trainer process with
         # content-type and size validation.
