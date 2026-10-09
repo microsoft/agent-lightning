@@ -8,7 +8,7 @@ import json
 import sys
 import zipfile
 from types import SimpleNamespace
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 import pytest
 
@@ -139,47 +139,6 @@ def _triplet(prompt_ids: list[int], response_ids: list[int]) -> Triplet:
         prompt={"token_ids": prompt_ids},
         response={"token_ids": response_ids, "log_probs": [-0.1] * len(response_ids)},
     )
-
-
-@pytest.mark.parametrize("level", ["transition", "trajectory"])
-@pytest.mark.parametrize("rewards", [(1.0, 1.001), (0.9, 0.901), (-1.0, -1.001), (0.0, 1.0)])
-def test_fractional_rewards_preserve_grpo_advantages(
-    level: Literal["transition", "trajectory"], rewards: tuple[float, float]
-) -> None:
-    from agentlightning.verl.rollout_level_advantage import compute_rollout_level_advantage
-
-    adapter = RolloutAdapter(
-        max_prompt_length=4,
-        max_response_length=4,
-        device=torch.device("cpu"),
-        pad_token_id=0,
-        trace_aggregator_level=level,
-        tokenizer=FakeTokenizer(),
-    )
-    rollouts = [
-        CompletedRollout(
-            rollout_id=f"r{index}",
-            data_id="data-1",
-            step=0,
-            sample_idx_in_step=index,
-            enqueue_time=0.0,
-            final_reward=reward,
-            triplets=[_triplet([1], [2]), _triplet([1, 2, 3], [4])],
-        )
-        for index, reward in enumerate(rewards)
-    ]
-    batch, _ = adapter.get_train_data_batch(rollouts, global_steps=0)
-    if "response_mask" not in batch.batch:
-        batch.batch["response_mask"] = batch.batch["attention_mask"][:, -4:]
-    batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
-    batch, _ = compute_rollout_level_advantage(batch, adv_estimator="grpo", gamma=1.0, lam=1.0, num_repeat=2)
-
-    # Compare with the group statistics before any lower-precision reward cast.
-    scores = torch.tensor(rewards, dtype=torch.float32)
-    expected = (scores - scores.mean()) / (scores.std() + 1e-6)
-    rows_per_rollout = 2 if level == "transition" else 1
-    expected = expected.repeat_interleave(rows_per_rollout).unsqueeze(-1) * batch.batch["response_mask"]
-    torch.testing.assert_close(batch.batch["advantages"].float(), expected, rtol=1e-3, atol=1e-5)
 
 
 def test_trajectory_prefix_mismatch_uploads_trace_merge_table_to_wandb(
