@@ -197,6 +197,72 @@ def _triplet(prompt_ids: list[int], response_ids: list[int]) -> Triplet:
     )
 
 
+@pytest.mark.parametrize("prefix_mismatch", [False, True], ids=["initial-group", "restarted-group"])
+@pytest.mark.parametrize("missing_log_probs", [False, True], ids=["with-log-probs", "missing-log-probs"])
+def test_trajectory_aggregation_preserves_input_log_probs(prefix_mismatch: bool, missing_log_probs: bool) -> None:
+    triplets = [
+        Triplet(
+            prompt={"token_ids": [10]},
+            response={"token_ids": [20], "log_probs": None if missing_log_probs else [-0.25]},
+        ),
+        Triplet(
+            prompt={"token_ids": [10, 20, 30]},
+            response={"token_ids": [40, 50], "log_probs": [-0.5, -0.75]},
+        ),
+    ]
+    expected_responses = [[20, 30, 40, 50, 0]]
+    expected_masks = [[1, 0, 1, 1, 0]]
+    expected_log_probs = [[-0.25, 0.0, -0.5, -0.75, 0.0]]
+    if prefix_mismatch:
+        triplets.insert(0, _triplet([90], [91]))
+        expected_responses.insert(0, [91, 0, 0, 0, 0])
+        expected_masks.insert(0, [1, 0, 0, 0, 0])
+        expected_log_probs.insert(0, [-0.1, 0.0, 0.0, 0.0, 0.0])
+    rollout = CompletedRollout(
+        rollout_id="r1",
+        data_id="data-1",
+        step=0,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=1.0,
+        triplets=triplets,
+    )
+    original_rollout = rollout.model_copy(deep=True)
+    adapter = RolloutAdapter(
+        max_prompt_length=4,
+        max_response_length=5,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level="trajectory",
+        tokenizer=FakeTokenizer(),
+    )
+
+    first, first_metrics = adapter.get_train_data_batch([rollout])
+
+    assert rollout == original_rollout
+    assert first.batch is not None
+    assert first.batch["responses"].tolist() == expected_responses
+    assert first.batch["response_mask"].tolist() == expected_masks
+    if missing_log_probs:
+        assert "rollout_log_probs" not in first.batch
+    else:
+        torch.testing.assert_close(first.batch["rollout_log_probs"], torch.tensor(expected_log_probs))
+    row_count = len(expected_responses)
+    assert first.non_tensor_batch["data_id_list"].tolist() == ["data-1"] * row_count
+    assert first.non_tensor_batch["rollout_id_list"].tolist() == ["r1"] * row_count
+
+    second, second_metrics = adapter.get_train_data_batch([rollout])
+
+    assert rollout == original_rollout
+    assert second.batch is not None
+    assert set(second.batch.keys()) == set(first.batch.keys())
+    for key, value in first.batch.items():
+        torch.testing.assert_close(second.batch[key], value)
+    for key in ("data_id_list", "rollout_id_list"):
+        assert second.non_tensor_batch[key].tolist() == first.non_tensor_batch[key].tolist()
+    assert second_metrics == first_metrics
+
+
 def test_trajectory_prefix_mismatch_uploads_trace_merge_table_to_wandb(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

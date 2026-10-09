@@ -561,6 +561,8 @@ class RolloutAdapter:
                 current_context = current_prompt_ids + current_response_ids
                 current_response_mask = [1] * len(current_response_ids)
                 current_response_log_probs: list[float] | None = first_triplet.response["log_probs"]
+                if current_response_log_probs is not None:
+                    current_response_log_probs = list(current_response_log_probs)
                 current_routed_experts = first_triplet.response.get("routed_experts")
                 response_len_per_turn_list.append(len(current_response_ids))
                 merged_group_count = 0
@@ -628,7 +630,7 @@ class RolloutAdapter:
                     current_prompt_ids = list(prompt_ids)
                     current_response_ids = list(response_ids)
                     current_response_mask = [1] * len(response_ids)
-                    current_response_log_probs = log_probs
+                    current_response_log_probs = list(log_probs) if log_probs is not None else None
                     current_routed_experts = triplet.response.get("routed_experts")
 
                 append_training_row(
