@@ -71,3 +71,35 @@ bash run_minikube.sh
 `run_minikube.sh` starts `agl-server` and `agl-controller`, and writes their logs under `/tmp/`. The script also starts a new local Minikube single-node K8s cluster, and the agent runs in this cluster as Kubernetes Jobs.
 When `run_minikube.sh` exits, it automatically cleans up the server, controller, and Minikube it started.
 Minikube needs at least 64 GB of memory; otherwise, it may be killed due to insufficient memory.
+
+## Evaluating a Trained Checkpoint
+
+Training saves checkpoints under the run's `checkpoint/` directory. To score one of them on
+a held-out split without training anything further, add `--val-only` and point `--model` at
+the checkpoint:
+
+```bash
+source .venv/bin/activate
+cd examples/calc_x
+python train_calc_agent.py \
+    --val-only \
+    --model /path/to/checkpoint/global_step_128 \
+    --val-file data/test.parquet
+```
+
+This sets `trainer.val_only`, so `verl` runs a single validation pass over `--val-file` and
+exits without taking an optimizer step. The metrics are printed as
+`Initial validation metrics: {...}` and logged to W&B under the `calc_x_eval` experiment.
+The one to read is `val/reward`: it is the mean reward over the split, and the Calc-X reward
+is 1.0 for an answer matching the reference and 0.0 otherwise, so it doubles as the accuracy.
+
+Under local mode the same flags go through `run_local.sh`, which forwards its arguments:
+`bash run_local.sh --val-only --model /path/to/checkpoint/global_step_128`.
+
+Two details worth knowing:
+
+- `--val-only` still wants a non-empty train split, because `run_ppo` sizes its sampler from
+  one. The example hands the held-out split in as both, so make sure it has at least
+  `data.train_batch_size` rows (32 by default).
+- The checkpoint is only read, never written, so the same split can be scored again later
+  and compared across runs.
