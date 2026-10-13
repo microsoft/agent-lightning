@@ -113,6 +113,7 @@ def build_config(
     run_name: str | None = None,
     async_mode: bool = False,
     val_only: bool = False,
+    resume_path: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides.
@@ -130,6 +131,15 @@ def build_config(
         base_cfg = compose(config_name="config")
 
     overrides = verl_default_config(val_only=val_only)
+
+    if resume_path:
+        # A checkpoint is restored through trainer.resume_from_path, not by pointing
+        # actor_rollout_ref.model.path at it. That key is the base model, and the gateway
+        # requires its own model name to match it exactly, so aiming it at a checkpoint
+        # makes the proxy answer "model not found"
+        # (docs/25-api-gateway-configuration.md).
+        overrides["trainer"]["resume_mode"] = "resume_path"
+        overrides["trainer"]["resume_from_path"] = resume_path
 
     if model:
         overrides["actor_rollout_ref"]["model"]["path"] = model
@@ -154,6 +164,19 @@ def build_config(
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
     OmegaConf.set_struct(base_cfg, False)
     config = OmegaConf.merge(base_cfg, override_conf, cli_override_conf)
+
+    # The CLI overrides merge last, so any of them can flip these back. In this mode the
+    # held-out split is also what run_ppo sizes its sampler from, so a val_before_train of
+    # false starts optimizing on it: the run would train on the data it is supposed to be
+    # scored on, with nothing in the logs saying so. Re-assert after the merge rather than
+    # trusting the keys to survive it.
+    if val_only:
+        config.trainer.val_only = True
+        config.trainer.val_before_train = True
+        config.trainer.resume_mode = "resume_path"
+        if resume_path:
+            config.trainer.resume_from_path = resume_path
+
     return config
 
 
@@ -206,6 +229,7 @@ def evaluate(
     *,
     checkpoint: str,
     data_file: str,
+    model: str | None = None,
     agl_base_url: str | None = None,
     agl_key: str | None = None,
     run_name: str | None = None,
@@ -213,17 +237,21 @@ def evaluate(
 ) -> None:
     """Score a saved checkpoint on a held-out split, without training it.
 
-    VERL runs one validation pass and returns. ``run_ppo`` still wants a non-empty
-    train split, so the held-out split is handed in as both: in this mode it only
-    sizes the sampler and no optimizer step is taken. That also means the split has
-    to be at least ``data.train_batch_size`` rows long (32 by default), or the
-    sampler has nothing to build a batch from.
+    The checkpoint goes through ``trainer.resume_from_path``; ``--model`` stays what it
+    already was, the base model both the trainer and the gateway are configured with.
+
+    VERL runs one validation pass and returns. ``run_ppo`` still wants a non-empty train
+    split, so the held-out split is handed in as both: in this mode it only sizes the
+    sampler and no optimizer step is taken. That also means the split has to be at least
+    ``data.train_batch_size`` rows long (32 by default), or the sampler has nothing to
+    build a batch from.
     """
     dataset = load_split(data_file)
     print(f"Held-out dataset: {len(dataset)} samples")
 
     config = build_config(
-        model=checkpoint,
+        model=model,
+        resume_path=checkpoint,
         agl_base_url=agl_base_url,
         agl_key=agl_key,
         run_name=run_name,
@@ -288,19 +316,27 @@ def main() -> None:
         help="Enable async rollout with async batch size set to 2x train_batch_size",
     )
     parser.add_argument(
+        "--resume",
+        dest="resume_path",
+        type=str,
+        default=None,
+        help="Path to a saved checkpoint (the run's global_step_N folder) to score",
+    )
+    parser.add_argument(
         "--val-only",
         dest="val_only",
         action="store_true",
-        help="Score --model, a saved checkpoint, on --val-file once, without training",
+        help="Score --resume on --val-file once, without training",
     )
     args, config_overrides = parser.parse_known_args()
 
     if args.val_only:
-        if not args.model:
-            parser.error("--val-only needs --model to point at a saved checkpoint")
+        if not args.resume_path:
+            parser.error("--val-only needs --resume to point at a saved checkpoint")
         evaluate(
-            checkpoint=args.model,
+            checkpoint=args.resume_path,
             data_file=args.val_file,
+            model=args.model,
             agl_base_url=args.agl_base_url,
             agl_key=args.agl_key,
             run_name=args.run_name,

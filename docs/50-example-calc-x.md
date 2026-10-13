@@ -74,8 +74,9 @@ Minikube needs at least 64 GB of memory; otherwise, it may be killed due to insu
 
 ## Evaluating a Trained Checkpoint
 
-Training saves checkpoints under the run's `checkpoint/` directory. To score one of them on
-a held-out split without training anything further, add `--val-only` and point `--model` at
+Training writes checkpoints under `trainer.default_local_dir`, which for this example is
+`checkpoints/agentlightning/calc_x/`, one folder per `global_step_N`. To score one of them on
+a held-out split without training anything further, pass `--val-only` and point `--resume` at
 the checkpoint:
 
 ```bash
@@ -83,18 +84,24 @@ source .venv/bin/activate
 cd examples/calc_x
 python train_calc_agent.py \
     --val-only \
-    --model /path/to/checkpoint/global_step_128 \
+    --resume checkpoints/agentlightning/calc_x/global_step_128 \
     --val-file data/test.parquet
 ```
 
-This sets `trainer.val_only`, so `verl` runs a single validation pass over `--val-file` and
-exits without taking an optimizer step. The metrics are printed as
-`Initial validation metrics: {...}` and logged to W&B under the `calc_x_eval` experiment.
-The one to read is `val/reward`: it is the mean reward over the split, and the Calc-X reward
-is 1.0 for an answer matching the reference and 0.0 otherwise, so it doubles as the accuracy.
+`--resume` sets `trainer.resume_mode` and `trainer.resume_from_path`, which is how `verl`
+restores a checkpoint. `--model` keeps its earlier meaning, the base model, because the
+gateway requires its own model name and `actor_rollout_ref.model.path` to be identical
+([API gateway configuration](25-api-gateway-configuration.md)); aiming either of them at a
+checkpoint makes the proxy answer "model not found".
+
+`--val-only` then runs a single validation pass over `--val-file` and exits without taking an
+optimizer step. The metrics are printed as `Initial validation metrics: {...}` and logged to
+W&B under the `calc_x_eval` experiment. The one to read is `val/reward`: it is the mean reward
+over the split, and the Calc-X reward is 1.0 for an answer matching the reference and 0.0
+otherwise, so it doubles as the accuracy.
 
 Under local mode the same flags go through `run_local.sh`, which forwards its arguments:
-`bash run_local.sh --val-only --model /path/to/checkpoint/global_step_128`.
+`bash run_local.sh --val-only --resume checkpoints/agentlightning/calc_x/global_step_128`.
 
 Two details worth knowing:
 
