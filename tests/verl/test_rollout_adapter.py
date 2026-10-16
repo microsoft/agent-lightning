@@ -336,6 +336,115 @@ def test_trajectory_prefix_mismatch_wandb_table_is_capped_at_100(
     assert table.rows[-1][3] == 100
 
 
+@pytest.mark.parametrize(
+    ("prompt", "response", "next_prompt", "use_tokenizer", "expected"),
+    [
+        ([1], [2], [3, 4], True, (False, True, False)),
+        ([1, 6], [7, 2], [1, 2, 4], True, (True, False, False)),
+        ([1, 10], [2, 11], [1, 2, 4], True, (True, False, False)),
+        ([9], [5], [3, 5, 4], True, (True, False, False)),
+        ([1], [2], [8, 4], True, (False, False, True)),
+        ([1, 6], [7, 2], [8, 4], True, (False, False, True)),
+        ([1, 12], [13, 2], [1, 2, 4], True, (False, False, True)),
+        ([6], [7], [8, 4], True, (False, False, True)),
+        ([-1], [2], [3, 4], True, (False, False, True)),
+        ([1], [2], [3, 4], False, (False, False, True)),
+    ],
+    ids=[
+        "retoken",
+        "think-delimiters",
+        "tool-call-delimiters",
+        "whitespace",
+        "content",
+        "template-and-content",
+        "unknown-delimiters",
+        "empty-normalized-context",
+        "decode-error",
+        "no-tokenizer",
+    ],
+)
+def test_trajectory_mismatch_classification_preserves_training_data(
+    monkeypatch: pytest.MonkeyPatch,
+    prompt: list[int],
+    response: list[int],
+    next_prompt: list[int],
+    use_tokenizer: bool,
+    expected: tuple[bool, bool, bool],
+) -> None:
+    from tokenizers import Tokenizer, models
+    from transformers import PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(
+            models.WordLevel(
+                {
+                    "[UNK]": 0,
+                    "hello": 1,
+                    "world": 2,
+                    "hello world": 3,
+                    "obs": 4,
+                    "done": 5,
+                    "<think>": 6,
+                    "</think>": 7,
+                    "changed": 8,
+                    "hello\nworld": 9,
+                    "<tool_call>": 10,
+                    "</tool_call>": 11,
+                    "<custom>": 12,
+                    "</custom>": 13,
+                },
+                unk_token="[UNK]",
+            )
+        ),
+        unk_token="[UNK]",
+    )
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    triplets = [_triplet(prompt, response), _triplet(next_prompt, [5])]
+    for triplet in triplets:
+        routes = np.arange(
+            (len(triplet.prompt["token_ids"]) + len(triplet.response["token_ids"])) * 4,
+            dtype=np.uint8,
+        ).reshape(-1, 2, 2)
+        triplet.response["routed_experts"] = _encode_routes(routes)
+    rollout = CompletedRollout(
+        rollout_id="classification",
+        data_id="data-1",
+        step=0,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=0.75,
+        triplets=triplets,
+    )
+    original = rollout.model_copy(deep=True)
+    adapter = RolloutAdapter(
+        max_prompt_length=12,
+        max_response_length=12,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level="trajectory",
+        require_routed_experts=True,
+    )
+    baseline, baseline_metrics = adapter.get_train_data_batch([rollout])
+    logged.clear()
+    adapter.tokenizer = tokenizer if use_tokenizer else None
+    batch, metrics = adapter.get_train_data_batch([rollout])
+
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    row = dict(zip(table.columns, table.rows[0], strict=True))
+    assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == expected
+    assert len(table.rows) == 1
+    assert len(batch) == 2  # Diagnostic classification never relaxes the exact token-prefix split.
+    assert rollout == original
+    assert metrics == baseline_metrics
+    assert batch.batch is not None and baseline.batch is not None
+    assert set(batch.batch.keys()) == set(baseline.batch.keys())
+    for key, value in baseline.batch.items():
+        torch.testing.assert_close(batch.batch[key], value)
+    for key, value in baseline.non_tensor_batch.items():
+        np.testing.assert_array_equal(batch.non_tensor_batch[key], value)
+
+
 def test_training_step_uploads_24_compact_rollout_trajectories_to_wandb_zip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -139,6 +139,14 @@ agentlightning:
 
 The aggregator automatically merges consecutive calls when the next prompt starts with the exact token sequence of the previous prompt and response. Tokens added between calls, such as tool observations, are retained as context but masked from the policy loss. If exact token-prefix continuity is broken, the aggregator starts a new training row instead of merging incompatible calls.
 
+For up to 100 such failures per batch, `training/trace_merge_mismatches` reports diagnostic flags:
+
+- `retoken_mismatch`: the decoded next prompt still starts with the decoded previous prompt and response;
+- `template_mismatch`: that prefix is recovered only after collapsing whitespace and removing the literal `<think>`, `</think>`, `<tool_call>` and `</tool_call>` delimiters;
+- `others_mismatch`: neither check matches, no tokenizer is available, or decoding fails.
+
+These flags are conservative heuristics, not proof of the underlying cause. Template normalization keeps reasoning/tool-call content and unknown tags; an empty normalized context is not a match. Classification never changes the strict token-prefix split or the resulting training tensors.
+
 In this mode:
 
 - `trajectory_max_prompt_length` limits the initial prompt in each merged training row;

@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64  # [multimodal-patch]
 import io
 import json
+import re
 import zipfile
 from typing import Any, cast
 
@@ -58,6 +59,39 @@ def _decode_token_ids(tokenizer: Any | None, ids: list[int]) -> str:
     else:
         text = " ".join(str(i) for i in ids)
     return text
+
+
+def _classify_trace_merge_mismatch(
+    tokenizer: Any | None, previous_ids: list[int], prompt_ids: list[int]
+) -> tuple[bool, bool, bool]:
+    """Return diagnostic (template, retokenization, other) flags, never merge decisions.
+
+    Only decoded-prefix equality, whitespace and the explicit think/tool-call
+    delimiters are recognized. These are heuristics, not proof of the cause.
+    """
+    if tokenizer is None:
+        return False, False, True
+    try:
+        try:
+            previous_text = tokenizer.decode(previous_ids, skip_special_tokens=False)
+            prompt_text = tokenizer.decode(prompt_ids, skip_special_tokens=False)
+        except TypeError:
+            previous_text = tokenizer.decode(previous_ids)
+            prompt_text = tokenizer.decode(prompt_ids)
+    except Exception:
+        return False, False, True
+    if not isinstance(previous_text, str) or not isinstance(prompt_text, str):
+        return False, False, True
+    if previous_text and prompt_text.startswith(previous_text):
+        return False, True, False
+
+    # Keep all content, including reasoning/tool-call bodies and unknown tags.
+    # An empty normalized context cannot establish a meaningful prefix match.
+    previous_normalized = " ".join(re.sub(r"</?(?:think|tool_call)>", "", previous_text).split())
+    prompt_normalized = " ".join(re.sub(r"</?(?:think|tool_call)>", "", prompt_text).split())
+    if previous_normalized and prompt_normalized.startswith(previous_normalized):
+        return True, False, False
+    return False, False, True
 
 
 def _decode_trace_text(tokenizer: Any | None, ids: list[int]) -> str:
@@ -593,16 +627,18 @@ class RolloutAdapter:
                         continue
 
                     if len(merge_mismatch_rows) < _TRACE_MERGE_MISMATCH_WANDB_LIMIT:
+                        template_mismatch, retoken_mismatch, others_mismatch = _classify_trace_merge_mismatch(
+                            self.tokenizer, current_context, prompt_ids
+                        )
                         merge_mismatch_rows.append(
                             {
                                 "global_steps": global_steps,
                                 "rollout_id": rollout.rollout_id,
                                 "data_id": rollout.data_id,
                                 "turn_index": turn_index,
-                                # Token-prefix failures are classified as other mismatches.
-                                "template_mismatch": False,
-                                "retoken_mismatch": False,
-                                "others_mismatch": True,
+                                "template_mismatch": template_mismatch,
+                                "retoken_mismatch": retoken_mismatch,
+                                "others_mismatch": others_mismatch,
                                 "prompt_length": len(prompt_ids),
                                 "response_length": len(response_ids),
                                 "previous_trace_length": len(current_context),
