@@ -166,6 +166,39 @@ def test_delete_rollout(client: TestClient, auth_headers: dict[str, str]):
     assert client.delete(f"/api/rollouts/{rollout_id}", headers=auth_headers).status_code == 204
 
 
+@pytest.mark.parametrize(
+    "logprobs",
+    [
+        {"content": [{"logprob": -0.5}, {"logprob": 10**400}]},
+        {"token_logprobs": [-0.5, 10**400]},
+    ],
+    ids=["chat", "completions"],
+)
+def test_triplet_events_ignore_overflowing_logprobs(client: TestClient, auth_headers: dict[str, str], logprobs: dict):
+    rollout_id = _rollout(client, auth_headers)["rollout_id"]
+    posted = client.post(
+        f"/api/rollouts/{rollout_id}/attempt/0/events",
+        json={
+            "event_type": "model_request",
+            "data": {
+                "response": {
+                    "prompt_token_ids": [1, 2],
+                    "choices": [{"token_ids": [3, 4], "logprobs": logprobs}],
+                },
+            },
+        },
+        headers=auth_headers,
+    )
+    assert posted.status_code == 200
+
+    triplets = client.get(f"/api/rollouts/{rollout_id}/events?format=triplet", headers=auth_headers)
+    assert triplets.status_code == 200
+    data = triplets.json()[0]["data"]
+    assert data["prompt_token_ids"] == [1, 2]
+    assert data["response_token_ids"] == [3, 4]
+    assert data["response_log_probs"] is None
+
+
 def test_enqueue_with_client_rollout_id_is_idempotent(client: TestClient, auth_headers: dict[str, str]):
     rid = "fixed-rollout-id-123"
     created = client.post(

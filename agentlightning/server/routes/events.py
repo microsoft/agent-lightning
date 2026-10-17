@@ -114,7 +114,7 @@ def _extract_choice_log_probs(choice: dict[str, Any]) -> list[float] | None:
     for v in raw:
         try:
             f = float(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
         if not math.isfinite(f):
             return None
