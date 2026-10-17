@@ -618,7 +618,9 @@ class AgentModeDaemon:
                 if failed_grace_polls_remaining is None:
                     # A few extra polls (~15s) for in-flight retries to land.
                     failed_grace_polls_remaining = 3
-                elif failed_grace_polls_remaining > 0:
+                # Independent of init: always sleep/poll while grace remains so a
+                # retry that arrives on the next poll can replace the failure.
+                if failed_grace_polls_remaining > 0:
                     failed_grace_polls_remaining -= 1
                     await asyncio.sleep(5)
                     continue

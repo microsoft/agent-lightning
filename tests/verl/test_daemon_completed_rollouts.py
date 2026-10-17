@@ -136,3 +136,45 @@ async def test_async_run_until_finished_rejects_unknown_and_overwrites_failed(mo
     assert set(daemon._completed_rollouts_v0) == {"r1", "r2"}
     assert daemon._completed_rollouts_v0["r1"].final_reward == 0.5
     assert AgentModeDaemon._is_failed_rollout(daemon._completed_rollouts_v0["r1"]) is False
+
+
+@pytest.mark.asyncio
+async def test_async_run_until_finished_grace_polls_when_only_failure_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When every queued ID has a result but it failed, keep polling for retries.
+
+    Unlike the mixed missing+failed case, this hits the grace-init branch with
+    ``missing == []`` so a successful retry on the next poll can replace it.
+    """
+    daemon = _bare_daemon(mode="v1")
+    daemon._task_id_to_original_sample = {"r1": {"data_id": "d1"}}
+    daemon._total_tasks_queued = 1
+
+    polls: List[List[RolloutLegacy]] = [
+        [_failed("r1")],
+        [_success("r1", reward=0.7)],
+    ]
+
+    async def fake_wait_for_rollouts(*, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutLegacy]:
+        del timeout
+        assert set(rollout_ids) == {"r1"}
+        if not polls:
+            return []
+        return polls.pop(0)
+
+    daemon.store = AsyncMock()
+    daemon.store.wait_for_rollouts = fake_wait_for_rollouts
+    daemon._validate_data = lambda rollout: None  # type: ignore[method-assign]
+
+    async def immediate_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", immediate_sleep)
+
+    await daemon._async_run_until_finished(verbose=False)
+
+    assert set(daemon._completed_rollouts_v0) == {"r1"}
+    assert daemon._completed_rollouts_v0["r1"].final_reward == 0.7
+    assert AgentModeDaemon._is_failed_rollout(daemon._completed_rollouts_v0["r1"]) is False
+    assert polls == []
