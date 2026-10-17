@@ -349,6 +349,15 @@ class AgentModeDaemon:
     async def _async_set_up(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
         """Async helper to set up data and resources on the server."""
         self.clear_data_and_server()
+        # Drain leftover completions from the previous step so they cannot be
+        # mixed into the new batch (see #355 / stale server result cache).
+        if self.mode == "v0":
+            try:
+                stale = await self.server.retrieve_completed_rollouts()
+                if stale:
+                    print(f"Warning: Drained {len(stale)} stale completed rollout(s) from server before setup.")
+            except Exception as exc:  # pragma: no cover - best-effort cleanup
+                print(f"Warning: Failed to drain stale completed rollouts: {exc}")
         if server_addresses != self.backend_llm_server_addresses:
             self.backend_llm_server_addresses = server_addresses
             if self.mode == "v1" and not self.llm_proxy.is_running():
@@ -504,30 +513,118 @@ class AgentModeDaemon:
 
         return result_rollout
 
+    @staticmethod
+    def _is_failed_rollout(rollout: RolloutLegacy) -> bool:
+        """Return True when a rollout has no usable reward or triplets.
+
+        Backend errors (e.g. vLLM HTTP 400 on over-long prompts) often complete
+        a rollout with ``final_reward is None`` and empty/missing triplets. The
+        store may retry the same ``rollout_id``; a later successful result must
+        be allowed to overwrite this placeholder.
+        """
+        return rollout.final_reward is None and not rollout.triplets
+
+    def _drop_stale_completed_rollouts(self) -> int:
+        """Drop completed rollouts that are not part of the current batch.
+
+        Stale server/store results from a previous step can otherwise inflate
+        ``_completed_rollouts_v0`` past ``_total_tasks_queued`` (see #355).
+        """
+        stale_ids = [
+            rollout_id
+            for rollout_id in list(self._completed_rollouts_v0)
+            if rollout_id not in self._task_id_to_original_sample
+        ]
+        for rollout_id in stale_ids:
+            print(f"Warning: Dropping stale completed rollout {rollout_id} not in current batch.")
+            del self._completed_rollouts_v0[rollout_id]
+        return len(stale_ids)
+
+    def _ensure_completed_matches_queued(self) -> None:
+        """Reconcile completed rollouts with the current batch before asserts."""
+        self._drop_stale_completed_rollouts()
+        completed = len(self._completed_rollouts_v0)
+        queued = self._total_tasks_queued
+        if completed == queued:
+            return
+        print(
+            f"Warning: completed rollouts ({completed}) != queued tasks ({queued}); "
+            "continuing with rollouts that belong to the current batch."
+        )
+
+    def _pending_rollout_ids(self) -> List[str]:
+        """Rollout IDs that still need a successful result (missing or failed)."""
+        pending: List[str] = []
+        for rollout_id in self._task_id_to_original_sample:
+            existing = self._completed_rollouts_v0.get(rollout_id)
+            if existing is None or self._is_failed_rollout(existing):
+                pending.append(rollout_id)
+        return pending
+
     async def _async_run_until_finished(self, verbose: bool = True):
         """Async helper to wait for all tasks to complete."""
-        while len(self._completed_rollouts_v0) < self._total_tasks_queued:
+        # After every queued ID has some result, keep polling briefly so a store
+        # retry can overwrite failed placeholders (empty reward/triplets).
+        failed_grace_polls_remaining: Optional[int] = None
+        while True:
             if self.mode == "v0":
                 completed_batch = await self.server.retrieve_completed_rollouts()
             else:
-                completed_batch = await self.store.wait_for_rollouts(
-                    rollout_ids=list(self._task_id_to_original_sample.keys()), timeout=0
-                )
+                pending_ids = self._pending_rollout_ids()
+                if not pending_ids and failed_grace_polls_remaining is None:
+                    break
+                wait_ids = pending_ids or list(self._task_id_to_original_sample.keys())
+                completed_batch = await self.store.wait_for_rollouts(rollout_ids=wait_ids, timeout=0)
             for rollout in completed_batch:
-                if rollout.rollout_id in self._completed_rollouts_v0:
-                    # Already processed, skip
-                    continue
                 if isinstance(rollout, Rollout):
                     rollout = await self._validate_data_v1(rollout)
                 else:
                     self._validate_data(rollout)
                 if rollout.rollout_id not in self._task_id_to_original_sample:
+                    # Reject unregistered / leftover IDs from earlier batches (#355).
                     print(f"Warning: Received unknown rollout ID {rollout.rollout_id}, skipping.")
-                else:
-                    self._completed_rollouts_v0[rollout.rollout_id] = rollout
+                    continue
+
+                existing = self._completed_rollouts_v0.get(rollout.rollout_id)
+                if existing is not None and not self._is_failed_rollout(existing):
+                    # Keep the first successful result for this rollout_id.
+                    continue
+                if existing is not None and self._is_failed_rollout(rollout):
+                    # No upgrade from one failed placeholder to another.
+                    continue
+
+                # Accept first result, or overwrite a failed placeholder with a
+                # successful retry for the same rollout_id.
+                self._completed_rollouts_v0[rollout.rollout_id] = rollout
+            self._drop_stale_completed_rollouts()
             if verbose:
                 print(f"Completed {len(self._completed_rollouts_v0)}/{self._total_tasks_queued} tasks...")
-            await asyncio.sleep(5)
+
+            missing = [
+                rollout_id
+                for rollout_id in self._task_id_to_original_sample
+                if rollout_id not in self._completed_rollouts_v0
+            ]
+            failed = [
+                rollout_id
+                for rollout_id, rollout in self._completed_rollouts_v0.items()
+                if self._is_failed_rollout(rollout)
+            ]
+            if missing:
+                failed_grace_polls_remaining = None
+                await asyncio.sleep(5)
+                continue
+            if failed:
+                if failed_grace_polls_remaining is None:
+                    # A few extra polls (~15s) for in-flight retries to land.
+                    failed_grace_polls_remaining = 3
+                # Independent of init: always sleep/poll while grace remains so a
+                # retry that arrives on the next poll can replace the failure.
+                if failed_grace_polls_remaining > 0:
+                    failed_grace_polls_remaining -= 1
+                    await asyncio.sleep(5)
+                    continue
+            break
 
         print("All tasks finished.")
 
@@ -556,7 +653,7 @@ class AgentModeDaemon:
     def get_test_metrics(self):
         """Calculates and returns metrics for a validation run."""
         assert not self.is_train, "This method should only be called during validation."
-        assert len(self._completed_rollouts_v0) == self._total_tasks_queued
+        self._ensure_completed_matches_queued()
 
         sample_stat_list: List[Dict[str, Any]] = []
         sample_stat_list_by_source: Dict[str, List[Dict[str, Any]]] = defaultdict(
@@ -638,7 +735,7 @@ class AgentModeDaemon:
         truncation, and tensor creation for the PPO training loop.
         """
         assert self.is_train, "This method should only be called during training."
-        assert len(self._completed_rollouts_v0) == self._total_tasks_queued
+        self._ensure_completed_matches_queued()
 
         # 1. Reconstruct the `finished_id_to_sample_info` structure from completed rollouts
         finished_id_to_sample_info: Dict[str, Dict[str, Any]] = {}
