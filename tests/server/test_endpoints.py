@@ -486,3 +486,39 @@ def test_terminal_rollouts_cursor_pagination(client: TestClient, auth_headers: d
     page3 = client.get("/api/rollouts/terminal", params={"after": 3}, headers=auth_headers)
     assert page3.json() == {"items": [], "next_after": 3, "total_terminal": 3}
     assert pending not in {it["rollout_id"] for it in body1["items"] + body2["items"]}
+
+
+def test_terminal_rollouts_do_not_replay_deleted_ids(client: TestClient, auth_headers: dict[str, str]):
+    retired = _terminal(client, auth_headers, "old", is_train=True)
+    survivor = _terminal(client, auth_headers, "survivor", is_train=True)
+    first_page = client.get("/api/rollouts/terminal", params={"limit": 1}, headers=auth_headers).json()
+    cursor = first_page["next_after"]
+    assert cursor == 1
+
+    assert client.delete(f"/api/rollouts/{retired}", headers=auth_headers).status_code == 204
+    after_delete = client.get("/api/rollouts/terminal", params={"after": cursor}, headers=auth_headers).json()
+    assert [item["rollout_id"] for item in after_delete["items"]] == [survivor]
+    recreated = client.post(
+        "/api/rollouts",
+        json=[{"rollout_id": retired, "input": {"data_id": "new"}}],
+        headers=auth_headers,
+    )
+    assert recreated.status_code == 201
+    assert recreated.json()[0]["status"]["state"] == "queuing"
+
+    # A new rollout with a deleted ID has not completed yet.
+    pending_page = client.get("/api/rollouts/terminal", params={"limit": 1}, headers=auth_headers).json()
+    assert pending_page == {"items": [], "next_after": 1, "total_terminal": 2}
+
+    for state in ("running", "succeeded"):
+        patched = client.patch(f"/api/rollouts/{retired}", json={"status": {"state": state}}, headers=auth_headers)
+        assert patched.status_code == 200
+
+    completed = client.get("/api/rollouts/terminal", headers=auth_headers).json()
+    assert [item["rollout_id"] for item in completed["items"]] == [survivor, retired]
+    assert completed["items"][-1]["data_id"] == "new"
+    assert completed["next_after"] == 3
+
+    # A cursor obtained before deletion must still see the following completions.
+    remaining = client.get("/api/rollouts/terminal", params={"after": cursor}, headers=auth_headers).json()
+    assert remaining == completed
