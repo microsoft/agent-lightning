@@ -35,18 +35,43 @@ class RolloutHooks:
 
 def load_hooks(path: str) -> RolloutHooks:
     """Load the single ``RolloutHooks`` subclass from a Python file."""
+    import hashlib
     import importlib.util
     import inspect
+    import sys
     from pathlib import Path
 
     module_path = Path(path).resolve()
     if not module_path.exists():
         raise FileNotFoundError(f"Hooks module not found: {module_path}")
 
-    spec = importlib.util.spec_from_file_location("_agl_hooks", str(module_path))
+    # A stable, path-derived module name gives each hooks file its own identity in
+    # ``sys.modules``. That registration is required during execution: with
+    # ``from __future__ import annotations``, the ``@dataclass`` decorator resolves
+    # string annotations through ``sys.modules[cls.__module__].__dict__``, which is
+    # None if the module was never registered (and the failure is the cryptic
+    # ``AttributeError: 'NoneType' object has no attribute '__dict__'``). A stable
+    # name also lets classes defined in the file be imported again, so they can be
+    # pickled by multiprocessing workers.
+    digest = hashlib.sha256(str(module_path).encode("utf-8")).hexdigest()[:12]
+    module_name = f"_agl_hooks_{digest}"
+
+    spec = importlib.util.spec_from_file_location(module_name, str(module_path))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+
+    # Register before execution, and restore whatever was there if loading fails,
+    # so a broken hooks file does not leave a half-imported module behind.
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+        raise
 
     hook_classes = [
         obj
