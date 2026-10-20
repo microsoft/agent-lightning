@@ -20,6 +20,7 @@ from agentlightning.verl.agl_rollout_manager import CompletedRollout
 
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
+_TRACE_MERGE_MISMATCH_TOKEN_LIMIT = 128
 _ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
 _TRACE_MERGE_MISMATCH_COLUMNS = [
     "global_steps",
@@ -59,6 +60,39 @@ def _decode_token_ids(tokenizer: Any | None, ids: list[int]) -> str:
     else:
         text = " ".join(str(i) for i in ids)
     return text
+
+
+def _classify_trace_merge_mismatch(
+    tokenizer: Any | None, previous_ids: list[int], prompt_ids: list[int]
+) -> tuple[bool, bool, bool]:
+    """Return diagnostic (template, retokenization, other) flags, never merge decisions.
+
+    Compare complete short inputs only; long or unrecognized cases stay other.
+    Template causes are not inferred, and no extra full-history decoding is done.
+    """
+    if (
+        tokenizer is None
+        or not previous_ids
+        or not prompt_ids
+        or len(previous_ids) > _TRACE_MERGE_MISMATCH_TOKEN_LIMIT
+        or len(prompt_ids) > _TRACE_MERGE_MISMATCH_TOKEN_LIMIT
+    ):
+        return False, False, True
+    try:
+        try:
+            previous_text = tokenizer.decode(previous_ids, skip_special_tokens=False)
+            prompt_text = tokenizer.decode(prompt_ids, skip_special_tokens=False)
+        except TypeError:
+            previous_text = tokenizer.decode(previous_ids)
+            prompt_text = tokenizer.decode(prompt_ids)
+    except Exception:
+        return False, False, True
+    if not isinstance(previous_text, str) or not isinstance(prompt_text, str):
+        return False, False, True
+    if previous_text and prompt_text.startswith(previous_text):
+        return False, True, False
+
+    return False, False, True
 
 
 def _decode_trace_text(tokenizer: Any | None, ids: list[int]) -> str:
@@ -594,16 +628,18 @@ class RolloutAdapter:
                         continue
 
                     if len(merge_mismatch_rows) < _TRACE_MERGE_MISMATCH_WANDB_LIMIT:
+                        template_mismatch, retoken_mismatch, others_mismatch = _classify_trace_merge_mismatch(
+                            self.tokenizer, current_context, prompt_ids
+                        )
                         merge_mismatch_rows.append(
                             {
                                 "global_steps": global_steps,
                                 "rollout_id": rollout.rollout_id,
                                 "data_id": rollout.data_id,
                                 "turn_index": turn_index,
-                                # Token-prefix failures are classified as other mismatches.
-                                "template_mismatch": False,
-                                "retoken_mismatch": False,
-                                "others_mismatch": True,
+                                "template_mismatch": template_mismatch,
+                                "retoken_mismatch": retoken_mismatch,
+                                "others_mismatch": others_mismatch,
                                 "prompt_length": len(prompt_ids),
                                 "response_length": len(response_ids),
                                 "previous_trace_length": len(current_context),
