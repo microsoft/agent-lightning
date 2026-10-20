@@ -427,6 +427,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             # [multimodal-patch] RayPPOTrainer stores the processor from entrypoint; forwarding it
             # enables pixel_values + mrope position ids for image-bearing training rows.
             processor=getattr(self, "processor", None),
+            require_score_centering=(self.config.actor_rollout_ref.actor.policy_loss.loss_mode == "score_centering"),
             require_routed_experts=(
                 OmegaConf.select(
                     self.config,
@@ -562,7 +563,11 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
         bypass_mode = bool(rollout_corr_config and rollout_corr_config.get("bypass_mode", False))
 
-        if bypass_mode:
+        if self.config.actor_rollout_ref.actor.policy_loss.loss_mode == "score_centering":
+            if "score_centering" not in batch.non_tensor_batch or "rollout_log_probs" not in batch.batch:
+                raise RuntimeError("Score centering requires original score centering candidates and probabilities")
+            # This loss does not use a recomputed old-policy probability.
+        elif bypass_mode:
             if "rollout_log_probs" not in batch.batch:
                 raise RuntimeError("bypass_mode requires rollout_log_probs in batch")
             if not torch.isfinite(batch.batch["rollout_log_probs"]).all():
@@ -649,7 +654,10 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         if self.config.trainer.critic_warmup <= self.global_steps:
             with marked_timer("update_actor", timing_raw, color="red"):
                 actor_output = self._update_actor(batch)
-            metrics.update(reduce_metrics(actor_output.meta_info["metrics"]))
+            actor_metrics = reduce_metrics(actor_output.meta_info["metrics"])
+            if loss_mode == "score_centering":
+                actor_metrics["rollout_corr/k3_kl"] = actor_metrics.pop("actor/rollout_k3_kl")
+            metrics.update(actor_metrics)
 
         with marked_timer("update_weights", timing_raw, color="red"):
             self.checkpoint_manager.update_weights(self.global_steps)  # pyright: ignore[reportOptionalMemberAccess]
@@ -706,8 +714,10 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             with marked_timer("step", timing_raw):
                 result = self._train_step(timing_raw, curr_step_profile)
             if result is None:
-                print("AgentLightningRayPPOTrainer: train step returned no batch; advancing step.")
-                self.global_steps += 1
+                print("AgentLightningRayPPOTrainer: train step returned no batch; skipping update.")
+                # SC experiment budgets count optimizer updates, not empty collections.
+                if self.config.actor_rollout_ref.actor.policy_loss.loss_mode != "score_centering":
+                    self.global_steps += 1
                 continue
             metrics, step_batch = result
 

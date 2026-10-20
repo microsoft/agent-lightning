@@ -1,11 +1,21 @@
 host: 0.0.0.0
 port: 8080
 key: ""
+upstream_timeout_seconds: 300
 default_proxy:
   model_name: "Qwen/Qwen2.5-7B-Instruct"
   include_log_probs: True
   include_routed_experts: False
+  score_centering:
+    enabled: False
+    top_logprobs_num: 128
   train:
     temperature: 1
+    top_p: null
+    top_k: null
+    min_p: null
   val:
     temperature: 0.7
+    top_p: null
+    top_k: null
+    min_p: null

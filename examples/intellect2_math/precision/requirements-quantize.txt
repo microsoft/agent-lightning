@@ -1,0 +1,2 @@
+llmcompressor==0.14.0
+torch==2.13.0

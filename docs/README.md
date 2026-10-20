@@ -38,6 +38,7 @@ For the legacy Agent Lightning releases earlier than v1.0, see the [`v0.x` code 
 |---|---|
 | [Calc-X](50-example-calc-x.md) | Train a math reasoning agent with AutoGen and MCP calculator tools. |
 | [GSM8K](55-example-gsm8k.md) | Train an agent on grade-school math reasoning tasks. |
+| [INTELLECT-2 Math](56-example-intellect2-math.md) | Train a math reasoning agent with GRPO or score centering and low-precision inference. |
 | [ScienceWorld](60-example-science-world.md) | Train an agent on interactive science tasks in a text environment. |
 | [Search-R1](65-example-search-r1.md) | Train a multi-turn retrieval and reasoning agent. |
 | [LLM-in-Sandbox](70-example-llm-in-sandbox.md) | Train a general agent with computer and code execution tools. |
