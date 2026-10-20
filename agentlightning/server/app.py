@@ -68,7 +68,9 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
         app.state.proxy_pause_state = ProxyPauseState()
 
         app.state.proxy_router = ProxyRouter(default_proxy)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=300.0)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout=float(server_config.get("upstream_timeout_seconds", 300.0)))
+        ) as client:
             app.state.http_client = client
             yield
 

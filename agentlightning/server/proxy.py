@@ -45,6 +45,16 @@ class ProxyRouter:
         self._val_temperature = float(default_proxy["val"]["temperature"])
         self._include_log_probs = bool(default_proxy.get("include_log_probs", True))
         self._include_routed_experts = bool(default_proxy.get("include_routed_experts", False))
+        self._score_centering = bool(default_proxy.get("score_centering", {}).get("enabled", False))
+        self._score_centering_top_logprobs = int(default_proxy.get("score_centering", {}).get("top_logprobs_num", 128))
+        self._sampling = {
+            mode: {
+                key: default_proxy[mode][key]
+                for key in ("top_p", "top_k", "min_p")
+                if default_proxy[mode].get(key) is not None
+            }
+            for mode in ("train", "val")
+        }
 
     @property
     def model_name(self) -> str:
@@ -67,11 +77,24 @@ class ProxyRouter:
                 "model": self._model_name,
                 "temperature": self._train_temperature,
                 "return_token_ids": True,
+                **self._sampling[mode],
             }
             if self._include_log_probs:
                 prepared["logprobs"] = True
             if self._include_routed_experts:
                 prepared["return_routed_experts"] = True
+            if self._score_centering:
+                if prepared["temperature"] <= 0 or prepared.get("n", 1) != 1:
+                    raise ValueError("SC capture requires positive temperature and a single choice")
+                prepared.update(
+                    return_score_centering=True,
+                    logprobs=True,
+                    top_logprobs=self._score_centering_top_logprobs,
+                    min_p=0,
+                    presence_penalty=0,
+                    frequency_penalty=0,
+                    repetition_penalty=1,
+                )
             return prepared
         if mode == "val":
             prepared = {
@@ -79,6 +102,7 @@ class ProxyRouter:
                 "model": self._model_name,
                 "temperature": self._val_temperature,
                 "return_token_ids": True,
+                **self._sampling[mode],
             }
             return prepared
         raise ValueError(f"Unsupported proxy mode: {mode}")

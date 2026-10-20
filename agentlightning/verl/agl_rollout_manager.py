@@ -487,6 +487,8 @@ class AglRolloutManagerBase:
                     response={
                         "token_ids": response_token_ids,
                         "log_probs": data.get("response_log_probs"),
+                        "score_centering_token_ids": data.get("score_centering_token_ids"),
+                        "score_centering_log_probs": data.get("score_centering_log_probs"),
                         "routed_experts": data.get("routed_experts"),
                     },
                     reward=None,

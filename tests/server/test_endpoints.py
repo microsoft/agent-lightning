@@ -25,6 +25,17 @@ def test_healthz(client: TestClient):
     assert client.get("/healthz").json() == {"status": "ok"}
 
 
+@pytest.mark.parametrize("timeout", [300, 3600])
+def test_upstream_timeout_is_applied(server_config, timeout):
+    from agentlightning.server.app import create_app
+
+    if timeout != 300:
+        server_config["upstream_timeout_seconds"] = timeout
+    app = create_app(server_config)
+    with TestClient(app):
+        assert app.state.http_client.timeout.read == timeout
+
+
 def test_auth_required(client: TestClient):
     assert client.post("/api/rollouts", json=[]).status_code == 401
 
