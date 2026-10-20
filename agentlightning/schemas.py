@@ -100,6 +100,7 @@ TERMINAL_STATES: frozenset[RolloutState] = frozenset(
 )
 
 DEFAULT_ATTEMPT_ID = "0"
+MAX_ROLLOUT_STATUS_BATCH_SIZE = 256
 
 
 class RolloutLocalConfig(BaseModel):
