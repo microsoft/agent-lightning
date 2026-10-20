@@ -9,7 +9,7 @@ import sys
 import weakref
 import zipfile
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
@@ -340,15 +340,19 @@ def test_trajectory_prefix_mismatch_wandb_table_is_capped_at_100(
     ("prompt", "response", "next_prompt", "use_tokenizer", "expected"),
     [
         ([1], [2], [3, 4], True, (False, True, False)),
-        ([1, 6], [7, 2], [1, 2, 4], True, (True, False, False)),
-        ([1, 10], [2, 11], [1, 2, 4], True, (True, False, False)),
-        ([9], [5], [3, 5, 4], True, (True, False, False)),
+        ([1, 6], [7, 2], [1, 2, 4], True, (False, False, True)),
+        ([1, 10], [2, 11], [1, 2, 4], True, (False, False, True)),
+        ([9], [5], [3, 5, 4], True, (False, False, True)),
         ([1], [2], [8, 4], True, (False, False, True)),
         ([1, 6], [7, 2], [8, 4], True, (False, False, True)),
         ([1, 12], [13, 2], [1, 2, 4], True, (False, False, True)),
         ([6], [7], [8, 4], True, (False, False, True)),
         ([-1], [2], [3, 4], True, (False, False, True)),
         ([1], [2], [3, 4], False, (False, False, True)),
+        ([1], [2], [1], True, (False, False, True)),
+        ([1], [2] + [4] * 126, [3] + [4] * 126, True, (False, True, False)),
+        ([1], [2] + [4] * 127, [3] + [4] * 127, True, (False, False, True)),
+        ([1], [2], [3] + [4] * 128, True, (False, False, True)),
     ],
     ids=[
         "retoken",
@@ -358,9 +362,13 @@ def test_trajectory_prefix_mismatch_wandb_table_is_capped_at_100(
         "content",
         "template-and-content",
         "unknown-delimiters",
-        "empty-normalized-context",
+        "empty-text",
         "decode-error",
         "no-tokenizer",
+        "response-cannot-complete-prefix",
+        "previous-128",
+        "previous-129",
+        "prompt-129",
     ],
 )
 def test_trajectory_mismatch_classification_preserves_training_data(
@@ -400,7 +408,7 @@ def test_trajectory_mismatch_classification_preserves_training_data(
     )
     logged: list[tuple[dict[str, FakeTable], int]] = []
     _install_fake_wandb(monkeypatch, logged)
-    triplets = [_triplet(prompt, response), _triplet(next_prompt, [5])]
+    triplets = [_triplet(prompt, response), _triplet(next_prompt, [2])]
     for triplet in triplets:
         routes = np.arange(
             (len(triplet.prompt["token_ids"]) + len(triplet.response["token_ids"])) * 4,
@@ -443,6 +451,101 @@ def test_trajectory_mismatch_classification_preserves_training_data(
         torch.testing.assert_close(batch.batch[key], value)
     for key, value in baseline.non_tensor_batch.items():
         np.testing.assert_array_equal(batch.non_tensor_batch[key], value)
+
+
+@pytest.mark.parametrize(
+    ("previous_size", "prompt_size", "expected_calls"),
+    [(128, 128, [128, 128]), (129, 128, []), (128, 129, []), (4096, 4096, [])],
+)
+def test_mismatch_classification_bounds_decoding(
+    previous_size: int, prompt_size: int, expected_calls: list[int]
+) -> None:
+    from tokenizers import Tokenizer, models
+    from transformers import PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(models.WordLevel({"[UNK]": 0, "hello": 1}, unk_token="[UNK]")),
+        unk_token="[UNK]",
+    )
+    calls: list[int] = []
+
+    class CountedTokenizer:
+        def decode(self, ids: list[int], **kwargs: Any) -> str:
+            calls.append(len(ids))
+            text = tokenizer.decode(ids, **kwargs)
+            assert isinstance(text, str)
+            return text
+
+    result = rollout_adapter_module._classify_trace_merge_mismatch(
+        CountedTokenizer(), [1] * previous_size, [1] * prompt_size
+    )
+    assert calls == expected_calls
+    assert result == ((False, True, False) if expected_calls else (False, False, True))
+
+
+def test_mismatch_classification_does_not_use_response_or_numeric_fallback() -> None:
+    assert rollout_adapter_module._classify_trace_merge_mismatch(None, [1], [1]) == (False, False, True)
+    # The next response could complete a decoded prefix; only the prompt is eligible.
+    assert rollout_adapter_module._classify_trace_merge_mismatch(FakeTokenizer(), [1, 2], [1]) == (
+        False,
+        False,
+        True,
+    )
+
+
+def test_mismatch_classification_keeps_legacy_decoder_and_rejects_invalid_text() -> None:
+    class LegacyTokenizer:
+        def decode(self, ids: list[int]) -> str:
+            return " ".join(str(token) for token in ids)
+
+    assert rollout_adapter_module._classify_trace_merge_mismatch(LegacyTokenizer(), [1], [1, 2]) == (
+        False,
+        True,
+        False,
+    )
+    invalid = SimpleNamespace(decode=lambda ids, **kwargs: None)
+    assert rollout_adapter_module._classify_trace_merge_mismatch(invalid, [1], [1, 2]) == (False, False, True)
+
+
+@pytest.mark.parametrize(("context_size", "expected_decode_calls"), [(2, 402), (129, 202)])
+def test_mismatch_decoding_stops_at_table_limit(
+    monkeypatch: pytest.MonkeyPatch, context_size: int, expected_decode_calls: int
+) -> None:
+    from tokenizers import Tokenizer, models
+    from transformers import PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(models.WordLevel({"[UNK]": 0, "hello": 1, "world": 2}, unk_token="[UNK]")),
+        unk_token="[UNK]",
+    )
+    calls: list[int] = []
+
+    class CountedTokenizer:
+        def decode(self, ids: list[int], **kwargs: Any) -> str:
+            calls.append(len(ids))
+            text = tokenizer.decode(ids, **kwargs)
+            assert isinstance(text, str)
+            return text
+
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = CompletedRollout(
+        rollout_id="bounded",
+        data_id="data-1",
+        step=0,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=0.5,
+        triplets=[_triplet([1 + turn % 2] * (context_size - 1), [1]) for turn in range(102)],
+    )
+    adapter = _adapter()
+    adapter.tokenizer = CountedTokenizer()
+    adapter.get_train_data_batch([rollout])
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    assert len(table.rows) == 100
+    # Each row decodes two traces; the trajectory summary decodes its final prompt/response.
+    # Only short rows add two classifier decodes, and none are added beyond the 100-row cap.
+    assert len(calls) == expected_decode_calls
 
 
 def test_training_step_uploads_24_compact_rollout_trajectories_to_wandb_zip(

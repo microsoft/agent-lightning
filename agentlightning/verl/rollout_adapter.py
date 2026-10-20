@@ -7,7 +7,6 @@ from __future__ import annotations
 import base64  # [multimodal-patch]
 import io
 import json
-import re
 import zipfile
 from typing import Any, cast
 
@@ -20,6 +19,7 @@ from agentlightning.verl.agl_rollout_manager import CompletedRollout
 
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
+_TRACE_MERGE_MISMATCH_TOKEN_LIMIT = 128
 _ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
 _TRACE_MERGE_MISMATCH_COLUMNS = [
     "global_steps",
@@ -66,10 +66,16 @@ def _classify_trace_merge_mismatch(
 ) -> tuple[bool, bool, bool]:
     """Return diagnostic (template, retokenization, other) flags, never merge decisions.
 
-    Only decoded-prefix equality, whitespace and the explicit think/tool-call
-    delimiters are recognized. These are heuristics, not proof of the cause.
+    Compare complete short inputs only; long or unrecognized cases stay other.
+    Template causes are not inferred, and no extra full-history decoding is done.
     """
-    if tokenizer is None:
+    if (
+        tokenizer is None
+        or not previous_ids
+        or not prompt_ids
+        or len(previous_ids) > _TRACE_MERGE_MISMATCH_TOKEN_LIMIT
+        or len(prompt_ids) > _TRACE_MERGE_MISMATCH_TOKEN_LIMIT
+    ):
         return False, False, True
     try:
         try:
@@ -85,12 +91,6 @@ def _classify_trace_merge_mismatch(
     if previous_text and prompt_text.startswith(previous_text):
         return False, True, False
 
-    # Keep all content, including reasoning/tool-call bodies and unknown tags.
-    # An empty normalized context cannot establish a meaningful prefix match.
-    previous_normalized = " ".join(re.sub(r"</?(?:think|tool_call)>", "", previous_text).split())
-    prompt_normalized = " ".join(re.sub(r"</?(?:think|tool_call)>", "", prompt_text).split())
-    if previous_normalized and prompt_normalized.startswith(previous_normalized):
-        return True, False, False
     return False, False, True
 
 
