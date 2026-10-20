@@ -62,6 +62,8 @@ class EnqueuedRollout(BaseModel):
     # Server timestamps expose pod queue time and completion time.
     running_at: float | None = None
     finished_at: float | None = None
+    # Retained across collection steps, whose managers are recreated by the trainer.
+    completion_hook_processed: bool = False
 
 
 class CompletedRollout(BaseModel):
@@ -641,10 +643,16 @@ class AglAsyncRolloutManager(AglRolloutManagerBase):
                     terminal_rollouts[enqueued_rollout.rollout_id] = rollout
                     if state == RolloutState.SUCCEEDED:
                         num_succeeded += 1
-                        self._run_succeeded_hook(rollout)
                     elif state == RolloutState.FAILED:
                         num_failed += 1
-                        self._run_failed_hook(rollout)
+
+                    if not enqueued_rollout.completion_hook_processed:
+                        if state == RolloutState.SUCCEEDED:
+                            self._run_succeeded_hook(rollout)
+                        elif state == RolloutState.FAILED:
+                            self._run_failed_hook(rollout)
+                        # Hook helpers log callback/flush errors as best-effort failures.
+                        enqueued_rollout.completion_hook_processed = True
 
                 if all(enqueued_rollout.rollout_id in finished_rollout_ids for enqueued_rollout in group):
                     completed_group_keys.add(data_id)
