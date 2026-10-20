@@ -15,7 +15,7 @@ from fastapi.exceptions import HTTPException
 from omegaconf import DictConfig, OmegaConf
 
 from agentlightning.server.proxy import ProxyPauseState, ProxyRouter
-from agentlightning.server.routes import events, models, proxy, rollouts
+from agentlightning.server.routes import events, models, proxy, readiness, rollouts
 
 log = structlog.get_logger()
 
@@ -83,6 +83,7 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
     app.include_router(rollouts.router, prefix="/api", dependencies=[Depends(verify_key)])
     app.include_router(events.router, prefix="/api", dependencies=[Depends(verify_key)])
     app.include_router(models.router, prefix="/api", dependencies=[Depends(verify_key)])
+    app.include_router(readiness.router, prefix="/api", dependencies=[Depends(verify_key)])
 
     # Proxy routes (LLM proxy + event ingestion) — require agent-facing auth.
     app.include_router(proxy.router, dependencies=[Depends(verify_key)])

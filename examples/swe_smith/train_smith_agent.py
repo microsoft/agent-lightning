@@ -213,7 +213,7 @@ def train(
         raise RuntimeError("AGL_KEY is required")
 
     train_dataset = load_split_file(train_dataset_path)
-    val_dataset = load_split_file(val_dataset_path, max_instances=max_val_instances)
+    val_dataset = load_split_file(val_dataset_path)
     instances = train_dataset + val_dataset
     distinct_repos = sorted({row["repo"] for row in instances})
 
@@ -222,7 +222,8 @@ def train(
     log(f"  model:        {model or DEFAULT_MODEL}")
     log(f"  train file:   {train_dataset_path}")
     log(f"  val file:     {val_dataset_path}")
-    log(f"  instances:    {len(instances)}  (train {len(train_dataset)} / val {len(val_dataset)})")
+    log(f"  source instances: {len(instances)}  (train {len(train_dataset)} / val {len(val_dataset)})")
+    log(f"  validation cap: {max_val_instances if max_val_instances is not None else 'all'}")
     log(f"  distinct repos (images to prepare): {len(distinct_repos)}")
 
     config = build_config(
@@ -236,7 +237,12 @@ def train(
     pprint(OmegaConf.to_container(config, resolve=True))
 
     log("\n=== Start VERL training ===")
-    run_ppo(config=config, train_dataset=train_dataset, val_dataset=val_dataset)
+    run_ppo(
+        config=config,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        max_val_instances=max_val_instances,
+    )
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
