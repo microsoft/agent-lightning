@@ -56,22 +56,24 @@ def load_hooks(path: str) -> RolloutHooks:
     digest = hashlib.sha256(str(module_path).encode("utf-8")).hexdigest()[:12]
     module_name = f"_agl_hooks_{digest}"
 
-    spec = importlib.util.spec_from_file_location(module_name, str(module_path))
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
+    # Reuse the module already registered for this path. Executing the file again
+    # would replace its classes inside ``sys.modules``, and instances created by
+    # the earlier load would then fail to pickle because their class object is no
+    # longer the one the module exposes.
+    module = sys.modules.get(module_name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(module_name, str(module_path))
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
 
-    # Register before execution, and restore whatever was there if loading fails,
-    # so a broken hooks file does not leave a half-imported module behind.
-    previous = sys.modules.get(module_name)
-    sys.modules[module_name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        if previous is None:
+        # Register before execution, and drop the half-imported module if loading
+        # fails, so a broken hooks file leaves no trace behind.
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
             sys.modules.pop(module_name, None)
-        else:
-            sys.modules[module_name] = previous
-        raise
+            raise
 
     hook_classes = [
         obj

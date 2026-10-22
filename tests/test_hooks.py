@@ -93,6 +93,32 @@ def test_load_hooks_distinct_paths_get_distinct_module_identity(tmp_path: Path) 
     assert hooks_a is not hooks_b
 
 
+def test_load_hooks_reuses_module_for_the_same_path(tmp_path: Path) -> None:
+    """Loading one file twice must reuse its module, not replace its classes.
+
+    Re-executing the file installs a new class object under the same module name,
+    which makes instances returned by the first load unpicklable.
+    """
+    path = _write_hooks(
+        tmp_path,
+        """\
+from agentlightning.hooks import RolloutHooks
+
+
+class Hooks(RolloutHooks):
+    pass
+""",
+    )
+
+    first = load_hooks(str(path))
+    assert pickle.loads(pickle.dumps(first)) is not None
+
+    second = load_hooks(str(path))
+
+    assert type(second) is type(first)
+    assert pickle.loads(pickle.dumps(first)) is not None
+
+
 def test_load_hooks_restores_sys_modules_on_failure(tmp_path: Path) -> None:
     """A hook file that raises during execution must not leave a half-imported
     module registered under its name."""
