@@ -345,6 +345,111 @@ def test_triplet_events_do_not_dedupe_without_valid_prompt_tokens(
     assert [event["data"]["response_token_ids"] for event in model_requests] == [[10], [20], [50]]
 
 
+def test_drop_superseded_routed_experts_across_multiturn_trajectory(
+    client: TestClient,
+    auth_headers: dict[str, str],
+):
+    rollout = _rollout(client, auth_headers)
+    rollout_id = rollout["rollout_id"]
+
+    def post_model_request(
+        prompt_token_ids: list[int], response_token_ids: list[int], routed_experts: list[int] | None = None
+    ) -> None:
+        data: dict = {
+            "response": {
+                "prompt_token_ids": prompt_token_ids,
+                "choices": [{"token_ids": response_token_ids}],
+            },
+            "server": {"model": MODEL_NAME, "version": 3},
+        }
+        if routed_experts is not None:
+            data["routed_experts"] = routed_experts
+        response = client.post(
+            f"/api/rollouts/{rollout_id}/attempt/0/events",
+            json={
+                "event_type": "model_request",
+                "data": data,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+    # Turn 1: prompt [1, 2], response [3, 4] with routed_experts
+    post_model_request([1, 2], [3, 4], routed_experts=[101])
+    # Turn 2: prompt [1, 2, 3, 4] (extends Turn 1), response [5, 6] with routed_experts
+    post_model_request([1, 2, 3, 4], [5, 6], routed_experts=[102])
+    # Turn 3: prompt [1, 2, 3, 4, 5, 6] (extends Turn 2 & 1), response [7, 8] with routed_experts
+    post_model_request([1, 2, 3, 4, 5, 6], [7, 8], routed_experts=[103])
+
+    raw_events = client.get(
+        f"/api/rollouts/{rollout_id}/events",
+        headers=auth_headers,
+    ).json()
+    model_events = [e for e in raw_events if e["event_type"] == "model_request"]
+    assert len(model_events) == 3
+    # Only Turn 3 should retain routed_experts; Turn 1 and Turn 2 should have had theirs dropped
+    assert "routed_experts" not in model_events[0]["data"]
+    assert "routed_experts" not in model_events[1]["data"]
+    assert model_events[2]["data"]["routed_experts"] == [103]
+
+
+def test_drop_superseded_routed_experts_with_interleaved_unrouted_turn(
+    client: TestClient,
+    auth_headers: dict[str, str],
+):
+    rollout = _rollout(client, auth_headers)
+    rollout_id = rollout["rollout_id"]
+
+    def post_model_request(
+        prompt_token_ids: list[int], response_token_ids: list[int], routed_experts: list[int] | None = None
+    ) -> None:
+        data: dict = {
+            "response": {
+                "prompt_token_ids": prompt_token_ids,
+                "choices": [{"token_ids": response_token_ids}],
+            },
+            "server": {"model": MODEL_NAME, "version": 3},
+        }
+        if routed_experts is not None:
+            data["routed_experts"] = routed_experts
+        response = client.post(
+            f"/api/rollouts/{rollout_id}/attempt/0/events",
+            json={
+                "event_type": "model_request",
+                "data": data,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+    # Turn 1 has routed_experts
+    post_model_request([1, 2], [3, 4], routed_experts=[201])
+    # Turn 2 extends Turn 1 but has NO routed_experts
+    post_model_request([1, 2, 3, 4], [5, 6])
+    # Turn 3 extends Turn 2 & 1 and HAS routed_experts
+    post_model_request([1, 2, 3, 4, 5, 6], [7, 8], routed_experts=[203])
+
+    raw_events = client.get(
+        f"/api/rollouts/{rollout_id}/events",
+        headers=auth_headers,
+    ).json()
+    model_events = [e for e in raw_events if e["event_type"] == "model_request"]
+    assert len(model_events) == 3
+    # Turn 1 must have its routed_experts dropped even though intermediate Turn 2 lacked routed_experts
+    assert "routed_experts" not in model_events[0]["data"]
+    assert "routed_experts" not in model_events[1]["data"]
+    assert model_events[2]["data"]["routed_experts"] == [203]
+
+    # Verify query parameter include_routed_experts=False drops routes on output
+    events_without_routes = client.get(
+        f"/api/rollouts/{rollout_id}/events",
+        params={"include_routed_experts": False},
+        headers=auth_headers,
+    ).json()
+    model_events_without = [e for e in events_without_routes if e["event_type"] == "model_request"]
+    assert "routed_experts" not in model_events_without[2]["data"]
+
+
 def test_model_endpoints(client: TestClient, auth_headers: dict[str, str]):
     created = client.post(
         "/api/models",
