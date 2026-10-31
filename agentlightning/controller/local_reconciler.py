@@ -43,7 +43,11 @@ def _run_local_reconciler_worker(agent_class_path: str) -> int:
             raise TypeError(f"{agent_class_path} is not a class")
         result = loaded().run()
         if inspect.isawaitable(result):
-            asyncio.run(result)  # type: ignore[arg-type]
+
+            async def await_result() -> None:
+                await result
+
+            asyncio.run(await_result())
         return 0
     except Exception:
         traceback.print_exc()
