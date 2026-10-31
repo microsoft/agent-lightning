@@ -450,6 +450,56 @@ def test_drop_superseded_routed_experts_with_interleaved_unrouted_turn(
     assert "routed_experts" not in model_events_without[2]["data"]
 
 
+def test_drop_superseded_routed_experts_stops_at_unrelated_interleaved_call(
+    client: TestClient,
+    auth_headers: dict[str, str],
+):
+    rollout = _rollout(client, auth_headers)
+    rollout_id = rollout["rollout_id"]
+
+    def post_model_request(
+        prompt_token_ids: list[int], response_token_ids: list[int], routed_experts: list[int] | None = None
+    ) -> None:
+        data: dict = {
+            "response": {
+                "prompt_token_ids": prompt_token_ids,
+                "choices": [{"token_ids": response_token_ids}],
+            },
+            "server": {"model": MODEL_NAME, "version": 3},
+        }
+        if routed_experts is not None:
+            data["routed_experts"] = routed_experts
+        response = client.post(
+            f"/api/rollouts/{rollout_id}/attempt/0/events",
+            json={
+                "event_type": "model_request",
+                "data": data,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+    # A: prompt [1, 2], response [3], routes r1
+    post_model_request([1, 2], [3], routed_experts=[101])
+    # B: prompt [7], response [8], routes r2 (e.g. sub-agent or tool-planner call, does not extend A)
+    post_model_request([7], [8], routed_experts=[102])
+    # C: prompt [1, 2, 3, 4], response [5], routes r3 (extends A's context, but sits after unrelated call B)
+    post_model_request([1, 2, 3, 4], [5], routed_experts=[103])
+
+    raw_events = client.get(
+        f"/api/rollouts/{rollout_id}/events",
+        headers=auth_headers,
+    ).json()
+    model_events = [e for e in raw_events if e["event_type"] == "model_request"]
+    assert len(model_events) == 3
+    # A must retain its routed_experts because B interrupted the mergeable chain
+    assert model_events[0]["data"]["routed_experts"] == [101]
+    # B must retain its routed_experts as an independent call
+    assert model_events[1]["data"]["routed_experts"] == [102]
+    # C retains its routed_experts as the latest turn in its own chain
+    assert model_events[2]["data"]["routed_experts"] == [103]
+
+
 def test_model_endpoints(client: TestClient, auth_headers: dict[str, str]):
     created = client.post(
         "/api/models",

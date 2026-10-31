@@ -36,7 +36,9 @@ def _drop_superseded_routed_experts(events: list[Event], event_type: str, data: 
         previous_context = previous_data["prompt_token_ids"] + previous_data["response_token_ids"]
         same_prompt = bool(prompt_ids) and prompt_ids == previous_data["prompt_token_ids"]
         extends_context = bool(previous_context) and prompt_ids[: len(previous_context)] == previous_context
-        if (same_prompt or extends_context) and "routed_experts" in previous.data:
+        if not (same_prompt or extends_context):
+            break
+        if "routed_experts" in previous.data:
             data_without_routes = dict(previous.data)
             data_without_routes.pop("routed_experts")
             events[index] = previous.model_copy(update={"data": data_without_routes})
