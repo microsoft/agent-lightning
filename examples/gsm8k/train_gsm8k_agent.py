@@ -124,7 +124,7 @@ def build_config(
         raise ValueError(f"Unsupported GSM8K OpenAI API: {api}")
     if api == "completion":
         overrides["agentlightning"]["local"]["agent_class"] = "examples.gsm8k.gsm8k_agent.CompletionAgent"
-        overrides["agentlightning"]["local"]["env_map"]["GSM8K_MODEL"] = overrides["actor_rollout_ref"]["model"]["path"]
+        overrides["agentlightning"]["local"]["env_map"]["GSM8K_MODEL"] = "${actor_rollout_ref.model.path}"
     if agl_base_url:
         overrides["agentlightning"]["agl_base_url"] = agl_base_url
     if agl_key is not None:
