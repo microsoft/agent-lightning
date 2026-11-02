@@ -108,13 +108,13 @@ nav:
   - Examples:
     - Calc-X: 50-example-calc-x.md
     - GSM8K: 55-example-gsm8k.md
-    - INTELLECT-2 Math: 56-example-intellect2-math.md
     - ScienceWorld: 60-example-science-world.md
     - Search-R1: 65-example-search-r1.md
     - LLM-in-Sandbox: 70-example-llm-in-sandbox.md
     - Coding Agent: 75-example-coding-agent.md
     - Coding Agent (MoE): 76-example-coding-agent-moe.md
     - Multimodal QA: 80-example-multimodal-qa.md
+    - Score Centering: 85-example-score-centering.md
   - Community:
     - Contributing: community/contributing.md
 

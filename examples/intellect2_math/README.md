@@ -1,3 +1,3 @@
-# INTELLECT-2 Math
+# Score Centering
 
-See the [INTELLECT-2 Math documentation](../../docs/56-example-intellect2-math.md) for environment setup, data and low-precision model preparation, GRPO and score centering presets, and training instructions.
+See the [Score Centering documentation](../../docs/85-example-score-centering.md) for environment setup, data and low-precision model preparation, GRPO and score centering presets, and training instructions.
