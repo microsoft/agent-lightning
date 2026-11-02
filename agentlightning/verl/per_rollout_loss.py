@@ -27,7 +27,7 @@ def normalize_advantages_by_rollout(
     if num_trained_rows <= 0:
         raise ValueError("num_trained_rows must be positive")
 
-    row_token_counts = response_mask.sum(dim=-1).to(dtype=advantages.dtype)
+    row_token_counts = response_mask.sum(dim=-1)
     rollout_token_counts: dict[Any, float] = {}
     for row_index, rollout_id in enumerate(rollout_ids):
         rollout_token_counts[rollout_id] = rollout_token_counts.get(rollout_id, 0.0) + float(
@@ -36,10 +36,10 @@ def normalize_advantages_by_rollout(
 
     row_divisors = torch.tensor(
         [rollout_token_counts[rollout_id] * num_trained_rows for rollout_id in rollout_ids],
-        dtype=advantages.dtype,
+        dtype=torch.promote_types(advantages.dtype, torch.float32),
         device=advantages.device,
     ).clamp_min(1.0)
-    return advantages / row_divisors.unsqueeze(-1)
+    return (advantages / row_divisors.unsqueeze(-1)).to(dtype=advantages.dtype)
 
 
 @register_policy_loss(PER_ROLLOUT_MEAN_LOSS_MODE)

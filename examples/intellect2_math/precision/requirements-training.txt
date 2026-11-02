@@ -1,0 +1,4 @@
+vllm==0.25.0
+flashinfer-cubin==0.6.13
+torch==2.11.0
+transformers==5.16.1

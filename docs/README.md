@@ -44,3 +44,4 @@ For the legacy Agent Lightning releases earlier than v1.0, see the [`v0.x` code 
 | [Coding Agent](75-example-coding-agent.md) | Train a coding agent using repository tests as feedback. |
 | [Coding Agent: MoE](76-example-coding-agent-moe.md) | Train Qwen3.5-35B-A3B with Megatron and R3. |
 | [Multimodal QA](80-example-multimodal-qa.md) | Train a vision-language model on synthetic image QA. |
+| [Score Centering](85-example-score-centering.md) | Train a math reasoning agent with GRPO or score centering and low-precision inference. |

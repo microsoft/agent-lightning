@@ -8,6 +8,7 @@ import json
 import sys
 import weakref
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -359,7 +360,10 @@ def test_mismatch_classification_is_disabled_by_default(monkeypatch: pytest.Monk
 
 
 @pytest.mark.parametrize("enabled", [None, False, True], ids=["missing", "disabled", "enabled"])
-def test_trainer_forwards_mismatch_classification_config(monkeypatch: pytest.MonkeyPatch, enabled: bool | None) -> None:
+@pytest.mark.parametrize("score_centering", [False, True])
+def test_trainer_forwards_mismatch_classification_config(
+    monkeypatch: pytest.MonkeyPatch, enabled: bool | None, score_centering: bool
+) -> None:
     from pathlib import Path
 
     from omegaconf import OmegaConf
@@ -374,6 +378,8 @@ def test_trainer_forwards_mismatch_classification_config(monkeypatch: pytest.Mon
         config.agentlightning.trace_aggregator.classify_trace_merge_mismatches = enabled
     config.data.max_prompt_length = 4
     config.data.max_response_length = 3
+    if score_centering:
+        config.actor_rollout_ref.actor.policy_loss.loss_mode = "score_centering"
     calls: list[list[int]] = []
 
     class CountedTokenizer(FakeTokenizer):
@@ -386,6 +392,10 @@ def test_trainer_forwards_mismatch_classification_config(monkeypatch: pytest.Mon
     logged: list[tuple[dict[str, FakeTable], int]] = []
     _install_fake_wandb(monkeypatch, logged)
     rollout = _transition_rollout([_triplet([1], [2]), _triplet([3, 4], [2])])
+    assert rollout.triplets is not None
+    for triplet in rollout.triplets:
+        triplet.response["score_centering_token_ids"] = [[2]]
+        triplet.response["score_centering_log_probs"] = [[-0.1]]
     manager = SimpleNamespace(
         delete_model=lambda: None,
         register_model=lambda addresses: None,
@@ -411,6 +421,13 @@ def test_trainer_forwards_mismatch_classification_config(monkeypatch: pytest.Mon
     assert (row["retoken_mismatch"], row["others_mismatch"]) == (bool(enabled), not enabled)
     assert len(calls) == (6 if enabled else 4)
     assert len(batch) == 2
+    if score_centering:
+        assert batch.non_tensor_batch["score_centering"].tolist() == [
+            {"token_ids": [[2]], "log_probs": [[-0.1]]},
+            {"token_ids": [[2]], "log_probs": [[-0.1]]},
+        ]
+    else:
+        assert "score_centering" not in batch.non_tensor_batch
 
 
 @pytest.mark.parametrize("classify_mismatches", [False, True], ids=["disabled", "enabled"])
@@ -1012,6 +1029,38 @@ def test_load_pil_image_decodes_data_url() -> None:
 
     assert image.size == (2, 2)
     assert image.mode == "RGB"
+
+
+@pytest.mark.parametrize("filename", ["plain.png", "frame one.png", "图像.png", "frame%20.png"])
+def test_load_pil_image_decodes_file_uri(tmp_path: Path, filename: str) -> None:
+    from PIL import Image
+
+    image_path = tmp_path / filename
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(image_path)
+    # A second unquote would load the wrong image for the literal-percent case.
+    if filename == "frame%20.png":
+        Image.new("RGB", (2, 2), (0, 0, 255)).save(tmp_path / "frame .png")
+
+    image = rollout_adapter_module._load_pil_image(image_path.as_uri())
+
+    assert image.size == (2, 2)
+    assert image.mode == "RGB"
+    assert image.getpixel((0, 0)) == (255, 0, 0)
+
+
+def test_file_uri_image_row_is_kept_for_training(tmp_path: Path) -> None:
+    from PIL import Image
+
+    image_path = tmp_path / "frame 50%.png"
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(image_path)
+    rollout = _transition_rollout([_image_triplet([1, 2], [3], image_urls=[image_path.as_uri()])])
+
+    batch, _ = _transition_adapter(FakeMropeProcessor()).get_train_data_batch([rollout])
+
+    assert batch.batch["is_drop_mask"].tolist() == [False]
+    assert batch.non_tensor_batch["multi_modal_inputs"][0] is not None
+    keep = (~batch.batch["is_drop_mask"].bool()).nonzero(as_tuple=True)[0].tolist()
+    assert batch[keep].non_tensor_batch["rollout_id_list"].tolist() == [rollout.rollout_id]
 
 
 def test_load_pil_image_fetches_remote_url_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
