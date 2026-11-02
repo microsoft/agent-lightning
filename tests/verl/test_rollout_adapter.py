@@ -295,15 +295,13 @@ def test_trajectory_prefix_mismatch_uploads_trace_merge_table_to_wandb(
     assert step == 17
     assert table.columns[0] == "global_steps"
     assert table.columns[-2:] == ["previous_trace", "current_trace"]
+    assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(table.columns)
     assert table.rows == [
         [
             17,
             "r1",
             "data-1",
             1,
-            False,
-            False,
-            True,
             1,
             1,
             2,
@@ -354,7 +352,7 @@ def test_mismatch_classification_is_disabled_by_default(monkeypatch: pytest.Monk
 
     table, _ = _logged_table(logged, "training/trace_merge_mismatches")
     row = dict(zip(table.columns, table.rows[0], strict=True))
-    assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == (False, False, True)
+    assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(row)
     # The two trace-text decodes and two trajectory-summary decodes already existed.
     assert len(calls) == 4
 
@@ -418,7 +416,10 @@ def test_trainer_forwards_mismatch_classification_config(
 
     table, _ = _logged_table(logged, "training/trace_merge_mismatches")
     row = dict(zip(table.columns, table.rows[0], strict=True))
-    assert (row["retoken_mismatch"], row["others_mismatch"]) == (bool(enabled), not enabled)
+    if enabled:
+        assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == (False, True, False)
+    else:
+        assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(row)
     assert len(calls) == (6 if enabled else 4)
     assert len(batch) == 2
     if score_centering:
@@ -537,9 +538,10 @@ def test_trajectory_mismatch_classification_preserves_training_data(
 
     table, _ = _logged_table(logged, "training/trace_merge_mismatches")
     row = dict(zip(table.columns, table.rows[0], strict=True))
-    assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == (
-        expected if classify_mismatches else (False, False, True)
-    )
+    if classify_mismatches:
+        assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == expected
+    else:
+        assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(row)
     assert len(table.rows) == 1
     assert len(batch) == 2  # Diagnostic classification never relaxes the exact token-prefix split.
     assert rollout == original

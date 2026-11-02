@@ -140,7 +140,7 @@ agentlightning:
 
 The aggregator automatically merges consecutive calls when the next prompt starts with the exact token sequence of the previous prompt and response. Tokens added between calls, such as tool observations, are retained as context but masked from the policy loss. If exact token-prefix continuity is broken, the aggregator starts a new training row instead of merging incompatible calls.
 
-Set `agentlightning.trace_aggregator.classify_trace_merge_mismatches=true` to enable retokenization hints when debugging. It defaults to `false`: mismatches stay `others_mismatch` without extra classifier decoding. Existing trace-text and trajectory-summary logging still decode tokens; the switch does not disable that pre-existing logging.
+Set `agentlightning.trace_aggregator.classify_trace_merge_mismatches=true` to enable retokenization hints when debugging. It defaults to `false`: the table omits `template_mismatch`, `retoken_mismatch` and `others_mismatch`, and no extra classifier decoding occurs. Trace text, lengths and mismatch counts are still recorded. Existing trace-text and trajectory-summary logging still decode tokens; the switch does not disable that pre-existing logging.
 
 When enabled, for up to 100 such failures per batch, `training/trace_merge_mismatches` reports `retoken_mismatch` when the decoded next prompt still starts with the decoded previous prompt and response. This check only runs when both complete token sequences contain at most 128 tokens, limiting the extra decoding to short inputs. Longer inputs, absent tokenizers, decoding failures and other unrecognized cases remain `others_mismatch`.
 
