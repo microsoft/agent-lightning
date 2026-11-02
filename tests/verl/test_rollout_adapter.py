@@ -336,6 +336,84 @@ def test_trajectory_prefix_mismatch_wandb_table_is_capped_at_100(
     assert table.rows[-1][3] == 100
 
 
+def test_mismatch_classification_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[int]] = []
+
+    class CountedTokenizer(FakeTokenizer):
+        def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
+            calls.append(list(ids))
+            return "hello world" if ids == [1, 2] else "hello world obs"
+
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = _transition_rollout([_triplet([1], [2]), _triplet([3, 4], [2])])
+    adapter = _adapter()
+    adapter.tokenizer = CountedTokenizer()
+    adapter.get_train_data_batch([rollout])
+
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    row = dict(zip(table.columns, table.rows[0], strict=True))
+    assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == (False, False, True)
+    # The two trace-text decodes and two trajectory-summary decodes already existed.
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("enabled", [None, False, True], ids=["missing", "disabled", "enabled"])
+def test_trainer_forwards_mismatch_classification_config(monkeypatch: pytest.MonkeyPatch, enabled: bool | None) -> None:
+    from pathlib import Path
+
+    from omegaconf import OmegaConf
+
+    from agentlightning.verl.trainer import AgentLightningRayPPOTrainer
+
+    config = OmegaConf.load(Path(rollout_adapter_module.__file__).with_name("config.yaml"))
+    assert config.agentlightning.trace_aggregator.classify_trace_merge_mismatches is False
+    if enabled is None:
+        del config.agentlightning.trace_aggregator.classify_trace_merge_mismatches
+    else:
+        config.agentlightning.trace_aggregator.classify_trace_merge_mismatches = enabled
+    config.data.max_prompt_length = 4
+    config.data.max_response_length = 3
+    calls: list[list[int]] = []
+
+    class CountedTokenizer(FakeTokenizer):
+        pad_token_id = 0
+
+        def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
+            calls.append(list(ids))
+            return "hello world" if ids == [1, 2] else "hello world obs"
+
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = _transition_rollout([_triplet([1], [2]), _triplet([3, 4], [2])])
+    manager = SimpleNamespace(
+        delete_model=lambda: None,
+        register_model=lambda addresses: None,
+        enqueue_and_wait_until_completed=lambda data, is_train: [rollout],
+    )
+    trainer = object.__new__(AgentLightningRayPPOTrainer)
+    for name, value in {
+        "config": config,
+        "tokenizer": CountedTokenizer(),
+        "is_async": False,
+        "global_steps": 0,
+        "async_rollout_manager": SimpleNamespace(server_addresses=[]),
+        "_resume_all_rollout_generation": lambda: None,
+        "_abort_all_rollout_requests": lambda: None,
+        "_make_rollout_manager": lambda cls: manager,
+        "_rollout_lifecycle_metrics": lambda rollouts: {},
+    }.items():
+        monkeypatch.setattr(trainer, name, value, raising=False)
+    batch, _ = AgentLightningRayPPOTrainer._rollout(trainer, rollout_adapter_module.DataProto(batch=None), True)
+
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    row = dict(zip(table.columns, table.rows[0], strict=True))
+    assert (row["retoken_mismatch"], row["others_mismatch"]) == (bool(enabled), not enabled)
+    assert len(calls) == (6 if enabled else 4)
+    assert len(batch) == 2
+
+
+@pytest.mark.parametrize("classify_mismatches", [False, True], ids=["disabled", "enabled"])
 @pytest.mark.parametrize(
     ("prompt", "response", "next_prompt", "use_tokenizer", "expected"),
     [
@@ -378,6 +456,7 @@ def test_trajectory_mismatch_classification_preserves_training_data(
     next_prompt: list[int],
     use_tokenizer: bool,
     expected: tuple[bool, bool, bool],
+    classify_mismatches: bool,
 ) -> None:
     from tokenizers import Tokenizer, models
     from transformers import PreTrainedTokenizerFast
@@ -432,6 +511,7 @@ def test_trajectory_mismatch_classification_preserves_training_data(
         pad_token_id=0,
         trace_aggregator_level="trajectory",
         require_routed_experts=True,
+        classify_trace_merge_mismatches=classify_mismatches,
     )
     baseline, baseline_metrics = adapter.get_train_data_batch([rollout])
     logged.clear()
@@ -440,7 +520,9 @@ def test_trajectory_mismatch_classification_preserves_training_data(
 
     table, _ = _logged_table(logged, "training/trace_merge_mismatches")
     row = dict(zip(table.columns, table.rows[0], strict=True))
-    assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == expected
+    assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == (
+        expected if classify_mismatches else (False, False, True)
+    )
     assert len(table.rows) == 1
     assert len(batch) == 2  # Diagnostic classification never relaxes the exact token-prefix split.
     assert rollout == original
@@ -507,9 +589,12 @@ def test_mismatch_classification_keeps_legacy_decoder_and_rejects_invalid_text()
     assert rollout_adapter_module._classify_trace_merge_mismatch(invalid, [1], [1, 2]) == (False, False, True)
 
 
-@pytest.mark.parametrize(("context_size", "expected_decode_calls"), [(2, 402), (129, 202)])
+@pytest.mark.parametrize(
+    ("context_size", "classify_mismatches", "expected_decode_calls"),
+    [(2, False, 202), (129, False, 202), (2, True, 402), (129, True, 202)],
+)
 def test_mismatch_decoding_stops_at_table_limit(
-    monkeypatch: pytest.MonkeyPatch, context_size: int, expected_decode_calls: int
+    monkeypatch: pytest.MonkeyPatch, context_size: int, classify_mismatches: bool, expected_decode_calls: int
 ) -> None:
     from tokenizers import Tokenizer, models
     from transformers import PreTrainedTokenizerFast
@@ -540,11 +625,12 @@ def test_mismatch_decoding_stops_at_table_limit(
     )
     adapter = _adapter()
     adapter.tokenizer = CountedTokenizer()
+    adapter.classify_trace_merge_mismatches = classify_mismatches
     adapter.get_train_data_batch([rollout])
     table, _ = _logged_table(logged, "training/trace_merge_mismatches")
     assert len(table.rows) == 100
     # Each row decodes two traces; the trajectory summary decodes its final prompt/response.
-    # Only short rows add two classifier decodes, and none are added beyond the 100-row cap.
+    # Only enabled, short rows add classifier decodes, and none are added beyond the 100-row cap.
     assert len(calls) == expected_decode_calls
 
 

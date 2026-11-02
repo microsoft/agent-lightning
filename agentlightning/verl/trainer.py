@@ -423,6 +423,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             pad_token_id=pad_token_id,
             reward_fillna_value=self.config.agentlightning.reward_fillna_value,
             trace_aggregator_level=level,
+            classify_trace_merge_mismatches=trace_aggregator.get("classify_trace_merge_mismatches", False),
             tokenizer=self.tokenizer,
             # [multimodal-patch] RayPPOTrainer stores the processor from entrypoint; forwarding it
             # enables pixel_values + mrope position ids for image-bearing training rows.

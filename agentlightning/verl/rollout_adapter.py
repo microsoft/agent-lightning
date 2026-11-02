@@ -422,6 +422,7 @@ class RolloutAdapter:
         tokenizer: Any | None = None,
         processor: Any | None = None,  # [multimodal-patch] HF processor; None keeps text-only behavior
         require_routed_experts: bool = False,
+        classify_trace_merge_mismatches: bool = False,
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
@@ -433,6 +434,7 @@ class RolloutAdapter:
         self.tokenizer = tokenizer
         self.processor = processor  # [multimodal-patch]
         self.require_routed_experts = require_routed_experts
+        self.classify_trace_merge_mismatches = classify_trace_merge_mismatches
 
     def get_train_data_batch(
         self,
@@ -627,9 +629,11 @@ class RolloutAdapter:
                         continue
 
                     if len(merge_mismatch_rows) < _TRACE_MERGE_MISMATCH_WANDB_LIMIT:
-                        template_mismatch, retoken_mismatch, others_mismatch = _classify_trace_merge_mismatch(
-                            self.tokenizer, current_context, prompt_ids
-                        )
+                        template_mismatch, retoken_mismatch, others_mismatch = False, False, True
+                        if self.classify_trace_merge_mismatches:
+                            template_mismatch, retoken_mismatch, others_mismatch = _classify_trace_merge_mismatch(
+                                self.tokenizer, current_context, prompt_ids
+                            )
                         merge_mismatch_rows.append(
                             {
                                 "global_steps": global_steps,
