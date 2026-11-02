@@ -15,6 +15,31 @@ logger = logging.getLogger(__name__)
 def apply_vllm_compat_patches() -> None:
     """Apply all known verl <-> vLLM compatibility shims (idempotent)."""
     _patch_make_request_output_pooling_output()
+    _patch_tool_parser_plugin()
+
+
+def _patch_tool_parser_plugin() -> None:
+    # VERL's embedded server skips the plugin import performed by `vllm serve`.
+    try:
+        from verl.workers.rollout.vllm_rollout.vllm_async_server import vLLMHttpServer
+    except ImportError:
+        return
+
+    current = vLLMHttpServer.run_server
+    if getattr(current, "_agl_vllm_compat", False):
+        return
+
+    async def run_server(self, args, *positional, **kwargs):
+        plugin = getattr(args, "tool_parser_plugin", None)
+        if plugin:
+            from vllm.entrypoints.openai.tool_parsers import ToolParserManager  # pyright: ignore[reportMissingImports]
+
+            ToolParserManager.import_tool_parser(plugin)
+        return await current(self, args, *positional, **kwargs)
+
+    run_server._agl_vllm_compat = True  # pyright: ignore[reportFunctionMemberAccess]
+    vLLMHttpServer.run_server = run_server
+    logger.info("Applied VERL compat shim for custom vLLM tool parser plugins")
 
 
 def _patch_make_request_output_pooling_output() -> None:
