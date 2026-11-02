@@ -8,6 +8,12 @@ This Score Centering example trains a single-turn math reasoning agent on `Prime
 
 Each rollout generates reasoning and a boxed final answer through the Chat Completions API. `math_verify` assigns reward 1 for an equivalent answer and 0 otherwise; truncated completions receive 0.
 
+## Results
+
+![Training reward over steps: the pink Score Centering curve sustains reward while the green GRPO baseline without Score Centering drops to zero.](images/score-centering-training-reward.png)
+
+The pink curve uses Score Centering; the green curve is the GRPO baseline without Score Centering. In these runs, the Score Centering training reward remains around 0.6 at later steps, while the baseline reward drops to zero around step 45 and stays there.
+
 ## Setup
 
 Run the commands below from the repository root. Start with the [installation guide](00-installation.md) to set up `.venv` and VERL 0.8.0. This example uses vLLM 0.25.0, Torch 2.11.0, and Transformers 5.16.1 on B200, which differ from the general installation guide's pinned inference stack:
