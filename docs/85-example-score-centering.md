@@ -1,12 +1,18 @@
-# INTELLECT-2 Math
+# Score Centering
 
 | GPU | Model | Controller Mode | Trainer Mode | Code |
 |---|---|---|---|---|
 | 1× B200 | `Qwen/Qwen3.5-9B` | Local | Sync only | [Source](https://github.com/microsoft/agent-lightning/tree/main/examples/intellect2_math) |
 
-INTELLECT-2 Math trains a single-turn math reasoning agent on `PrimeIntellect/INTELLECT-2-only-math` with `verl` and Agent Lightning >=v1.0. It provides GRPO and score centering (SC) presets using INT8 weight/activation inference, an INT4 Attention KV cache, and BF16 training.
+This Score Centering example trains a single-turn math reasoning agent on `PrimeIntellect/INTELLECT-2-only-math` with `verl` and Agent Lightning >=v1.0. It provides GRPO and score centering (SC) presets using INT8 weight/activation inference, an INT4 Attention KV cache, and BF16 training.
 
 Each rollout generates reasoning and a boxed final answer through the Chat Completions API. `math_verify` assigns reward 1 for an equivalent answer and 0 otherwise; truncated completions receive 0.
+
+## Results
+
+![Training reward over steps: the pink Score Centering curve sustains reward while the green GRPO baseline without Score Centering drops to zero.](images/score-centering-training-reward.png){ width="50%" style="display: block; margin: 0 auto;" }
+
+The pink curve uses Score Centering; the green curve is the GRPO baseline without Score Centering. In these runs, the Score Centering training reward remains around 0.6 at later steps, while the baseline reward drops to zero around step 45 and stays there.
 
 ## Setup
 
