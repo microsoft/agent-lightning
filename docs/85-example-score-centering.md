@@ -10,7 +10,9 @@ Each rollout generates reasoning and a boxed final answer through the Chat Compl
 
 ## Results
 
-![Training reward over steps: the pink Score Centering curve sustains reward while the green GRPO baseline without Score Centering drops to zero.](images/score-centering-training-reward.png)
+<p align="center">
+  <img src="../images/score-centering-training-reward.png" alt="Training reward over steps: the pink Score Centering curve sustains reward while the green GRPO baseline without Score Centering drops to zero." width="50%">
+</p>
 
 The pink curve uses Score Centering; the green curve is the GRPO baseline without Score Centering. In these runs, the Score Centering training reward remains around 0.6 at later steps, while the baseline reward drops to zero around step 45 and stays there.
 
