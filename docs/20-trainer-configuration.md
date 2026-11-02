@@ -72,6 +72,17 @@ run_ppo(config, train_dataset=train_dataset, val_dataset=val_dataset)
 
 `run_ppo` accepts non-empty in-memory sequences as `train_dataset` and `val_dataset`. Each element is read as a JSON-like object. When the trainer creates a rollout, each element in the list becomes the rollout's `input` field. The Controller can then map fields from `input` into the agent's environment or Kubernetes Job template.
 
+### Validation batch size
+
+Agent Lightning requires the inherited VERL default `data.val_batch_size: null` (Python `None`). VERL uses the entire validation dataset as one dataloader batch, so the reported validation metrics cover the full dataset.
+
+```yaml
+data:
+  val_batch_size: null
+```
+
+`run_ppo` rejects non-null values before accessing Ray. To reset a command-line override, use `data.val_batch_size=null`; the string `"None"` is not equivalent to `null`.
+
 ## Rollout execution
 
 The Controller has two execution modes: `local` and `k8s`. Configure the matching section below, and the Controller reads that section according to its running mode.

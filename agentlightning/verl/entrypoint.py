@@ -39,6 +39,10 @@ def run_ppo(
 
     Datasets must be passed as non-empty in-memory sequences.
     """
+    assert config.data.val_batch_size is None, (
+        "Agent Lightning requires data.val_batch_size=null to validate the entire dataset in one batch."
+    )
+
     from verl.trainer.main_ppo import get_ppo_ray_runtime_env
 
     assert train_dataset is not None and len(train_dataset) > 0, "train_dataset must be non-empty"
