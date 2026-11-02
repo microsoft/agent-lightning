@@ -41,10 +41,6 @@
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
-         <loc>https://microsoft.github.io/agent-lightning/latest/56-example-intellect2-math/</loc>
-         <lastmod>2026-11-02</lastmod>
-    </url>
-    <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/60-example-science-world/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
@@ -66,6 +62,10 @@
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/80-example-multimodal-qa/</loc>
+         <lastmod>2026-11-02</lastmod>
+    </url>
+    <url>
+         <loc>https://microsoft.github.io/agent-lightning/latest/85-example-score-centering/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
