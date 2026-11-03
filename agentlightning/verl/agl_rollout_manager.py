@@ -113,6 +113,20 @@ class _TraceEventHelper:
 def _as_reward_value(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
+    if torch is not None and isinstance(value, torch.Tensor):
+        if value.numel() == 1 and not value.is_complex() and value.dtype != torch.bool:
+            try:
+                return float(value.item())
+            except (TypeError, ValueError):
+                return None
+        return None
+    if isinstance(value, np.ndarray):
+        if value.size == 1 and not np.issubdtype(value.dtype, np.bool_):
+            try:
+                return float(value.item())
+            except (TypeError, ValueError):
+                return None
+        return None
     if isinstance(value, int | float | np.number):
         return float(value)
     return None
