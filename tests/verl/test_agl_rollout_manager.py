@@ -4,13 +4,21 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from agentlightning.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
 from agentlightning.verl.agl_rollout_manager import (
     AglRolloutManagerBase,
     EnqueuedRollout,
     _aligned_image_urls,
+    _as_reward_value,
     _extract_image_urls_from_messages,
 )
 
@@ -267,3 +275,134 @@ def test_aligned_image_urls_text_only_rollout_returns_none_without_warning(
     # Text-only rollouts keep the exact original behavior: no alignment, no warning.
     assert _aligned_image_urls(raw_events, 2) is None
     assert capsys.readouterr().out == ""
+
+
+def test_as_reward_value_primitives() -> None:
+    assert _as_reward_value(1) == 1.0
+    assert _as_reward_value(2.5) == 2.5
+    assert _as_reward_value(np.float32(3.5)) == 3.5
+    assert _as_reward_value(np.int64(4)) == 4.0
+    assert _as_reward_value(True) is None
+    assert _as_reward_value(False) is None
+    assert _as_reward_value(None) is None
+    assert _as_reward_value("1.0") is None
+    assert _as_reward_value({"value": 1.0}) is None
+    assert _as_reward_value([1.0]) is None
+
+
+@pytest.mark.skipif(torch is None, reason="torch not installed")
+def test_as_reward_value_torch_tensors() -> None:
+    assert torch is not None
+    # 0-D scalar tensor
+    assert _as_reward_value(torch.tensor(0.85)) == pytest.approx(0.85)
+    # 1-D single-element tensor
+    assert _as_reward_value(torch.tensor([1.25])) == pytest.approx(1.25)
+    # 2-D single-element tensor
+    assert _as_reward_value(torch.tensor([[2.5]])) == pytest.approx(2.5)
+    # Different numeric dtypes
+    assert _as_reward_value(torch.tensor(3, dtype=torch.int64)) == 3.0
+    assert _as_reward_value(torch.tensor(4.0, dtype=torch.float64)) == 4.0
+    # Multi-element and empty tensors should be rejected
+    assert _as_reward_value(torch.tensor([1.0, 2.0])) is None
+    assert _as_reward_value(torch.tensor([])) is None
+    assert _as_reward_value(torch.zeros((2, 2))) is None
+    # Non-numeric / boolean / complex tensors
+    assert _as_reward_value(torch.tensor(True)) is None
+    assert _as_reward_value(torch.tensor([False])) is None
+    assert _as_reward_value(torch.tensor(1.0 + 2.0j)) is None
+
+
+def test_as_reward_value_numpy_arrays() -> None:
+    # 0-D scalar array
+    assert _as_reward_value(np.array(0.75)) == pytest.approx(0.75)
+    # 1-D single-element array
+    assert _as_reward_value(np.array([1.5])) == pytest.approx(1.5)
+    # 2-D single-element array
+    assert _as_reward_value(np.array([[2.25]])) == pytest.approx(2.25)
+    # Multi-element and empty arrays should be rejected
+    assert _as_reward_value(np.array([1.0, 2.0])) is None
+    assert _as_reward_value(np.array([])) is None
+    # Boolean array
+    assert _as_reward_value(np.array(True)) is None
+    assert _as_reward_value(np.array([False])) is None
+    # Non-numeric array
+    assert _as_reward_value(np.array("invalid")) is None
+
+
+@pytest.mark.skipif(torch is None, reason="torch not installed")
+def test_build_completed_rollout_with_tensor_reward() -> None:
+    assert torch is not None
+    manager = _Manager(
+        [
+            _triplet_model_request_event([1], [2]),
+            _event("reward", {"value": torch.tensor(0.85)}),
+        ]
+    )
+
+    completed = manager._build_completed_rollout(
+        EnqueuedRollout(
+            data_id="data-1",
+            rollout_id="rollout-1",
+            step=0,
+            sample_idx_in_step=0,
+            enqueue_time=0.0,
+        ),
+        _rollout(),
+    )
+
+    assert completed.final_reward == pytest.approx(0.85)
+    assert completed.triplets is not None
+    assert len(completed.triplets) == 1
+    assert completed.triplets[0].reward == pytest.approx(0.85)
+
+
+def test_build_completed_rollout_with_array_reward() -> None:
+    manager = _Manager(
+        [
+            _triplet_model_request_event([1], [2]),
+            _event("reward", {"value": np.array([0.75])}),
+        ]
+    )
+
+    completed = manager._build_completed_rollout(
+        EnqueuedRollout(
+            data_id="data-1",
+            rollout_id="rollout-1",
+            step=0,
+            sample_idx_in_step=0,
+            enqueue_time=0.0,
+        ),
+        _rollout(),
+    )
+
+    assert completed.final_reward == pytest.approx(0.75)
+    assert completed.triplets is not None
+    assert len(completed.triplets) == 1
+    assert completed.triplets[0].reward == pytest.approx(0.75)
+
+
+@pytest.mark.skipif(torch is None, reason="torch not installed")
+def test_build_completed_rollout_with_invalid_tensor_reward_leaves_none() -> None:
+    assert torch is not None
+    manager = _Manager(
+        [
+            _triplet_model_request_event([1], [2]),
+            _event("reward", {"value": torch.tensor([1.0, 2.0])}),
+        ]
+    )
+
+    completed = manager._build_completed_rollout(
+        EnqueuedRollout(
+            data_id="data-1",
+            rollout_id="rollout-1",
+            step=0,
+            sample_idx_in_step=0,
+            enqueue_time=0.0,
+        ),
+        _rollout(),
+    )
+
+    assert completed.final_reward is None
+    assert completed.triplets is not None
+    assert len(completed.triplets) == 1
+    assert completed.triplets[0].reward is None
