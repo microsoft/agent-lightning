@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import time
 import uuid
@@ -64,6 +65,8 @@ def _batch_dict_len(batch: dict[str, Any] | None) -> int:
 
 def _grpo_group_metrics(batch: Any) -> dict[str, int]:
     """Count GRPO groups and how many have zero intra-group reward variance."""
+    if getattr(batch, "batch", None) is None:
+        return {}
     uids = batch.non_tensor_batch.get("uid")
     scores = batch.batch.get("token_level_scores")
     if uids is None or scores is None:
@@ -72,7 +75,11 @@ def _grpo_group_metrics(batch: Any) -> dict[str, int]:
     groups: dict[Any, list[float]] = defaultdict(list)
     for uid, score in zip(uids, sequence_score.tolist(), strict=False):
         groups[uid].append(score)
-    n_zero_adv = sum(1 for vals in groups.values() if max(vals) - min(vals) == 0.0)
+    n_zero_adv = sum(
+        1
+        for vals in groups.values()
+        if len(vals) > 1 and math.isclose(max(vals), min(vals), rel_tol=1e-5, abs_tol=1e-8)
+    )
     return {
         "training/n_groups": len(groups),
         "training/n_zero_adv_groups": n_zero_adv,
@@ -80,7 +87,7 @@ def _grpo_group_metrics(batch: Any) -> dict[str, int]:
 
 
 def _same_reward_uid_indices(batch: DataProto) -> list[int]:
-    if "uid" not in batch.non_tensor_batch:
+    if getattr(batch, "batch", None) is None or "uid" not in batch.non_tensor_batch:
         return []
 
     rewards = batch.batch["token_level_scores"].sum(dim=-1)
@@ -90,6 +97,8 @@ def _same_reward_uid_indices(batch: DataProto) -> list[int]:
 
     same_reward_indices: list[int] = []
     for indices in uid_to_indices.values():
+        if len(indices) <= 1:
+            continue
         group_rewards = rewards[indices]
         if torch.allclose(group_rewards, group_rewards[0].expand_as(group_rewards)):
             same_reward_indices.extend(indices)
