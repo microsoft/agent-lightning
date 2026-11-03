@@ -23,6 +23,8 @@ agentlightning:
   max_ppo_update_times: null
   trace_aggregator:
     level: trajectory # transition | trajectory
+    # Opt in to extra tokenizer decoding for mismatch diagnostics when debugging.
+    classify_trace_merge_mismatches: false
     trajectory_max_prompt_length: 2048
     trajectory_max_response_length: 8192
   async_rollout:

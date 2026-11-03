@@ -133,11 +133,18 @@ The left side of the diagram shows traditional agentic RL, where each rollout co
 agentlightning:
   trace_aggregator:
     level: trajectory
+    classify_trace_merge_mismatches: false
     trajectory_max_prompt_length: 2048
     trajectory_max_response_length: 8192
 ```
 
 The aggregator automatically merges consecutive calls when the next prompt starts with the exact token sequence of the previous prompt and response. Tokens added between calls, such as tool observations, are retained as context but masked from the policy loss. If exact token-prefix continuity is broken, the aggregator starts a new training row instead of merging incompatible calls.
+
+Set `agentlightning.trace_aggregator.classify_trace_merge_mismatches=true` to enable retokenization hints when debugging. It defaults to `false`: the table omits `template_mismatch`, `retoken_mismatch` and `others_mismatch`, and no extra classifier decoding occurs. Trace text, lengths and mismatch counts are still recorded. Existing trace-text and trajectory-summary logging still decode tokens; the switch does not disable that pre-existing logging.
+
+When enabled, for up to 100 such failures per batch, `training/trace_merge_mismatches` reports `retoken_mismatch` when the decoded next prompt still starts with the decoded previous prompt and response. This check only runs when both complete token sequences contain at most 128 tokens, limiting the extra decoding to short inputs. Longer inputs, absent tokenizers, decoding failures and other unrecognized cases remain `others_mismatch`.
+
+`template_mismatch` remains false: no template normalization or root-cause inference is attempted. These flags are diagnostic hints, not proof of a cause. Classification never changes the strict token-prefix split or the resulting training tensors; long trajectories may therefore have retokenization mismatches that are still reported as `other`.
 
 In this mode:
 

@@ -20,15 +20,15 @@ from agentlightning.verl.agl_rollout_manager import CompletedRollout
 
 _TRACE_MERGE_MISMATCH_WANDB_LIMIT = 100
 _TRACE_MERGE_MISMATCH_TEXT_LIMIT = 4000
+_TRACE_MERGE_MISMATCH_TOKEN_LIMIT = 128
 _ROLLOUT_TRAJECTORY_WANDB_LIMIT = 24
+_TRACE_MERGE_MISMATCH_CLASSIFICATION_COLUMNS = ("template_mismatch", "retoken_mismatch", "others_mismatch")
 _TRACE_MERGE_MISMATCH_COLUMNS = [
     "global_steps",
     "rollout_id",
     "data_id",
     "turn_index",
-    "template_mismatch",
-    "retoken_mismatch",
-    "others_mismatch",
+    *_TRACE_MERGE_MISMATCH_CLASSIFICATION_COLUMNS,
     "prompt_length",
     "response_length",
     "previous_trace_length",
@@ -67,6 +67,39 @@ def _decode_token_ids(tokenizer: Any | None, ids: list[int]) -> str:
     else:
         text = " ".join(str(i) for i in ids)
     return text
+
+
+def _classify_trace_merge_mismatch(
+    tokenizer: Any | None, previous_ids: list[int], prompt_ids: list[int]
+) -> tuple[bool, bool, bool]:
+    """Return diagnostic (template, retokenization, other) flags, never merge decisions.
+
+    Compare complete short inputs only; long or unrecognized cases stay other.
+    Template causes are not inferred, and no extra full-history decoding is done.
+    """
+    if (
+        tokenizer is None
+        or not previous_ids
+        or not prompt_ids
+        or len(previous_ids) > _TRACE_MERGE_MISMATCH_TOKEN_LIMIT
+        or len(prompt_ids) > _TRACE_MERGE_MISMATCH_TOKEN_LIMIT
+    ):
+        return False, False, True
+    try:
+        try:
+            previous_text = tokenizer.decode(previous_ids, skip_special_tokens=False)
+            prompt_text = tokenizer.decode(prompt_ids, skip_special_tokens=False)
+        except TypeError:
+            previous_text = tokenizer.decode(previous_ids)
+            prompt_text = tokenizer.decode(prompt_ids)
+    except Exception:
+        return False, False, True
+    if not isinstance(previous_text, str) or not isinstance(prompt_text, str):
+        return False, False, True
+    if previous_text and prompt_text.startswith(previous_text):
+        return False, True, False
+
+    return False, False, True
 
 
 def _decode_trace_text(tokenizer: Any | None, ids: list[int]) -> str:
@@ -123,15 +156,22 @@ def _build_zipped_jsonl(records: list[dict[str, Any]], jsonl_name: str) -> bytes
     return buffer.getvalue()
 
 
-def _upload_trace_merge_mismatches_to_wandb(rows: list[dict[str, Any]], global_steps: int) -> None:
+def _upload_trace_merge_mismatches_to_wandb(
+    rows: list[dict[str, Any]], global_steps: int, *, include_classification: bool
+) -> None:
     try:
         import wandb
 
         if wandb.run is None:
             return
-        table = wandb.Table(columns=cast(list[str | int], _TRACE_MERGE_MISMATCH_COLUMNS))
+        columns = [
+            column
+            for column in _TRACE_MERGE_MISMATCH_COLUMNS
+            if include_classification or column not in _TRACE_MERGE_MISMATCH_CLASSIFICATION_COLUMNS
+        ]
+        table = wandb.Table(columns=cast(list[str | int], columns))
         for row in rows:
-            table.add_data(*(row.get(column) for column in _TRACE_MERGE_MISMATCH_COLUMNS))
+            table.add_data(*(row.get(column) for column in columns))
         wandb.log({"training/trace_merge_mismatches": table}, step=global_steps)
     except Exception as exc:
         print(f"Warning: failed to upload trace merge mismatches to wandb: {exc}")
@@ -398,6 +438,7 @@ class RolloutAdapter:
         processor: Any | None = None,  # [multimodal-patch] HF processor; None keeps text-only behavior
         require_routed_experts: bool = False,
         require_score_centering: bool = False,
+        classify_trace_merge_mismatches: bool = False,
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
@@ -410,6 +451,7 @@ class RolloutAdapter:
         self.processor = processor  # [multimodal-patch]
         self.require_routed_experts = require_routed_experts
         self.require_score_centering = require_score_centering
+        self.classify_trace_merge_mismatches = classify_trace_merge_mismatches
 
     def get_train_data_batch(
         self,
@@ -625,24 +667,30 @@ class RolloutAdapter:
                         continue
 
                     if len(merge_mismatch_rows) < _TRACE_MERGE_MISMATCH_WANDB_LIMIT:
-                        merge_mismatch_rows.append(
-                            {
-                                "global_steps": global_steps,
-                                "rollout_id": rollout.rollout_id,
-                                "data_id": rollout.data_id,
-                                "turn_index": turn_index,
-                                # Token-prefix failures are classified as other mismatches.
-                                "template_mismatch": False,
-                                "retoken_mismatch": False,
-                                "others_mismatch": True,
-                                "prompt_length": len(prompt_ids),
-                                "response_length": len(response_ids),
-                                "previous_trace_length": len(current_context),
-                                "current_trace_length": len(next_context),
-                                "previous_trace": _decode_trace_text(self.tokenizer, current_context),
-                                "current_trace": _decode_trace_text(self.tokenizer, next_context),
-                            }
+                        mismatch_row = {
+                            "global_steps": global_steps,
+                            "rollout_id": rollout.rollout_id,
+                            "data_id": rollout.data_id,
+                            "turn_index": turn_index,
+                            "prompt_length": len(prompt_ids),
+                            "response_length": len(response_ids),
+                            "previous_trace_length": len(current_context),
+                            "current_trace_length": len(next_context),
+                        }
+                        if self.classify_trace_merge_mismatches:
+                            template_mismatch, retoken_mismatch, others_mismatch = _classify_trace_merge_mismatch(
+                                self.tokenizer, current_context, prompt_ids
+                            )
+                            mismatch_row.update(
+                                template_mismatch=template_mismatch,
+                                retoken_mismatch=retoken_mismatch,
+                                others_mismatch=others_mismatch,
+                            )
+                        mismatch_row.update(
+                            previous_trace=_decode_trace_text(self.tokenizer, current_context),
+                            current_trace=_decode_trace_text(self.tokenizer, next_context),
                         )
+                        merge_mismatch_rows.append(mismatch_row)
 
                     append_training_row(
                         rollout_id=rollout.rollout_id,
@@ -690,7 +738,9 @@ class RolloutAdapter:
             reward_fillna_value=self.reward_fillna_value,
             limit=_ROLLOUT_TRAJECTORY_WANDB_LIMIT,
         )
-        _upload_trace_merge_mismatches_to_wandb(merge_mismatch_rows, global_steps)
+        _upload_trace_merge_mismatches_to_wandb(
+            merge_mismatch_rows, global_steps, include_classification=self.classify_trace_merge_mismatches
+        )
         _upload_compact_rollout_trajectories_to_wandb(rollout_trajectory_records, global_steps)
 
         n_sample = len(input_ids_list)

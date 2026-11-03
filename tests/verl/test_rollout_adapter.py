@@ -10,7 +10,7 @@ import weakref
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
@@ -295,15 +295,13 @@ def test_trajectory_prefix_mismatch_uploads_trace_merge_table_to_wandb(
     assert step == 17
     assert table.columns[0] == "global_steps"
     assert table.columns[-2:] == ["previous_trace", "current_trace"]
+    assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(table.columns)
     assert table.rows == [
         [
             17,
             "r1",
             "data-1",
             1,
-            False,
-            False,
-            True,
             1,
             1,
             2,
@@ -335,6 +333,324 @@ def test_trajectory_prefix_mismatch_wandb_table_is_capped_at_100(
     assert len(table.rows) == 100
     assert table.rows[0][3] == 1
     assert table.rows[-1][3] == 100
+
+
+def test_mismatch_classification_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[int]] = []
+
+    class CountedTokenizer(FakeTokenizer):
+        def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
+            calls.append(list(ids))
+            return "hello world" if ids == [1, 2] else "hello world obs"
+
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = _transition_rollout([_triplet([1], [2]), _triplet([3, 4], [2])])
+    adapter = _adapter()
+    adapter.tokenizer = CountedTokenizer()
+    adapter.get_train_data_batch([rollout])
+
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    row = dict(zip(table.columns, table.rows[0], strict=True))
+    assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(row)
+    # The two trace-text decodes and two trajectory-summary decodes already existed.
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("enabled", [None, False, True], ids=["missing", "disabled", "enabled"])
+@pytest.mark.parametrize("score_centering", [False, True])
+def test_trainer_forwards_mismatch_classification_config(
+    monkeypatch: pytest.MonkeyPatch, enabled: bool | None, score_centering: bool
+) -> None:
+    from pathlib import Path
+
+    from omegaconf import OmegaConf
+
+    from agentlightning.verl.trainer import AgentLightningRayPPOTrainer
+
+    config = OmegaConf.load(Path(rollout_adapter_module.__file__).with_name("config.yaml"))
+    assert config.agentlightning.trace_aggregator.classify_trace_merge_mismatches is False
+    if enabled is None:
+        del config.agentlightning.trace_aggregator.classify_trace_merge_mismatches
+    else:
+        config.agentlightning.trace_aggregator.classify_trace_merge_mismatches = enabled
+    config.data.max_prompt_length = 4
+    config.data.max_response_length = 3
+    if score_centering:
+        config.actor_rollout_ref.actor.policy_loss.loss_mode = "score_centering"
+    calls: list[list[int]] = []
+
+    class CountedTokenizer(FakeTokenizer):
+        pad_token_id = 0
+
+        def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
+            calls.append(list(ids))
+            return "hello world" if ids == [1, 2] else "hello world obs"
+
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = _transition_rollout([_triplet([1], [2]), _triplet([3, 4], [2])])
+    assert rollout.triplets is not None
+    for triplet in rollout.triplets:
+        triplet.response["score_centering_token_ids"] = [[2]]
+        triplet.response["score_centering_log_probs"] = [[-0.1]]
+    manager = SimpleNamespace(
+        delete_model=lambda: None,
+        register_model=lambda addresses: None,
+        enqueue_and_wait_until_completed=lambda data, is_train: [rollout],
+    )
+    trainer = object.__new__(AgentLightningRayPPOTrainer)
+    for name, value in {
+        "config": config,
+        "tokenizer": CountedTokenizer(),
+        "is_async": False,
+        "global_steps": 0,
+        "async_rollout_manager": SimpleNamespace(server_addresses=[]),
+        "_resume_all_rollout_generation": lambda: None,
+        "_abort_all_rollout_requests": lambda: None,
+        "_make_rollout_manager": lambda cls: manager,
+        "_rollout_lifecycle_metrics": lambda rollouts: {},
+    }.items():
+        monkeypatch.setattr(trainer, name, value, raising=False)
+    batch, _ = AgentLightningRayPPOTrainer._rollout(trainer, rollout_adapter_module.DataProto(batch=None), True)
+
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    row = dict(zip(table.columns, table.rows[0], strict=True))
+    if enabled:
+        assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == (False, True, False)
+    else:
+        assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(row)
+    assert len(calls) == (6 if enabled else 4)
+    assert len(batch) == 2
+    if score_centering:
+        assert batch.non_tensor_batch["score_centering"].tolist() == [
+            {"token_ids": [[2]], "log_probs": [[-0.1]]},
+            {"token_ids": [[2]], "log_probs": [[-0.1]]},
+        ]
+    else:
+        assert "score_centering" not in batch.non_tensor_batch
+
+
+@pytest.mark.parametrize("classify_mismatches", [False, True], ids=["disabled", "enabled"])
+@pytest.mark.parametrize(
+    ("prompt", "response", "next_prompt", "use_tokenizer", "expected"),
+    [
+        ([1], [2], [3, 4], True, (False, True, False)),
+        ([1, 6], [7, 2], [1, 2, 4], True, (False, False, True)),
+        ([1, 10], [2, 11], [1, 2, 4], True, (False, False, True)),
+        ([9], [5], [3, 5, 4], True, (False, False, True)),
+        ([1], [2], [8, 4], True, (False, False, True)),
+        ([1, 6], [7, 2], [8, 4], True, (False, False, True)),
+        ([1, 12], [13, 2], [1, 2, 4], True, (False, False, True)),
+        ([6], [7], [8, 4], True, (False, False, True)),
+        ([-1], [2], [3, 4], True, (False, False, True)),
+        ([1], [2], [3, 4], False, (False, False, True)),
+        ([1], [2], [1], True, (False, False, True)),
+        ([1], [2] + [4] * 126, [3] + [4] * 126, True, (False, True, False)),
+        ([1], [2] + [4] * 127, [3] + [4] * 127, True, (False, False, True)),
+        ([1], [2], [3] + [4] * 128, True, (False, False, True)),
+    ],
+    ids=[
+        "retoken",
+        "think-delimiters",
+        "tool-call-delimiters",
+        "whitespace",
+        "content",
+        "template-and-content",
+        "unknown-delimiters",
+        "empty-text",
+        "decode-error",
+        "no-tokenizer",
+        "response-cannot-complete-prefix",
+        "previous-128",
+        "previous-129",
+        "prompt-129",
+    ],
+)
+def test_trajectory_mismatch_classification_preserves_training_data(
+    monkeypatch: pytest.MonkeyPatch,
+    prompt: list[int],
+    response: list[int],
+    next_prompt: list[int],
+    use_tokenizer: bool,
+    expected: tuple[bool, bool, bool],
+    classify_mismatches: bool,
+) -> None:
+    from tokenizers import Tokenizer, models
+    from transformers import PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(
+            models.WordLevel(
+                {
+                    "[UNK]": 0,
+                    "hello": 1,
+                    "world": 2,
+                    "hello world": 3,
+                    "obs": 4,
+                    "done": 5,
+                    "<think>": 6,
+                    "</think>": 7,
+                    "changed": 8,
+                    "hello\nworld": 9,
+                    "<tool_call>": 10,
+                    "</tool_call>": 11,
+                    "<custom>": 12,
+                    "</custom>": 13,
+                },
+                unk_token="[UNK]",
+            )
+        ),
+        unk_token="[UNK]",
+    )
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    triplets = [_triplet(prompt, response), _triplet(next_prompt, [2])]
+    for triplet in triplets:
+        routes = np.arange(
+            (len(triplet.prompt["token_ids"]) + len(triplet.response["token_ids"])) * 4,
+            dtype=np.uint8,
+        ).reshape(-1, 2, 2)
+        triplet.response["routed_experts"] = _encode_routes(routes)
+    rollout = CompletedRollout(
+        rollout_id="classification",
+        data_id="data-1",
+        step=0,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=0.75,
+        triplets=triplets,
+    )
+    original = rollout.model_copy(deep=True)
+    adapter = RolloutAdapter(
+        max_prompt_length=12,
+        max_response_length=12,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level="trajectory",
+        require_routed_experts=True,
+        classify_trace_merge_mismatches=classify_mismatches,
+    )
+    baseline, baseline_metrics = adapter.get_train_data_batch([rollout])
+    logged.clear()
+    adapter.tokenizer = tokenizer if use_tokenizer else None
+    batch, metrics = adapter.get_train_data_batch([rollout])
+
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    row = dict(zip(table.columns, table.rows[0], strict=True))
+    if classify_mismatches:
+        assert (row["template_mismatch"], row["retoken_mismatch"], row["others_mismatch"]) == expected
+    else:
+        assert {"template_mismatch", "retoken_mismatch", "others_mismatch"}.isdisjoint(row)
+    assert len(table.rows) == 1
+    assert len(batch) == 2  # Diagnostic classification never relaxes the exact token-prefix split.
+    assert rollout == original
+    assert metrics == baseline_metrics
+    assert batch.batch is not None and baseline.batch is not None
+    assert set(batch.batch.keys()) == set(baseline.batch.keys())
+    for key, value in baseline.batch.items():
+        torch.testing.assert_close(batch.batch[key], value)
+    for key, value in baseline.non_tensor_batch.items():
+        np.testing.assert_array_equal(batch.non_tensor_batch[key], value)
+
+
+@pytest.mark.parametrize(
+    ("previous_size", "prompt_size", "expected_calls"),
+    [(128, 128, [128, 128]), (129, 128, []), (128, 129, []), (4096, 4096, [])],
+)
+def test_mismatch_classification_bounds_decoding(
+    previous_size: int, prompt_size: int, expected_calls: list[int]
+) -> None:
+    from tokenizers import Tokenizer, models
+    from transformers import PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(models.WordLevel({"[UNK]": 0, "hello": 1}, unk_token="[UNK]")),
+        unk_token="[UNK]",
+    )
+    calls: list[int] = []
+
+    class CountedTokenizer:
+        def decode(self, ids: list[int], **kwargs: Any) -> str:
+            calls.append(len(ids))
+            text = tokenizer.decode(ids, **kwargs)
+            assert isinstance(text, str)
+            return text
+
+    result = rollout_adapter_module._classify_trace_merge_mismatch(
+        CountedTokenizer(), [1] * previous_size, [1] * prompt_size
+    )
+    assert calls == expected_calls
+    assert result == ((False, True, False) if expected_calls else (False, False, True))
+
+
+def test_mismatch_classification_does_not_use_response_or_numeric_fallback() -> None:
+    assert rollout_adapter_module._classify_trace_merge_mismatch(None, [1], [1]) == (False, False, True)
+    # The next response could complete a decoded prefix; only the prompt is eligible.
+    assert rollout_adapter_module._classify_trace_merge_mismatch(FakeTokenizer(), [1, 2], [1]) == (
+        False,
+        False,
+        True,
+    )
+
+
+def test_mismatch_classification_keeps_legacy_decoder_and_rejects_invalid_text() -> None:
+    class LegacyTokenizer:
+        def decode(self, ids: list[int]) -> str:
+            return " ".join(str(token) for token in ids)
+
+    assert rollout_adapter_module._classify_trace_merge_mismatch(LegacyTokenizer(), [1], [1, 2]) == (
+        False,
+        True,
+        False,
+    )
+    invalid = SimpleNamespace(decode=lambda ids, **kwargs: None)
+    assert rollout_adapter_module._classify_trace_merge_mismatch(invalid, [1], [1, 2]) == (False, False, True)
+
+
+@pytest.mark.parametrize(
+    ("context_size", "classify_mismatches", "expected_decode_calls"),
+    [(2, False, 202), (129, False, 202), (2, True, 402), (129, True, 202)],
+)
+def test_mismatch_decoding_stops_at_table_limit(
+    monkeypatch: pytest.MonkeyPatch, context_size: int, classify_mismatches: bool, expected_decode_calls: int
+) -> None:
+    from tokenizers import Tokenizer, models
+    from transformers import PreTrainedTokenizerFast
+
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(models.WordLevel({"[UNK]": 0, "hello": 1, "world": 2}, unk_token="[UNK]")),
+        unk_token="[UNK]",
+    )
+    calls: list[int] = []
+
+    class CountedTokenizer:
+        def decode(self, ids: list[int], **kwargs: Any) -> str:
+            calls.append(len(ids))
+            text = tokenizer.decode(ids, **kwargs)
+            assert isinstance(text, str)
+            return text
+
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = CompletedRollout(
+        rollout_id="bounded",
+        data_id="data-1",
+        step=0,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=0.5,
+        triplets=[_triplet([1 + turn % 2] * (context_size - 1), [1]) for turn in range(102)],
+    )
+    adapter = _adapter()
+    adapter.tokenizer = CountedTokenizer()
+    adapter.classify_trace_merge_mismatches = classify_mismatches
+    adapter.get_train_data_batch([rollout])
+    table, _ = _logged_table(logged, "training/trace_merge_mismatches")
+    assert len(table.rows) == 100
+    # Each row decodes two traces; the trajectory summary decodes its final prompt/response.
+    # Only enabled, short rows add classifier decodes, and none are added beyond the 100-row cap.
+    assert len(calls) == expected_decode_calls
 
 
 def test_training_step_uploads_24_compact_rollout_trajectories_to_wandb_zip(
