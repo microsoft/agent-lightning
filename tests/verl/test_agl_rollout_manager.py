@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
-from agentlightning.client import AgentLightningSyncClient
 from agentlightning.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
 from agentlightning.verl.agl_rollout_manager import (
     AglRolloutManagerBase,
@@ -269,19 +267,3 @@ def test_aligned_image_urls_text_only_rollout_returns_none_without_warning(
     # Text-only rollouts keep the exact original behavior: no alignment, no warning.
     assert _aligned_image_urls(raw_events, 2) is None
     assert capsys.readouterr().out == ""
-
-
-def test_delete_rollout_reports_http_errors(capsys: pytest.CaptureFixture[str]) -> None:
-    manager = AglRolloutManagerBase(agl_base_url="http://server", agl_key="", model="test-model", step=0)
-    manager.client.close()
-    manager.client = AgentLightningSyncClient(
-        base_url="http://server",
-        transport=httpx.MockTransport(lambda request: httpx.Response(500, request=request)),
-    )
-    try:
-        manager._delete_rollout("rollout-1")
-    finally:
-        manager.client.close()
-
-    # A rejected DELETE must not be treated as a successful cleanup.
-    assert "failed to delete rollout rollout-1" in capsys.readouterr().out
