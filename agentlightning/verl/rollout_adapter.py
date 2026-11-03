@@ -44,6 +44,14 @@ _ROLLOUT_TRAJECTORY_COLUMNS = [
 ]
 
 
+def _score_centering(response: dict[str, Any]) -> dict[str, Any] | None:
+    ids = response.get("score_centering_token_ids")
+    log_probs = response.get("score_centering_log_probs")
+    if ids is None or log_probs is None:
+        return None
+    return {"token_ids": list(ids), "log_probs": list(log_probs)}
+
+
 def ids_startswith(full_ids: list[int], prefix_ids: list[int]) -> bool:
     return full_ids[: len(prefix_ids)] == prefix_ids
 
@@ -389,6 +397,7 @@ class RolloutAdapter:
         tokenizer: Any | None = None,
         processor: Any | None = None,  # [multimodal-patch] HF processor; None keeps text-only behavior
         require_routed_experts: bool = False,
+        require_score_centering: bool = False,
     ) -> None:
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
@@ -400,6 +409,7 @@ class RolloutAdapter:
         self.tokenizer = tokenizer
         self.processor = processor  # [multimodal-patch]
         self.require_routed_experts = require_routed_experts
+        self.require_score_centering = require_score_centering
 
     def get_train_data_batch(
         self,
@@ -445,6 +455,7 @@ class RolloutAdapter:
         turn_index_list: list[int] = []
         is_drop_list: list[bool] = []
         response_log_probs_list: list[list[float] | None] = []
+        support_rows: list[dict[str, Any] | None] = []
         routed_experts_rows: list[tuple[str, int, int, int] | None] = []
         image_urls_list: list[list[str] | None] = []  # [multimodal-patch] per kept training row
         n_trunc_sample_because_of_response = 0
@@ -463,6 +474,7 @@ class RolloutAdapter:
             reward: float,
             response_mask: list[int] | None = None,
             response_log_probs: list[float] | None = None,
+            support: dict[str, Any] | None = None,
             routed_experts: str | None = None,
             image_urls: list[str] | None = None,  # [multimodal-patch]
         ) -> None:
@@ -483,6 +495,8 @@ class RolloutAdapter:
                     response_mask = response_mask[:response_limit]
                 if response_log_probs is not None:
                     response_log_probs = response_log_probs[:response_limit]
+                if support is not None:
+                    support = {key: values[:response_limit] for key, values in support.items()}
                 n_trunc_sample_because_of_response += 1
 
             if response_log_probs is not None and len(response_log_probs) != len(response_ids):
@@ -494,6 +508,11 @@ class RolloutAdapter:
                 return
             if self.require_routed_experts and routed_experts is None:
                 raise RuntimeError(f"R3 requires routed_experts for rollout {rollout_id}")
+            if self.require_score_centering:
+                if support is None or response_log_probs is None:
+                    raise ValueError(f"Missing score centering data for rollout {rollout_id}")
+                if any(len(values) != len(response_ids) for values in support.values()):
+                    raise ValueError("Score centering data and response token lengths differ")
 
             one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
                 prompt_ids, self.max_prompt_length, self.pad_token_id
@@ -514,6 +533,7 @@ class RolloutAdapter:
                 response_mask_list.append(one_response_mask)
 
             response_log_probs_list.append(response_log_probs)
+            support_rows.append(support)
             routed_experts_rows.append(
                 (routed_experts, original_prompt_length, len(prompt_ids), len(response_ids))
                 if routed_experts is not None
@@ -550,6 +570,7 @@ class RolloutAdapter:
                         response_ids=response_ids,
                         reward=final_reward,
                         response_log_probs=log_probs,
+                        support=_score_centering(triplet.response),
                         routed_experts=triplet.response.get("routed_experts"),
                         image_urls=triplet.image_urls,  # [multimodal-patch]
                     )
@@ -565,6 +586,7 @@ class RolloutAdapter:
                 if current_response_log_probs is not None:
                     current_response_log_probs = list(current_response_log_probs)
                 current_routed_experts = first_triplet.response.get("routed_experts")
+                current_support = _score_centering(first_triplet.response)
                 response_len_per_turn_list.append(len(current_response_ids))
                 merged_group_count = 0
 
@@ -582,6 +604,9 @@ class RolloutAdapter:
                             current_response_mask += [0] * len(observation_ids)
                             if current_response_log_probs is not None:
                                 current_response_log_probs += [0.0] * len(observation_ids)
+                            if current_support is not None:
+                                for values in current_support.values():
+                                    values.extend([[] for _ in observation_ids])
                         current_response_ids += response_ids
                         current_response_mask += [1] * len(response_ids)
                         if current_response_log_probs is not None:
@@ -590,6 +615,12 @@ class RolloutAdapter:
                             else:
                                 current_response_log_probs += list(log_probs)
                         current_context = next_context
+                        next_support = _score_centering(triplet.response)
+                        if current_support is not None and next_support is not None:
+                            for key in current_support:
+                                current_support[key].extend(next_support[key])
+                        else:
+                            current_support = None
                         current_routed_experts = triplet.response.get("routed_experts")
                         continue
 
@@ -622,6 +653,7 @@ class RolloutAdapter:
                         reward=final_reward,
                         response_mask=current_response_mask,
                         response_log_probs=current_response_log_probs,
+                        support=current_support,
                         routed_experts=current_routed_experts,
                     )
                     merged_group_count += 1
@@ -633,6 +665,7 @@ class RolloutAdapter:
                     current_response_mask = [1] * len(response_ids)
                     current_response_log_probs = list(log_probs) if log_probs is not None else None
                     current_routed_experts = triplet.response.get("routed_experts")
+                    current_support = _score_centering(triplet.response)
 
                 append_training_row(
                     rollout_id=rollout.rollout_id,
@@ -643,6 +676,7 @@ class RolloutAdapter:
                     reward=final_reward,
                     response_mask=current_response_mask,
                     response_log_probs=current_response_log_probs,
+                    support=current_support,
                     routed_experts=current_routed_experts,
                 )
                 merged_group_count += 1
@@ -817,6 +851,10 @@ class RolloutAdapter:
         data_proto = DataProto(batch=batch)
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)
+        if self.require_score_centering:
+            # Preserve variable supports through row selection, rank dispatch and
+            # microbatch slicing; pad only the active positions inside the worker.
+            data_proto.non_tensor_batch["score_centering"] = np.array(support_rows, dtype=object)
         if level == "transition":
             data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)
         if multi_modal_inputs_list is not None:

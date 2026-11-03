@@ -1,0 +1,138 @@
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 1
+  logger:
+  - console
+  - wandb
+  project_name: score_centering
+  experiment_name: intellect2_math-sc
+  total_epochs: 100
+  total_training_steps: 200
+  val_before_train: false
+  test_freq: 16
+  save_freq: -1
+  resume_mode: disable
+data:
+  seed: 42
+  train_batch_size: 32
+  max_prompt_length: 8192
+  max_response_length: 8192
+algorithm:
+  adv_estimator: grpo
+  enable_rollout_level_advantage: true
+  norm_adv_by_std_in_grpo: true
+  use_kl_in_reward: false
+  rollout_correction: null
+actor_rollout_ref:
+  model:
+    path: ${oc.env:SC_MODEL,Qwen/Qwen3.5-9B}
+    use_remove_padding: true
+    use_fused_kernels: false
+    enable_gradient_checkpointing: true
+    enable_activation_offload: false
+  actor:
+    strategy: fsdp
+    policy_loss:
+      loss_mode: score_centering
+    loss_agg_mode: token-mean
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size_per_gpu: 1
+    ppo_epochs: 1
+    use_dynamic_bsz: false
+    use_kl_loss: false
+    entropy_coeff: 0
+    calculate_entropy: false
+    checkpoint:
+      save_contents:
+      - model
+      - optimizer
+      - extra
+      - hf_model
+    optim:
+      lr: 1.0e-06
+      optimizer: AdamW
+      optimizer_impl: torch.optim
+      override_optimizer_config:
+        fused: true
+    fsdp_config:
+      fsdp_size: 1
+      offload_policy: false
+      model_dtype: fp32
+      mixed_precision:
+        param_dtype: bf16
+        reduce_dtype: fp32
+        buffer_dtype: fp32
+      param_offload: false
+      optimizer_offload: false
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.2
+  rollout:
+    name: vllm
+    dtype: bfloat16
+    quantization: int8
+    tensor_model_parallel_size: 1
+    data_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    'n': 4
+    log_prob_micro_batch_size_per_gpu: 1
+    multi_turn:
+      enable: false
+    temperature: 1.0
+    top_p: 1.0
+    top_k: -1
+    logprobs_mode: processed_logprobs
+    gpu_memory_utilization: 0.25
+    val_kwargs:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      do_sample: false
+      'n': 1
+    engine_kwargs:
+      vllm:
+        max_logprobs: ${agentlightning.score_centering.top_logprobs_num}
+        kv_cache_dtype: int4_per_token_head
+        worker_extension_cls: agentlightning.verl.sc.vllm_score_centering.ScoreCenteringWorkerExtension
+        enable_auto_tool_choice: false
+        tool_call_parser: null
+        default_chat_template_kwargs:
+          enable_thinking: true
+        language_model_only: true
+        attention_backend: TRITON_ATTN
+        linear_backend: triton
+        compilation_config:
+          cudagraph_mode: NONE
+    quantization_config_file: ${oc.env:SC_INT8_CONFIG,outputs/precision_validation/Qwen3.5-9B-W8A8-INT8/config.json}
+    enforce_eager: true
+    max_model_len: 16384
+    enable_prefix_caching: false
+  ref:
+    fsdp_config:
+      param_offload: false
+agentlightning:
+  agl_base_url: ${oc.env:SC_BASE_URL,http://localhost:8282}
+  agl_key: ${oc.env:SC_KEY,sc-local}
+  max_ppo_update_times: null
+  rollout_timeout_seconds: 3600
+  trace_aggregator:
+    level: trajectory
+    trajectory_max_prompt_length: 8192
+    trajectory_max_response_length: 8192
+  async_rollout:
+    enabled: false
+  local:
+    agent_class: examples.intellect2_math.agent.Agent
+    env_map:
+      QUESTION: input.question
+      RESULT: input.result
+  score_centering:
+    centering: true
+    is_mode: none
+    top_logprobs_num: 128
+    tis_max: 2.0
+    mis_min: 0.5
+    mis_max: 5.0
+ray_kwargs:
+  ray_init:
+    address: local
+    num_gpus: 1

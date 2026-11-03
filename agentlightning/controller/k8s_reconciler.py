@@ -257,6 +257,13 @@ class K8sReconciler:
 
         try:
             manifest = build_job_spec(rollout, self._config)
+        except Exception as exc:
+            # Template rendering and manifest validation happen before any Kubernetes
+            # request and are deterministic: retrying the same rollout cannot succeed.
+            await self._fail_invalid_job_spec(rollout.rollout_id, exc)
+            return
+
+        try:
             attempt_id = manifest["metadata"]["labels"]["agentlightning/attempt-id"]
             api = await self._get_k8s_api()
             job = k8s_objects.Job(manifest, api=api)
@@ -267,14 +274,18 @@ class K8sReconciler:
             error_str = str(exc)
             lower_error = error_str.lower()
             if "422" in lower_error or "unprocessable" in lower_error or "invalid" in lower_error:
-                log.error("Invalid Job spec — marking failed", rollout_id=rollout.rollout_id, error=error_str)
-                await self._patch_status(
-                    rollout.rollout_id,
-                    state=RolloutState.FAILED,
-                    error_message=f"Invalid Job spec: {error_str}",
-                )
+                await self._fail_invalid_job_spec(rollout.rollout_id, exc)
             else:
                 log.warning("Job creation failed — will retry", rollout_id=rollout.rollout_id, error=error_str)
+
+    async def _fail_invalid_job_spec(self, rollout_id: str, exc: Exception) -> None:
+        """Mark a rollout failed when its Job manifest cannot be applied as-is."""
+        log.error("Invalid Job spec — marking failed", rollout_id=rollout_id, error=str(exc))
+        await self._patch_status(
+            rollout_id,
+            state=RolloutState.FAILED,
+            error_message=f"Invalid Job spec: {exc}",
+        )
 
     # --- Watch Jobs ---
 

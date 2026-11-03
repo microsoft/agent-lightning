@@ -164,6 +164,10 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
     }
     if routed_experts is not None:
         trimmed["routed_experts"] = routed_experts
+    if isinstance(resp, dict) and resp.get("choices"):
+        for key in ("score_centering_token_ids", "score_centering_log_probs"):
+            if key in resp["choices"][0]:
+                trimmed[key] = resp["choices"][0][key]
     for key in ("http_status", "status"):
         if key in data:
             trimmed[key] = data[key]

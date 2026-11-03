@@ -56,7 +56,9 @@ def run_ppo(
         # Register the custom policy loss in each Ray actor process.
         runtime_env.setdefault(
             "worker_process_setup_hook",
-            "agentlightning.verl.per_rollout_loss.register_in_worker",
+            "agentlightning.verl.sc.patches.register_in_worker"
+            if config.actor_rollout_ref.actor.policy_loss.loss_mode == "score_centering"
+            else "agentlightning.verl.per_rollout_loss.register_in_worker",
         )
         _temp_dir = os.environ.get("RAY_TMPDIR")
         ray.init(
@@ -104,6 +106,10 @@ class _AglTaskRunner:
         # Worker setup — delegated to verl's TaskRunner
         d = self._delegate
         actor_rollout_cls, ray_worker_group_cls = d.add_actor_rollout_worker(config)
+        if config.actor_rollout_ref.actor.policy_loss.loss_mode == "score_centering":
+            from agentlightning.verl.sc.score_centering import configure_actor_worker
+
+            actor_rollout_cls = configure_actor_worker(config, d.role_worker_mapping)
         d.add_critic_worker(config)
         d.add_reward_model_resource_pool(config)
         d.add_ref_policy_worker(config, actor_rollout_cls)

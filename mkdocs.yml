@@ -114,6 +114,7 @@ nav:
     - Coding Agent: 75-example-coding-agent.md
     - Coding Agent (MoE): 76-example-coding-agent-moe.md
     - Multimodal QA: 80-example-multimodal-qa.md
+    - Score Centering: 85-example-score-centering.md
   - Community:
     - Contributing: community/contributing.md
 
