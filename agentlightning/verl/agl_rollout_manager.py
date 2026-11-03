@@ -321,7 +321,8 @@ class AglRolloutManagerBase:
 
     def _delete_rollout(self, rollout_id: str) -> None:
         try:
-            self.client.delete(f"/api/rollouts/{rollout_id}")
+            response = self.client.delete(f"/api/rollouts/{rollout_id}")
+            response.raise_for_status()
         except Exception as exc:
             print(f"RolloutManager: failed to delete rollout {rollout_id}: {exc}")
 
