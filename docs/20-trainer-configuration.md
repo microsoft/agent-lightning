@@ -18,6 +18,8 @@ agentlightning:
     env_map: {}
   k8s:
     job_template_path: null
+    filter_unavailable_images: false
+    image_readiness_timeout_seconds: 60
   reward_fillna_value: 0.0
   max_ppo_update_times: null
   trace_aggregator:
@@ -81,6 +83,8 @@ The Controller has two execution modes: `local` and `k8s`. Configure the matchin
 | `agentlightning.local.agent_class` | `null` | Fully qualified Python class imported and started by the Controller in local mode. |
 | `agentlightning.local.env_map` | `{}` | Maps environment variable names to fields in the rollout `input`. |
 | `agentlightning.k8s.job_template_path` | `null` | Path to the Jinja Kubernetes Job template used by the Controller in K8s mode. |
+| `agentlightning.k8s.filter_unavailable_images` | `false` | Before Ray starts, filter train and validation rows whose rendered Job images are not cached on every eligible K8s node. |
+| `agentlightning.k8s.image_readiness_timeout_seconds` | `60` | Maximum time to wait for a fresh Controller readiness snapshot when filtering is enabled. |
 
 For local execution, set the agent class and map fields from each dataset row into environment variables. For example:
 
@@ -114,6 +118,8 @@ env:
 ```
 
 The trainer reads the Jinja template and includes its text in each rollout. The Controller renders it with that rollout's `input`, then creates one Kubernetes Job per rollout.
+
+Set `agentlightning.k8s.filter_unavailable_images=true` when repository-specific images are prepared on the Kubernetes nodes. The trainer obtains a fresh, leased inventory from the Controller, renders this same Job template for every train and validation row, and keeps a row only when all regular, init, and ephemeral container images are available. This in-memory preflight runs before Ray or GPU workers are initialized. It never modifies source dataset files, and `job_template_path` is required while the filter is enabled. Missing or expired readiness, an invalid template, or an empty filtered split fails startup instead of silently using unfiltered data.
 
 Finally, `agentlightning.rollout_timeout_seconds` sets the maximum execution time for each rollout in both modes. The Controller uses this value and marks a rollout as failed if it does not finish within the configured number of seconds. The default is `1800`.
 

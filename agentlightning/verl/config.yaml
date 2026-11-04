@@ -19,6 +19,8 @@ agentlightning:
     env_map: {}
   k8s:
     job_template_path: null
+    filter_unavailable_images: false
+    image_readiness_timeout_seconds: 60
   reward_fillna_value: 0.0
   max_ppo_update_times: null
   trace_aggregator:
