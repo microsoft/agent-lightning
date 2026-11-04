@@ -155,6 +155,8 @@ We recommend setting `trajectory_max_response_length` relatively high so it can 
 
 Training rows whose initial prompt exceeds `trajectory_max_prompt_length` are marked and dropped from the policy-update batch. Content beyond `trajectory_max_response_length`, on the other hand, is truncated to the configured response length.
 
+The outcome reward is placed on the last retained generated token. If truncation ends inside a tool observation, the observation remains masked and the reward stays on the preceding generated token, so estimators such as GAE can propagate it.
+
 The number of dropped and truncated rows is reported to W&B with these metrics:
 
 - `training/n_sample_dropped/marked` — rows dropped because their prompts exceeded the configured prompt limit;
