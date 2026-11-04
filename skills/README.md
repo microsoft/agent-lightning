@@ -2,6 +2,8 @@
 
 **Agent Lightning helps a coding agent improve another AI agent.** Give the coding agent an editable agent and a benchmark. It can then test changes to prompts, tools, workflows, models, and other settings. The goal is to improve quality, cost, speed, or reliability without breaking how the agent is used.
 
+Read the technical report: [AGL-SKILL: Coding Harnesses as Agentic Optimizers](assets/agl-skill.pdf).
+
 ### Installation
 
 Install the skill from this repository for Claude Code, Codex, or GitHub Copilot:

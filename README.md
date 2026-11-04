@@ -13,6 +13,7 @@
 ## ⚡ News
 
 - [2026/11] We release a [Score Centering example](https://microsoft.github.io/agent-lightning/latest/85-example-score-centering/) for math reasoning, with GRPO and score centering presets, INT8 inference, and an INT4 Attention KV cache.
+- [2026/10] Read our [AGL-SKILL: Coding Harnesses as Agentic Optimizers](skills/assets/agl-skill.pdf) technical report on using coding harnesses to optimize other agents across five benchmarks.
 - [2026/09] We release [a new coding agent example based on an MoE model](https://microsoft.github.io/agent-lightning/stable/76-example-coding-agent-moe/). Pure RL improves Qwen3.5-35B-A3B on SWE-bench Verified from 47.8% to 61.6% after training it on only 1.8K training examples!
 - [2026/08] [Agent Lightning Skill](https://github.com/microsoft/agent-lightning/tree/main/skills#agent-lightning-skill) is released. It helps a coding agent improve another AI agent against a benchmark.
 - [2026/08] [Agent Lightning v1.0 technical report](https://arxiv.org/abs/2608.17528) is released!
