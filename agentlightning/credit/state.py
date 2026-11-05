@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 import time
 from dataclasses import dataclass, replace
 from typing import Any
@@ -30,18 +31,73 @@ from agentlightning.credit.types import (
 from agentlightning.schemas import Event
 
 
-def successful_action(record: CreditRecord) -> bool:
-    """HTTP failures and empty responses do not create sampled action indices."""
+def captured_action_geometry(record: CreditRecord):
+    """Reject possibly sampled but incomplete success before treating a call as no action."""
+    if record.event_type != "model_request":
+        return None
     data = record.data
-    response = data.get("response", {})
-    choices = response.get("choices", []) if isinstance(response, dict) else []
-    tokens = choices[0].get("token_ids", []) if choices and isinstance(choices[0], dict) else []
-    return (
-        record.event_type == "model_request"
-        and data.get("status") != "error"
-        and data.get("http_status", 200) < 300
-        and bool(tokens)
-    )
+    status = data.get("http_status", 200)
+    if type(status) is not int:
+        raise IncompletePolicyTraceError("captured HTTP status must be explicit integer metadata")
+    if data.get("status") == "error" or not 200 <= status < 300:
+        return None
+    if type(data.get("model_version")) is not int or data["model_version"] != record.envelope.policy_version:
+        raise IncompletePolicyTraceError("captured serving policy differs from action identity")
+    response = data.get("response")
+    if not isinstance(response, dict):
+        raise IncompletePolicyTraceError("successful capture requires a model response object")
+    choices = response.get("choices")
+    if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
+        raise IncompletePolicyTraceError("one complete sampled choice is required; extra choices cannot be dropped")
+    choice = choices[0]
+    tokens = choice.get("token_ids")
+    if not isinstance(tokens, list) or any(type(token) is not int or token < 0 for token in tokens):
+        raise IncompletePolicyTraceError("sampled response token identities are missing or invalid")
+    usage = response.get("usage") or {}
+    if not isinstance(usage, dict):
+        raise IncompletePolicyTraceError("invalid captured token usage metadata")
+    if not tokens:
+        message = choice.get("message")
+        content = choice.get("text") or (message.get("content") if isinstance(message, dict) else message)
+        if type(usage.get("completion_tokens")) is not int or usage["completion_tokens"] != 0 or content:
+            raise IncompletePolicyTraceError("empty token capture does not establish a zero-action failure")
+        return None
+    if "completion_tokens" in usage and (
+        type(usage["completion_tokens"]) is not int or usage["completion_tokens"] != len(tokens)
+    ):
+        raise IncompletePolicyTraceError("capture omitted generated tokens, including EOS")
+    prompt = response.get("prompt_token_ids") or choice.get("prompt_token_ids")
+    if not isinstance(prompt, list) or not prompt or any(type(token) is not int or token < 0 for token in prompt):
+        raise IncompletePolicyTraceError("complete sampled action requires its exact original prompt tokens")
+    raw = choice.get("logprobs")
+    if not isinstance(raw, dict):
+        raise IncompletePolicyTraceError("sampled action is missing complete token logprobs")
+    if isinstance(raw.get("content"), list):
+        probabilities = [item.get("logprob") if isinstance(item, dict) else None for item in raw["content"]]
+    else:
+        probabilities = raw.get("token_logprobs")
+    if (
+        not isinstance(probabilities, list)
+        or len(probabilities) != len(tokens)
+        or any(
+            isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value) or value > 0
+            for value in probabilities
+        )
+    ):
+        raise IncompletePolicyTraceError("sampled action has invalid or incomplete token logprobs")
+    if choice.get("finish_reason") not in {"stop", "length"}:
+        raise IncompletePolicyTraceError("sampled action has no complete stop/length boundary")
+    values = []
+    for value in probabilities:
+        if not isinstance(value, int | float):
+            raise IncompletePolicyTraceError("sampled logprob must be numeric")
+        values.append(float(value))
+    return tuple(prompt), tuple(tokens), tuple(values), choice["finish_reason"]
+
+
+def successful_action(record: CreditRecord) -> bool:
+    """HTTP failures are environment failures; malformed successes abort collection."""
+    return captured_action_geometry(record) is not None
 
 
 def validate_snapshot(snapshot: CreditSnapshot) -> tuple[tuple[CreditRecord, ...], tuple[CreditRecord, ...]]:
@@ -220,8 +276,9 @@ class AttemptCreditState:
         captured = event.model_copy(
             update={"data": {**copy.deepcopy(event.data), "_agl_credit": envelope.model_dump(exclude_none=True)}}
         )
+        is_action = successful_action(CreditRecord(**captured.model_dump(exclude={"timestamp"})))
         self._append(captured)
-        self._action_count += int(successful_action(CreditRecord(**captured.model_dump(exclude={"timestamp"}))))
+        self._action_count += int(is_action)
         completion = CreditCompletion(
             body=copy.deepcopy(response_body),
             status_code=status_code,

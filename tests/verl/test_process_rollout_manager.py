@@ -78,3 +78,38 @@ def test_terminal_unsealed_deadline_fails_with_original_ids():
             EnqueuedRollout(rollout_id="r", data_id="task", step=7, sample_idx_in_step=0, enqueue_time=0), rollout
         )
     manager.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selected_rollout,selected_attempt", [("foreign", "a"), ("r", "foreign")])
+async def test_native_manager_rejects_a_seal_from_another_selected_attempt(
+    sealed_snapshot, selected_rollout, selected_attempt
+):
+    snapshot = await sealed_snapshot()
+    manager = AglRolloutManagerBase(
+        agl_base_url="http://offline",
+        agl_key="",
+        model="m",
+        step=7,
+        process_credit_config=ProcessCreditConfig(enabled=True),
+    )
+    manager.client.close()
+    manager.client = AgentLightningSyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=snapshot.model_dump(mode="json"))),
+        base_url="http://offline",
+    )
+    rollout = Rollout(
+        rollout_id=selected_rollout,
+        input={},
+        config=RolloutConfig(),
+        metadata=RolloutMetadata.model_validate({"process_credit": {}}),
+        status=RolloutLifecycleStatus(
+            state=RolloutState.SUCCEEDED, last_attempt_id=selected_attempt, created_at=0, updated_at=0
+        ),
+    )
+    with pytest.raises(ValueError, match="identity"):
+        manager._build_completed_rollout(
+            EnqueuedRollout(rollout_id=selected_rollout, data_id="task", step=7, sample_idx_in_step=0, enqueue_time=0),
+            rollout,
+        )
+    manager.client.close()

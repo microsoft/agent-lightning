@@ -54,3 +54,44 @@ async def test_output_directory_does_not_change_semantic_artifact_identity(seale
     first = make_credit_artifact(snapshot, ProcessCreditConfig(enabled=True, artifact_dir="/tmp/first"))
     second = make_credit_artifact(snapshot, ProcessCreditConfig(enabled=True, artifact_dir="/tmp/second"))
     assert first.artifact_hash == second.artifact_hash
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["coefficient", "origin", "context"])
+async def test_rehashed_projected_evidence_still_requires_exact_math_and_token_provenance(
+    completed_process_rollout, mutation
+):
+    from types import SimpleNamespace
+
+    import torch
+
+    from agentlightning.credit.types import CreditArtifact, semantic_digest
+    from agentlightning.verl.process_credit import ScheduledGroups, ScheduledRollout
+    from agentlightning.verl.rollout_adapter import RolloutAdapter
+
+    config = ProcessCreditConfig(enabled=True, gamma=0.5)
+    rollout = await completed_process_rollout(config=config)
+    groups = ScheduledGroups(
+        rollouts=(ScheduledRollout(rollout_id="r", group_id="task", group_size=1, policy_version=7),)
+    )
+    adapter = RolloutAdapter(
+        max_prompt_length=20,
+        max_response_length=20,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        tokenizer=SimpleNamespace(eos_token_id=2),
+        trace_aggregator_level="trajectory",
+        process_credit_config=config,
+        process_scheduled_groups=groups,
+    )
+    adapter.get_train_data_batch([rollout])
+    payload = rollout.process_credit.model_dump(mode="json")
+    if mutation == "coefficient":
+        payload["projection"][0]["coefficients"][0] += 1
+    elif mutation == "origin":
+        payload["projection"][0]["origins"][0]["offset"] = 1
+    else:
+        payload["projection"][0]["prompt_token_ids"].append(999)
+    payload["artifact_hash"] = semantic_digest({key: value for key, value in payload.items() if key != "artifact_hash"})
+    with pytest.raises(ValueError):
+        replay_credit(CreditArtifact.model_validate(payload))

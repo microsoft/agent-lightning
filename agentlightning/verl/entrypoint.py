@@ -159,6 +159,22 @@ class _AglTaskRunner:
                 fallback_processor = None
             processor = fallback_processor
 
+        from importlib.metadata import version
+
+        from agentlightning.verl.process_credit import validate_model_dropout, validate_process_config
+
+        process = validate_process_config(config, verl_version=version("verl"))
+        if process is not None:
+            from transformers import AutoConfig
+            from verl.utils.model import update_model_config
+
+            hf_config_path = config.actor_rollout_ref.model.get("hf_config_path")
+            hf_config_path = copy_to_local(hf_config_path) if hf_config_path else local_path
+            model_config = AutoConfig.from_pretrained(hf_config_path, trust_remote_code=trust_remote_code)
+            overrides = config.actor_rollout_ref.model.get("override_config", {})
+            overrides = overrides.get("model_config", overrides)
+            update_model_config(model_config, override_config_kwargs=dict(overrides))
+            validate_model_dropout(model_config)
         resource_pool_manager = d.init_resource_pool_mgr(config)
 
         assert train_dataset is not None and len(train_dataset) > 0, "train_dataset must be non-empty"

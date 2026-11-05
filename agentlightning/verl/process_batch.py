@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agentlightning.credit.artifacts import replay_credit
-from agentlightning.credit.state import validate_snapshot
+from agentlightning.credit.state import captured_action_geometry, validate_snapshot
 from agentlightning.credit.types import IncompletePolicyTraceError, validate_sampling_parameters
 
 if TYPE_CHECKING:
@@ -115,7 +115,10 @@ def project_process_rollout(
             for value in log_probs
         ):
             raise IncompletePolicyTraceError("nonfinite/invalid captured action logprob")
-        finish = choice.get("finish_reason")
+        geometry = captured_action_geometry(action)
+        if geometry is None or tuple(log_probs) != geometry[2]:
+            raise IncompletePolicyTraceError("native action logprobs differ from original capture")
+        finish = geometry[3]
         eos = limits.eos_token_id
         eos_ids = (eos,) if isinstance(eos, int) else (eos or ())
         if finish != "length" and (finish != "stop" or response[-1] not in eos_ids):
@@ -172,8 +175,6 @@ def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
     from tensordict import TensorDict
     from verl import DataProto
 
-    from agentlightning.credit.artifacts import make_credit_artifact
-    from agentlightning.credit.types import canonical_json
     from agentlightning.verl.process_credit import compute_process_coefficients
     from agentlightning.verl.rollout_adapter import (
         _build_multi_modal_inputs,
@@ -195,10 +196,8 @@ def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
         getattr(adapter.tokenizer, "eos_token_id", None),
     )
     rows = []
-    per_rollout = {}
     for rollout in completed_rollouts:
         projected = project_process_rollout(rollout, level=adapter.trace_aggregator_level, limits=limits)
-        per_rollout[rollout.rollout_id] = projected
         rows.extend(projected)
     outcomes = [item.terminal_outcome for item in resolved]
     metrics = {
@@ -216,12 +215,21 @@ def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
         "process_snapshot_hashes": [item.snapshot_hash for item in resolved],
         "process_zero_action": not rows,
     }
+    projection_records = {rollout.rollout_id: [] for rollout in completed_rollouts}
+    scheduling = tuple(
+        {
+            **item.model_dump(),
+            "episode_return": coefficients.episode_returns[item.rollout_id],
+            "snapshot_hash": by_id[item.rollout_id].snapshot_hash,
+        }
+        for item in scheduled_groups.rollouts
+    )
     if not rows:
+        _attach_projected_artifacts(completed_rollouts, config, scheduling, projection_records)
         return DataProto(batch=None, meta_info=meta), metrics
     prompts, responses, attention, masks, log_probs, advantages, returns, scores = ([] for _ in range(8))
     origins = []
     row_ids = []
-    projection_records = {rollout.rollout_id: [] for rollout in completed_rollouts}
     action_lengths = {
         rollout.rollout_id: [len(triplet.response["token_ids"]) for triplet in rollout.triplets]
         for rollout in completed_rollouts
@@ -287,6 +295,8 @@ def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
         "returns": torch.tensor(returns, dtype=torch.float32, device=device),
         "token_level_scores": torch.tensor(scores, dtype=torch.float32, device=device),
     }
+    if not torch.isfinite(tensors["rollout_log_probs"][tensors["response_mask"].bool()]).all():
+        raise IncompletePolicyTraceError("captured logprobs are not finite when cast to native float32")
     multimodal = None
     if any(row.image_urls for row in rows):
         if adapter.processor is None:
@@ -337,14 +347,14 @@ def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
     )
     if multimodal is not None:
         batch.non_tensor_batch["multi_modal_inputs"] = object_vector(multimodal)
-    scheduling = tuple(
-        {
-            **item.model_dump(),
-            "episode_return": coefficients.episode_returns[item.rollout_id],
-            "snapshot_hash": by_id[item.rollout_id].snapshot_hash,
-        }
-        for item in scheduled_groups.rollouts
-    )
+    _attach_projected_artifacts(completed_rollouts, config, scheduling, projection_records)
+    return batch, metrics
+
+
+def _attach_projected_artifacts(completed_rollouts, config, scheduling, projection_records) -> None:
+    from agentlightning.credit.artifacts import make_credit_artifact
+    from agentlightning.credit.types import canonical_json
+
     for rollout in completed_rollouts:
         updated = make_credit_artifact(
             rollout.process_credit.snapshot,
@@ -355,4 +365,39 @@ def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
         if len(canonical_json(updated.model_dump(mode="json"))) > config.max_artifact_bytes:
             raise IncompletePolicyTraceError("complete projected artifact exceeds configured size limit")
         rollout.process_credit = updated
-    return batch, metrics
+
+
+def pad_process_batch(batch, *, dp_size: int):
+    """Pad whole collections with zero-gradient rows, preserving the scheduled K."""
+    import copy
+
+    import numpy as np
+    from verl import DataProto
+
+    if type(dp_size) is not int or dp_size < 1:
+        raise IncompletePolicyTraceError("process padding requires a positive FSDP data-parallel size")
+    if batch.meta_info.get("process_zero_action"):
+        return batch
+    if not batch.meta_info.get("process_scheduled_count") or batch.batch is None or not len(batch):
+        raise IncompletePolicyTraceError("padding requires a complete nonempty process batch")
+    count = (-len(batch)) % dp_size
+    if not count:
+        batch.meta_info["process_padding_rows"] = 0
+        return batch
+    padding = copy.deepcopy(batch[[index % len(batch) for index in range(count)]])
+    for name in ("response_mask", "advantages", "returns", "token_level_scores"):
+        padding.batch[name].zero_()
+    padding.non_tensor_batch["process_padding"] = np.ones(count, dtype=bool)
+    for name in ("rollout_id_list", "data_id_list", "uid", "process_snapshot_hash", "process_group_id"):
+        if name in padding.non_tensor_batch:
+            padding.non_tensor_batch[name] = np.array([""] * count, dtype=object)
+    padding.non_tensor_batch["process_row_id"] = np.array(
+        [f"process-padding:{index}" for index in range(count)], dtype=object
+    )
+    for name in ("process_token_origins", "process_credit_action_index"):
+        values = np.empty(count, dtype=object)
+        values[:] = [[] for _ in range(count)]
+        padding.non_tensor_batch[name] = values
+    padded = DataProto.concat([batch, padding])
+    padded.meta_info = {**batch.meta_info, "process_padding_rows": count}
+    return padded

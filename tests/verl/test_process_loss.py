@@ -52,3 +52,16 @@ def test_unsupported_loss_inputs_fail(kind):
             config=SimpleNamespace(global_batch_info={} if kind == "missing_dp" else {"dp_size": 1}),
             rollout_is_weights=torch.ones_like(log_prob) if kind == "weights" else None,
         )
+
+
+@pytest.mark.parametrize("log_probability,dp_size", [(-100.0, 1), (0.0, 2)])
+def test_finite_inputs_cannot_overflow_the_loss_or_scaled_score_gradient(log_probability, dp_size):
+    log_prob = torch.tensor([[log_probability]], requires_grad=True)
+    with pytest.raises(ValueError, match="overflow"):
+        compute_policy_loss_process_reinforce(
+            torch.zeros_like(log_prob),
+            log_prob,
+            torch.full_like(log_prob, torch.finfo(torch.float32).max),
+            torch.ones_like(log_prob),
+            config=SimpleNamespace(global_batch_info={"dp_size": dp_size}),
+        )

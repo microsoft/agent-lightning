@@ -50,6 +50,8 @@ def validate_process_config(config: Any, *, verl_version: str) -> ProcessCreditC
     requirements = {
         "algorithm.adv_estimator": PROCESS_LOSS_MODE,
         "actor_rollout_ref.actor.policy_loss.loss_mode": PROCESS_LOSS_MODE,
+        "trainer.critic_warmup": 0,
+        "trainer.default_hdfs_dir": None,
         "critic.enable": False,
         "algorithm.enable_rollout_level_advantage": False,
         "agentlightning.async_rollout.enabled": False,
@@ -65,7 +67,11 @@ def validate_process_config(config: Any, *, verl_version: str) -> ProcessCreditC
         "actor_rollout_ref.actor.megatron.pipeline_model_parallel_size": 1,
     }
     for path, expected in requirements.items():
-        actual = config_value(config, path, expected)
+        actual = config_value(
+            config,
+            path,
+            None if path in {"algorithm.adv_estimator", "actor_rollout_ref.actor.policy_loss.loss_mode"} else expected,
+        )
         if actual != expected:
             raise CreditProtocolError(f"process credit requires {path}={expected!r}, got {actual!r}")
     if config_value(config, "critic.enable") is not False:
@@ -80,7 +86,11 @@ def validate_process_config(config: Any, *, verl_version: str) -> ProcessCreditC
         raise CreditProtocolError("process credit forbids actor_rollout_ref.actor.megatron.router_replay.mode")
     if config_value(config, "agentlightning.trace_aggregator.level", "transition") not in {"transition", "trajectory"}:
         raise CreditProtocolError("process credit requires transition or trajectory trace aggregation")
-    sampling = config_value(config, "actor_rollout_ref.rollout", {})
+    sampling = dict(config_value(config, "actor_rollout_ref.rollout", {}))
+    # Native rollout.n schedules independent whole episodes; each proxied call is n=1.
+    count = sampling.pop("n", 1)
+    if type(count) is not int or count < 1:
+        raise CreditProtocolError("process credit requires positive integer actor_rollout_ref.rollout.n")
     validate_sampling_parameters(sampling, prefix="actor_rollout_ref.rollout")
     return process
 
@@ -183,3 +193,94 @@ def compute_process_coefficients(
         baselines=baselines,
         episode_returns={key: item.episode_return for key, item in observed.items()},
     )
+
+
+def validate_model_dropout(model_config: Any, *, path: str = "model") -> None:
+    """Reject declared trainable dropout; behavior/training matching is still measured."""
+    values = model_config.to_dict() if hasattr(model_config, "to_dict") else model_config
+    if not isinstance(values, Mapping):
+        raise CreditProtocolError("process credit requires inspectable model configuration")
+    for key, value in values.items():
+        child = f"{path}.{key}"
+        if isinstance(value, Mapping):
+            validate_model_dropout(value, path=child)
+        elif (
+            ("dropout" in key.lower() or key.lower().endswith("_pdrop"))
+            and value is not None
+            and (isinstance(value, bool) or not isinstance(value, int | float) or value != 0)
+        ):
+            raise CreditProtocolError(f"process credit requires zero trainable dropout: {child}")
+
+
+def write_process_checkpoint(path, config: ProcessCreditConfig, last_completed: dict[str, Any] | None) -> None:
+    """Atomically record configuration and the last completed update, not in-flight resume."""
+    import os
+    import tempfile
+
+    from agentlightning.credit.types import ALGORITHM_VERSION, canonical_json
+
+    payload = canonical_json(
+        {
+            "version": 1,
+            "algorithm_version": ALGORITHM_VERSION,
+            "config_digest": config.digest,
+            "last_completed": last_completed,
+        }
+    )
+    if len(payload) > config.max_artifact_bytes:
+        raise CreditProtocolError("process checkpoint metadata exceeds configured size limit")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".process-credit-", delete=False) as stream:
+            from pathlib import Path
+
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def read_process_checkpoint(path, config: ProcessCreditConfig) -> dict[str, Any] | None:
+    """Reject incompatible process resumes before loading actor weights or collecting data."""
+    import json
+
+    from agentlightning.credit.artifacts import _nonfinite, _unique_keys
+    from agentlightning.credit.types import ALGORITHM_VERSION
+
+    with path.open("rb") as stream:
+        contents = stream.read(config.max_artifact_bytes + 1)
+    if len(contents) > config.max_artifact_bytes:
+        raise CreditProtocolError("process checkpoint metadata exceeds configured size limit")
+    payload = json.loads(contents, object_pairs_hook=_unique_keys, parse_constant=_nonfinite)
+    if not isinstance(payload, dict):
+        raise CreditProtocolError("process checkpoint metadata must be a JSON object")
+    if (
+        set(payload) != {"version", "algorithm_version", "config_digest", "last_completed"}
+        or type(payload["version"]) is not int
+        or payload["version"] != 1
+        or payload["algorithm_version"] != ALGORITHM_VERSION
+        or payload["config_digest"] != config.digest
+    ):
+        raise CreditProtocolError("incompatible process checkpoint configuration/algorithm")
+    completed = payload["last_completed"]
+    if completed is not None:
+        if (
+            not isinstance(completed, dict)
+            or set(completed) != {"policy_version", "snapshot_hashes", "scheduled_count"}
+            or type(completed["policy_version"]) is not int
+            or completed["policy_version"] < 0
+            or type(completed["scheduled_count"]) is not int
+            or completed["scheduled_count"] < 1
+            or not isinstance(completed["snapshot_hashes"], list)
+            or len(completed["snapshot_hashes"]) != completed["scheduled_count"]
+        ):
+            raise CreditProtocolError("invalid completed process checkpoint evidence")
+        for digest in completed["snapshot_hashes"]:
+            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                raise CreditProtocolError("invalid completed snapshot identity")
+    return completed

@@ -90,3 +90,54 @@ def sealed_snapshot():
         return state.snapshot()
 
     return build
+
+
+@pytest.fixture
+def completed_process_rollout(sealed_snapshot):
+    async def build(config=None, **kwargs):
+        from agentlightning.credit.artifacts import make_credit_artifact
+        from agentlightning.credit.state import validate_snapshot
+        from agentlightning.credit.types import ProcessCreditConfig
+        from agentlightning.verl.agl_rollout_manager import CompletedRollout, Triplet
+
+        snapshot = await sealed_snapshot(**kwargs)
+        config = config or ProcessCreditConfig(enabled=True, gamma=0.5)
+        artifact = make_credit_artifact(snapshot, config)
+        actions, _ = validate_snapshot(snapshot)
+        triplets = []
+        for index, action in enumerate(actions):
+            response = action.data["response"]
+            choice = response["choices"][0]
+            triplets.append(
+                Triplet(
+                    prompt={"token_ids": response["prompt_token_ids"]},
+                    response={"token_ids": choice["token_ids"], "log_probs": choice["logprobs"]["token_logprobs"]},
+                    metadata={"process_credit": {"action_event_id": action.envelope.event_id, "action_index": index}},
+                )
+            )
+        return CompletedRollout(
+            rollout_id=snapshot.rollout_id,
+            data_id=snapshot.group_id,
+            step=7,
+            sample_idx_in_step=0,
+            enqueue_time=0,
+            final_reward=artifact.resolved.terminal_outcome,
+            triplets=triplets,
+            process_credit=artifact,
+        )
+
+    return build
+
+
+@pytest.fixture
+def cpu_native_padding(monkeypatch):
+    """Use VERL's real pure-Torch kernel; CUDA/NPU dispatch is not exercised on CPU.
+
+    Native left_right_2_no_padding otherwise imports unavailable flash_attn on
+    macOS. Only its device padding primitive is rebound for this CPU contract
+    test; native conversion, registry, loss, TensorDict and autograd remain real.
+    """
+    pytest.importorskip("einops", reason="CPU native padding contract additionally requires optional einops")
+    from verl.utils.npu_flash_attn_utils import unpad_input
+
+    monkeypatch.setattr("verl.workers.utils.padding.unpad_input", unpad_input)

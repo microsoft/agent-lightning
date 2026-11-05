@@ -91,3 +91,25 @@ def test_disabled_mode_preserves_outcome_and_rejects_unknown_process_discriminat
     )
     with pytest.raises(ValueError, match="enabled"):
         validate_process_config({"algorithm": {"adv_estimator": "process_reinforce"}}, verl_version="0.8.0")
+
+
+def test_group_rollout_count_is_not_the_number_of_choices_per_model_call():
+    config = supported_config()
+    config["actor_rollout_ref"]["rollout"]["n"] = 3
+    assert validate_process_config(config, verl_version="0.8.0") is not None
+    config["actor_rollout_ref"]["rollout"]["n"] = 0
+    with pytest.raises(ValueError, match=r"rollout\.n"):
+        validate_process_config(config, verl_version="0.8.0")
+
+
+def test_documented_config_satisfies_actual_native_validation():
+    from verl.trainer.ppo.utils import need_critic, need_reference_policy
+    from verl.utils.config import validate_config
+
+    from examples.process_credit.train import build_config
+
+    config = build_config("/offline/model")
+    assert validate_process_config(config, verl_version="0.8.0") is not None
+    assert not need_critic(config)
+    assert not need_reference_policy(config)
+    validate_config(config, use_reference_policy=False, use_critic=False)

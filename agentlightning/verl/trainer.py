@@ -10,6 +10,8 @@ import random
 import time
 import uuid
 from collections import defaultdict
+from importlib.metadata import version
+from pathlib import Path
 from pprint import pprint
 from typing import Any, TypeVar
 
@@ -33,6 +35,8 @@ from verl.utils.ray_utils import auto_await
 from verl.utils.tracking import Tracking
 
 from agentlightning.client import AgentLightningSyncClient
+from agentlightning.credit.artifacts import write_credit_artifact
+from agentlightning.credit.types import IncompletePolicyTraceError
 from agentlightning.hooks import RolloutHooks, load_hooks
 
 from .agl_rollout_manager import (
@@ -102,6 +106,10 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from agentlightning.verl.process_credit import validate_process_config
+
+        self._process_credit_config = validate_process_config(self.config, verl_version=version("verl"))
+        self._last_completed_process_update = None
         self.is_async = self.config.agentlightning.async_rollout.enabled
         self.epoch = 0
         async_train_batch_size = self.config.agentlightning.async_rollout.async_train_batch_size
@@ -138,6 +146,9 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
 
     def _make_rollout_manager(self, manager_cls: type[RolloutManagerT]) -> RolloutManagerT:
         al = self.config.agentlightning
+        process_kwargs: dict[str, Any] = {}
+        if getattr(self, "_process_credit_config", None) is not None:
+            process_kwargs["process_credit_config"] = self._process_credit_config
         return manager_cls(
             agl_base_url=al.agl_base_url,
             agl_key=al.agl_key,
@@ -149,6 +160,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             local_agent_class=al.local.agent_class,
             local_env_map=al.local.env_map,
             k8s_job_template_path=al.k8s.job_template_path,
+            **process_kwargs,
         )
 
     def _rollout_replicas(self) -> list[Any]:
@@ -415,6 +427,19 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             trace_aggregator.get("trajectory_max_total_length") if str(level).startswith("trajectory") else None
         )
         pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+        process_adapter_kwargs = {}
+        process = getattr(self, "_process_credit_config", None)
+        if process is not None and is_train:
+            from agentlightning.verl.process_credit import ScheduledGroups
+
+            self._process_completed_rollouts = completed_rollouts
+            self._process_rollout_manager = rollout_manager
+            process_adapter_kwargs = {
+                "process_credit_config": process,
+                "process_scheduled_groups": ScheduledGroups.model_validate(
+                    {"rollouts": rollout_manager.process_scheduled_groups}
+                ),
+            }
         rollout_adapter = RolloutAdapter(
             max_prompt_length=max_prompt_length,
             max_response_length=max_response_length,
@@ -437,6 +462,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                 )
                 == "R3"
             ),
+            **process_adapter_kwargs,
         )
 
         if is_train:
@@ -465,6 +491,8 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         timing_raw: dict[str, float],
         curr_step_profile: bool,
     ) -> tuple[dict[str, Any], DataProto] | None:
+        if getattr(self, "_process_credit_config", None) is not None:
+            return self._train_process_step(timing_raw, curr_step_profile)
         metrics: dict[str, Any] = {}
         self._step_start_wall = time.time()
         metrics["timing/step_start_wall"] = self._step_start_wall
@@ -667,6 +695,146 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         # Return the batch so fit() can compute throughput after the step timer closes.
         return metrics, batch
 
+    def _persist_process_evidence(self, metrics: dict[str, Any]) -> None:
+        """Persist complete evidence before actor mutation, or report explicit in-memory mode."""
+        process = self._process_credit_config
+        if process is None:
+            raise IncompletePolicyTraceError("process persistence requires an enabled estimator")
+        root = process.artifact_dir
+        if root is None:
+            checkpoint_root = self.config.trainer.get("default_local_dir")
+            root = str(Path(checkpoint_root) / "process_credit") if checkpoint_root else None
+        metrics["process/in_memory_evidence_only"] = int(root is None)
+        if root is not None:
+            for rollout in self._process_completed_rollouts:
+                artifact = rollout.process_credit
+                if artifact is None:
+                    raise IncompletePolicyTraceError("cannot update actor without sealed process artifacts")
+                write_credit_artifact(
+                    Path(root) / f"{artifact.snapshot.snapshot_hash}.json",
+                    artifact,
+                    max_bytes=process.max_artifact_bytes,
+                )
+
+    def _release_process_evidence(self) -> None:
+        for rollout in self._process_completed_rollouts:
+            self._process_rollout_manager._delete_rollout(rollout.rollout_id)
+
+    def _train_process_step(self, timing_raw: dict[str, float], curr_step_profile: bool):
+        """One complete on-policy collection and one full optimizer minibatch, never row flooring."""
+        from agentlightning.verl.process_batch import pad_process_batch
+
+        metrics = {"timing/step_start_wall": time.time()}
+        self._step_start_wall = metrics["timing/step_start_wall"]
+        batch = DataProto.from_single_dict(self._next_train_batch_dict_for_rollout())
+        gen_batch = self._get_gen_batch(batch)
+        gen_batch.meta_info["global_steps"] = self.global_steps
+        profiler = (
+            (getattr(self, "llm_server_manager", None) or getattr(self, "async_rollout_manager", None))
+            if curr_step_profile
+            else None
+        )
+        with marked_timer("gen", timing_raw, color="red"):
+            if profiler is not None:
+                profiler.start_profile()
+            try:
+                batch, rollout_metrics = self._rollout(gen_batch, is_train=True)
+            finally:
+                if profiler is not None:
+                    profiler.stop_profile()
+            metrics.update(rollout_metrics)
+        metrics["timing/rollout_phase_end_wall"] = time.time()
+        self._persist_process_evidence(metrics)
+        if batch.meta_info.get("process_zero_action"):
+            metrics.update(
+                {"process/actor_updates": 0, "training/n_sample_trained": 0, "process/zero_action_collection": 1}
+            )
+            self._process_skip_metrics = metrics
+            self._release_process_evidence()
+            return None
+        original_rows = len(batch)
+        batch = pad_process_batch(batch, dp_size=self.actor_rollout_wg.world_size)
+        metrics.update(
+            {
+                "training/n_sample_collected": original_rows,
+                "training/n_sample_trained": original_rows,
+                "process/padding_rows": len(batch) - original_rows,
+            }
+        )
+        batch.meta_info["temperature"] = 1.0
+        batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
+        batch.meta_info["global_token_num"] = batch.batch["attention_mask"].sum(-1).tolist()
+        assert self.checkpoint_manager is not None
+        self.checkpoint_manager.sleep_replicas()
+        if self.config.trainer.balance_batch:
+            self._balance_batch(batch, metrics=metrics)
+        with marked_timer("old_log_prob", timing_raw, color="blue"):
+            old_log_prob, _ = self._compute_old_log_prob(batch)
+            batch = batch.union(old_log_prob)
+        active = batch.batch["response_mask"].bool()
+        if not torch.isfinite(batch.batch["old_log_probs"][active]).all():
+            raise IncompletePolicyTraceError("active current-policy logprobs are not finite")
+        discrepancies = (batch.batch["old_log_probs"] - batch.batch["rollout_log_probs"])[active].abs()
+        metrics["process/behavior_logprob_abs_mean"] = discrepancies.mean().item()
+        metrics["process/behavior_logprob_abs_max"] = discrepancies.max().item()
+        batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+        with marked_timer("update_actor", timing_raw, color="red"):
+            actor_output = self._update_actor(batch)
+        metrics.update(reduce_metrics(actor_output.meta_info["metrics"]))
+        metrics["process/actor_updates"] = 1
+        self._last_completed_process_update = {
+            "policy_version": self.global_steps,
+            "snapshot_hashes": list(batch.meta_info["process_snapshot_hashes"]),
+            "scheduled_count": batch.meta_info["process_scheduled_count"],
+        }
+        with marked_timer("update_weights", timing_raw, color="red"):
+            self.checkpoint_manager.update_weights(self.global_steps)
+        self._release_process_evidence()
+        return metrics, batch
+
+    def _update_actor(self, batch: DataProto) -> DataProto:
+        if getattr(self, "_process_credit_config", None) is None:
+            return super()._update_actor(batch)
+        from verl.utils import tensordict_utils as tu
+        from verl.utils.py_functional import rename_dict
+
+        from agentlightning.verl.process_loss import build_process_actor_payload
+
+        payload = build_process_actor_payload(batch, seed=self.config.actor_rollout_ref.actor.data_loader_seed)
+        output = self.actor_rollout_wg.update_actor(payload)
+        metrics = rename_dict(tu.get(output, "metrics"), "actor/")
+        metrics["perf/mfu/actor"] = metrics.pop("actor/mfu")
+        return DataProto.from_single_dict(data={}, meta_info={"metrics": metrics})
+
+    def _save_checkpoint(self):
+        result = super()._save_checkpoint()
+        process = getattr(self, "_process_credit_config", None)
+        if process is not None:
+            from agentlightning.verl.process_credit import write_process_checkpoint
+
+            path = (
+                Path(self.config.trainer.default_local_dir) / f"global_step_{self.global_steps}" / "process_credit.json"
+            )
+            write_process_checkpoint(path, process, self._last_completed_process_update)
+        return result
+
+    def _load_checkpoint(self):
+        process = getattr(self, "_process_credit_config", None)
+        if process is not None and self.config.trainer.resume_mode != "disable":
+            from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
+
+            from agentlightning.verl.process_credit import read_process_checkpoint
+
+            if self.config.trainer.resume_mode == "resume_path":
+                checkpoint = self.config.trainer.resume_from_path
+            else:
+                checkpoint = find_latest_ckpt_path(self.config.trainer.default_local_dir)
+            if checkpoint is not None:
+                self._last_completed_process_update = read_process_checkpoint(
+                    Path(checkpoint) / "process_credit.json", process
+                )
+        return super()._load_checkpoint()
+
     def fit(self):
         """Training loop driven by AglRolloutManager for rollouts."""
 
@@ -715,6 +883,8 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             with marked_timer("step", timing_raw):
                 result = self._train_step(timing_raw, curr_step_profile)
             if result is None:
+                if getattr(self, "_process_credit_config", None) is not None:
+                    logger.log(data=self._process_skip_metrics, step=self.global_steps)
                 print("AgentLightningRayPPOTrainer: train step returned no batch; skipping update.")
                 # SC experiment budgets count optimizer updates, not empty collections.
                 if self.config.actor_rollout_ref.actor.policy_loss.loss_mode != "score_centering":

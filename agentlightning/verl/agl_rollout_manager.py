@@ -599,8 +599,13 @@ class AglRolloutManagerBase:
                     f"unsealed process rollout {rollout.rollout_id}/{rollout.status.last_attempt_id}"
                 )
             time.sleep(min(self._poll_interval_seconds, max(0, deadline - time.monotonic())))
-        if snapshot.policy_version != self._step or snapshot.group_id != enqueued.data_id:
-            raise IncompletePolicyTraceError("sealed policy/task identity differs from predeclared collection")
+        if (snapshot.rollout_id, snapshot.attempt_id, snapshot.policy_version, snapshot.group_id) != (
+            enqueued.rollout_id,
+            rollout.status.last_attempt_id,
+            self._step,
+            enqueued.data_id,
+        ):
+            raise IncompletePolicyTraceError("sealed attempt/policy/task identity differs from predeclared collection")
         artifact = make_credit_artifact(snapshot, process)
         actions, _ = validate_snapshot(snapshot)
         triplets = []

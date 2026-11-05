@@ -1,0 +1,84 @@
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 1
+  logger: [console]
+  project_name: process-credit
+  experiment_name: arithmetic
+  total_epochs: 2
+  total_training_steps: 2
+  val_before_train: false
+  test_freq: -1
+  save_freq: 1
+  resume_mode: disable
+  default_local_dir: outputs/process-credit
+  default_hdfs_dir: null
+  critic_warmup: 0
+data:
+  train_batch_size: 4
+  max_prompt_length: 1024
+  max_response_length: 1024
+algorithm:
+  adv_estimator: process_reinforce
+  gamma: 0.5
+  enable_rollout_level_advantage: false
+  use_kl_in_reward: false
+  rollout_correction: null
+critic:
+  enable: false
+reward_model:
+  enable: false
+distillation:
+  enabled: false
+actor_rollout_ref:
+  model:
+    use_remove_padding: true
+    use_fused_kernels: false
+  actor:
+    strategy: fsdp
+    policy_loss:
+      loss_mode: process_reinforce
+    ppo_epochs: 1
+    ppo_mini_batch_size: 4
+    ppo_micro_batch_size_per_gpu: 1
+    use_kl_loss: false
+    entropy_coeff: 0
+    calculate_entropy: false
+    ulysses_sequence_parallel_size: 1
+    optim:
+      lr: 1.0e-6
+  rollout:
+    name: vllm
+    quantization: null
+    temperature: 1.0
+    top_p: 1.0
+    top_k: -1
+    'n': 2
+    tensor_model_parallel_size: 1
+    log_prob_micro_batch_size_per_gpu: 1
+    multi_turn:
+      enable: false
+agentlightning:
+  agl_base_url: ${oc.env:AGL_BASE_URL,http://localhost:8080}
+  agl_key: ${oc.env:AGL_KEY,local-example}
+  async_rollout:
+    enabled: false
+  max_ppo_update_times: null
+  trace_aggregator:
+    level: trajectory
+    trajectory_max_prompt_length: 1024
+    trajectory_max_response_length: 1024
+  local:
+    agent_class: examples.process_credit.agent.Agent
+    env_map:
+      A: input.a
+      B: input.b
+      C: input.c
+      D: input.d
+  process_credit:
+    enabled: true
+    gamma: 0.5
+    baseline: task_loo
+    normalization_tokens: 1024
+    process_weight: 1
+    terminal_weight: 1
+    finalization_timeout_seconds: 300

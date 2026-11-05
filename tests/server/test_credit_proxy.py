@@ -92,9 +92,7 @@ async def test_duplicate_waiter_disconnect_keeps_original_capture(app, auth_head
 
     async with _serve(app) as url, httpx.AsyncClient(base_url=url, headers=auth_headers) as caller:
         app.state.http_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
-        await caller.post(
-            "/api/models", json=[{"model": "test-model", "endpoint": "http://offline/v1", "version": 7}]
-        )
+        await caller.post("/api/models", json=[{"model": "test-model", "endpoint": "http://offline/v1", "version": 7}])
         await caller.post(
             "/api/rollouts",
             json=[
@@ -181,3 +179,48 @@ def test_uncaptured_transport_failure_prevents_finalization(client, app, auth_he
         ).status_code
         == 409
     )
+
+
+@pytest.mark.parametrize(
+    "response_body",
+    [
+        {"choices": [{"message": {"content": "sampled but tokens missing"}, "finish_reason": "stop"}]},
+        {
+            "prompt_token_ids": [1],
+            "choices": [
+                {"token_ids": [3, 2], "finish_reason": "stop", "logprobs": {"token_logprobs": [-0.1, -0.2]}},
+                {"token_ids": [4, 2], "finish_reason": "stop", "logprobs": {"token_logprobs": [-0.1, -0.2]}},
+            ],
+        },
+    ],
+)
+def test_incomplete_successful_generation_is_not_a_zero_action_failure(client, app, auth_headers, response_body):
+    async def upstream(request):
+        return httpx.Response(200, json=response_body)
+
+    app.state.http_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+    client.post(
+        "/api/models",
+        headers=auth_headers,
+        json=[{"model": "test-model", "endpoint": "http://offline/v1", "version": 7}],
+    )
+    client.post(
+        "/api/rollouts",
+        headers=auth_headers,
+        json=[
+            {
+                "input": {},
+                "rollout_id": "r",
+                "metadata": {
+                    "process_credit": {"version": 1, "policy_version": 7, "group_id": "task", "group_size": 1}
+                },
+            }
+        ],
+    )
+    response = client.post(
+        "/proxy/rollout/r/attempt/a/mode/train/openai/v1/chat/completions",
+        headers={**auth_headers, "X-AGL-Request-ID": "incomplete", "X-AGL-Action-Index": "0"},
+        json={"messages": []},
+    )
+    assert response.status_code == 409
+    assert "uncaptured" in response.text
