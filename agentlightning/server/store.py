@@ -8,6 +8,7 @@ thread. See docs/dev_guidelines.md § Concurrency Model.
 
 from __future__ import annotations
 
+from agentlightning.credit.state import AttemptCreditState
 from agentlightning.schemas import Event, Model, Rollout
 
 _rollouts: dict[str, Rollout] = {}
@@ -16,3 +17,6 @@ _models: dict[str, dict[str, Model]] = {}
 
 # Completion-ordered ids enable cursor pagination without rescanning rollouts.
 _terminal_order: list[str] = []
+
+# Only explicitly marked process attempts allocate state.
+_credit_states: dict[tuple[str, str], AttemptCreditState] = {}

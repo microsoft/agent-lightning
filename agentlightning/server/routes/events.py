@@ -12,6 +12,7 @@ from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 
 from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Event, EventCreate
+from agentlightning.server.routes.credit import credit_http_error, get_credit_state
 from agentlightning.server.store import _events, _rollouts
 
 router = APIRouter(tags=["events"])
@@ -47,6 +48,22 @@ def record_event(rollout_id: str, attempt_id: str, event_type: str, data: dict[s
     """Append a single event for an existing rollout."""
     if rollout_id not in _rollouts:
         raise _not_found(rollout_id)
+
+    credit_state = get_credit_state(rollout_id, attempt_id)
+    if credit_state is not None:
+        if event_type == "model_request":
+            raise HTTPException(status_code=409, detail="process model requests must be captured by the proxy")
+        if event_type == "reward":
+            previous_count = credit_state.event_count
+            try:
+                event = credit_state.append_reward(data)
+            except ValueError as exc:
+                raise credit_http_error(exc) from exc
+            if credit_state.event_count != previous_count:
+                _events[rollout_id].setdefault(attempt_id, []).append(event)
+            return event
+        if len(_events[rollout_id].get(attempt_id, [])) >= credit_state.config.max_events_per_rollout:
+            raise HTTPException(status_code=400, detail="process event limit reached")
 
     rid_events = _events[rollout_id]
     if attempt_id not in rid_events:
@@ -250,8 +267,23 @@ async def query_events(
         event_type=event_type,
     )
     if format == "triplet":
-        events = [_to_triplet_format(e) for e in events]
-        events = _dedupe_model_requests_by_prompt_token_ids(events)
+        if _rollouts[rollout_id].metadata.model_dump().get("process_credit") is not None:
+            events = [
+                _to_triplet_format(event).model_copy(
+                    update={
+                        "data": {
+                            **_to_triplet_format(event).data,
+                            "_agl_credit": event.data["_agl_credit"],
+                        }
+                    }
+                )
+                if "_agl_credit" in event.data
+                else _to_triplet_format(event)
+                for event in events
+            ]
+        else:
+            events = [_to_triplet_format(e) for e in events]
+            events = _dedupe_model_requests_by_prompt_token_ids(events)
     if not include_routed_experts:
         events = [_without_routed_experts(event) for event in events]
     return events

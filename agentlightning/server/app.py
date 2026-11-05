@@ -15,7 +15,7 @@ from fastapi.exceptions import HTTPException
 from omegaconf import DictConfig, OmegaConf
 
 from agentlightning.server.proxy import ProxyPauseState, ProxyRouter
-from agentlightning.server.routes import events, models, proxy, rollouts
+from agentlightning.server.routes import credit, events, models, proxy, rollouts
 
 log = structlog.get_logger()
 
@@ -83,6 +83,7 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
 
     # Store API routes — all require auth.
     app.include_router(rollouts.router, prefix="/api", dependencies=[Depends(verify_key)])
+    app.include_router(credit.router, prefix="/api", dependencies=[Depends(verify_key)])
     app.include_router(events.router, prefix="/api", dependencies=[Depends(verify_key)])
     app.include_router(models.router, prefix="/api", dependencies=[Depends(verify_key)])
 

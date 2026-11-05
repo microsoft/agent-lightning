@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agentlightning.server.app import create_app
-from agentlightning.server.store import _events, _models, _rollouts, _terminal_order
+from agentlightning.server.store import _credit_states, _events, _models, _rollouts, _terminal_order
 
 AGL_KEY = "test-secret-key"
 MODEL_NAME = "test-model"
@@ -20,11 +20,13 @@ MODEL_NAME = "test-model"
 
 @pytest.fixture(autouse=True)
 def clean_store() -> Iterator[None]:
+    _credit_states.clear()
     _rollouts.clear()
     _events.clear()
     _models.clear()
     _terminal_order.clear()
     yield
+    _credit_states.clear()
     _rollouts.clear()
     _events.clear()
     _models.clear()

@@ -23,7 +23,7 @@ from agentlightning.schemas import (
     RolloutPatch,
     RolloutState,
 )
-from agentlightning.server.store import _events, _rollouts, _terminal_order
+from agentlightning.server.store import _credit_states, _events, _rollouts, _terminal_order
 
 router = APIRouter(tags=["rollouts"])
 
@@ -218,3 +218,5 @@ async def delete_rollout(rollout_id: str) -> None:
     """Delete a rollout and its events. Idempotent: missing id is a no-op."""
     _rollouts.pop(rollout_id, None)
     _events.pop(rollout_id, None)
+    for key in [key for key in _credit_states if key[0] == rollout_id]:
+        _credit_states.pop(key).close()
