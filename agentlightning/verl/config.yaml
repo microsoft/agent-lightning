@@ -10,6 +10,8 @@ algorithm:
   enable_rollout_level_advantage: true
 
 agentlightning:
+  process_credit:
+    enabled: false
   agl_base_url: http://localhost:8080
   agl_key: ""
   hooks: null

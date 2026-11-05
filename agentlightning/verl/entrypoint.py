@@ -39,7 +39,13 @@ def run_ppo(
 
     Datasets must be passed as non-empty in-memory sequences.
     """
+    from importlib.metadata import version
+
     from verl.trainer.main_ppo import get_ppo_ray_runtime_env
+
+    from agentlightning.verl.process_credit import validate_process_config
+
+    validate_process_config(config, verl_version=version("verl"))
 
     assert train_dataset is not None and len(train_dataset) > 0, "train_dataset must be non-empty"
     assert val_dataset is not None and len(val_dataset) > 0, "val_dataset must be non-empty"
