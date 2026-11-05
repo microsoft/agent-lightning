@@ -95,3 +95,18 @@ async def test_rehashed_projected_evidence_still_requires_exact_math_and_token_p
     payload["artifact_hash"] = semantic_digest({key: value for key, value in payload.items() if key != "artifact_hash"})
     with pytest.raises(ValueError):
         replay_credit(CreditArtifact.model_validate(payload))
+
+
+@pytest.mark.asyncio
+async def test_rehashed_captured_sampling_extension_cannot_replay(sealed_snapshot):
+    from agentlightning.credit.types import CreditArtifact, semantic_digest
+
+    artifact = make_credit_artifact(await sealed_snapshot(), ProcessCreditConfig(enabled=True))
+    payload = artifact.model_dump(mode="json")
+    payload["snapshot"]["events"][0]["data"]["request"]["min_tokens"] = 1
+    payload["snapshot"]["snapshot_hash"] = semantic_digest(
+        {key: value for key, value in payload["snapshot"].items() if key != "snapshot_hash"}
+    )
+    payload["artifact_hash"] = semantic_digest({key: value for key, value in payload.items() if key != "artifact_hash"})
+    with pytest.raises(ValueError, match="min_tokens"):
+        replay_credit(CreditArtifact.model_validate(payload))

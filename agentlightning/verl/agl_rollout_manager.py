@@ -423,6 +423,7 @@ class AglRolloutManagerBase:
                         "policy_version": self._step,
                         "group_id": data_id,
                         "group_size": rollouts_per_sample,
+                        "limits": process.admission_limits.model_dump(mode="json"),
                     }
                     request = request.model_copy(update={"metadata": metadata})
                 # Assign the id after hooks so creation remains idempotent.

@@ -2,6 +2,11 @@ host: 0.0.0.0
 port: 8080
 key: ""
 upstream_timeout_seconds: 300
+# Operator caps; process rollouts bind matching or tighter admission limits at enqueue.
+process_credit_limits:
+  max_events_per_rollout: 100000
+  max_actions_per_rollout: 1024
+  max_artifact_bytes: 67108864
 default_proxy:
   model_name: "Qwen/Qwen2.5-7B-Instruct"
   include_log_probs: True

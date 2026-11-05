@@ -27,6 +27,7 @@ from agentlightning.credit.types import (
     finite_number,
     nonempty,
     semantic_digest,
+    validate_sampling_parameters,
 )
 from agentlightning.schemas import Event
 
@@ -43,6 +44,7 @@ def captured_action_geometry(record: CreditRecord):
         return None
     if type(data.get("model_version")) is not int or data["model_version"] != record.envelope.policy_version:
         raise IncompletePolicyTraceError("captured serving policy differs from action identity")
+    validate_sampling_parameters(data.get("adjusted_params") or data.get("request", {}))
     response = data.get("response")
     if not isinstance(response, dict):
         raise IncompletePolicyTraceError("successful capture requires a model response object")
@@ -359,6 +361,7 @@ class AttemptCreditState:
             "policy_version": self.policy_version,
             "group_id": self.group_id,
             "group_size": self.group_size,
+            "limits": self.config.admission_limits.model_dump(mode="json"),
             "action_event_ids": request.action_event_ids,
             "reward_event_ids": request.reward_event_ids,
             "terminal_reward_id": request.terminal_reward_id,

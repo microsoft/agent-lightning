@@ -8,10 +8,11 @@ import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
+from agentlightning.credit.types import ProcessCreditContext
 from agentlightning.schemas import (
     TERMINAL_STATES,
     VALID_TRANSITIONS,
@@ -23,6 +24,7 @@ from agentlightning.schemas import (
     RolloutPatch,
     RolloutState,
 )
+from agentlightning.server.routes.credit import credit_http_error
 from agentlightning.server.store import _credit_states, _events, _rollouts, _terminal_order
 
 router = APIRouter(tags=["rollouts"])
@@ -93,21 +95,39 @@ def _list_attempts(rollout_id: str) -> list[str]:
 
 
 @router.post("/rollouts", status_code=201, response_model=list[Rollout])
-async def enqueue_rollouts(body: list[RolloutCreate]) -> list[Rollout]:
+async def enqueue_rollouts(body: list[RolloutCreate], request: Request) -> list[Rollout]:
     """Enqueue rollouts. Each item in the list is self-contained.
 
     If a request carries a `rollout_id` that already exists, the existing
     rollout is returned unchanged (its events are left intact), making creation
     idempotent so callers can pre-assign ids and retry safely.
     """
-    results: list[Rollout] = []
+    # Bind the whole request before publishing any episode for sampling.
+    metadata_items = []
     for req in body:
+        metadata = _metadata_from_request(req)
+        marker = metadata.model_dump().get("process_credit")
+        if marker is not None:
+            try:
+                bound = ProcessCreditContext.model_validate(marker)
+                bound.require_within(request.app.state.process_credit_limits)
+            except ValueError as exc:
+                raise credit_http_error(exc) from exc
+            metadata = RolloutMetadata.model_validate(
+                {**metadata.model_dump(), "process_credit": bound.model_dump(mode="json")}
+            )
+        if req.rollout_id is not None and req.rollout_id in _rollouts:
+            existing = _rollouts[req.rollout_id].metadata.model_dump().get("process_credit")
+            if existing != metadata.model_dump().get("process_credit"):
+                raise HTTPException(status_code=409, detail="process admission binding differs from existing rollout")
+        metadata_items.append(metadata)
+    results: list[Rollout] = []
+    for req, metadata in zip(body, metadata_items, strict=True):
         if req.rollout_id is not None and req.rollout_id in _rollouts:
             results.append(_rollouts[req.rollout_id])
             continue
         now = time.time()
         rollout_id = req.rollout_id or uuid.uuid4().hex
-        metadata = _metadata_from_request(req)
         rollout = Rollout(
             rollout_id=rollout_id,
             input=req.input,

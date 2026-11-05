@@ -92,7 +92,35 @@ def finite_float32(value: float, context: str) -> float:
     return value
 
 
-class ProcessCreditConfig(FrozenCreditModel):
+class CreditLimits(FrozenCreditModel):
+    """Immutable admission bounds within the initial server's supported hard caps."""
+
+    max_events_per_rollout: int = Field(default=100000, gt=0, le=100000, strict=True)
+    max_actions_per_rollout: int = Field(default=1024, gt=0, le=1024, strict=True)
+    max_artifact_bytes: int = Field(default=67108864, gt=0, le=67108864, strict=True)
+
+
+class ProcessCreditContext(FrozenCreditModel):
+    """Policy/group identity and ingress limits bound before sampling is visible."""
+
+    version: Literal[1] = 1
+    policy_version: int = Field(ge=0, strict=True)
+    group_id: str
+    group_size: int = Field(gt=0, strict=True)
+    limits: CreditLimits = Field(default_factory=CreditLimits)
+
+    @field_validator("group_id")
+    @classmethod
+    def group_identity(cls, value: str) -> str:
+        return nonempty(value)
+
+    def require_within(self, caps: CreditLimits) -> None:
+        for name, value in self.limits.model_dump().items():
+            if value > getattr(caps, name):
+                raise CreditProtocolError(f"process admission limits exceed server operator cap: {name}")
+
+
+class ProcessCreditConfig(CreditLimits):
     """Fixed-before-sampling objective, evidence limits and output policy."""
 
     enabled: bool = Field(default=False, strict=True)
@@ -102,9 +130,6 @@ class ProcessCreditConfig(FrozenCreditModel):
     terminal_weight: float = 1.0
     process_weight: float = 1.0
     finalization_timeout_seconds: float = Field(default=300.0, gt=0)
-    max_events_per_rollout: int = Field(default=100000, gt=0, strict=True)
-    max_actions_per_rollout: int = Field(default=1024, gt=0, strict=True)
-    max_artifact_bytes: int = Field(default=67108864, gt=0, strict=True)
     artifact_dir: str | None = None
 
     @field_validator(
@@ -120,6 +145,10 @@ class ProcessCreditConfig(FrozenCreditModel):
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise CreditProtocolError("process configuration requires finite numeric values")
         return value
+
+    @property
+    def admission_limits(self) -> CreditLimits:
+        return CreditLimits.model_validate({name: getattr(self, name) for name in CreditLimits.model_fields})
 
     @property
     def digest(self) -> str:
@@ -219,6 +248,7 @@ class CreditSnapshot(FrozenCreditModel):
     watermark: int = Field(ge=-1, strict=True)
     events: tuple[CreditRecord, ...]
     snapshot_hash: str
+    limits: CreditLimits
 
     @model_validator(mode="after")
     def checksum(self) -> CreditSnapshot:
@@ -298,8 +328,48 @@ class CreditArtifact(FrozenCreditModel):
     artifact_hash: str
 
 
-def validate_sampling_parameters(parameters: Mapping[str, Any], *, prefix: str = "sampling") -> None:
+def validate_sampling_parameters(
+    parameters: Mapping[str, Any], *, prefix: str = "sampling", strict_request: bool = True
+) -> None:
     """Reject sampling changes not present in the trainable policy likelihood."""
+    if not isinstance(parameters, Mapping):
+        raise CreditProtocolError(f"{prefix} must be a parameter object")
+    # Admit proven context/observation/length controls, never opaque sampler extensions.
+    # In particular extra_body is not recursively trusted or flattened here.
+    supported = {
+        "model",
+        "messages",
+        "prompt",
+        "max_tokens",
+        "max_completion_tokens",
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "repetition_penalty",
+        "presence_penalty",
+        "frequency_penalty",
+        "n",
+        "stream",
+        "logprobs",
+        "top_logprobs",
+        "prompt_logprobs",
+        "return_token_ids",
+        "return_tokens_as_token_ids",
+        "add_generation_prompt",
+        "continue_final_message",
+        "add_special_tokens",
+        "chat_template",
+        "chat_template_kwargs",
+        "documents",
+    }
+    if strict_request and (unknown := set(parameters) - supported):
+        raise CreditProtocolError(f"unsupported process sampling request fields: {', '.join(sorted(unknown))}")
+    if strict_request and parameters.get("stream", False) is not False:
+        raise CreditProtocolError(f"process credit requires {prefix}.stream=false")
+    for name in ("max_tokens", "max_completion_tokens"):
+        if name in parameters and (type(parameters[name]) is not int or parameters[name] < 1):
+            raise CreditProtocolError(f"process credit requires a positive predeclared {prefix}.{name}")
     expected = {
         "temperature": 1,
         "top_p": 1,
@@ -315,6 +385,9 @@ def validate_sampling_parameters(parameters: Mapping[str, Any], *, prefix: str =
     if parameters.get("top_k", -1) not in (-1, 0, None):
         raise CreditProtocolError(f"process credit requires {prefix}.top_k disabled")
     for key in (
+        "min_tokens",
+        "response_format",
+        "extra_body",
         "guided_decoding",
         "structured_outputs",
         "allowed_token_ids",

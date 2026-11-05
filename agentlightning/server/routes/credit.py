@@ -9,11 +9,12 @@ from fastapi import APIRouter, HTTPException
 from agentlightning.credit.state import AttemptCreditState
 from agentlightning.credit.types import (
     CreditConflictError,
-    CreditProtocolError,
     CreditReceipt,
     CreditSnapshot,
     FinalizeCreditRequest,
     IncompletePolicyTraceError,
+    ProcessCreditConfig,
+    ProcessCreditContext,
 )
 from agentlightning.server.store import _credit_states, _rollouts
 
@@ -28,22 +29,28 @@ def get_credit_state(rollout_id: str, attempt_id: str) -> AttemptCreditState | N
     context = rollout.metadata.model_dump().get("process_credit")
     if context is None:
         return None
-    if not isinstance(context, dict) or set(context) != {"version", "policy_version", "group_id", "group_size"}:
-        raise HTTPException(status_code=400, detail="invalid process_credit rollout metadata")
-    if type(context["version"]) is not int or context["version"] != 1:
-        raise HTTPException(status_code=400, detail="unknown process_credit rollout version")
-    key = (rollout_id, attempt_id)
-    if key not in _credit_states:
-        try:
+    try:
+        bound = ProcessCreditContext.model_validate(context)
+        key = (rollout_id, attempt_id)
+        if key not in _credit_states:
             _credit_states[key] = AttemptCreditState(
                 rollout_id,
                 attempt_id,
-                policy_version=context["policy_version"],
-                group_id=context["group_id"],
-                group_size=context["group_size"],
+                policy_version=bound.policy_version,
+                group_id=bound.group_id,
+                group_size=bound.group_size,
+                config=ProcessCreditConfig(enabled=True, **bound.limits.model_dump()),
             )
-        except CreditProtocolError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        state = _credit_states[key]
+        if (state.policy_version, state.group_id, state.group_size, state.config.admission_limits) != (
+            bound.policy_version,
+            bound.group_id,
+            bound.group_size,
+            bound.limits,
+        ):
+            raise CreditConflictError("process admission binding changed after attempt creation")
+    except ValueError as exc:
+        raise credit_http_error(exc) from exc
     return _credit_states[key]
 
 

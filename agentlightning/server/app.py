@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import HTTPException
 from omegaconf import DictConfig, OmegaConf
 
+from agentlightning.credit.types import CreditLimits
 from agentlightning.server.proxy import ProxyPauseState, ProxyRouter
 from agentlightning.server.routes import credit, events, models, proxy, rollouts
 
@@ -54,6 +55,7 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     server_config = _server_config(config)
     key = str(server_config["key"] or "")
+    credit_caps = CreditLimits.model_validate(server_config.get("process_credit_limits", {}))
 
     if not key:
         log.warning("AGL_KEY not set — authentication disabled. Do not use in production.")
@@ -75,6 +77,7 @@ def create_app(config: Mapping[str, Any] | DictConfig | None = None) -> FastAPI:
             yield
 
     app = FastAPI(title="Agent Lightning", version="1.0.0", lifespan=lifespan)
+    app.state.process_credit_limits = credit_caps
 
     # Health check — no auth.
     @app.get("/healthz")

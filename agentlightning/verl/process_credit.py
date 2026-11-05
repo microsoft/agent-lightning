@@ -91,7 +91,7 @@ def validate_process_config(config: Any, *, verl_version: str) -> ProcessCreditC
     count = sampling.pop("n", 1)
     if type(count) is not int or count < 1:
         raise CreditProtocolError("process credit requires positive integer actor_rollout_ref.rollout.n")
-    validate_sampling_parameters(sampling, prefix="actor_rollout_ref.rollout")
+    validate_sampling_parameters(sampling, prefix="actor_rollout_ref.rollout", strict_request=False)
     return process
 
 

@@ -30,6 +30,8 @@ def resolve_credit(snapshot: CreditSnapshot, config: ProcessCreditConfig) -> Res
     if not config.enabled:
         raise CreditProtocolError("process credit resolution requires enabled configuration")
     snapshot = CreditSnapshot.model_validate(snapshot.model_dump(mode="json"))
+    if snapshot.limits != config.admission_limits:
+        raise CreditProtocolError("sealed admission limits differ from process configuration")
     actions, reward_events = validate_snapshot(snapshot)
     if len(snapshot.events) > config.max_events_per_rollout or len(actions) > config.max_actions_per_rollout:
         raise CreditProtocolError("sealed credit exceeds configured event/action limits")
