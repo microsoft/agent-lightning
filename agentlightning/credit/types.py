@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import struct
 from collections.abc import Mapping
 from typing import Any, Literal
 from uuid import UUID
@@ -60,7 +61,7 @@ def semantic_digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
 
-def nonempty(value: str) -> str:
+def nonempty(value: Any) -> str:
     """Retain caller identity exactly, rejecting empty/whitespace identifiers."""
     if not isinstance(value, str) or not value.strip():
         raise CreditProtocolError("credit identity/source must be nonempty")
@@ -86,6 +87,8 @@ def finite_float32(value: float, context: str) -> float:
     """Guard accumulation and casts without importing a numerical framework."""
     if isinstance(value, bool) or not math.isfinite(value) or abs(value) > FLOAT32_MAX:
         raise CreditProtocolError(f"{context} must be finite and representable as float32")
+    if value != 0 and struct.unpack("f", struct.pack("f", value))[0] == 0:
+        raise CreditProtocolError(f"{context} would silently underflow float32")
     return value
 
 

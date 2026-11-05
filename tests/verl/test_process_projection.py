@@ -66,6 +66,7 @@ async def test_incomplete_action_geometry_or_overlong_rows_fail_not_truncate(sea
             level="transition",
             limits=ProjectionLimits(max_prompt_length=1, max_response_length=1, eos_token_id=2),
         )
+    assert rollout.triplets is not None
     rollout.triplets[0].response["log_probs"] = None
     with pytest.raises(IncompletePolicyTraceError, match="logprob"):
         project_process_rollout(
@@ -86,3 +87,39 @@ async def test_zero_action_has_no_fake_row(sealed_snapshot):
         )
         == []
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["transition", "trajectory"])
+async def test_native_dataproto_uses_complete_action_coefficients_and_eos_rewards(sealed_snapshot, level):
+    from types import SimpleNamespace
+
+    import torch
+
+    from agentlightning.verl.process_credit import ScheduledGroups, ScheduledRollout
+    from agentlightning.verl.rollout_adapter import RolloutAdapter
+
+    rollout = completed(await sealed_snapshot())
+    config = ProcessCreditConfig(enabled=True, gamma=0.5)
+    scheduled = ScheduledGroups(
+        rollouts=(ScheduledRollout(rollout_id="r", group_id="task", group_size=1, policy_version=7),)
+    )
+    adapter = RolloutAdapter(
+        max_prompt_length=20,
+        max_response_length=20,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level=level,
+        tokenizer=SimpleNamespace(eos_token_id=2),
+        process_credit_config=config,
+        process_scheduled_groups=scheduled,
+    )
+    batch, metrics = adapter.get_train_data_batch([rollout])
+    assert batch.batch["response_mask"].sum().item() == 6
+    assert batch.batch["token_level_scores"].sum().item() == pytest.approx(1.1)
+    assert metrics["training/reward"] == 1
+    assert batch.meta_info["process_scheduled_count"] == 1
+    assert batch.batch["advantages"].sum().item() == pytest.approx(2 * (0.4 + 0.2 + 0.25) / 1024)
+    assert batch.batch["returns"].sum().item() == pytest.approx(2 * (0.4 + 0.4 + 1))
+    assert not batch.batch["advantages"].requires_grad
+    assert "process_token_origins" in batch.non_tensor_batch

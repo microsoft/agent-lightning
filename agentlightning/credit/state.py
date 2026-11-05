@@ -209,10 +209,11 @@ class AttemptCreditState:
             raise IncompletePolicyTraceError("captured response belongs to a foreign attempt")
         if event.data.get("model_version") != self.policy_version:
             raise IncompletePolicyTraceError("captured serving policy version differs from collection")
+        sequence = self.event_count
         envelope = CreditEnvelope(
             event_id=lease.event_id,
             policy_version=self.policy_version,
-            sequence=self.event_count,
+            sequence=sequence,
             request_id=lease.request_id,
             action_index=lease.action_index,
         )
@@ -225,7 +226,7 @@ class AttemptCreditState:
             body=copy.deepcopy(response_body),
             status_code=status_code,
             event_id=lease.event_id,
-            sequence=envelope.sequence,
+            sequence=sequence,
             action_index=lease.action_index,
             request_id=lease.request_id,
             policy_version=self.policy_version,

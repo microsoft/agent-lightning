@@ -44,7 +44,9 @@ def supported_config():
 def test_supported_config_is_explicit_and_does_not_mutate():
     config = supported_config()
     before = copy.deepcopy(config)
-    assert validate_process_config(config, verl_version="0.8.0").normalization_tokens == 1024
+    process = validate_process_config(config, verl_version="0.8.0")
+    assert process is not None
+    assert process.normalization_tokens == 1024
     assert config == before
     with pytest.raises(ValueError, match=r"0\.8\.0"):
         validate_process_config(config, verl_version="0.9.0")

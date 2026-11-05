@@ -139,5 +139,7 @@ def register_in_worker() -> None:
     apply_vllm_compat_patches()
     from verl.trainer.ppo.core_algos import POLICY_LOSS_REGISTRY
 
+    from agentlightning.verl import process_loss  # noqa: F401 - registers the opt-in native loss
+
     assert PER_ROLLOUT_MEAN_LOSS_MODE in POLICY_LOSS_REGISTRY
     assert CISPO_PER_ROLLOUT_MEAN_LOSS_MODE in POLICY_LOSS_REGISTRY

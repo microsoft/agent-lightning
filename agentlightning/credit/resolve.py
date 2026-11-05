@@ -41,6 +41,8 @@ def resolve_credit(snapshot: CreditSnapshot, config: ProcessCreditConfig) -> Res
     terminal_outcome = None
     for record in reward_events:
         envelope = record.envelope
+        if envelope.kind is None:
+            raise CreditProtocolError("reward is missing its declared kind")
         raw = record.data.get("value")
         if isinstance(raw, bool) or not isinstance(raw, int | float) or not math.isfinite(raw):
             raise CreditProtocolError("reward values must be finite numbers")
@@ -48,8 +50,10 @@ def resolve_credit(snapshot: CreditSnapshot, config: ProcessCreditConfig) -> Res
         weighted = raw * weight
         if not math.isfinite(weighted):
             raise CreditProtocolError("weighted reward accumulation must be finite and representable as float32")
-        cutoff = indices.get(envelope.evidence_through_event_id)
-        target = indices.get(envelope.target_event_id)
+        cutoff = (
+            indices.get(envelope.evidence_through_event_id) if envelope.evidence_through_event_id is not None else None
+        )
+        target = indices.get(envelope.target_event_id) if envelope.target_event_id is not None else None
         if envelope.kind == "terminal":
             terminal_outcome = float(raw)
         if cutoff is not None:
@@ -78,6 +82,8 @@ def resolve_credit(snapshot: CreditSnapshot, config: ProcessCreditConfig) -> Res
         )
     except OverflowError as exc:
         raise CreditProtocolError("credit accumulation overflows finite float32 evidence") from exc
+    if terminal_outcome is None:
+        raise CreditProtocolError("exactly one finite terminal outcome is required")
     return ResolvedCredit(
         rollout_id=snapshot.rollout_id,
         attempt_id=snapshot.attempt_id,

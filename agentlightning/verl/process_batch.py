@@ -161,3 +161,198 @@ def project_process_rollout(
     if len(actual) != len(set(actual)) or set(actual) != expected_origins:
         raise IncompletePolicyTraceError("projection must retain every sampled action token exactly once")
     return rows
+
+
+def build_process_batch(completed_rollouts, adapter, scheduled_groups, config):
+    """Build real native tensors from all scheduled trajectories, with no row selection."""
+    from dataclasses import asdict
+
+    import numpy as np
+    import torch
+    from tensordict import TensorDict
+    from verl import DataProto
+
+    from agentlightning.credit.artifacts import make_credit_artifact
+    from agentlightning.credit.types import canonical_json
+    from agentlightning.verl.process_credit import compute_process_coefficients
+    from agentlightning.verl.rollout_adapter import (
+        _build_multi_modal_inputs,
+        _compute_mrope_position_ids,
+        _is_mrope_processor,
+        get_left_padded_ids_and_attention_mask,
+        get_right_padded_ids_and_attention_mask,
+    )
+
+    if any(rollout.process_credit is None for rollout in completed_rollouts):
+        raise IncompletePolicyTraceError("process collection cannot mix unsealed outcome trajectories")
+    resolved = [replay_credit(rollout.process_credit) for rollout in completed_rollouts]
+    coefficients = compute_process_coefficients(resolved, scheduled_groups, config)
+    by_id = {item.rollout_id: item for item in resolved}
+    limits = ProjectionLimits(
+        adapter.max_prompt_length,
+        adapter.max_response_length,
+        adapter.max_total_length,
+        getattr(adapter.tokenizer, "eos_token_id", None),
+    )
+    rows = []
+    per_rollout = {}
+    for rollout in completed_rollouts:
+        projected = project_process_rollout(rollout, level=adapter.trace_aggregator_level, limits=limits)
+        per_rollout[rollout.rollout_id] = projected
+        rows.extend(projected)
+    outcomes = [item.terminal_outcome for item in resolved]
+    metrics = {
+        "training/reward": float(np.mean(outcomes)) if outcomes else 0,
+        "training/n_rollouts": coefficients.scheduled_count,
+        "training/n_sample": len(rows),
+        "process/zero_action_rollouts": sum(not item.action_event_ids for item in resolved),
+        "process/scheduled_rollouts": coefficients.scheduled_count,
+        "process/normalization_tokens": config.normalization_tokens,
+    }
+    meta = {
+        "process_scheduled_count": coefficients.scheduled_count,
+        "process_config_digest": config.digest,
+        "process_policy_version": scheduled_groups.rollouts[0].policy_version,
+        "process_snapshot_hashes": [item.snapshot_hash for item in resolved],
+        "process_zero_action": not rows,
+    }
+    if not rows:
+        return DataProto(batch=None, meta_info=meta), metrics
+    prompts, responses, attention, masks, log_probs, advantages, returns, scores = ([] for _ in range(8))
+    origins = []
+    row_ids = []
+    projection_records = {rollout.rollout_id: [] for rollout in completed_rollouts}
+    action_lengths = {
+        rollout.rollout_id: [len(triplet.response["token_ids"]) for triplet in rollout.triplets]
+        for rollout in completed_rollouts
+    }
+    for row in rows:
+        prompt, prompt_mask = get_left_padded_ids_and_attention_mask(
+            list(row.prompt_ids), adapter.max_prompt_length, adapter.pad_token_id
+        )
+        response, response_attention = get_right_padded_ids_and_attention_mask(
+            list(row.response_ids), adapter.max_response_length, adapter.pad_token_id
+        )
+        row_coefficients = [
+            coefficients.coefficients[row.rollout_id][origin.action_index] if origin else 0 for origin in row.origins
+        ]
+        row_returns = [
+            coefficients.returns[row.rollout_id][origin.action_index] if origin else 0 for origin in row.origins
+        ]
+        row_scores = [
+            by_id[row.rollout_id].rewards[origin.action_index]
+            if origin is not None and origin.offset == action_lengths[row.rollout_id][origin.action_index] - 1
+            else 0
+            for origin in row.origins
+        ]
+        padding = adapter.max_response_length - len(row.response_ids)
+        prompts.append(prompt)
+        responses.append(response)
+        attention.append(prompt_mask + response_attention)
+        masks.append(list(row.response_mask) + [0] * padding)
+        log_probs.append(list(row.log_probs) + [0.0] * padding)
+        advantages.append(row_coefficients + [0.0] * padding)
+        returns.append(row_returns + [0.0] * padding)
+        scores.append(row_scores + [0.0] * padding)
+        row_origins = [asdict(origin) if origin is not None else None for origin in row.origins]
+        origins.append(row_origins + [None] * padding)
+        row_id = f"{row.rollout_id}:{len(projection_records[row.rollout_id])}"
+        row_ids.append(row_id)
+        projection_records[row.rollout_id].append(
+            {
+                "row_id": row_id,
+                "prompt_token_ids": row.prompt_ids,
+                "response_token_ids": row.response_ids,
+                "origins": row_origins,
+                "response_mask": row.response_mask,
+                "coefficients": row_coefficients,
+                "returns": row_returns,
+            }
+        )
+    device = adapter.device
+    prompt_tensor = torch.tensor(prompts, dtype=torch.long, device=device)
+    response_tensor = torch.tensor(responses, dtype=torch.long, device=device)
+    input_ids = torch.cat((prompt_tensor, response_tensor), dim=-1)
+    attention_tensor = torch.tensor(attention, dtype=torch.long, device=device)
+    positions = torch.clamp(attention_tensor.cumsum(-1) - 1, min=0)
+    tensors = {
+        "prompts": prompt_tensor,
+        "responses": response_tensor,
+        "input_ids": input_ids,
+        "attention_mask": attention_tensor,
+        "position_ids": positions,
+        "response_mask": torch.tensor(masks, dtype=torch.long, device=device),
+        "rollout_log_probs": torch.tensor(log_probs, dtype=torch.float32, device=device),
+        "advantages": torch.tensor(advantages, dtype=torch.float32, device=device),
+        "returns": torch.tensor(returns, dtype=torch.float32, device=device),
+        "token_level_scores": torch.tensor(scores, dtype=torch.float32, device=device),
+    }
+    multimodal = None
+    if any(row.image_urls for row in rows):
+        if adapter.processor is None:
+            raise IncompletePolicyTraceError("complete image-bearing process actions require the original processor")
+        multimodal = []
+        position_rows = []
+        use_mrope = _is_mrope_processor(adapter.processor)
+        for index, row in enumerate(rows):
+            inputs, has_types = (
+                _build_multi_modal_inputs(adapter.processor, list(row.image_urls)) if row.image_urls else (None, False)
+            )
+            multimodal.append(inputs)
+            if use_mrope:
+                if row.image_urls and (inputs is None or "image_grid_thw" not in inputs):
+                    raise IncompletePolicyTraceError("process image geometry lacks required image_grid_thw")
+                position_rows.append(
+                    _compute_mrope_position_ids(
+                        adapter.processor,
+                        input_ids[index],
+                        attention_tensor[index],
+                        inputs.get("image_grid_thw") if inputs is not None else None,
+                        has_types,
+                    )
+                )
+        if use_mrope:
+            tensors["position_ids"] = torch.stack(position_rows)
+    batch = DataProto(batch=TensorDict(tensors, batch_size=len(rows)), meta_info=meta)
+
+    def object_vector(values):
+        vector = np.empty(len(values), dtype=object)
+        vector[:] = values
+        return vector
+
+    batch.non_tensor_batch.update(
+        {
+            "rollout_id_list": np.array([row.rollout_id for row in rows]),
+            "data_id_list": np.array([row.data_id for row in rows]),
+            "uid": np.array([row.data_id for row in rows]),
+            "process_snapshot_hash": np.array([row.snapshot_hash for row in rows]),
+            "process_group_id": np.array([row.data_id for row in rows]),
+            "process_row_id": np.array(row_ids),
+            "process_padding": np.zeros(len(rows), dtype=bool),
+            "process_token_origins": object_vector(origins),
+            "process_credit_action_index": object_vector(
+                [[origin["action_index"] if origin else None for origin in row] for row in origins]
+            ),
+        }
+    )
+    if multimodal is not None:
+        batch.non_tensor_batch["multi_modal_inputs"] = object_vector(multimodal)
+    scheduling = tuple(
+        {
+            **item.model_dump(),
+            "episode_return": coefficients.episode_returns[item.rollout_id],
+            "snapshot_hash": by_id[item.rollout_id].snapshot_hash,
+        }
+        for item in scheduled_groups.rollouts
+    )
+    for rollout in completed_rollouts:
+        updated = make_credit_artifact(
+            rollout.process_credit.snapshot,
+            config,
+            projection=tuple(projection_records[rollout.rollout_id]),
+            scheduled_groups=scheduling,
+        )
+        if len(canonical_json(updated.model_dump(mode="json"))) > config.max_artifact_bytes:
+            raise IncompletePolicyTraceError("complete projected artifact exceeds configured size limit")
+        rollout.process_credit = updated
+    return batch, metrics

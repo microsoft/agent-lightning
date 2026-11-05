@@ -361,5 +361,5 @@ async def forward_process_request(
         if isinstance(exc, asyncio.CancelledError):
             raise
     finally:
-        if registered:
+        if registered and pause_state is not None:
             await _dec_inflight(pause_state)

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
@@ -93,7 +93,7 @@ class _CreditManifest:
         value: float,
         *,
         reward_id: str,
-        kind: str,
+        kind: Literal["process", "terminal"],
         source: str,
         target_event_id: str | None = None,
         evidence_through_event_id: str | None = None,

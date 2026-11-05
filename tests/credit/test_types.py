@@ -44,7 +44,7 @@ def test_invalid_config_never_repairs_values(values):
 
 def test_unknown_protocol_and_invalid_reward_identity_rejected():
     with pytest.raises(ValueError):
-        CreditEnvelope(version=2, event_id="", policy_version=0)
+        CreditEnvelope.model_validate({"version": 2, "event_id": "", "policy_version": 0})
     with pytest.raises(ValueError):
         CreditEnvelope(event_id="not-a-uuid", policy_version=0, kind="terminal")
     with pytest.raises(ValueError):

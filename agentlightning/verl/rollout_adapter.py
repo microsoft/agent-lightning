@@ -439,7 +439,11 @@ class RolloutAdapter:
         require_routed_experts: bool = False,
         require_score_centering: bool = False,
         classify_trace_merge_mismatches: bool = False,
+        process_credit_config: Any | None = None,
+        process_scheduled_groups: Any | None = None,
     ) -> None:
+        self.process_credit_config = process_credit_config
+        self.process_scheduled_groups = process_scheduled_groups
         self.max_prompt_length = max_prompt_length
         self.max_response_length = max_response_length
         self.max_total_length = max_total_length
@@ -460,6 +464,16 @@ class RolloutAdapter:
         global_steps: int = 0,
     ) -> tuple[DataProto, dict[str, Any]]:
         """Build a VERL training batch from completed rollouts."""
+        if self.process_credit_config is not None:
+            from agentlightning.verl.process_batch import build_process_batch
+
+            if self.process_scheduled_groups is None:
+                raise ValueError("process credit requires predeclared scheduled collection membership")
+            return build_process_batch(
+                completed_rollouts, self, self.process_scheduled_groups, self.process_credit_config
+            )
+        if any(rollout.process_credit is not None for rollout in completed_rollouts):
+            raise ValueError("sealed process trajectories require explicit process mode")
         level = self.trace_aggregator_level
         if level not in {"transition", "trajectory"}:
             raise ValueError(f"Unknown trace_aggregator_level: {level}")

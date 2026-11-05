@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from agentlightning.client import AgentLightningSyncClient
 from agentlightning.credit.types import CreditFinalizationTimeout, ProcessCreditConfig
 from agentlightning.schemas import Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutMetadata, RolloutState
 from agentlightning.verl.agl_rollout_manager import AglRolloutManagerBase, EnqueuedRollout
@@ -29,18 +30,20 @@ async def test_native_manager_keeps_equal_prompt_actions_and_failed_ordinal_gap(
         process_credit_config=ProcessCreditConfig(enabled=True, gamma=0.5),
     )
     manager.client.close()
-    manager.client = httpx.Client(transport=httpx.MockTransport(handle), base_url="http://offline")
+    manager.client = AgentLightningSyncClient(transport=httpx.MockTransport(handle), base_url="http://offline")
     rollout = Rollout(
         rollout_id="r",
         input={},
         config=RolloutConfig(),
-        metadata=RolloutMetadata(
-            process_credit={"version": 1, "policy_version": 7, "group_id": "task", "group_size": 1}
+        metadata=RolloutMetadata.model_validate(
+            {"process_credit": {"version": 1, "policy_version": 7, "group_id": "task", "group_size": 1}}
         ),
         status=RolloutLifecycleStatus(state=RolloutState.SUCCEEDED, last_attempt_id="a", created_at=0, updated_at=0),
     )
     enqueued = EnqueuedRollout(rollout_id="r", data_id="task", step=7, sample_idx_in_step=0, enqueue_time=0)
     completed = manager._build_completed_rollout(enqueued, rollout)
+    assert completed.triplets is not None
+    assert completed.process_credit is not None
     assert len(completed.triplets) == 3
     assert [turn.metadata["process_credit"]["action_index"] for turn in completed.triplets] == [0, 1, 2]
     assert [turn.metadata["process_credit"]["request_action_index"] for turn in completed.triplets] == [1, 2, 3]
@@ -59,7 +62,7 @@ def test_terminal_unsealed_deadline_fails_with_original_ids():
         process_credit_config=ProcessCreditConfig(enabled=True, finalization_timeout_seconds=0.002),
     )
     manager.client.close()
-    manager.client = httpx.Client(
+    manager.client = AgentLightningSyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(409, json={"detail": "pending"})),
         base_url="http://offline",
     )
@@ -67,7 +70,7 @@ def test_terminal_unsealed_deadline_fails_with_original_ids():
         rollout_id="r",
         input={},
         config=RolloutConfig(),
-        metadata=RolloutMetadata(process_credit={}),
+        metadata=RolloutMetadata.model_validate({"process_credit": {}}),
         status=RolloutLifecycleStatus(state=RolloutState.FAILED, last_attempt_id="a", created_at=0, updated_at=0),
     )
     with pytest.raises(CreditFinalizationTimeout, match="r/a"):
