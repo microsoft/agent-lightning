@@ -71,6 +71,9 @@ The default agent uses the Chat Completions API. To use the token-in/token-out C
 examples/search_r1/run.sh --api-type completion
 ```
 
+In completion mode, the tokenizer follows the final `actor_rollout_ref.model.path`, including overrides passed after `--model`.
+To select a tokenizer explicitly, pass `agentlightning.local.env_map.SEARCH_R1_TOKENIZER_MODEL=path/to/tokenizer`.
+
 To use different dataset files:
 
 ```bash

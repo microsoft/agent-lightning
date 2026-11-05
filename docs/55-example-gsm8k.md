@@ -59,5 +59,8 @@ bash run_local.sh --api completion
 
 In token-in/token-out mode, the agent tokenizes the prompt with the configured model tokenizer, sends prompt token IDs to the OpenAI-compatible Completions endpoint, receives response token IDs, and decodes them locally for answer evaluation.
 
+The tokenizer follows the final `actor_rollout_ref.model.path`, including overrides passed after `--model`.
+To select a tokenizer explicitly, pass `agentlightning.local.env_map.GSM8K_MODEL=path/to/tokenizer`.
+
 `run_local.sh` starts `agl-server`, `agl-controller`, and Ray locally, and writes server/controller logs under `/tmp/`.
 When the script exits, it cleans up the local server, controller, and Ray process it started.
