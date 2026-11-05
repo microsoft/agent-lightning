@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from agentlightning.credit.types import CreditProtocolError, ProcessCreditConfig
+from agentlightning.credit.types import CreditProtocolError, ProcessCreditConfig, validate_sampling_parameters
 
 PROCESS_LOSS_MODE = "process_reinforce"
 
@@ -20,36 +20,6 @@ def config_value(config: Any, path: str, default: Any = None) -> Any:
             return default
         current = current[part]
     return current
-
-
-def validate_sampling_parameters(parameters: Mapping[str, Any], *, prefix: str = "sampling") -> None:
-    """Reject sampling changes not present in the trainable policy likelihood."""
-    expected = {
-        "temperature": 1,
-        "top_p": 1,
-        "min_p": 0,
-        "repetition_penalty": 1,
-        "presence_penalty": 0,
-        "frequency_penalty": 0,
-        "n": 1,
-    }
-    for key, value in expected.items():
-        if parameters.get(key, value) != value:
-            raise CreditProtocolError(f"process credit requires {prefix}.{key}={value}")
-    if parameters.get("top_k", -1) not in (-1, 0, None):
-        raise CreditProtocolError(f"process credit requires {prefix}.top_k disabled")
-    for key in (
-        "guided_decoding",
-        "structured_outputs",
-        "allowed_token_ids",
-        "logit_bias",
-        "stop",
-        "ignore_eos",
-        "return_score_centering",
-        "return_routed_experts",
-    ):
-        if parameters.get(key):
-            raise CreditProtocolError(f"process credit does not support {prefix}.{key}")
 
 
 def validate_process_config(config: Any, *, verl_version: str) -> ProcessCreditConfig | None:

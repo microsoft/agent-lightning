@@ -18,9 +18,10 @@ import structlog
 from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
-from agentlightning.schemas import Model
+from agentlightning.credit.state import AttemptCreditState, RequestLease
+from agentlightning.schemas import Event, Model
 from agentlightning.server.routes.events import record_event
-from agentlightning.server.store import _models
+from agentlightning.server.store import _events, _models
 
 log = structlog.get_logger()
 
@@ -294,3 +295,71 @@ def _extract_finish_reason(response_body: dict[str, Any]) -> str | None:
         if isinstance(reason, str) and reason:
             return reason
     return None
+
+
+async def forward_process_request(
+    *,
+    client: httpx.AsyncClient,
+    server: Model,
+    body: dict[str, Any],
+    upstream_path: str,
+    state: AttemptCreditState,
+    lease: RequestLease,
+    pause_state: ProxyPauseState | None = None,
+) -> None:
+    """Capture one logical sample without unsafe transport retries or waiter ownership.
+
+    An ambiguous transport failure cannot establish whether a policy sample was
+    generated. It marks the attempt incomplete rather than requesting another
+    unobserved sample. A disconnected waiter never cancels this shared operation.
+    """
+    registered = False
+    try:
+        paused = False
+        if pause_state is not None:
+            async with pause_state.lock:
+                paused = pause_state.paused
+                if not paused:
+                    pause_state.inflight += 1
+                    registered = True
+        started_at = time.perf_counter()
+        if paused:
+            status_code, response_body = 429, {"error": "gateway paused"}
+        else:
+            response = await client.post(
+                f"{server.endpoint.rstrip('/')}/{upstream_path}",
+                json=body,
+                headers={"content-type": "application/json"},
+            )
+            status_code = response.status_code
+            response_body = response.json()
+            if not isinstance(response_body, dict):
+                raise ValueError("model response must be a complete JSON object")
+        event = Event(
+            event_type="model_request",
+            rollout_id=state.rollout_id,
+            attempt_id=state.attempt_id,
+            timestamp=time.time(),
+            data={
+                "model": server.model,
+                "model_version": server.version,
+                "request": body,
+                "response": response_body,
+                "server": {"model": server.model, "endpoint": server.endpoint, "version": server.version},
+                "latency_ms": (time.perf_counter() - started_at) * 1000,
+                "http_status": status_code,
+                "status": _status_from_http_status(status_code),
+                "retry_count": 0,
+                "usage": _extract_usage(response_body),
+                "finish_reason": _extract_finish_reason(response_body),
+            },
+        )
+        completion = state.complete_request(lease, event=event, response_body=response_body, status_code=status_code)
+        _events[state.rollout_id].setdefault(state.attempt_id, []).append(state.event(completion.event_id))
+    except BaseException as exc:
+        state.fail_request(lease, f"uncaptured process policy request: {type(exc).__name__}")
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+    finally:
+        if registered:
+            await _dec_inflight(pause_state)

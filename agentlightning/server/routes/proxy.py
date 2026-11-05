@@ -10,9 +10,25 @@ import json
 import structlog
 from fastapi import APIRouter, Request, Response
 from fastapi.exceptions import HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agentlightning.server.proxy import NoServersError, ProxyPauseState, ProxyRouter, forward_request
+from agentlightning.credit.state import AttemptCreditState
+from agentlightning.credit.types import (
+    CreditProtocolError,
+    canonical_json,
+    semantic_digest,
+    validate_sampling_parameters,
+)
+from agentlightning.schemas import Model
+from agentlightning.server.proxy import (
+    NoServersError,
+    ProxyPauseState,
+    ProxyRouter,
+    forward_process_request,
+    forward_request,
+)
+from agentlightning.server.routes.credit import credit_http_error, get_credit_state
 from agentlightning.server.store import _rollouts
 
 log = structlog.get_logger()
@@ -74,6 +90,11 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, upstream_path: 
         raise HTTPException(status_code=503, detail=f"No servers available for model '{model_name}'") from None
 
     prepared_body = proxy_router.prepare_body(body, mode)
+    credit_state = get_credit_state(rollout_id, attempt_id)
+    if credit_state is not None:
+        return await _process_proxy(
+            request, credit_state, server, body, prepared_body, upstream_path, http_client, pause_state
+        )
 
     # Server endpoint includes the OpenAI base path (e.g., "http://vllm:8000/v1").
     forwarding = asyncio.create_task(
@@ -100,6 +121,72 @@ async def llm_proxy(rollout_id: str, attempt_id: str, mode: str, upstream_path: 
             if not task.done():
                 task.cancel()
         await asyncio.gather(forwarding, disconnected, return_exceptions=True)
+
+
+async def _process_proxy(
+    request: Request,
+    state: AttemptCreditState,
+    server: Model,
+    original_body: dict,
+    prepared_body: dict,
+    upstream_path: str,
+    http_client,
+    pause_state: ProxyPauseState | None,
+) -> Response:
+    try:
+        if server.version != state.policy_version:
+            raise CreditProtocolError("serving policy version differs from collection step")
+        if prepared_body.get("stream"):
+            raise CreditProtocolError("process credit requires complete non-streamed responses")
+        validate_sampling_parameters(prepared_body)
+        request_id = request.headers.get("X-AGL-Request-ID", "")
+        action_index = int(request.headers.get("X-AGL-Action-Index", ""))
+        payload = {"path": upstream_path, "body": original_body, "prepared": prepared_body, "index": action_index}
+        if len(canonical_json(payload)) > state.config.max_artifact_bytes:
+            raise CreditProtocolError("process request exceeds evidence byte limit")
+        lease = state.begin_request(request_id, action_index, semantic_digest(payload))
+    except ValueError as exc:
+        raise credit_http_error(exc) from exc
+    if lease.owner:
+        state.retain_operation(
+            asyncio.create_task(
+                forward_process_request(
+                    client=http_client,
+                    server=server,
+                    body=prepared_body,
+                    upstream_path=upstream_path,
+                    state=state,
+                    lease=lease,
+                    pause_state=pause_state,
+                )
+            )
+        )
+    # Cancel only this shielded waiter on disconnect. Other waiters and the
+    # shared operation remain alive, including capture after all waiters leave.
+    waiting = asyncio.ensure_future(asyncio.shield(lease.future))
+    disconnected = asyncio.create_task(_wait_for_disconnect(request))
+    try:
+        done, _ = await asyncio.wait((waiting, disconnected), return_when=asyncio.FIRST_COMPLETED)
+        if waiting in done:
+            try:
+                completion = waiting.result()
+            except ValueError as exc:
+                raise credit_http_error(exc) from exc
+            return JSONResponse(
+                content=completion.body,
+                status_code=completion.status_code,
+                headers={
+                    "X-AGL-Event-ID": completion.event_id,
+                    "X-AGL-Event-Sequence": str(completion.sequence),
+                },
+            )
+        disconnected.result()
+        return Response(status_code=499)
+    finally:
+        for task in (waiting, disconnected):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(waiting, disconnected, return_exceptions=True)
 
 
 # --- Management routes ------------------------------------------------------
