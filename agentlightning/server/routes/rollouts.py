@@ -104,6 +104,7 @@ async def enqueue_rollouts(body: list[RolloutCreate], request: Request) -> list[
     """
     # Bind the whole request before publishing any episode for sampling.
     metadata_items = []
+    pending_bindings = {}
     for req in body:
         metadata = _metadata_from_request(req)
         marker = metadata.model_dump().get("process_credit")
@@ -120,6 +121,13 @@ async def enqueue_rollouts(body: list[RolloutCreate], request: Request) -> list[
             existing = _rollouts[req.rollout_id].metadata.model_dump().get("process_credit")
             if existing != metadata.model_dump().get("process_credit"):
                 raise HTTPException(status_code=409, detail="process admission binding differs from existing rollout")
+        if req.rollout_id is not None:
+            canonical_marker = metadata.model_dump().get("process_credit")
+            if req.rollout_id in pending_bindings and pending_bindings[req.rollout_id] != canonical_marker:
+                raise HTTPException(
+                    status_code=409, detail="conflicting process admission bindings within enqueue batch"
+                )
+            pending_bindings[req.rollout_id] = canonical_marker
         metadata_items.append(metadata)
     results: list[Rollout] = []
     for req, metadata in zip(body, metadata_items, strict=True):

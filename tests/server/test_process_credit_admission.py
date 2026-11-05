@@ -153,3 +153,68 @@ def test_operator_caps_reject_unsupported_admission_before_enqueue_visibility(se
 def test_invalid_operator_caps_fail_at_server_startup(server_config):
     with pytest.raises(ValueError):
         create_app({**server_config, "process_credit_limits": {"max_actions_per_rollout": 1025}})
+
+
+@pytest.mark.parametrize("limits", [(1, 1024), (1024, 1)])
+def test_conflicting_new_batch_ids_abort_before_any_visibility(native_admission, limits):
+    client, calls, _schedule = native_admission
+    markers = [
+        {
+            "version": 1,
+            "policy_version": 7,
+            "group_id": "task",
+            "group_size": 1,
+            "limits": {"max_actions_per_rollout": bound},
+        }
+        for bound in limits
+    ]
+    response = client.post(
+        "/api/rollouts",
+        json=[{"input": {}, "rollout_id": "duplicate", "metadata": {"process_credit": marker}} for marker in markers],
+    )
+    assert response.status_code == 409
+    assert "duplicate" not in _rollouts
+    assert calls == []
+
+
+def test_later_invalid_binding_does_not_publish_an_earlier_valid_episode(native_admission):
+    client, calls, _schedule = native_admission
+    marker = {
+        "version": 1,
+        "policy_version": 7,
+        "group_id": "task",
+        "group_size": 1,
+        "limits": {"max_actions_per_rollout": 1},
+    }
+    invalid = {**marker, "limits": {"max_actions_per_rollout": 0}}
+    response = client.post(
+        "/api/rollouts",
+        json=[
+            {"input": {}, "rollout_id": name, "metadata": {"process_credit": context}}
+            for name, context in (("valid", marker), ("invalid", invalid))
+        ],
+    )
+    assert response.status_code == 400
+    assert not {"valid", "invalid"}.intersection(_rollouts)
+    assert calls == []
+
+
+@pytest.mark.parametrize("process", [True, False])
+def test_identical_new_batch_ids_remain_idempotent(native_admission, process):
+    client, calls, _schedule = native_admission
+    item = {"input": {}, "rollout_id": "identical"}
+    if process:
+        item["metadata"] = {
+            "process_credit": {
+                "version": 1,
+                "policy_version": 7,
+                "group_id": "task",
+                "group_size": 1,
+                "limits": {"max_actions_per_rollout": 1},
+            }
+        }
+    response = client.post("/api/rollouts", json=[item, item])
+    assert response.status_code == 201
+    assert response.json()[0] == response.json()[1]
+    assert list(_rollouts) == ["identical"]
+    assert calls == []
