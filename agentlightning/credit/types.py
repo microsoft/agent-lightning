@@ -75,6 +75,13 @@ def event_identifier(value: str) -> str:
         raise CreditProtocolError("event identity must be a UUID") from exc
 
 
+def finite_number(value: float, context: str) -> float:
+    """Raw labels/weights may be float64; only projected training values require float32."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        raise CreditProtocolError(f"{context} must be a finite number")
+    return float(value)
+
+
 def finite_float32(value: float, context: str) -> float:
     """Guard accumulation and casts without importing a numerical framework."""
     if isinstance(value, bool) or not math.isfinite(value) or abs(value) > FLOAT32_MAX:

@@ -18,7 +18,7 @@ from agentlightning.credit.types import (
     CreditReceipt,
     FinalizeCreditRequest,
     event_identifier,
-    finite_float32,
+    finite_number,
     nonempty,
 )
 from agentlightning.schemas import Event
@@ -100,7 +100,7 @@ class _CreditManifest:
         reason: str | None = None,
     ) -> dict[str, Any]:
         reward_id = event_identifier(reward_id)
-        finite_float32(value, "reward")
+        finite_number(value, "reward")
         if kind == "terminal" and self._terminal is not None and self._terminal != reward_id:
             raise CreditConflictError("one stable terminal reward ID is permitted per attempt")
         envelope = CreditEnvelope(

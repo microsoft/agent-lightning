@@ -23,7 +23,7 @@ from agentlightning.credit.types import (
     IncompletePolicyTraceError,
     ProcessCreditConfig,
     canonical_json,
-    finite_float32,
+    finite_number,
     nonempty,
     semantic_digest,
 )
@@ -251,7 +251,7 @@ class AttemptCreditState:
         value = payload.get("value")
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise CreditProtocolError("reward must be a finite number")
-        finite_float32(value, "raw reward")
+        finite_number(value, "raw reward")
         normalized = {
             "value": float(value),
             "source": nonempty(payload.get("source")),
