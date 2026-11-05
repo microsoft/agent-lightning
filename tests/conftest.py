@@ -14,12 +14,30 @@ from agentlightning.schemas import Event
 @pytest.fixture
 def sealed_snapshot():
     async def build(
-        rewards=(0.2, -0.1, 1), cutoff=None, target=None, action_count=3, rollout_id="r", group_id="task", group_size=1
+        rewards=(0.2, -0.1, 1),
+        cutoff=None,
+        target=None,
+        action_count=3,
+        rollout_id="r",
+        group_id="task",
+        group_size=1,
+        same_prompt=False,
+        failed_first=False,
     ):
         state = AttemptCreditState(rollout_id, "a", policy_version=7, group_id=group_id, group_size=group_size)
         actions = []
+        if failed_first:
+            failed = state.begin_request("failed", 0, "failed-body")
+            event = Event(
+                event_type="model_request",
+                rollout_id=rollout_id,
+                attempt_id="a",
+                timestamp=0,
+                data={"model_version": 7, "http_status": 400, "response": {"error": "no sample"}},
+            )
+            state.complete_request(failed, event=event, response_body={"error": "no sample"}, status_code=400)
         for index in range(action_count):
-            lease = state.begin_request(f"request-{index}", index, f"body-{index}")
+            lease = state.begin_request(f"request-{index}", index + int(failed_first), f"body-{index}")
             event = Event(
                 event_type="model_request",
                 rollout_id=rollout_id,
@@ -30,7 +48,7 @@ def sealed_snapshot():
                     "request": {"temperature": 1},
                     "http_status": 200,
                     "response": {
-                        "prompt_token_ids": [1] + [3, 2, 9] * index,
+                        "prompt_token_ids": [1] + [3, 2, 9] * (0 if same_prompt else index),
                         "choices": [
                             {"token_ids": [3, 2], "finish_reason": "stop", "logprobs": {"token_logprobs": [-0.1, -0.2]}}
                         ],

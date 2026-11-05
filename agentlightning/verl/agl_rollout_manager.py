@@ -19,6 +19,15 @@ from httpx_retries import Retry, RetryTransport
 from pydantic import BaseModel, Field
 
 from agentlightning.client import AgentLightningSyncClient
+from agentlightning.credit.artifacts import make_credit_artifact
+from agentlightning.credit.state import validate_snapshot
+from agentlightning.credit.types import (
+    CreditArtifact,
+    CreditFinalizationTimeout,
+    CreditSnapshot,
+    IncompletePolicyTraceError,
+    ProcessCreditConfig,
+)
 from agentlightning.schemas import (
     TERMINAL_STATES,
     Event,
@@ -76,6 +85,7 @@ class CompletedRollout(BaseModel):
     running_at: float | None = None
     finished_at: float | None = None
     final_reward: float | None = None
+    process_credit: CreditArtifact | None = Field(default=None, exclude=True)
     triplets: list[Triplet] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     events: list[dict[str, Any]] = Field(default_factory=list)
@@ -268,7 +278,10 @@ class AglRolloutManagerBase:
         local_agent_class: str | None = None,
         local_env_map: dict[str, str] | None = None,
         k8s_job_template_path: str | None = None,
+        process_credit_config: ProcessCreditConfig | None = None,
     ) -> None:
+        self._process_credit_config = process_credit_config
+        self.process_scheduled_groups: tuple[dict[str, Any], ...] = ()
         self._model = model
         self._step = step
         self._train_rollout_n = train_rollout_n
@@ -398,6 +411,20 @@ class AglRolloutManagerBase:
                 )
                 if self._hooks is not None:
                     request = self._hooks.on_enqueue(request)
+                process = getattr(self, "_process_credit_config", None)
+                if process is not None and is_train:
+                    metadata = (
+                        request.metadata.model_dump()
+                        if isinstance(request.metadata, BaseModel)
+                        else dict(request.metadata or {})
+                    )
+                    metadata["process_credit"] = {
+                        "version": 1,
+                        "policy_version": self._step,
+                        "group_id": data_id,
+                        "group_size": rollouts_per_sample,
+                    }
+                    request = request.model_copy(update={"metadata": metadata})
                 # Assign the id after hooks so creation remains idempotent.
                 rollout_id = uuid.uuid4().hex
                 request = request.model_copy(update={"rollout_id": rollout_id})
@@ -416,6 +443,17 @@ class AglRolloutManagerBase:
         if not rollout_requests:
             return []
 
+        if getattr(self, "_process_credit_config", None) is not None and is_train:
+            # Fix membership before the POST can make any rollout visible for sampling.
+            self.process_scheduled_groups = tuple(
+                {
+                    "rollout_id": item.rollout_id,
+                    "group_id": item.data_id,
+                    "group_size": rollouts_per_sample,
+                    "policy_version": self._step,
+                }
+                for item in enqueued_rollouts
+            )
         # Preassigned ids make batch creation safe to retry without duplicates.
         payload = [request.model_dump(mode="json", exclude_none=True) for request in rollout_requests]
         response = self.client.post_with_retry("/api/rollouts", json=payload)
@@ -469,6 +507,8 @@ class AglRolloutManagerBase:
 
     def _build_completed_rollout(self, enqueued_rollout: EnqueuedRollout, rollout: Rollout) -> CompletedRollout:
         """Fetch triplets and reward for a terminal rollout."""
+        if rollout.metadata.model_dump().get("process_credit") is not None:
+            return self._build_process_completed_rollout(enqueued_rollout, rollout)
         raw_events, triplet_events = self._fetch_rollout_events(enqueued_rollout.rollout_id)
 
         triplets: list[Triplet] = []
@@ -538,6 +578,73 @@ class AglRolloutManagerBase:
             error_message=rollout.status.error_message,
         )
 
+    def _build_process_completed_rollout(self, enqueued: EnqueuedRollout, rollout: Rollout) -> CompletedRollout:
+        """Wait for an explicit selected-attempt seal; never substitute a fallback reward."""
+        from agentlightning.server.routes.events import _trim_model_request
+
+        process = getattr(self, "_process_credit_config", None)
+        if process is None or not rollout.status.last_attempt_id or rollout.status.state not in TERMINAL_STATES:
+            raise IncompletePolicyTraceError("process collection requires enabled config and terminal explicit attempt")
+        path = f"/api/rollouts/{rollout.rollout_id}/attempt/{rollout.status.last_attempt_id}/credit"
+        deadline = time.monotonic() + process.finalization_timeout_seconds
+        while True:
+            response = self.client.get(path)
+            if response.status_code == 200:
+                snapshot = CreditSnapshot.model_validate(response.json())
+                break
+            if response.status_code != 409:
+                response.raise_for_status()
+            if time.monotonic() >= deadline:
+                raise CreditFinalizationTimeout(
+                    f"unsealed process rollout {rollout.rollout_id}/{rollout.status.last_attempt_id}"
+                )
+            time.sleep(min(self._poll_interval_seconds, max(0, deadline - time.monotonic())))
+        if snapshot.policy_version != self._step or snapshot.group_id != enqueued.data_id:
+            raise IncompletePolicyTraceError("sealed policy/task identity differs from predeclared collection")
+        artifact = make_credit_artifact(snapshot, process)
+        actions, _ = validate_snapshot(snapshot)
+        triplets = []
+        for index, event in enumerate(actions):
+            data = _trim_model_request(event.data)
+            images = _extract_image_urls_from_messages(event.data.get("request", {}).get("messages", []))
+            triplets.append(
+                Triplet(
+                    prompt={"token_ids": data["prompt_token_ids"]},
+                    response={"token_ids": data["response_token_ids"], "log_probs": data["response_log_probs"]},
+                    reward=artifact.resolved.rewards[index],
+                    image_urls=images or None,
+                    metadata={
+                        "server": data["server"],
+                        "process_credit": {
+                            "action_event_id": event.envelope.event_id,
+                            "action_index": index,
+                            "request_action_index": event.envelope.action_index,
+                            "snapshot_hash": snapshot.snapshot_hash,
+                            "finish_reason": event.data.get("finish_reason"),
+                        },
+                    },
+                )
+            )
+        raw_events, triplet_events = self._fetch_rollout_events(rollout.rollout_id)
+        return CompletedRollout(
+            rollout_id=enqueued.rollout_id,
+            data_id=enqueued.data_id,
+            step=enqueued.step,
+            sample_idx_in_step=enqueued.sample_idx_in_step,
+            enqueue_time=enqueued.enqueue_time,
+            input=enqueued.input,
+            running_at=enqueued.running_at,
+            finished_at=enqueued.finished_at or rollout.status.updated_at,
+            final_reward=artifact.resolved.terminal_outcome,
+            triplets=triplets,
+            process_credit=artifact,
+            metadata=rollout.metadata.model_dump(),
+            events=[event.model_dump() for event in raw_events],
+            triplet_events=[event.model_dump() for event in triplet_events],
+            rollout_state=rollout.status.state,
+            error_message=rollout.status.error_message,
+        )
+
 
 class AglRolloutManager(AglRolloutManagerBase):
     def enqueue_and_wait_until_completed(
@@ -557,7 +664,8 @@ class AglRolloutManager(AglRolloutManagerBase):
         while len(completed_rollouts) < len(enqueued_rollouts):
             # Delete prior completions before polling to bound server-side state.
             for completed_rollout in completed_rollouts[num_deleted:]:
-                self._delete_rollout(completed_rollout.rollout_id)
+                if getattr(self, "_process_credit_config", None) is None or not is_train:
+                    self._delete_rollout(completed_rollout.rollout_id)
             num_deleted = len(completed_rollouts)
 
             for enqueued_rollout in list(pending_rollouts):
@@ -588,7 +696,8 @@ class AglRolloutManager(AglRolloutManagerBase):
 
         # Delete whatever completed in the final round.
         for completed_rollout in completed_rollouts[num_deleted:]:
-            self._delete_rollout(completed_rollout.rollout_id)
+            if getattr(self, "_process_credit_config", None) is None or not is_train:
+                self._delete_rollout(completed_rollout.rollout_id)
 
         return completed_rollouts
 
