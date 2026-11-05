@@ -105,6 +105,7 @@ nav:
     - API Gateway Configuration: 25-api-gateway-configuration.md
     - Controller Configuration: 30-controller-configuration.md
     - Asynchronous Training: 35-asynchronous-training.md
+    - Sealed Process Credit: 36-process-credit.md
   - Examples:
     - Calc-X: 50-example-calc-x.md
     - GSM8K: 55-example-gsm8k.md
