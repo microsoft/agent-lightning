@@ -116,3 +116,7 @@ The SWE agent limits these reward-hacking paths in two ways:
 - **Network isolation:** we strongly recommend adding a Kubernetes network policy that denies all outbound traffic from agent pods except connections to the AGL Gateway. Without this restriction, an agent may retrieve upstream source code or other external information and obtain reward without solving the task as intended.
 
 The final reward is computed by running the task-specific `FAIL_TO_PASS` and `PASS_TO_PASS` tests inside the isolated repository environment. These controls are part of the training setup: weakening them can allow the agent to recover reference code and corrupt the reward signal.
+
+The evaluator matches pytest reports against the complete test IDs in `FAIL_TO_PASS` and
+`PASS_TO_PASS`, including whitespace and punctuation in parametrized IDs. A required test
+that is missing from the report does not count as passing.

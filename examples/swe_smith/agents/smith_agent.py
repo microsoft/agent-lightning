@@ -28,9 +28,7 @@ CHECKOUT_JITTER_SECONDS = 30.0
 # harness still reaches it via --git-dir/--work-tree. See also _forbidden_action.
 _HIDDEN_GIT_DIR = os.environ.get("SMITH_HIDDEN_GIT_DIR", "/opt/agl_tmp")
 
-_STATUS_RE = re.compile(
-    r"(?:^|\s)(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\s+(\S+)|(\S+)\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)(?:\s|$)"
-)
+_TEST_STATUS_PATTERN = r"(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)"
 # pytest --color=yes (or a repo that forces color) wraps PASSED in ANSI codes.
 # Without stripping them, parse_test_statuses never sees a bare "PASSED" token
 # and a fully passing suite is scored 0/N.
@@ -573,10 +571,20 @@ def capture_patch() -> str:
         return ""
 
 
-def parse_test_statuses(test_output: str) -> dict[str, str]:
+def parse_test_statuses(test_output: str, test_nodes: list[str]) -> dict[str, str]:
+    """Match pytest reports against the complete test IDs from evaluation metadata."""
+    if not test_nodes:
+        return {}
+    # Parameter IDs can contain spaces, brackets, and " - ". Match known IDs
+    # instead of guessing where an ID ends and pytest's failure reason begins.
+    nodes = "|".join(re.escape(node) for node in sorted(set(test_nodes), key=len, reverse=True))
+    status_re = re.compile(
+        rf"(?:^|\s){_TEST_STATUS_PATTERN}\s+({nodes})(?=\s+-\s|\s*$)"
+        rf"|(?:^|\s)({nodes})\s+{_TEST_STATUS_PATTERN}(?:\s|$)"
+    )
     statuses: dict[str, str] = {}
     for line in _ANSI_ESCAPE_RE.sub("", test_output).splitlines():
-        m = _STATUS_RE.search(line)
+        m = status_re.search(line)
         if not m:
             continue
         if m.group(1):
@@ -612,7 +620,7 @@ def evaluate(eval_meta: dict[str, Any], timeout: int, f2p_only: bool = True) -> 
     )
     # rc 124 == subprocess.TimeoutExpired (see _run); pytest itself never exits 124.
     timed_out = rc == 124 or "[timed out after" in output
-    statuses = parse_test_statuses(output)
+    statuses = parse_test_statuses(output, nodes)
     f2p_pass = [t for t in fail_to_pass if statuses.get(t) in ("PASSED", "XFAIL")]
     # only count P2P reporting PASSED/XFAIL — a missing status means it never ran.
     p2p_ok = [t for t in pass_to_pass if statuses.get(t) in ("PASSED", "XFAIL")]
