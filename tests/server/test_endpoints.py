@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.server.conftest import MODEL_NAME
+from tests.server.conftest import AGL_KEY, MODEL_NAME
 
 
 def _rollout(client: TestClient, headers: dict[str, str]) -> dict:
@@ -38,6 +38,62 @@ def test_upstream_timeout_is_applied(server_config, timeout):
 
 def test_auth_required(client: TestClient):
     assert client.post("/api/rollouts", json=[]).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        f"Bearer {AGL_KEY}",
+        f"bearer {AGL_KEY}",
+        f"BEARER {AGL_KEY}",
+        f"BeArEr {AGL_KEY}",
+        f"Bearer  {AGL_KEY}",
+    ],
+)
+def test_bearer_auth_accepts_case_insensitive_scheme(client: TestClient, authorization: str):
+    # Hit the real auth dependency through a store route (issue #671).
+    response = client.get("/api/rollouts", params={"state_in": "queuing"}, headers={"Authorization": authorization})
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_x_api_key_auth_still_accepted(client: TestClient):
+    response = client.get(
+        "/api/rollouts",
+        params={"state_in": "queuing"},
+        headers={"x-api-key": AGL_KEY},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Authorization": f"Bearer wrong-{AGL_KEY}"},
+        {"Authorization": f"bearer wrong-{AGL_KEY}"},
+        {"Authorization": f"Basic {AGL_KEY}"},
+        {"Authorization": f"Token {AGL_KEY}"},
+        {"Authorization": "Bearer"},
+        {"Authorization": AGL_KEY},
+        {"x-api-key": f"wrong-{AGL_KEY}"},
+    ],
+    ids=[
+        "missing",
+        "wrong-key-canonical",
+        "wrong-key-lower",
+        "basic-scheme",
+        "token-scheme",
+        "scheme-only",
+        "bare-key",
+        "wrong-x-api-key",
+    ],
+)
+def test_auth_rejects_invalid_credentials(client: TestClient, headers: dict[str, str]):
+    response = client.get("/api/rollouts", params={"state_in": "queuing"}, headers=headers)
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid or missing API key"}
 
 
 def test_rollout_endpoints(client: TestClient, auth_headers: dict[str, str]):
