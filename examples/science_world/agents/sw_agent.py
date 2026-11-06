@@ -219,6 +219,8 @@ class SWAgent:
                 messages=messages,
                 max_tokens=max_tokens,
                 stop=["###\n", "###\n\n"],
+                # The strict action parser needs the closing ### in the stop string.
+                extra_body={"include_stop_str_in_output": True},
             )
             return completion.choices[0].message.content or ""
         except Exception as e:
