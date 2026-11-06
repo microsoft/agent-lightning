@@ -133,10 +133,23 @@ async def list_rollouts(
     return matches[:limit]
 
 
+def _present_id(value: object) -> bool:
+    """True when value is a usable dataset/instance id (keeps numeric zero)."""
+    return value is not None and value != ""
+
+
 def _data_id_of(rollout: Rollout) -> str:
+    """Project data_id (or instance_id fallback) for the terminal listing.
+
+    Explicit numeric ``0`` must survive; only missing / ``None`` / ``""`` fall back.
+    """
     inp = rollout.input
     if isinstance(inp, dict):
-        return str(inp.get("data_id") or inp.get("instance_id") or "")
+        for key in ("data_id", "instance_id"):
+            value = inp.get(key)
+            if _present_id(value):
+                return str(value)
+        return ""
     return ""
 
 

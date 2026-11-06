@@ -530,3 +530,56 @@ def test_terminal_rollouts_cursor_pagination(client: TestClient, auth_headers: d
     page3 = client.get("/api/rollouts/terminal", params={"after": 3}, headers=auth_headers)
     assert page3.json() == {"items": [], "next_after": 3, "total_terminal": 3}
     assert pending not in {it["rollout_id"] for it in body1["items"] + body2["items"]}
+
+
+def _terminal_with_input(client: TestClient, headers: dict[str, str], rollout_input: dict) -> str:
+    """Create a rollout with the given input and drive it to succeeded."""
+    created = client.post(
+        "/api/rollouts",
+        json=[{"input": rollout_input}],
+        headers=headers,
+    )
+    assert created.status_code == 201
+    rid = created.json()[0]["rollout_id"]
+    assert (
+        client.patch(f"/api/rollouts/{rid}", json={"status": {"state": "running"}}, headers=headers).status_code == 200
+    )
+    assert (
+        client.patch(f"/api/rollouts/{rid}", json={"status": {"state": "succeeded"}}, headers=headers).status_code
+        == 200
+    )
+    return rid
+
+
+@pytest.mark.parametrize(
+    ("rollout_input", "expected_data_id"),
+    [
+        ({"data_id": 0, "instance_id": "fallback"}, "0"),
+        ({"instance_id": 0}, "0"),
+        ({"data_id": 0, "instance_id": 0}, "0"),
+        ({"data_id": 7, "instance_id": "fallback"}, "7"),
+        ({"data_id": "item-1"}, "item-1"),
+        ({"data_id": "", "instance_id": "fallback"}, "fallback"),
+        ({"data_id": None, "instance_id": "fallback"}, "fallback"),
+        ({"instance_id": "only-instance"}, "only-instance"),
+        ({"prompt": "no-ids"}, ""),
+    ],
+)
+def test_terminal_rollouts_preserves_numeric_zero_data_id(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    rollout_input: dict,
+    expected_data_id: str,
+):
+    """GET /api/rollouts/terminal must keep explicit 0 and only fall back for missing/None/""."""
+    rid = _terminal_with_input(client, auth_headers, rollout_input)
+    page = client.get("/api/rollouts/terminal", headers=auth_headers)
+    assert page.status_code == 200
+    body = page.json()
+    assert body["total_terminal"] == 1
+    assert body["items"][0] == {
+        "rollout_id": rid,
+        "state": "succeeded",
+        "data_id": expected_data_id,
+        "is_train": True,
+    }
