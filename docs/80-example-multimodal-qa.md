@@ -18,6 +18,8 @@ The dataset is generated with PIL at startup — there is nothing to download:
 
 For images already stored on the trainer host, construct each `image_url` with `Path("images/frame 1.png").resolve().as_uri()` (from `pathlib`). Local file URIs preserve spaces, Unicode, and literal percent characters in filenames.
 
+RGBA images are composited onto a white background before training, matching vLLM's default image decoder. If your rollout server uses a custom `rgba_background_color`, pre-composite the images to RGB with that background before sending them so rollout and training use identical pixels.
+
 Any mrope VLM supported by verl works; pass `--model` to change the default model.
 
 ## Training
