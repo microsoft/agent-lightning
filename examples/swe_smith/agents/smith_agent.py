@@ -109,6 +109,59 @@ your_command_here
 
 Failure to follow these rules will cause your response to be rejected."""
 
+TOOL_SYSTEM_PROMPT = """\
+You are a helpful assistant that can interact multiple times with a computer
+shell to solve programming tasks. Call execute_bash exactly once per turn with
+one command (or commands connected with && or ||). Wait for the tool result
+before choosing your next command."""
+
+BASH_RESPONSE_PREAMBLE = """\
+For each response:
+1. Include a THOUGHT section explaining your reasoning and goal.
+2. Provide exactly ONE bash command to execute."""
+
+BASH_RESPONSE_INSTRUCTIONS = """\
+**CRITICAL REQUIREMENTS:**
+- Your response MUST contain EXACTLY ONE bash code block.
+- That block MUST contain EXACTLY ONE command (or several joined with && or ||).
+- If you include zero or multiple bash blocks, YOUR RESPONSE WILL FAIL.
+- Do NOT put several independent commands in separate blocks in one response.
+- Directory and environment changes are NOT persistent: every action runs in a new
+  subshell. Prefix an action with `MY_VAR=value cd /testbed && ...`, or read/write
+  state from files, if you need persistence.
+
+Example of a CORRECT response:
+<example_response>
+THOUGHT: I need to understand the repository layout first, so let me list the files.
+
+```bash
+ls -la
+```
+</example_response>"""
+
+TOOL_RESPONSE_INSTRUCTIONS = """\
+For each response, call execute_bash exactly once. Put the shell command in the
+command argument, without Markdown fences. For example, call execute_bash with
+{"command": "ls -la"}. Do not call multiple tools in one response.
+
+Directory and environment changes are NOT persistent: every action runs in a new
+subshell. Prefix an action with `MY_VAR=value cd /testbed && ...`, or read/write
+state from files, if you need persistence."""
+
+BASH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "execute_bash",
+        "description": "Run one shell command in a fresh subshell in /testbed.",
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string", "description": "The shell command to execute."}},
+            "required": ["command"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 INSTANCE_PROMPT = """\
 <pr_description>
 Consider the following PR description:
@@ -128,9 +181,7 @@ consistent with the codebase.
 <IMPORTANT>This is an interactive process: you think and issue ONE command, see \
 its result, then think and issue your next command.</IMPORTANT>
 
-For each response:
-1. Include a THOUGHT section explaining your reasoning and goal.
-2. Provide exactly ONE bash command to execute.
+{response_preamble}
 
 ## Important Boundaries
 - MODIFY: regular source files in /testbed (the working directory for every command).
@@ -150,23 +201,7 @@ You operate in a loop:
 3. You see the result.
 4. You write your next command.
 
-**CRITICAL REQUIREMENTS:**
-- Your response MUST contain EXACTLY ONE bash code block.
-- That block MUST contain EXACTLY ONE command (or several joined with && or ||).
-- If you include zero or multiple bash blocks, YOUR RESPONSE WILL FAIL.
-- Do NOT put several independent commands in separate blocks in one response.
-- Directory and environment changes are NOT persistent: every action runs in a new
-  subshell. Prefix an action with `MY_VAR=value cd /testbed && ...`, or read/write
-  state from files, if you need persistence.
-
-Example of a CORRECT response:
-<example_response>
-THOUGHT: I need to understand the repository layout first, so let me list the files.
-
-```bash
-ls -la
-```
-</example_response>
+{response_instructions}
 
 ## Environment Details
 - You have a full Linux shell environment.
@@ -185,9 +220,7 @@ ls -la
 ## Submission
 When your fix is complete, submit with this EXACT command on its own. The system
 captures your changes to /testbed automatically -- you do NOT need git:
-```bash
-echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-```
+{submission_instructions}
 
 <CRITICAL>
 - git is disabled; do not use it for any purpose.
@@ -216,15 +249,61 @@ class FormatError(Exception):
         self.n_actions = n_actions
 
 
-def parse_action(content: str) -> str:
+def parse_action(content: str, *, enable_thinking: bool = False) -> str:
     """Return the single bash action from a model reply.
 
     Raises ``FormatError`` unless exactly one fenced bash block is present.
     """
+    # The model may start inside a prefilled <think> tag. Never execute a
+    # candidate command from its reasoning, including an unfinished think block.
+    if enable_thinking or content.lstrip().startswith("<think>"):
+        content = content.split("</think>", 1)[1] if "</think>" in content else ""
     actions = _ACTION_RE.findall(content)
     if len(actions) == 1:
         return actions[0].strip()
     raise FormatError(len(actions))
+
+
+class UnrenderableToolCall(ValueError):
+    """Tool arguments cannot be replayed through the server's chat template."""
+
+
+def parse_tool_action(message: dict[str, Any], finish_reason: str) -> str:
+    """Validate the one-command contract before executing a native tool call."""
+    calls = message.get("tool_calls") or []
+    arguments: dict[str, Any] = {}
+    # vLLM decodes historical arguments as JSON, and Qwen's template iterates
+    # their keys. Check every call, even when rejecting parallel/unknown tools,
+    # so error recovery cannot submit history that the server cannot render.
+    for call in calls:
+        function = call.get("function") or {}
+        try:
+            arguments = json.loads(function.get("arguments", ""))
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise UnrenderableToolCall("Tool arguments are not valid JSON.") from exc
+        if not isinstance(arguments, dict):
+            raise UnrenderableToolCall("Tool arguments must be a JSON object.")
+    if finish_reason == "length":
+        raise ValueError("Your response reached the output token limit. Send one complete execute_bash call.")
+    if len(calls) != 1:
+        raise ValueError(f"Expected exactly one execute_bash call, found {len(calls)}.")
+    call = calls[0]
+    function = call.get("function") or {}
+    if call.get("type") != "function" or function.get("name") != "execute_bash":
+        raise ValueError("Only the execute_bash tool is supported.")
+    if set(arguments) != {"command"} or not isinstance(arguments["command"], str) or not arguments["command"].strip():
+        raise ValueError("execute_bash requires exactly one non-empty string argument named command.")
+    return arguments["command"].strip()
+
+
+def _append_observation(messages: list[dict[str, Any]], message: dict[str, Any], content: str) -> None:
+    """Answer every native call, including rejected parallel or malformed calls."""
+    calls = message.get("tool_calls") or []
+    if calls:
+        for call in calls:
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": content})
+    else:
+        messages.append({"role": "user", "content": content})
 
 
 def is_submission(output: str) -> bool:
@@ -301,7 +380,7 @@ def _forbidden_action(action: str) -> str | None:
 
 def format_error_message(n_actions: int, finish_reason: str) -> str:
     """Nudge the model back to the one-bash-block format after a parse failure."""
-    if finish_reason in ("length", "tool_calls"):
+    if finish_reason == "length":
         return (
             f"Your previous response reached the output token limit "
             f"(finish_reason={finish_reason}) before you produced a complete action, "
@@ -727,12 +806,16 @@ def run_agent_loop(
     max_format_errors: int = 3,
     gateway_wait_s: float = 600.0,
     gateway_poll_s: float = 5.0,
+    use_tools: bool = False,
+    enable_thinking: bool = False,
 ) -> tuple[bool, int, int]:
     """Drive the agent until it submits, errors out, or hits ``max_turns``.
 
     Mirrors mini-swe-agent's control flow: each turn we query the model, parse a
-    single bash action from its free-text reply, run it in a fresh /testbed
-    subshell, and append a templated observation.
+    single bash action (a fenced block by default, or a native execute_bash call
+    with ``use_tools``), run it in a fresh /testbed subshell, and append a
+    templated observation. ``enable_thinking`` opts into the model's reasoning
+    mode; reasoning is retained in history but never parsed as a shell action.
 
     Returns ``(submitted, turns_used, max_prompt_tokens)`` where ``submitted`` is
     ``True`` iff the model emitted the submit marker, ``turns_used`` is the number
@@ -743,8 +826,24 @@ def run_agent_loop(
     penalty and ``max_prompt_tokens`` the prompt-length penalty in ``main``.
     """
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": INSTANCE_PROMPT.format(problem_statement=problem)},
+        {"role": "system", "content": TOOL_SYSTEM_PROMPT if use_tools else SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": INSTANCE_PROMPT.format(
+                problem_statement=problem,
+                response_preamble=(
+                    "For each response, call execute_bash exactly once with one command."
+                    if use_tools
+                    else BASH_RESPONSE_PREAMBLE
+                ),
+                response_instructions=TOOL_RESPONSE_INSTRUCTIONS if use_tools else BASH_RESPONSE_INSTRUCTIONS,
+                submission_instructions=(
+                    f'Call execute_bash with {{"command": "echo {SUBMIT_MARKER}"}}.'
+                    if use_tools
+                    else f"```bash\necho {SUBMIT_MARKER}\n```"
+                ),
+            ),
+        },
     ]
     n_format_errors = 0
     turns_used = 0
@@ -756,7 +855,9 @@ def run_agent_loop(
         paused_for = 0.0
         while True:
             try:
-                content, finish_reason, prompt_tokens = _query(client, messages, max_tokens)
+                message, finish_reason, prompt_tokens = _query(
+                    client, messages, max_tokens, use_tools=use_tools, enable_thinking=enable_thinking
+                )
                 break
             except _ContextOverflow as exc:
                 # Prompt no longer fits: end without appending a turn so the
@@ -766,7 +867,7 @@ def run_agent_loop(
             except _GatewayPaused as exc:
                 if paused_for >= gateway_wait_s:
                     log.warning("turn=%d gateway paused >%.0fs, giving up: %s", turn, gateway_wait_s, exc)
-                    content, finish_reason, prompt_tokens = "", "error", 0
+                    message, finish_reason, prompt_tokens = {}, "error", 0
                     break
                 log.info(
                     "turn=%d gateway paused, waiting %.0fs (waited %.0fs): %s", turn, gateway_poll_s, paused_for, exc
@@ -787,24 +888,36 @@ def run_agent_loop(
         if prompt_tokens > max_prompt_tokens:
             max_prompt_tokens = prompt_tokens
 
-        messages.append({"role": "assistant", "content": content})
+        messages.append(message)
 
         try:
-            action = parse_action(content)
-        except FormatError as exc:
+            if use_tools:
+                action = parse_tool_action(message, finish_reason)
+            else:
+                action = parse_action(
+                    message.get("content") or "",
+                    enable_thinking=enable_thinking and "reasoning_content" not in message,
+                )
+        except UnrenderableToolCall as exc:
+            # Do not rewrite the model's generated arguments or retry a history
+            # that vLLM cannot render; end with the recorded completion intact.
+            log.warning("turn=%d cannot replay tool call, ending episode: %s", turn, exc)
+            return False, turns_used, max_prompt_tokens
+        except (FormatError, ValueError) as exc:
             n_format_errors += 1
             if 0 < max_format_errors <= n_format_errors:
                 log.warning("turn=%d %d consecutive format errors, ending episode", turn, n_format_errors)
                 return False, turns_used, max_prompt_tokens
             log.info("turn=%d format error (%d/%d)", turn, n_format_errors, max_format_errors)
-            messages.append({"role": "user", "content": format_error_message(exc.n_actions, finish_reason)})
+            error = format_error_message(exc.n_actions, finish_reason) if isinstance(exc, FormatError) else str(exc)
+            _append_observation(messages, message, error)
             continue
         n_format_errors = 0
 
         reason = _forbidden_action(action)
         if reason is not None:
             log.info("turn=%d blocked disallowed action: %r", turn, action[:200])
-            messages.append({"role": "user", "content": render_observation(1, reason, obs_cap)})
+            _append_observation(messages, message, render_observation(1, reason, obs_cap))
             continue
 
         output, rc = _run(action, cmd_timeout)
@@ -812,36 +925,56 @@ def run_agent_loop(
         if is_submission(output):
             log.info("turn=%d submit marker detected", turn)
             return True, turns_used, max_prompt_tokens
-        messages.append({"role": "user", "content": render_observation(rc, output, obs_cap)})
+        _append_observation(messages, message, render_observation(rc, output, obs_cap))
     return False, turns_used, max_prompt_tokens
 
 
-def _query(client: Any, messages: list[dict[str, Any]], max_tokens: int) -> tuple[str, str, int]:
-    """Return ``(content, finish_reason, prompt_tokens)`` for one model call.
+def _query(
+    client: Any,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    *,
+    use_tools: bool = False,
+    enable_thinking: bool = False,
+) -> tuple[dict[str, Any], str, int]:
+    """Return ``(assistant_message, finish_reason, prompt_tokens)`` for one model call.
 
     ``prompt_tokens`` is the server-reported ``usage.prompt_tokens`` (0 if the
     gateway omits usage), used for the prompt-length penalty — no local tokenizer.
     Raises ``_ContextOverflow`` when the prompt exceeds the model's context.
-    Any other failure yields ``("", "error", 0)`` so the caller can burn the turn.
+    Any other failure yields ``({}, "error", 0)`` so the caller can burn the turn.
     """
     try:
+        tool_options = {"tools": [BASH_TOOL], "tool_choice": "auto", "parallel_tool_calls": False} if use_tools else {}
         completion = client.chat.completions.create(
             model="auto",
             messages=messages,
             max_tokens=max_tokens,
             temperature=1.0,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            extra_body={"chat_template_kwargs": {"enable_thinking": enable_thinking}},
+            **tool_options,
         )
         choice = completion.choices[0]
         prompt_tokens = getattr(getattr(completion, "usage", None), "prompt_tokens", 0) or 0
-        return (choice.message.content or ""), (choice.finish_reason or "stop"), int(prompt_tokens)
+        message: dict[str, Any] = {"role": "assistant", "content": choice.message.content or ""}
+        if choice.message.tool_calls:
+            message["tool_calls"] = [call.model_dump(exclude_none=True) for call in choice.message.tool_calls]
+        # Older vLLM accepts reasoning on requests; Qwen's native template
+        # consumes reasoning_content. Keep both aliases for the round trip.
+        reasoning = getattr(choice.message, "reasoning", None)
+        if reasoning is None:
+            reasoning = getattr(choice.message, "reasoning_content", None)
+        if reasoning is not None:
+            message["reasoning"] = reasoning
+            message["reasoning_content"] = reasoning
+        return message, (choice.finish_reason or "stop"), int(prompt_tokens)
     except Exception as exc:
         if _is_context_overflow(exc):
             raise _ContextOverflow(str(exc)) from exc
         if _is_gateway_paused(exc):
             raise _GatewayPaused(str(exc)) from exc
         log.error("LLM call failed: %s", exc)
-        return "", "error", 0
+        return {}, "error", 0
 
 
 def main() -> int:
@@ -868,6 +1001,8 @@ def main() -> int:
     max_tokens = int(os.environ.get("AGL_MAX_TOKENS", "16384"))
     max_format_errors = int(os.environ.get("SMITH_MAX_FORMAT_ERRORS", "3"))
     gateway_wait_s = float(os.environ.get("SMITH_GATEWAY_WAIT_S", "600"))
+    use_tools = os.environ.get("SMITH_USE_TOOLS", "0").lower() in ("1", "true", "yes")
+    enable_thinking = os.environ.get("SMITH_ENABLE_THINKING", "0").lower() in ("1", "true", "yes")
     f2p_only = os.environ.get("SMITH_F2P_ONLY", "1").lower() not in ("0", "false", "no")
 
     from openai import OpenAI
@@ -886,6 +1021,8 @@ def main() -> int:
         max_tokens=max_tokens,
         max_format_errors=max_format_errors,
         gateway_wait_s=gateway_wait_s,
+        use_tools=use_tools,
+        enable_thinking=enable_thinking,
     )
 
     patch = capture_patch()

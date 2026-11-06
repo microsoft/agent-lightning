@@ -66,5 +66,9 @@ examples/swe_smith/run_moe.sh trainer \
     actor_rollout_ref.rollout.n=4
 ```
 
+To enable native Qwen3.5 tools and thinking, follow the [Coding Agent configuration
+instructions](75-example-coding-agent.md#native-qwen35-tool-calling-and-thinking), using
+`run_moe.sh trainer` with the same vLLM overrides.
+
 The default topology is PP=1, TP=1, EP=4, and ETP=1 with parameter, optimizer, and gradient offload.
 Treat it as a four-B200 starting point and tune batch sizes for the available memory.
