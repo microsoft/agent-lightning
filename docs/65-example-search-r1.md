@@ -15,6 +15,11 @@ The example supports two API styles:
 1. **Chat Completions API:** the standard text-in/text-out API used by default.
 2. **Token-in/token-out Completions API:** the agent sends prompt token IDs and receives generated token IDs while preserving the multi-turn token sequence.
 
+Both modes compute exact-match reward from the answer action selected by the agent.
+Retrieved passages and later, unused answer tags do not count as the agent's answer.
+The extra model response after the turn limit follows the same rule: its first action
+must be an answer to receive exact-match reward.
+
 ## Data Preparation
 
 Prepare the Wikipedia corpus, E5 FAISS index, training data, and retriever environment from the repository root:
