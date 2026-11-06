@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import logging
@@ -11,6 +12,7 @@ import os
 import random
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -340,17 +342,27 @@ def _agent_env() -> dict[str, str]:
 
 def _run(command: str, timeout: int) -> tuple[str, int]:
     try:
-        proc = subprocess.run(
+        with subprocess.Popen(
             ["bash", "-c", command],
             cwd=TESTBED,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             env=_agent_env(),
-        )
-        return proc.stdout + proc.stderr, proc.returncode
-    except subprocess.TimeoutExpired:
-        return f"[timed out after {timeout}s]", 124
+            start_new_session=True,
+        ) as proc:
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # Kill shell descendants before another action or evaluation
+                # starts, including workers still holding the output pipes.
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                # Timeout observations discard partial output. Reap the shell
+                # without decoding it; the context manager closes the pipes.
+                proc.wait()
+                return f"[timed out after {timeout}s]", 124
+            return stdout + stderr, proc.returncode
     except Exception as exc:
         return f"[failed to start: {exc}]", 1
 
