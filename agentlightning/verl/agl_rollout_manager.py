@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json  # [multimodal-patch]
 import time
 import traceback
 import uuid
@@ -18,6 +17,8 @@ import numpy as np
 from httpx_retries import Retry, RetryTransport
 from pydantic import BaseModel, Field
 
+from agentlightning._prompt_identity import PromptKey, prompt_key
+from agentlightning._prompt_identity import extract_image_urls_from_messages as _extract_image_urls_from_messages
 from agentlightning.client import AgentLightningSyncClient
 from agentlightning.schemas import (
     TERMINAL_STATES,
@@ -141,33 +142,8 @@ def _without_routed_experts(event: Event) -> Event:
     return event.model_copy(update={"data": data})
 
 
-# [multimodal-patch] Extract image URLs from OpenAI-style chat messages, in order of
-# appearance (ported from agent-lightning v0.3.0 TripletAdapter.extract_prompt_image_urls).
-def _extract_image_urls_from_messages(messages: Any) -> list[str]:
-    if not isinstance(messages, list):
-        return []
-    image_urls: list[str] = []
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        content = message.get("content")
-        if isinstance(content, str):
-            try:
-                content = json.loads(content)  # Some clients serialize content parts as JSON text.
-            except json.JSONDecodeError:
-                continue
-        if isinstance(content, list):
-            for content_part in content:
-                if not isinstance(content_part, dict) or content_part.get("type") != "image_url":
-                    continue
-                image_url = content_part.get("image_url")
-                if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
-                    image_urls.append(image_url["url"])
-    return image_urls
-
-
 # [multimodal-patch] Recover per-triplet image URLs from raw model_request events.
-# Replicates the server triplet view (dedupe by prompt_token_ids, keep last) and the
+# Replicates the server triplet view (dedupe by prompt token ids and images, keep last) and the
 # manager-side filtering below, so the result aligns one-to-one with the kept triplets.
 # Returns None when the rollout is text-only or when alignment cannot be guaranteed
 # (caller then leaves image_urls unset).
@@ -221,13 +197,14 @@ def _aligned_image_urls(raw_events: list[Event], n_triplets: int) -> list[list[s
 
     # Mirror the server-side dedupe: keep the last request for each valid prompt key.
     # Missing or malformed ids cannot establish that two requests are duplicates.
-    last_index_by_prompt: dict[tuple[int, ...], int] = {}
+    last_index_by_prompt: dict[PromptKey, int] = {}
     kept_indexes: set[int] = set()
-    for index, (_, prompt_token_ids, _, _) in enumerate(requests):
-        if not prompt_token_ids or any(type(token_id) is not int for token_id in prompt_token_ids):
+    for index, (_, prompt_token_ids, _, image_urls) in enumerate(requests):
+        key = prompt_key(prompt_token_ids, image_urls)
+        if key is None:
             kept_indexes.add(index)
             continue
-        last_index_by_prompt[tuple(prompt_token_ids)] = index
+        last_index_by_prompt[key] = index
     kept_indexes.update(last_index_by_prompt.values())
 
     aligned: list[list[str] | None] = []

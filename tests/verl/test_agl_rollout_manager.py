@@ -198,6 +198,7 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
         _event("reward", {"value": 1.0}),
     ]
     triplet_events = [
+        _triplet_model_request_event([1, 2], [3, 4]),
         _triplet_model_request_event([1, 2], [30, 40]),
         _triplet_model_request_event([7, 8], [9]),
         _triplet_model_request_event([10], [11]),
@@ -217,8 +218,8 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
     )
 
     assert completed.triplets is not None
-    assert len(completed.triplets) == 3
-    assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG2], [_IMG, _IMG2], None]
+    assert len(completed.triplets) == 4
+    assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG], [_IMG2], [_IMG, _IMG2], None]
 
 
 @pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True], [1.0], "bad-ids", {"token": 1}])
@@ -267,3 +268,97 @@ def test_aligned_image_urls_text_only_rollout_returns_none_without_warning(
     # Text-only rollouts keep the exact original behavior: no alignment, no warning.
     assert _aligned_image_urls(raw_events, 2) is None
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("routed_experts", [False, True])
+def test_distinct_images_survive_server_to_training_batch(routed_experts: bool) -> None:
+    import base64
+    import io
+    from typing import cast
+
+    import numpy as np
+    import torch
+    from fastapi.testclient import TestClient
+    from PIL import Image
+
+    from agentlightning.client import AgentLightningSyncClient
+    from agentlightning.server.app import create_app
+    from agentlightning.verl.rollout_adapter import RolloutAdapter
+
+    class ImageProcessor:
+        def __call__(self, text: object, images: list, return_tensors: str) -> dict:
+            return {"pixel_values": torch.tensor([image.getpixel((0, 0)) for image in images])}
+
+    urls = []
+    for color in ("red", "blue"):
+        buffer = io.BytesIO()
+        Image.new("RGB", (2, 2), color).save(buffer, format="PNG")
+        urls.append("data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode())
+
+    app = create_app(
+        {
+            "key": "test",
+            "default_proxy": {"model_name": "test-model", "train": {"temperature": 1}, "val": {"temperature": 0}},
+        }
+    )
+    with TestClient(app, headers={"Authorization": "Bearer test"}) as client:
+        rollout_id = client.post("/api/rollouts", json=[{"input": {}}]).json()[0]["rollout_id"]
+        try:
+            client.patch(
+                f"/api/rollouts/{rollout_id}", json={"status": {"state": "running", "last_attempt_id": "0"}}
+            ).raise_for_status()
+            for index, url in enumerate([urls[0], urls[0], urls[1]]):
+                event = _raw_model_request_event([url], [1, 2], [index + 3])
+                event.data["response"]["choices"][0]["logprobs"] = {"content": [{"logprob": -0.1}]}
+                if routed_experts:
+                    buffer = io.BytesIO()
+                    np.save(buffer, np.array([index * 10, index * 10 + 1], dtype=np.uint8).reshape(2, 1, 1))
+                    event.data["routed_experts"] = base64.b64encode(buffer.getvalue()).decode()
+                response = client.post(
+                    f"/api/rollouts/{rollout_id}/attempt/0/events",
+                    json={"event_type": "model_request", "data": event.data},
+                )
+                assert response.status_code == 200
+            client.post(
+                f"/api/rollouts/{rollout_id}/attempt/0/events",
+                json={"event_type": "reward", "data": {"value": 0.75}},
+            ).raise_for_status()
+            client.patch(
+                f"/api/rollouts/{rollout_id}", json={"status": {"state": "succeeded", "last_attempt_id": "0"}}
+            ).raise_for_status()
+            manager = object.__new__(AglRolloutManagerBase)
+            manager.client = cast(AgentLightningSyncClient, client)
+            completed = manager._build_completed_rollout(
+                EnqueuedRollout(data_id="sample", rollout_id=rollout_id, step=0, sample_idx_in_step=0, enqueue_time=0),
+                manager._get_rollout(rollout_id),
+            )
+            assert completed.triplets is not None
+            assert [triplet.image_urls for triplet in completed.triplets] == [[urls[0]], [urls[1]]]
+
+            adapter = RolloutAdapter(
+                max_prompt_length=4,
+                max_response_length=2,
+                device=torch.device("cpu"),
+                pad_token_id=0,
+                processor=ImageProcessor(),
+                require_routed_experts=routed_experts,
+            )
+            batch, _ = adapter.get_train_data_batch([completed])
+            assert batch.batch is not None
+            assert batch.batch["responses"].tolist() == [[4, 0], [5, 0]]
+            assert batch.batch["is_drop_mask"].tolist() == [False, False]
+            assert batch.batch["token_level_scores"].sum(-1).tolist() == [0.75, 0.75]
+            torch.testing.assert_close(batch.batch["rollout_log_probs"], torch.tensor([[-0.1, 0.0], [-0.1, 0.0]]))
+            assert [row["pixel_values"].tolist() for row in batch.non_tensor_batch["multi_modal_inputs"]] == [
+                [[255, 0, 0]],
+                [[0, 0, 255]],
+            ]
+            if routed_experts:
+                assert batch.batch["routed_experts"][:, :, 0, 0].tolist() == [
+                    [0, 0, 10, 11, 0, 0],
+                    [0, 0, 20, 21, 0, 0],
+                ]
+                raw_events = client.get(f"/api/rollouts/{rollout_id}/events").json()
+                assert ["routed_experts" in event["data"] for event in raw_events[:3]] == [False, True, True]
+        finally:
+            client.delete(f"/api/rollouts/{rollout_id}").raise_for_status()
