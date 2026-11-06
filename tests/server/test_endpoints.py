@@ -314,6 +314,47 @@ def test_triplet_events_keep_last_model_request_for_duplicate_prompt(client: Tes
     assert [event["data"]["response_token_ids"] for event in triplet_events[1:]] == [[20], [30]]
 
 
+@pytest.mark.parametrize("serialized_content", [False, True])
+def test_triplet_events_distinguish_image_prompts(
+    client: TestClient, auth_headers: dict[str, str], serialized_content: bool
+):
+    import json
+
+    rollout_id = _rollout(client, auth_headers)["rollout_id"]
+    image_a = "data:image/png;base64,YQ=="
+    image_b = "data:image/png;base64,Yg=="
+    images_by_request = [[image_a], [image_b], [image_a], [image_a, image_b], [image_b, image_a]]
+    for index, images in enumerate(images_by_request):
+        content = [{"type": "image_url", "image_url": {"url": url}} for url in images]
+        response = client.post(
+            f"/api/rollouts/{rollout_id}/attempt/0/events",
+            json={
+                "event_type": "model_request",
+                "data": {
+                    "request": {
+                        "messages": [
+                            {"role": "user", "content": json.dumps(content) if serialized_content else content}
+                        ]
+                    },
+                    "response": {"prompt_token_ids": [1, 2], "choices": [{"token_ids": [index]}]},
+                },
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+    response = client.get(f"/api/rollouts/{rollout_id}/events?format=triplet", headers=auth_headers)
+    assert response.status_code == 200
+    events = response.json()
+    assert [event["data"]["response_token_ids"] for event in events] == [[1], [2], [3], [4]]
+    # Image identity is needed only while deduplicating the raw events.
+    assert all(
+        set(event["data"]) == {"prompt_token_ids", "response_token_ids", "response_log_probs", "server"}
+        for event in events
+    )
+    assert "data:image" not in response.text
+
+
 @pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True], [1.0], "bad-ids", {"token": 1}])
 def test_triplet_events_do_not_dedupe_without_valid_prompt_tokens(
     client: TestClient,

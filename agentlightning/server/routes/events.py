@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 
+from agentlightning._prompt_identity import PromptKey, extract_image_urls_from_messages, prompt_key
 from agentlightning.schemas import DEFAULT_ATTEMPT_ID, Event, EventCreate
 from agentlightning.server.store import _events, _rollouts
 
@@ -28,10 +29,18 @@ def _drop_superseded_routed_experts(events: list[Event], event_type: str, data: 
 
     current = _trim_model_request(data)
     prompt_ids = current["prompt_token_ids"]
+    request = data.get("request")
+    messages = request.get("messages") if isinstance(request, dict) else None
+    image_urls = extract_image_urls_from_messages(messages)
     for index in range(len(events) - 1, -1, -1):
         previous = events[index]
         if previous.event_type != "model_request":
             continue
+        previous_request = previous.data.get("request")
+        previous_messages = previous_request.get("messages") if isinstance(previous_request, dict) else None
+        if image_urls != extract_image_urls_from_messages(previous_messages):
+            # Equal placeholder IDs do not imply equal visual inputs or routes.
+            return
         previous_data = _trim_model_request(previous.data)
         previous_context = previous_data["prompt_token_ids"] + previous_data["response_token_ids"]
         same_prompt = prompt_ids == previous_data["prompt_token_ids"]
@@ -209,23 +218,22 @@ def _without_routed_experts(event: Event) -> Event:
     return event.model_copy(update={"data": data})
 
 
-def _dedupe_model_requests_by_prompt_token_ids(events: list[Event]) -> list[Event]:
-    """Keep the last request for each valid, non-empty prompt-token key."""
-    last_index_by_prompt: dict[tuple[int, ...], int] = {}
+def _dedupe_model_requests_by_prompt(events: list[Event]) -> list[Event]:
+    """Keep the last raw request for each valid prompt-token and image key."""
+    last_index_by_prompt: dict[PromptKey, int] = {}
     kept_indexes: set[int] = set()
     for index, event in enumerate(events):
         if event.event_type != "model_request":
             continue
-        prompt_token_ids = event.data.get("prompt_token_ids", [])
-        if (
-            not isinstance(prompt_token_ids, list)
-            or not prompt_token_ids
-            or any(type(token_id) is not int for token_id in prompt_token_ids)
-        ):
+        prompt_token_ids = _trim_model_request(event.data)["prompt_token_ids"]
+        request = event.data.get("request")
+        messages = request.get("messages") if isinstance(request, dict) else None
+        key = prompt_key(prompt_token_ids, extract_image_urls_from_messages(messages))
+        if key is None:
             # Skip deduplication, not the request, when no valid key exists.
             kept_indexes.add(index)
             continue
-        last_index_by_prompt[tuple(prompt_token_ids)] = index
+        last_index_by_prompt[key] = index
 
     kept_indexes.update(last_index_by_prompt.values())
     return [event for index, event in enumerate(events) if event.event_type != "model_request" or index in kept_indexes]
@@ -250,8 +258,8 @@ async def query_events(
         event_type=event_type,
     )
     if format == "triplet":
+        events = _dedupe_model_requests_by_prompt(events)
         events = [_to_triplet_format(e) for e in events]
-        events = _dedupe_model_requests_by_prompt_token_ids(events)
     if not include_routed_experts:
         events = [_without_routed_experts(event) for event in events]
     return events

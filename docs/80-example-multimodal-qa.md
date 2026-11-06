@@ -8,6 +8,8 @@ Multimodal QA is a minimal end-to-end example of **multimodal (image) reinforcem
 
 The example exercises the multimodal training data path: image URLs are recovered from the raw `model_request` events, aligned with the training triplets, and turned into per-row `multi_modal_inputs` (`pixel_values` + `image_grid_thw`) with mrope `(batch, 4, seq_len)` position ids, so the training forward pass actually consumes the image features.
 
+Within a rollout, requests are deduplicated only when both their prompt token IDs and ordered image URLs match. Different images can produce identical image placeholder tokens, so their transitions are kept separately; repeated requests with the same image URLs retain the last response.
+
 ## Data Preparation
 
 The dataset is generated with PIL at startup — there is nothing to download:
