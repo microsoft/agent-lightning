@@ -8,6 +8,10 @@ ScienceWorld trains an agent with `verl` and Agent Lightning >=v1.0 to solve tex
 
 This example uses the local controller in asynchronous trainer mode. Each rollout runs as a local process that interacts with a ScienceWorld environment, calls the model through the AGL Gateway, and reports the final reward. It does not require K8s, Docker, or Minikube.
 
+The model selects an action with `### ACTION: <number> ###`. The agent asks vLLM to retain
+the matched stop string so a newline-terminated reply keeps the closing `###` required by
+the action parser. Invalid or out-of-range replies fall back to action zero.
+
 ## Environment Preparation
 
 Install Java and the example dependencies:
