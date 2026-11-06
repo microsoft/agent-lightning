@@ -193,6 +193,19 @@ Transition mode does not use `trajectory_max_prompt_length` or `trajectory_max_r
 
 Use transition mode when every request-response call should remain a separate training sample.
 
+## Training limits
+
+`trainer.total_epochs` limits how many times the trainer reads the training dataloader.
+After the final epoch, synchronous collection stops before starting another rollout batch.
+Asynchronous collection stops admitting new inputs and finishes the groups already in flight;
+its last refill may contain fewer inputs than `async_train_batch_size` requests. The configured
+`trainer.total_training_steps` remains an independent upper bound and can stop training earlier.
+
+When the epoch limit ends training, enabled validation and checkpointing run at the last
+successful training step, unless they already ran there on their regular schedule. No extra
+optimizer step is taken to discover that the data is exhausted. Final partial collections still
+follow the PPO mini-batch alignment rules described below.
+
 ## Algorithm correctness
 
 The following settings control how rollout data contributes to optimization:

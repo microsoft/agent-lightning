@@ -55,6 +55,10 @@ log = logging.getLogger(__name__)
 RolloutManagerT = TypeVar("RolloutManagerT", bound=AglRolloutManagerBase)
 
 
+class _TrainingDataExhausted(Exception):
+    """The configured training epochs have no more input batches."""
+
+
 def _batch_dict_len(batch: dict[str, Any] | None) -> int:
     """Leading-dim length of a dataloader batch dict (0 if absent/empty)."""
     if batch is None or not batch:
@@ -274,10 +278,13 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         async_train_batch_size = async_cfg.async_train_batch_size
         n_carry_over = len({rollout.data_id for rollout in self._carry_over_rollouts})
         n_new = int(async_train_batch_size) - n_carry_over
-        return self._next_train_batch_dict_with_size(n_new)
+        batch = self._next_train_batch_dict_with_size(n_new)
+        if not batch and not self._carry_over_rollouts:
+            raise _TrainingDataExhausted
+        return batch
 
     def _next_train_batch_dict(self) -> dict[str, Any]:
-        while True:
+        while self.epoch <= self.config.trainer.total_epochs:
             if self._train_dataloader_iter is None:
                 self._train_dataloader_iter = iter(self.train_dataloader)
 
@@ -286,6 +293,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
 
             self.epoch += 1
             self._train_dataloader_iter = None
+        raise _TrainingDataExhausted
 
     def _next_train_batch_dict_with_size(self, size: int) -> dict[str, Any]:
         if size <= 0:
@@ -340,15 +348,12 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                 remaining = 0
 
         while remaining > 0:
-            if self._train_dataloader_iter is None:
-                self._train_dataloader_iter = iter(self.train_dataloader)
-
             try:
-                batch_dict = next(self._train_dataloader_iter)
-            except StopIteration:
-                self.epoch += 1
-                self._train_dataloader_iter = None
-                continue
+                batch_dict = self._next_train_batch_dict()
+            except _TrainingDataExhausted:
+                # The last refill may be partial. An empty refill still lets
+                # the async runner finish groups admitted by an earlier step.
+                break
 
             batch_size = _batch_dict_len(batch_dict)
             if batch_size <= remaining:
@@ -360,7 +365,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                 self._train_dataloader_buf = tail
                 remaining = 0
 
-        return concat_batches(collected)
+        return concat_batches(collected) if collected else {}
 
     def _rollout(self, gen_batch: DataProto, is_train: bool) -> tuple[DataProto, dict[str, Any]]:
         """Run Agent Lightning rollouts and return the resulting DataProto plus metrics."""
@@ -381,11 +386,14 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             rollout_manager.delete_model()
             rollout_manager.register_model(server_addresses)
             previous_carry_over_rollouts = list(self._carry_over_rollouts)
+            available_groups = _batch_dict_len(data_dict) + len(
+                {rollout.data_id for rollout in previous_carry_over_rollouts}
+            )
             completed_rollouts, new_carry_over_rollouts = rollout_manager.enqueue_and_wait_until_group_completed(
                 data_dict,
                 previous_carry_over_rollouts,
                 is_train=True,
-                target_finished_group_num=self.config.data.train_batch_size,
+                target_finished_group_num=min(self.config.data.train_batch_size, available_groups),
             )
             self._carry_over_rollouts = new_carry_over_rollouts
             async_rollout_metrics = self._compute_async_rollout_metrics(
@@ -680,6 +688,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         self.global_steps = 0
         self.epoch = 0
         self._train_dataloader_iter = None
+        self._train_dataloader_buf = None
         self._carry_over_rollouts = []
         self._load_checkpoint()
         # Push loaded weights before the first rollout or validation.
@@ -698,9 +707,10 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         self.global_steps += 1
         self.epoch += 1
         last_val_metrics = None
+        last_update_step: int | None = None
 
         while True:
-            if self.global_steps > self.total_training_steps or self.epoch > self.config.trainer.total_epochs:
+            if self.global_steps > self.total_training_steps:
                 progress_bar.close()
                 return
 
@@ -712,8 +722,22 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                 else False
             )
 
-            with marked_timer("step", timing_raw):
-                result = self._train_step(timing_raw, curr_step_profile)
+            try:
+                with marked_timer("step", timing_raw):
+                    result = self._train_step(timing_raw, curr_step_profile)
+            except _TrainingDataExhausted:
+                # Exhaustion is discovered when requesting the next input, so
+                # finalize the last update without counting an extra step.
+                if last_update_step is not None:
+                    self.global_steps = last_update_step
+                    if self.config.trainer.test_freq > 0 and self.global_steps % self.config.trainer.test_freq != 0:
+                        last_val_metrics = self._validate()
+                        logger.log(data=last_val_metrics, step=self.global_steps)
+                    if self.config.trainer.save_freq > 0 and self.global_steps % self.config.trainer.save_freq != 0:
+                        self._save_checkpoint()
+                pprint(f"Final validation metrics: {last_val_metrics}")
+                progress_bar.close()
+                return
             if result is None:
                 print("AgentLightningRayPPOTrainer: train step returned no batch; skipping update.")
                 # SC experiment budgets count optimizer updates, not empty collections.
@@ -721,6 +745,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
                     self.global_steps += 1
                 continue
             metrics, step_batch = result
+            last_update_step = self.global_steps
 
             # Compute timing and throughput after the step timer records its total duration.
             metrics.update(compute_timing_metrics(batch=step_batch, timing_raw=timing_raw))
@@ -735,8 +760,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
             ):
                 with marked_timer("validate", timing_raw, color="green"):
                     val_metrics = self._validate()
-                    if is_last_step:
-                        last_val_metrics = val_metrics
+                    last_val_metrics = val_metrics
                 metrics.update(val_metrics)
 
             if self.config.trainer.save_freq > 0 and (
