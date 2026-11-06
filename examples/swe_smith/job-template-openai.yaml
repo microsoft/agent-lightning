@@ -23,6 +23,12 @@ spec:
               value: {{ input.problem_statement | yaml_escape }}
             - name: SMITH_MAX_TURNS
               value: "100"
+            # Opt in to native tool calls and thinking; see the Coding Agent docs
+            # for the matching vLLM parser and chat-template overrides.
+            - name: SMITH_USE_TOOLS
+              value: "0"
+            - name: SMITH_ENABLE_THINKING
+              value: "0"
             # Long-turn penalty (plan A): only SOLVED (reward==1) rollouts are
             # penalized for burning turns. reward = 1 - λ·clip((n_turns-T0)/(max_turns-T0),0,1).
             - name: SMITH_LEN_PEN_T0

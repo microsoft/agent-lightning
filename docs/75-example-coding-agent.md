@@ -106,6 +106,51 @@ examples/swe_smith/run.sh trainer \
     actor_rollout_ref.rollout.n=4
 ```
 
+## Native Qwen3.5 Tool Calling and Thinking
+
+The harness defaults to one fenced Bash command per turn with thinking disabled. To use
+Qwen3.5's native tool format, enable `SMITH_USE_TOOLS`. The harness then provides an
+`execute_bash` tool with a string `command` argument, reads structured `tool_calls` from the
+response, and returns each observation as a tool message with the matching call ID. Commands
+still pass through the same execution checks.
+
+On **Machine B**, set these entries in `examples/swe_smith/job-template-openai.yaml`:
+
+```yaml
+- name: SMITH_USE_TOOLS
+  value: "1"
+- name: SMITH_ENABLE_THINKING
+  value: "1"
+```
+
+These are rollout-container settings: exporting them in the trainer or controller shell does
+not pass them to the Jobs. The switches are independent; keep `SMITH_ENABLE_THINKING` at `"0"`
+to use native tools without thinking.
+
+Start the trainer with Qwen3.5's native chat template and the matching vLLM parsers:
+
+```bash
+examples/swe_smith/run.sh trainer \
+    actor_rollout_ref.rollout.engine_kwargs.vllm.chat_template=null \
+    actor_rollout_ref.rollout.engine_kwargs.vllm.tool_call_parser=qwen3_coder \
+    actor_rollout_ref.rollout.engine_kwargs.vllm.reasoning_parser=qwen3
+```
+
+Setting `chat_template=null` selects the model's own template instead of the example's Hermes
+template. Qwen3.5 uses XML function and parameter tags; vLLM's `qwen3_coder` parser converts
+them into the structured calls consumed by the harness. The parser settings follow the
+[official Qwen3.5 model card](https://huggingface.co/Qwen/Qwen3.5-9B#serving-qwen35).
+
+For thinking runs, use native tools as well. The harness retains the returned reasoning in
+the assistant history, and tool messages allow Qwen3.5's native template to preserve it across
+successive actions. The legacy Bash loop returns observations as user messages, which the
+native template treats as new queries and uses to discard earlier reasoning.
+
+When upgrading an existing deployment, update the checkout on Machine A and restart the
+controller with `examples/swe_smith/run.sh controller`. The launcher refreshes the
+`swe-smith-agent-scripts` ConfigMap before starting the controller, so new rollout pods use the
+updated harness. Apply the Job settings and trainer overrides before starting the next run.
+
 ## Preventing Reward Hacking
 
 A coding agent may obtain the reference fix without solving the task, for example by inspecting Git history, downloading upstream source code with `curl` or `wget`, installing the original package with `pip`, or using Python networking libraries such as `urllib`.
