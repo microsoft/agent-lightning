@@ -243,15 +243,25 @@ def _build_routed_experts_batch(
     batch: torch.Tensor | None = None
     for index, (payload, original_prompt_length, prompt_length, response_length) in enumerate(rows):
         routes = np.load(io.BytesIO(base64.b64decode(payload)), allow_pickle=False)
+        if not np.issubdtype(routes.dtype, np.integer) or routes.min(initial=0) < 0:
+            raise ValueError("R3 routed_experts must contain non-negative integer expert IDs")
+        max_expert_id = int(routes.max(initial=0))
+        if max_expert_id > torch.iinfo(torch.int32).max:
+            raise ValueError("R3 routed_experts expert IDs exceed the int32 range")
+        # Keep the compact representation for <=256 experts without wrapping
+        # larger IDs (e.g. 256 -> 0) and changing the routes replayed in training.
+        dtype = torch.uint8 if max_expert_id <= 255 else torch.int32
         if batch is None:
             batch = torch.zeros(
                 (len(rows), max_prompt_length + max_response_length, *routes.shape[1:]),
-                dtype=torch.uint8,
+                dtype=dtype,
                 device=device,
             )
+        elif dtype == torch.int32 and batch.dtype == torch.uint8:
+            batch = batch.to(dtype=torch.int32)
         if len(routes) < original_prompt_length + response_length - 1:
             raise RuntimeError("R3 routed_experts is shorter than its token sequence")
-        routes = torch.from_numpy(routes).to(device=device, dtype=torch.uint8)
+        routes = torch.from_numpy(routes).to(device=device, dtype=batch.dtype)
         prompt_routes = min(prompt_length, len(routes))
         prompt_start = max_prompt_length - prompt_length
         batch[index, prompt_start : prompt_start + prompt_routes] = routes[:prompt_routes]
