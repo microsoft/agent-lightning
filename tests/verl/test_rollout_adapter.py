@@ -60,6 +60,38 @@ def test_routed_experts_batch_preserves_padding_and_truncation(dtype: type[np.ge
     torch.testing.assert_close(batch, expected, rtol=0, atol=0)
 
 
+@pytest.mark.parametrize("dtype", [np.uint16, np.int32, np.int64])
+@pytest.mark.parametrize("high_routes_first", [False, True])
+def test_routed_experts_batch_preserves_expert_ids_above_255(dtype: type[np.generic], high_routes_first: bool) -> None:
+    low_routes = np.array([[[0, 255]], [[128, 1]]], dtype=dtype)
+    high_routes = np.array([[[256, 511]], [[300, 257]], [[510, 400]], [[1, 2]]], dtype=dtype)
+    low_row = (_encode_routes(low_routes), 1, 1, 2)
+    high_row = (_encode_routes(high_routes), 2, 2, 2)
+    rows = [high_row, low_row] if high_routes_first else [low_row, high_row]
+
+    batch = _build_routed_experts_batch(rows, 3, 3, torch.device("cpu"))
+
+    low_expected = [[[0, 0]], [[0, 0]], [[0, 255]], [[128, 1]], [[0, 0]], [[0, 0]]]
+    high_expected = [[[0, 0]], [[256, 511]], [[300, 257]], [[510, 400]], [[1, 2]], [[0, 0]]]
+    expected_rows = [high_expected, low_expected] if high_routes_first else [low_expected, high_expected]
+    expected = torch.tensor(expected_rows, dtype=torch.int32)
+    torch.testing.assert_close(batch.to(torch.int32), expected, rtol=0, atol=0)
+    assert batch.dtype == torch.int32
+
+
+@pytest.mark.parametrize(
+    "routes",
+    [
+        np.array([[[-1]]], dtype=np.int32),
+        np.array([[[0.5]]], dtype=np.float32),
+        np.array([[[2**31]]], dtype=np.int64),
+    ],
+)
+def test_routed_experts_batch_rejects_ids_that_cannot_be_represented(routes: np.ndarray) -> None:
+    with pytest.raises(ValueError, match="R3 routed_experts"):
+        _build_routed_experts_batch([(_encode_routes(routes), 1, 1, 1)], 1, 1, torch.device("cpu"))
+
+
 def test_routed_experts_batch_releases_decoded_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = _encode_routes(np.arange(48, dtype=np.uint8).reshape(12, 2, 2))
     decoded: list[weakref.ReferenceType[np.ndarray]] = []
