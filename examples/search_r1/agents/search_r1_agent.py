@@ -15,7 +15,7 @@ from typing import Any, TypedDict, cast
 
 import httpx
 
-from examples.search_r1.agents.qa_em import compute_score_em
+from examples.search_r1.agents.qa_em import em_check
 
 log = logging.getLogger(__name__)
 
@@ -235,7 +235,7 @@ class SearchR1Agent:
         client = AsyncOpenAI(base_url=openai_base_url, api_key=agl_key, max_retries=6)
         prompt = INSTRUCTION_FORMAT + question
         messages = [{"role": "user", "content": prompt}]
-        rollout_content = ""
+        final_answer: str | None = None
         finished = False
         invalid_action = False
         start_time = time.time()
@@ -249,10 +249,9 @@ class SearchR1Agent:
                 max_tokens=max_tokens,
             )
             valid_turn_response = postprocess_response(turn_response)
-            rollout_content += valid_turn_response
             messages.append({"role": "assistant", "content": valid_turn_response})
 
-            action, _ = extract_action(valid_turn_response)
+            action, content = extract_action(valid_turn_response)
             if action is None:
                 invalid_action = True
                 log.info("turn=%d invalid response=%r", turn_id, valid_turn_response)
@@ -260,10 +259,10 @@ class SearchR1Agent:
 
             turn_env_feedback = await execute_response(valid_turn_response, retrieval_url=retrieval_url, topk=topk)
             if not turn_env_feedback:
+                final_answer = content
                 finished = True
                 log.info("turn=%d finished response=%r", turn_id, valid_turn_response)
                 break
-            rollout_content += turn_env_feedback
             messages.append({"role": "user", "content": turn_env_feedback})
             log.info("turn=%d response=%r env_feedback_chars=%d", turn_id, valid_turn_response, len(turn_env_feedback))
 
@@ -274,11 +273,13 @@ class SearchR1Agent:
                 temperature=train_temperature,
                 max_tokens=max_tokens,
             )
-            rollout_content += turn_response
             messages.append({"role": "assistant", "content": turn_response})
+            action, content = extract_action(turn_response)
+            if action == "answer":
+                final_answer = content
             log.info("last_turn response=%r", turn_response)
 
-        reward = 0.0 if invalid_action else float(compute_score_em(rollout_content, answer_list))
+        reward = 0.0 if final_answer is None else float(em_check(final_answer, answer_list))
         reason = "invalid_action" if invalid_action else "em_match" if reward > 0 else "em_miss"
         await post_reward(event_url, agl_key, reward, reason)
 
@@ -311,7 +312,7 @@ class SearchR1CompletionAgent:
 
         client = AsyncOpenAI(base_url=openai_base_url, api_key=agl_key, max_retries=6)
         prompt_ids = encode_text(tokenizer_model, INSTRUCTION_FORMAT + question)
-        rollout_content = ""
+        final_answer: str | None = None
         finished = False
         invalid_action = False
         start_time = time.time()
@@ -331,10 +332,9 @@ class SearchR1CompletionAgent:
                 temperature=train_temperature,
                 max_tokens=max_tokens,
             )
-            rollout_content += turn_response
             next_prompt_ids = prompt_ids + response_ids
 
-            action, _ = extract_action(turn_response)
+            action, content = extract_action(turn_response)
             if action is None:
                 invalid_action = True
                 log.info("turn=%d invalid response=%r response_tokens=%d", turn_id, turn_response, len(response_ids))
@@ -342,12 +342,12 @@ class SearchR1CompletionAgent:
 
             turn_env_feedback = await execute_response(turn_response, retrieval_url=retrieval_url, topk=topk)
             if not turn_env_feedback:
+                final_answer = content
                 finished = True
                 log.info("turn=%d finished response=%r response_tokens=%d", turn_id, turn_response, len(response_ids))
                 break
 
             feedback_ids = encode_text(tokenizer_model, turn_env_feedback)
-            rollout_content += turn_env_feedback
             prompt_ids = next_prompt_ids + feedback_ids
             log.info(
                 "turn=%d response=%r response_tokens=%d env_feedback_tokens=%d",
@@ -365,10 +365,12 @@ class SearchR1CompletionAgent:
                 temperature=train_temperature,
                 max_tokens=max_tokens,
             )
-            rollout_content += turn_response
+            action, content = extract_action(turn_response)
+            if action == "answer":
+                final_answer = content
             log.info("last_turn response=%r response_tokens=%d", turn_response, len(response_ids))
 
-        reward = 0.0 if invalid_action else float(compute_score_em(rollout_content, answer_list))
+        reward = 0.0 if final_answer is None else float(em_check(final_answer, answer_list))
         reason = "invalid_action" if invalid_action else "em_match" if reward > 0 else "em_miss"
         await post_reward(event_url, agl_key, reward, reason)
 
