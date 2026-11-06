@@ -106,6 +106,12 @@ examples/swe_smith/run.sh trainer \
     actor_rollout_ref.rollout.n=4
 ```
 
+Shell commands run inside the Linux repository containers. `SMITH_CMD_TIMEOUT`
+(default: 120 seconds) limits each agent command; `SMITH_EVAL_TIMEOUT` (default:
+600 seconds) limits the final pytest run. On timeout, the harness terminates the
+command's process group, including child workers, before continuing and reports
+exit code 124.
+
 ## Preventing Reward Hacking
 
 A coding agent may obtain the reference fix without solving the task, for example by inspecting Git history, downloading upstream source code with `curl` or `wget`, installing the original package with `pip`, or using Python networking libraries such as `urllib`.
