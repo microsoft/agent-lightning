@@ -66,6 +66,12 @@ This command installs the OpenAI client into each required SWE-smith base image 
 
 ## Training
 
+Shell commands run inside the Linux repository containers. `SMITH_CMD_TIMEOUT`
+(default: 120 seconds) limits each agent command; `SMITH_EVAL_TIMEOUT` (default:
+600 seconds) limits the final pytest run. On timeout, the harness terminates the
+command's process group, including child workers, before continuing and reports
+exit code 124.
+
 The distributed launcher has three roles and must be started in this order:
 
 ```text
@@ -105,12 +111,6 @@ examples/swe_smith/run.sh trainer \
     trainer.total_training_steps=100 \
     actor_rollout_ref.rollout.n=4
 ```
-
-Shell commands run inside the Linux repository containers. `SMITH_CMD_TIMEOUT`
-(default: 120 seconds) limits each agent command; `SMITH_EVAL_TIMEOUT` (default:
-600 seconds) limits the final pytest run. On timeout, the harness terminates the
-command's process group, including child workers, before continuing and reports
-exit code 124.
 
 ## Preventing Reward Hacking
 
