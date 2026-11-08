@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64  # [multimodal-patch]
 import io
 import json
+import math
 import zipfile
 from typing import Any, cast
 from urllib.request import url2pathname
@@ -590,6 +591,10 @@ class RolloutAdapter:
 
         for rollout in sorted_rollouts:
             final_reward = self._fillna_reward(rollout)
+            if abs(final_reward) > torch.finfo(torch.float32).max:
+                raise ValueError(
+                    f"Reward for rollout {rollout.rollout_id!r} is outside the finite float32 range: {final_reward!r}"
+                )
             final_rewards.append(final_reward)
             if rollout.final_reward is not None:
                 sample_with_reward_count += 1
@@ -983,9 +988,10 @@ class RolloutAdapter:
         }
 
     def _fillna_reward(self, rollout: CompletedRollout) -> float:
-        if rollout.final_reward is not None:
-            return rollout.final_reward
-        return self.reward_fillna_value
+        reward = rollout.final_reward if rollout.final_reward is not None else self.reward_fillna_value
+        if not math.isfinite(reward):
+            raise ValueError(f"Reward for rollout {rollout.rollout_id!r} must be finite, got {reward!r}")
+        return reward
 
 
 __all__ = ["RolloutAdapter"]

@@ -36,6 +36,14 @@ actor_rollout_ref:
 
 The configuration above shows the Agent Lightning settings. At runtime, these settings are merged with the original `verl` `ppo_trainer` configuration, whose existing options remain available and take effect as usual.
 
+Rewards must be finite. Training stores outcome scores as float32, so training rewards
+must also lie within the finite float32 range. The adapter raises a `ValueError` naming
+the rollout if a reward is NaN, infinite, or too large for the training score tensor;
+it does not clip the value or silently replace it with zero. The same checks apply
+when a missing reward uses `agentlightning.reward_fillna_value`. Validation metrics
+require finite rewards but do not narrow them to float32. These checks prevent
+invalid score inputs, not overflow in every subsequent training computation.
+
 ## Connect to the API Gateway
 
 The first group of settings connects the trainer to the Agent Lightning API Gateway:
