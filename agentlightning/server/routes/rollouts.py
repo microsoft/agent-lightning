@@ -126,11 +126,12 @@ async def enqueue_rollouts(body: list[RolloutCreate]) -> list[Rollout]:
 async def list_rollouts(
     state_in: Annotated[list[RolloutState], Query()],
     limit: int = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Rollout]:
-    """List rollouts by lifecycle states."""
+    """List rollouts by lifecycle states, in insertion order, with offset pagination."""
     states = set(state_in)
     matches = [rollout for rollout in _rollouts.values() if rollout.status.state in states]
-    return matches[:limit]
+    return matches[offset : offset + limit]
 
 
 def _data_id_of(rollout: Rollout) -> str:

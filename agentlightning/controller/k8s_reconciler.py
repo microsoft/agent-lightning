@@ -351,13 +351,25 @@ class K8sReconciler:
         state_in: list[RolloutState],
         limit: int = 50,
     ) -> list[Rollout]:
+        """Read all active pages before reconciliation changes their membership."""
         params = httpx.QueryParams()
         for state in state_in:
             params = params.add("state_in", state.value)
         params = params.add("limit", limit)
-        response = await self._api.get("/api/rollouts", params=params)
-        response.raise_for_status()
-        return [Rollout.model_validate(item) for item in response.json()]
+        rollouts: list[Rollout] = []
+        previous_page_ids: list[str] = []
+        while True:
+            response = await self._api.get("/api/rollouts", params=params.set("offset", len(rollouts)))
+            response.raise_for_status()
+            page = [Rollout.model_validate(item) for item in response.json()]
+            page_ids = [rollout.rollout_id for rollout in page]
+            if page and page_ids == previous_page_ids:
+                log.warning("Server repeated a rollout page; upgrade the server to enable offset pagination")
+                return rollouts
+            rollouts.extend(page)
+            if len(page) < limit:
+                return rollouts
+            previous_page_ids = page_ids
 
     async def _patch_status(self, rollout_id: str, **status: Any) -> bool:
         try:

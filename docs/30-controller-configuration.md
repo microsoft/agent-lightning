@@ -75,6 +75,10 @@ The K8s runner provides settings that limit Job creation and clean up completed 
 
 `max_jobs_per_minute` prevents the Controller from creating too many Jobs in a short period. `ttl_after_finished` prevents completed Jobs from accumulating and overloading the Kubernetes API server.
 
+The Controller reads all pages of queued and running rollouts before reconciling their Jobs. The API page size is not a concurrency limit: long-running Jobs do not prevent later queued rollouts from being considered. Concurrent lifecycle changes during pagination are reconciled on a subsequent poll.
+
+Upgrade the Server alongside the Controller to enable pagination. If an older Server ignores the offset and repeats a page, the Controller logs a warning and reconciles the rows already read instead of repeatedly fetching the same page.
+
 ## Local runner limits
 
 The local runner limits concurrent processes and periodically synchronizes their state:
