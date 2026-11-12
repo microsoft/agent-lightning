@@ -864,11 +864,13 @@ class RolloutAdapter:
         # Preserve fractional reward differences used by advantage estimators.
         scores = torch.tensor(reward_list, dtype=torch.float32).to(self.device)
 
-        token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
-        token_positions = torch.arange(attention_mask.shape[-1], device=attention_mask.device).unsqueeze(0)
-        eos_mask_idx = torch.argmax(token_positions * attention_mask, dim=-1)
-        token_level_scores[torch.arange(n_sample), eos_mask_idx] = scores
-        token_level_scores = token_level_scores[:, -self.max_response_length :]
+        # Truncation can leave a trajectory ending in masked tool observations.
+        # Keep the outcome on a generated token so masked-return estimators see it.
+        score_mask = batch_response_mask if batch_response_mask is not None else response_attention_mask
+        token_level_scores = torch.zeros_like(score_mask, dtype=scores.dtype)
+        token_positions = torch.arange(score_mask.shape[-1], device=score_mask.device).unsqueeze(0)
+        last_response_idx = torch.argmax(token_positions * score_mask, dim=-1)
+        token_level_scores[torch.arange(n_sample, device=scores.device), last_response_idx] = scores
 
         batch_dict = {
             "prompts": batch_input_ids,
