@@ -10,6 +10,7 @@ import random
 import time
 import uuid
 from collections import defaultdict
+from pathlib import Path
 from pprint import pprint
 from typing import Any, TypeVar
 
@@ -115,6 +116,51 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         self._agl_client: AgentLightningSyncClient | None = None
         self._carry_over_rollouts: list[EnqueuedRollout] = []
         self._train_dataloader_iter: Any | None = None
+        self._train_dataloader_buf: dict[str, Any] | None = None
+
+    def _save_checkpoint(self):
+        if self.is_async:
+            folder = Path(self.config.trainer.default_local_dir) / f"global_step_{self.global_steps}"
+            folder.mkdir(parents=True, exist_ok=True)
+            state = {
+                "version": 1,
+                "dataloader": self.train_dataloader.state_dict(),
+                "buffer": self._train_dataloader_buf,
+                "epoch": self.epoch,
+            }
+            path = folder / "agentlightning_input.pt"
+            temporary = path.with_suffix(".pt.tmp")
+            # Persist input state before VERL publishes the latest-checkpoint marker.
+            torch.save(state, temporary)
+            temporary.replace(path)
+        return super()._save_checkpoint()
+
+    def _load_checkpoint(self):
+        self._train_dataloader_iter = None
+        self._train_dataloader_buf = None
+        result = super()._load_checkpoint()
+        # VERL returns 0 when resume is disabled or no automatic checkpoint exists.
+        if not self.is_async or result == 0:
+            return result
+
+        if self.config.trainer.resume_mode == "resume_path":
+            folder = Path(self.config.trainer.resume_from_path)
+        else:
+            folder = Path(self.config.trainer.default_local_dir) / f"global_step_{self.global_steps}"
+        path = folder / "agentlightning_input.pt"
+        if not path.exists():
+            log.warning("Checkpoint has no Agent Lightning input state; unqueued async samples cannot be recovered")
+            return result
+
+        state = torch.load(path, map_location="cpu", weights_only=False)
+        if state["version"] != 1:
+            raise ValueError(f"Unsupported Agent Lightning input checkpoint version: {state['version']}")
+        # Optimizer steps do not identify async dataloader epoch boundaries. Restore
+        # the saved cursor even if VERL skipped its step-based dataloader restore.
+        self.train_dataloader.load_state_dict(state["dataloader"])
+        self._train_dataloader_buf = state["buffer"]
+        self.epoch = state["epoch"]
+        return result
 
     def _ensure_hooks(self) -> RolloutHooks | None:
         if self._hooks is not None:
@@ -696,7 +742,7 @@ class AgentLightningRayPPOTrainer(RayPPOTrainer):
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
 
         self.global_steps += 1
-        self.epoch += 1
+        self.epoch = max(1, self.epoch)
         last_val_metrics = None
 
         while True:

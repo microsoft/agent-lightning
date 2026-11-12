@@ -83,6 +83,14 @@ data:
 
 `run_ppo` rejects non-null values before accessing Ray. To reset a command-line override, use `data.val_batch_size=null`; the string `"None"` is not equivalent to `null`.
 
+### Resuming asynchronous input collection
+
+With asynchronous rollouts enabled, each new checkpoint includes `agentlightning_input.pt` alongside VERL's checkpoint files. It stores the dataloader position, the unused tail of a partially consumed batch, and the input epoch. Keep this file when copying a checkpoint. Both `trainer.resume_mode=auto` and `trainer.resume_mode=resume_path` restore these inputs, including when the output directory changes for an explicit resume.
+
+An optimizer step can consume a different number of inputs in asynchronous mode, so its number does not identify a dataloader epoch boundary. Agent Lightning restores the saved input position rather than inferring it from the step number. Older checkpoints without this file remain loadable through VERL, but their missing buffered inputs cannot be reconstructed; asynchronous resume logs a warning.
+
+This restores inputs that have not yet been enqueued. It does not restore the trainer's in-flight carry-over rollouts or the external Server/Controller state, and does not guarantee that a restarted distributed training job is identical to an uninterrupted run. Synchronous checkpoint behavior is unchanged.
+
 ## Rollout execution
 
 The Controller has two execution modes: `local` and `k8s`. Configure the matching section below, and the Controller reads that section according to its running mode.
