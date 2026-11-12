@@ -10,11 +10,15 @@ from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 
-def verl_default_config() -> dict[str, Any]:
+def verl_default_config(val_only: bool = False) -> dict[str, Any]:
     """VERL config overrides for Calc-X training.
 
     These are merged on top of Agent Lightning's base config
     (agentlightning/verl/config.yaml → verl/trainer/config/ppo_trainer.yaml).
+
+    With ``val_only`` the run scores a saved checkpoint instead of training one.
+    VERL only takes that exit from the validation pass it runs before the first
+    step, so ``val_before_train`` has to be on as well.
     """
     example_dir = Path(__file__).resolve().parent
     return {
@@ -68,7 +72,8 @@ def verl_default_config() -> dict[str, Any]:
         },
         "trainer": {
             "n_gpus_per_node": 1,
-            "val_before_train": False,
+            "val_before_train": val_only,
+            "val_only": val_only,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
             "project_name": "agentlightning",
@@ -107,6 +112,8 @@ def build_config(
     agl_key: str | None = None,
     run_name: str | None = None,
     async_mode: bool = False,
+    val_only: bool = False,
+    resume_path: str | None = None,
     config_overrides: Sequence[str] = (),
 ) -> Any:
     """Build the full OmegaConf config by merging base + overrides.
@@ -123,7 +130,16 @@ def build_config(
     with initialize_config_dir(config_dir=config_dir, version_base=None):
         base_cfg = compose(config_name="config")
 
-    overrides = verl_default_config()
+    overrides = verl_default_config(val_only=val_only)
+
+    if resume_path:
+        # A checkpoint is restored through trainer.resume_from_path, not by pointing
+        # actor_rollout_ref.model.path at it. That key is the base model, and the gateway
+        # requires its own model name to match it exactly, so aiming it at a checkpoint
+        # makes the proxy answer "model not found"
+        # (docs/25-api-gateway-configuration.md).
+        overrides["trainer"]["resume_mode"] = "resume_path"
+        overrides["trainer"]["resume_from_path"] = resume_path
 
     if model:
         overrides["actor_rollout_ref"]["model"]["path"] = model
@@ -138,6 +154,8 @@ def build_config(
             overrides["data"]["train_batch_size"] * 2
         )
         name_parts.append("async")
+    if val_only:
+        name_parts.append("eval")
     if run_name:
         name_parts.append(run_name)
     overrides["trainer"]["experiment_name"] = "_".join(name_parts)
@@ -146,7 +164,28 @@ def build_config(
     cli_override_conf = OmegaConf.from_dotlist(list(config_overrides))
     OmegaConf.set_struct(base_cfg, False)
     config = OmegaConf.merge(base_cfg, override_conf, cli_override_conf)
+
+    # The CLI overrides merge last, so any of them can flip these back. In this mode the
+    # held-out split is also what run_ppo sizes its sampler from, so a val_before_train of
+    # false starts optimizing on it: the run would train on the data it is supposed to be
+    # scored on, with nothing in the logs saying so. Re-assert after the merge rather than
+    # trusting the keys to survive it.
+    if val_only:
+        config.trainer.val_only = True
+        config.trainer.val_before_train = True
+        config.trainer.resume_mode = "resume_path"
+        if resume_path:
+            config.trainer.resume_from_path = resume_path
+
     return config
+
+
+def load_split(path: str) -> Sequence[Any]:
+    """Read one parquet split into a list of rows."""
+    return cast(
+        Sequence[Any],
+        HuggingFaceDataset.from_parquet(path).to_list(),  # type: ignore
+    )
 
 
 def train(
@@ -163,15 +202,8 @@ def train(
     """Load datasets, build config, and launch VERL training via Agent Lightning."""
     from agentlightning.verl.entrypoint import run_ppo
 
-    # Load datasets.
-    train_dataset: Sequence[Any] = cast(
-        Sequence[Any],
-        HuggingFaceDataset.from_parquet(train_file).to_list(),  # type: ignore
-    )
-    val_dataset: Sequence[Any] = cast(
-        Sequence[Any],
-        HuggingFaceDataset.from_parquet(val_file).to_list(),  # type: ignore
-    )
+    train_dataset = load_split(train_file)
+    val_dataset = load_split(val_file)
 
     print(f"Train dataset: {len(train_dataset)} samples")
     print(f"Val dataset:   {len(val_dataset)} samples")
@@ -191,6 +223,50 @@ def train(
     pprint(OmegaConf.to_container(config, resolve=True))
 
     run_ppo(config, train_dataset=train_dataset, val_dataset=val_dataset)
+
+
+def evaluate(
+    *,
+    checkpoint: str,
+    data_file: str,
+    model: str | None = None,
+    agl_base_url: str | None = None,
+    agl_key: str | None = None,
+    run_name: str | None = None,
+    config_overrides: Sequence[str] = (),
+) -> None:
+    """Score a saved checkpoint on a held-out split, without training it.
+
+    The checkpoint goes through ``trainer.resume_from_path``; ``--model`` stays what it
+    already was, the base model both the trainer and the gateway are configured with.
+
+    VERL runs one validation pass and returns. ``run_ppo`` still wants a non-empty train
+    split, so the held-out split is handed in as both: in this mode it only sizes the
+    sampler and no optimizer step is taken. That also means the split has to be at least
+    ``data.train_batch_size`` rows long (32 by default), or the sampler has nothing to
+    build a batch from.
+    """
+    dataset = load_split(data_file)
+    print(f"Held-out dataset: {len(dataset)} samples")
+
+    config = build_config(
+        model=model,
+        resume_path=checkpoint,
+        agl_base_url=agl_base_url,
+        agl_key=agl_key,
+        run_name=run_name,
+        val_only=True,
+        config_overrides=config_overrides,
+    )
+
+    from pprint import pprint
+
+    print("\n=== VERL Config ===")
+    pprint(OmegaConf.to_container(config, resolve=True))
+
+    from agentlightning.verl.entrypoint import run_ppo
+
+    run_ppo(config, train_dataset=dataset, val_dataset=dataset)
 
 
 def main() -> None:
@@ -239,7 +315,34 @@ def main() -> None:
         action="store_true",
         help="Enable async rollout with async batch size set to 2x train_batch_size",
     )
+    parser.add_argument(
+        "--resume",
+        dest="resume_path",
+        type=str,
+        default=None,
+        help="Path to a saved checkpoint (the run's global_step_N folder) to score",
+    )
+    parser.add_argument(
+        "--val-only",
+        dest="val_only",
+        action="store_true",
+        help="Score --resume on --val-file once, without training",
+    )
     args, config_overrides = parser.parse_known_args()
+
+    if args.val_only:
+        if not args.resume_path:
+            parser.error("--val-only needs --resume to point at a saved checkpoint")
+        evaluate(
+            checkpoint=args.resume_path,
+            data_file=args.val_file,
+            model=args.model,
+            agl_base_url=args.agl_base_url,
+            agl_key=args.agl_key,
+            run_name=args.run_name,
+            config_overrides=config_overrides,
+        )
+        return
 
     train(
         train_file=args.train_file,
