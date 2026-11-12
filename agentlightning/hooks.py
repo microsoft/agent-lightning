@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import sys
+from hashlib import sha256
 from typing import TYPE_CHECKING, Any, Protocol
 
 from agentlightning.schemas import RolloutCreate
@@ -43,10 +45,20 @@ def load_hooks(path: str) -> RolloutHooks:
     if not module_path.exists():
         raise FileNotFoundError(f"Hooks module not found: {module_path}")
 
-    spec = importlib.util.spec_from_file_location("_agl_hooks", str(module_path))
+    module_name = f"_agl_hooks_{sha256(str(module_path).encode()).hexdigest()[:16]}"
+    spec = importlib.util.spec_from_file_location(module_name, str(module_path))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    previous_module = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+        raise
 
     hook_classes = [
         obj
