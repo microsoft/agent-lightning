@@ -45,6 +45,8 @@ The trainer creates rollouts through the Rollout API. The Controller reads queue
 
 Every event is associated with a specific rollout ID and is later exported as training data.
 
+The trainer polls unfinished rollouts in batches through `POST /api/rollouts/status`. This read-only endpoint accepts a JSON array of up to 256 rollout IDs and returns an object mapping each ID to its full lifecycle status, including timestamps. It requires the same bearer authentication as the other Rollout API endpoints. An empty array returns `{}`; an unknown or deleted ID returns HTTP 404, and a batch larger than 256 returns HTTP 422. Inputs, configurations, and attempt histories are omitted; the trainer fetches full rollout details after completion. Upgrade the Gateway together with the trainer to use this endpoint.
+
 ### OpenAI-compatible proxy
 
 The Gateway also acts as a reverse proxy. The trainer registers one or more model inference endpoints, and the agent sends its model requests to a rollout-specific Gateway URL. The Gateway forwards each request to the registered model endpoint and records its prompt token IDs, response token IDs, and chosen-token log probabilities as a `model_request` event.

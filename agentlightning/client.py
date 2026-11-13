@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Collection
 from typing import Any
 
 import httpx
@@ -61,11 +62,14 @@ class AgentLightningSyncClient(httpx.Client):
         assert last_exc is not None
         raise last_exc
 
-    def post_with_retry(self, *args: Any, **kwargs: Any) -> httpx.Response:
+    def post_with_retry(
+        self, *args: Any, retry_status_codes: Collection[int] | None = None, **kwargs: Any
+    ) -> httpx.Response:
         """POST with retry + backoff, raising on non-2xx. Only for idempotent endpoints.
 
         Retries both transport errors and error status codes, so a transient 5xx
         is retried too. Callers get an already status-checked response back.
+        Set retry_status_codes to surface other HTTP errors immediately.
         """
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
@@ -74,6 +78,12 @@ class AgentLightningSyncClient(httpx.Client):
                 response.raise_for_status()
                 return response
             except Exception as exc:
+                if (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and retry_status_codes is not None
+                    and exc.response.status_code not in retry_status_codes
+                ):
+                    raise
                 last_exc = exc
                 print(f"POST failed (attempt {attempt + 1}/{self.max_retries + 1}): {exc}")
                 if attempt < self.max_retries:
