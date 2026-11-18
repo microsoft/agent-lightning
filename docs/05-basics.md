@@ -98,7 +98,7 @@ The trainer also handles Agent Lightning-specific data processing. It merges con
 - An uncaught exception in the agent's `run()` exits the worker non-zero and marks the rollout `FAILED`, with the exit code or Job reason in `error_message`.
 - Returning `None` from `run()` is **not** a failure signal. The worker ignores the return value and exits with code 0, so the rollout becomes `SUCCEEDED` regardless of whether a reward event was recorded; a missing reward is then filled with `reward_fillna_value`.
 - `FAILED` does not automatically exclude a rollout from training. Model calls recorded before the failure remain, and the trainer still builds a `CompletedRollout` from a `FAILED` rollout and passes it to the adapter alongside successful rollouts.
-- If no `reward` event was recorded, `agentlightning.reward_fillna_value` (default `0.0`) is used as the reward. There is no check that the rollout succeeded.
+- The rollout manager examines only the last `reward` event, in event order. Its `value` must be numeric; booleans are not accepted. Earlier reward events are not consulted if the last event has a non-numeric value. If there is no reward event, or the last value is unusable, `final_reward` remains unset and `agentlightning.reward_fillna_value` (default `0.0`) is used. This fallback is independent of rollout state. For example, events with values `1.0` followed by `"unavailable"` produce `0.0`, not `1.0`.
 
 The last point matters: an infrastructure failure after a few successful model calls can produce training rows labelled `0.0`, indistinguishable from a genuine zero-reward outcome.
 
@@ -111,7 +111,7 @@ The last point matters: an infrastructure failure after a few successful model c
 | Transient infrastructure failure, e.g. one model call times out or returns `5xx` | The Gateway retries that call with backoff. The rollout is unaffected while retries succeed. | Let the automatic retry work. Do not convert the error into a reward. If the call still fails, allow `FAILED`; re-enqueue with a **new** `rollout_id` only if you choose to retry the sample. |
 | Persistent infrastructure failure, e.g. network down or a bad model endpoint | There is no rollout-level retry. Each affected rollout terminates on its own. | Stop the run and fix the network or endpoint. More rollout attempts will not repair an infrastructure fault and will waste the batch. |
 | An exception in one sub-agent of a multi-agent rollout | Earlier sub-agents' `model_request` events are already stored. An uncaught exception yields `FAILED`, but the partial trace is still converted into training rows and a missing reward is filled with `reward_fillna_value`. | Decide explicitly: catch the exception and report a valid reward for the completed work, or discard the rollout at the training-data boundary. Do not assume partial traces are dropped for you. |
-| A valid task failure versus an infrastructure failure | A `reward` event with a numeric `value` (negative values included) is used as-is. No `reward` event triggers `reward_fillna_value`. | Report task outcomes, including wrong answers, with an explicit `reward` event and finish normally so the rollout is `SUCCEEDED`. Never report `0.0` for an infrastructure error; let the rollout fail and filter it later. |
+| A valid task failure versus an infrastructure failure | Only the last `reward` event is considered; its numeric `value` (negative values included) is used. If there is no reward event, or the last value is non-numeric or boolean, `reward_fillna_value` is used instead, even if an earlier event had a numeric value. | Report task outcomes, including wrong answers, with an explicit `reward` event and finish normally so the rollout is `SUCCEEDED`. Never report `0.0` for an infrastructure error; let the rollout fail and filter it later. |
 | Too many failed rollouts in one batch | The synchronous manager returns every terminal rollout; the asynchronous manager waits for every member of a group. There is no batch threshold or skip switch. | Check the reported `succeeded`/`failed` counters (or count failures in an `on_failed` hook) and abort the training step when your own threshold is exceeded. |
 
 ### Minimal example: separate task outcomes from infrastructure errors
@@ -167,7 +167,7 @@ The supported customization seam is `agentlightning.hooks.RolloutHooks`, loaded 
 - There is no built-in per-rollout retry, batch-skip switch, or automatic suppression of zero-reward examples.
 - `RolloutConfig` has no `max_attempts` or retry-condition fields. Snippets from older releases that call `emit_exception` or subclass `TracerTraceToTriplet` do not apply to v1.0.
 - Re-enqueuing with the same `rollout_id` returns the existing rollout unchanged; use a fresh ID for a real retry.
-- `reward_fillna_value` applies to every rollout without a recorded reward, not only to failed ones. Non-numeric `reward` values are ignored when computing the final reward.
+- `reward_fillna_value` applies to every rollout without a usable final reward, not only to failed ones. Only the last `reward` event is checked; if its `value` is non-numeric or boolean, earlier numeric reward events are not used and the fallback applies.
 
 ## Configure the components
 
