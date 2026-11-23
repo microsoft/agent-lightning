@@ -23,7 +23,7 @@ from agentlightning.schemas import (
     RolloutPatch,
     RolloutState,
 )
-from agentlightning.server.store import _events, _rollouts, _terminal_order
+from agentlightning.server.store import _events, _rollouts, _terminal_order, _terminal_positions
 
 router = APIRouter(tags=["rollouts"])
 
@@ -148,6 +148,8 @@ async def list_terminal_rollouts(after: int = 0, limit: int = 1000) -> TerminalR
     to fetch only rollouts that completed since the last call. Out-of-order
     completions are never missed because the log is append-on-terminal-transition.
     Returns only id/state/data_id/is_train — fetch events per rollout for details.
+    Deleted completions leave empty slots; cursors and total_terminal count log
+    positions, including those slots, rather than currently retained rollouts.
     """
     if after < 0:
         after = 0
@@ -157,6 +159,8 @@ async def list_terminal_rollouts(after: int = 0, limit: int = 1000) -> TerminalR
     slice_ids = _terminal_order[after : after + limit]
     items: list[TerminalRolloutItem] = []
     for rid in slice_ids:
+        if rid is None:
+            continue
         rollout = _rollouts.get(rid)
         if rollout is None:
             continue
@@ -209,6 +213,7 @@ async def patch_rollout(rollout_id: str, body: RolloutPatch) -> Rollout:
     _rollouts[rollout_id] = updated
     if "state" in updates and updated_status.state in TERMINAL_STATES:
         # One-way terminal transition (guarded above) => append exactly once.
+        _terminal_positions[rollout_id] = len(_terminal_order)
         _terminal_order.append(rollout_id)
     return updated
 
@@ -216,5 +221,8 @@ async def patch_rollout(rollout_id: str, body: RolloutPatch) -> Rollout:
 @router.delete("/rollouts/{rollout_id}", status_code=204)
 async def delete_rollout(rollout_id: str) -> None:
     """Delete a rollout and its events. Idempotent: missing id is a no-op."""
+    position = _terminal_positions.pop(rollout_id, None)
+    if position is not None:
+        _terminal_order[position] = None
     _rollouts.pop(rollout_id, None)
     _events.pop(rollout_id, None)
