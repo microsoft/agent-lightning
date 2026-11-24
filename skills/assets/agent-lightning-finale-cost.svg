@@ -1,0 +1,289 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="790" viewBox="0 0 1180 790">
+<rect width="100%" height="100%" fill="#FFFFFF"/>
+<style>text{font-family:Palatino,"TeX Gyre Pagella",serif;fill:#25282D}.title{font-size:17px;font-weight:700}.axis-label{font-size:13px}.tick{font-size:11px;fill:#4D535C}.budget{font-size:9px;font-weight:600}.legend-title{font-size:15px;font-weight:700}.legend{font-size:13px}.note{font-size:11px;fill:#5E646D}</style>
+<text class="title" x="237.0" y="36" text-anchor="middle">SpreadsheetBench</text>
+<line x1="93" y1="236.79" x2="381" y2="236.79" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="85" y="240.79" text-anchor="end">40%</text>
+<line x1="93" y1="147.46" x2="381" y2="147.46" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="85" y="151.46" text-anchor="end">60%</text>
+<line x1="93" y1="58.12" x2="381" y2="58.12" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="85" y="62.12" text-anchor="end">80%</text>
+<line x1="102.60" y1="56" x2="102.60" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="102.60" y="336" text-anchor="middle">0</text>
+<line x1="179.91" y1="56" x2="179.91" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="179.91" y="336" text-anchor="middle">5</text>
+<line x1="257.22" y1="56" x2="257.22" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="257.22" y="336" text-anchor="middle">10</text>
+<line x1="334.53" y1="56" x2="334.53" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="334.53" y="336" text-anchor="middle">15</text>
+<line x1="93" y1="317" x2="381" y2="317" stroke="#7D848E" stroke-width="1.2"/>
+<line x1="93" y1="56" x2="93" y2="317" stroke="#7D848E" stroke-width="1.2"/>
+<text class="axis-label" x="237.0" y="361" text-anchor="middle">Finale cost (USD)</text>
+<text class="axis-label" x="48" y="186.5" text-anchor="middle" transform="rotate(-90 48 186.5)">Held-out score</text>
+<polygon points="150.77,285.74 156.77,291.74 150.77,297.74 144.77,291.74" fill="#626A75" stroke="#626A75" stroke-width="1.5"/>
+<circle cx="172.54" cy="90.90" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="183.74" cy="116.61" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="134.28" cy="121.43" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="191.39" cy="96.09" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="200.34" cy="121.96" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="134.09" cy="108.04" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="164.27" cy="94.65" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="172.07" cy="88.76" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="134.20" cy="112.59" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="188.37" cy="118.21" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="164.65" cy="239.25" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="129.17" cy="126.25" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="192.59" cy="112.32" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="170.45" cy="93.04" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="175.96" cy="113.39" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="211.63" cy="110.18" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="199.47" cy="167.49" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="135.94" cy="102.68" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<polygon points="195.33,203.86 189.93,213.66 200.73,213.66" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<polygon points="210.56,111.21 205.16,121.01 215.96,121.01" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<polygon points="285.47,211.90 280.07,221.70 290.87,221.70" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<g stroke="#159D75" stroke-width="2.4" stroke-linecap="round"><line x1="184.11" y1="128.62" x2="191.15" y2="135.66"/><line x1="184.11" y1="135.66" x2="191.15" y2="128.62"/></g>
+<g stroke="#3478D4" stroke-width="2.4" stroke-linecap="round"><line x1="191.32" y1="103.98" x2="198.36" y2="111.02"/><line x1="191.32" y1="111.02" x2="198.36" y2="103.98"/></g>
+<g stroke="#D95F02" stroke-width="2.4" stroke-linecap="round"><line x1="339.08" y1="77.74" x2="346.12" y2="84.78"/><line x1="339.08" y1="84.78" x2="346.12" y2="77.74"/></g>
+<rect x="136.08" y="126.13" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="129.28" y="108.44" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="223.75" y="90.79" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="123.87" y="118.62" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="122.78" y="122.37" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="125.41" y="129.88" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="123.71" y="114.87" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="130.36" y="101.52" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="152.01" y="104.15" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<text class="title" x="612.0" y="36" text-anchor="middle">OfficeQA</text>
+<line x1="468" y1="306.76" x2="756" y2="306.76" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="310.76" text-anchor="end">30%</text>
+<line x1="468" y1="237.58" x2="756" y2="237.58" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="241.58" text-anchor="end">40%</text>
+<line x1="468" y1="168.41" x2="756" y2="168.41" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="172.41" text-anchor="end">50%</text>
+<line x1="468" y1="99.24" x2="756" y2="99.24" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="103.24" text-anchor="end">60%</text>
+<line x1="477.60" y1="56" x2="477.60" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="477.60" y="336" text-anchor="middle">0</text>
+<line x1="559.23" y1="56" x2="559.23" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="559.23" y="336" text-anchor="middle">2</text>
+<line x1="640.87" y1="56" x2="640.87" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="640.87" y="336" text-anchor="middle">4</text>
+<line x1="722.50" y1="56" x2="722.50" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="722.50" y="336" text-anchor="middle">6</text>
+<line x1="468" y1="317" x2="756" y2="317" stroke="#7D848E" stroke-width="1.2"/>
+<line x1="468" y1="56" x2="468" y2="317" stroke="#7D848E" stroke-width="1.2"/>
+<text class="axis-label" x="612.0" y="361" text-anchor="middle">Finale cost (USD)</text>
+<text class="axis-label" x="423" y="186.5" text-anchor="middle" transform="rotate(-90 423 186.5)">Held-out score</text>
+<polygon points="594.84,285.74 600.84,291.74 594.84,297.74 588.84,291.74" fill="#626A75" stroke="#626A75" stroke-width="1.5"/>
+<circle cx="593.41" cy="169.75" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="607.31" cy="140.26" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="640.23" cy="149.65" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="607.21" cy="149.65" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="600.10" cy="130.88" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="655.13" cy="121.50" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="612.28" cy="145.62" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="608.94" cy="142.94" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="694.32" cy="121.50" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="616.82" cy="130.88" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="606.94" cy="138.92" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="587.98" cy="171.09" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="654.16" cy="125.52" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="594.08" cy="144.28" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="636.15" cy="126.86" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="602.51" cy="136.24" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<polygon points="592.07,157.65 586.67,167.45 597.47,167.45" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<polygon points="597.37,133.52 591.97,143.32 602.77,143.32" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="612.34" cy="128.20" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<polygon points="619.51,167.04 614.11,176.84 624.91,176.84" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="609.88" cy="128.20" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<g stroke="#159D75" stroke-width="2.4" stroke-linecap="round"><line x1="577.48" y1="167.57" x2="584.52" y2="174.61"/><line x1="577.48" y1="174.61" x2="584.52" y2="167.57"/></g>
+<g stroke="#3478D4" stroke-width="2.4" stroke-linecap="round"><line x1="608.85" y1="144.79" x2="615.89" y2="151.83"/><line x1="608.85" y1="151.83" x2="615.89" y2="144.79"/></g>
+<g stroke="#D95F02" stroke-width="2.4" stroke-linecap="round"><line x1="650.26" y1="144.79" x2="657.30" y2="151.83"/><line x1="650.26" y1="151.83" x2="657.30" y2="144.79"/></g>
+<rect x="691.57" y="117.12" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="713.20" y="76.86" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="690.34" y="92.97" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="611.16" y="165.33" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="634.42" y="135.86" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="607.08" y="158.62" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="623.81" y="153.29" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="614.42" y="138.56" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="641.77" y="155.99" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<text class="title" x="987.0" y="36" text-anchor="middle">ALFWorld</text>
+<line x1="843" y1="278.32" x2="1131" y2="278.32" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="835" y="282.32" text-anchor="end">60%</text>
+<line x1="843" y1="172.45" x2="1131" y2="172.45" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="835" y="176.45" text-anchor="end">80%</text>
+<line x1="843" y1="66.59" x2="1131" y2="66.59" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="835" y="70.59" text-anchor="end">100%</text>
+<line x1="852.60" y1="56" x2="852.60" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="852.60" y="336" text-anchor="middle">0</text>
+<line x1="931.75" y1="56" x2="931.75" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="931.75" y="336" text-anchor="middle">2.5</text>
+<line x1="1010.91" y1="56" x2="1010.91" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="1010.91" y="336" text-anchor="middle">5</text>
+<line x1="1090.06" y1="56" x2="1090.06" y2="317" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="1090.06" y="336" text-anchor="middle">7.5</text>
+<line x1="843" y1="317" x2="1131" y2="317" stroke="#7D848E" stroke-width="1.2"/>
+<line x1="843" y1="56" x2="843" y2="317" stroke="#7D848E" stroke-width="1.2"/>
+<text class="axis-label" x="987.0" y="361" text-anchor="middle">Finale cost (USD)</text>
+<text class="axis-label" x="798" y="186.5" text-anchor="middle" transform="rotate(-90 798 186.5)">Held-out score</text>
+<polygon points="1092.60,284.17 1098.60,290.17 1092.60,296.17 1086.60,290.17" fill="#626A75" stroke="#626A75" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="885.64" cy="67.90" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="852.60" cy="71.85" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="902.42" cy="67.90" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="852.60" cy="67.90" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="852.60" cy="69.22" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="940.07" cy="140.32" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="852.60" cy="66.59" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="918.12" cy="250.93" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="867.48" cy="70.54" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="852.60" cy="67.90" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="907.12" cy="67.90" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<polygon points="852.60,62.50 847.20,72.30 858.00,72.30" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<g stroke="#159D75" stroke-width="2.4" stroke-linecap="round"><line x1="849.08" y1="64.38" x2="856.12" y2="71.42"/><line x1="849.08" y1="71.42" x2="856.12" y2="64.38"/></g>
+<polygon points="922.05,94.11 916.65,103.91 927.45,103.91" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<g stroke="#3478D4" stroke-width="2.4" stroke-linecap="round"><line x1="849.08" y1="63.07" x2="856.12" y2="70.11"/><line x1="849.08" y1="70.11" x2="856.12" y2="63.07"/></g>
+<polygon points="911.62,73.04 906.22,82.84 917.02,82.84" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<g stroke="#D95F02" stroke-width="2.4" stroke-linecap="round"><line x1="970.32" y1="74.92" x2="977.36" y2="81.96"/><line x1="970.32" y1="81.96" x2="977.36" y2="74.92"/></g>
+<rect x="918.49" y="91.14" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="873.21" y="204.42" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="897.91" y="63.51" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="848.20" y="89.82" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="848.20" y="62.19" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="877.33" y="74.04" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="848.20" y="100.35" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="848.20" y="62.19" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="848.20" y="63.51" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<text class="title" x="237.0" y="426" text-anchor="middle">SearchQA</text>
+<line x1="93" y1="676.46" x2="381" y2="676.46" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="85" y="680.46" text-anchor="end">75%</text>
+<line x1="93" y1="579.28" x2="381" y2="579.28" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="85" y="583.28" text-anchor="end">80%</text>
+<line x1="93" y1="482.10" x2="381" y2="482.10" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="85" y="486.10" text-anchor="end">85%</text>
+<line x1="102.60" y1="446" x2="102.60" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="102.60" y="726" text-anchor="middle">0</text>
+<line x1="234.37" y1="446" x2="234.37" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="234.37" y="726" text-anchor="middle">2</text>
+<line x1="366.14" y1="446" x2="366.14" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="366.14" y="726" text-anchor="middle">4</text>
+<line x1="93" y1="707" x2="381" y2="707" stroke="#7D848E" stroke-width="1.2"/>
+<line x1="93" y1="446" x2="93" y2="707" stroke="#7D848E" stroke-width="1.2"/>
+<text class="axis-label" x="237.0" y="751" text-anchor="middle">Finale cost (USD)</text>
+<text class="axis-label" x="48" y="576.5" text-anchor="middle" transform="rotate(-90 48 576.5)">Held-out score</text>
+<polygon points="219.72,642.69 225.72,648.69 219.72,654.69 213.72,648.69" fill="#626A75" stroke="#626A75" stroke-width="1.5"/>
+<circle cx="237.62" cy="556.60" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="259.44" cy="537.63" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="314.34" cy="533.93" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="235.34" cy="538.55" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="239.05" cy="514.49" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="305.84" cy="544.57" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="238.96" cy="527.45" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="248.90" cy="530.22" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="293.83" cy="504.31" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="252.24" cy="513.10" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="255.51" cy="540.40" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="241.23" cy="513.56" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="289.74" cy="514.49" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="276.25" cy="551.51" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="259.30" cy="549.66" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<polygon points="232.67,537.78 227.27,547.58 238.07,547.58" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<polygon points="234.72,536.39 229.32,546.19 240.12,546.19" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<polygon points="307.45,550.74 302.05,560.54 312.85,560.54" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<g stroke="#159D75" stroke-width="2.4" stroke-linecap="round"><line x1="218.87" y1="551.23" x2="225.91" y2="558.27"/><line x1="218.87" y1="558.27" x2="225.91" y2="551.23"/></g>
+<g stroke="#3478D4" stroke-width="2.4" stroke-linecap="round"><line x1="217.78" y1="532.26" x2="224.82" y2="539.30"/><line x1="217.78" y1="539.30" x2="224.82" y2="532.26"/></g>
+<g stroke="#D95F02" stroke-width="2.4" stroke-linecap="round"><line x1="296.10" y1="530.87" x2="303.14" y2="537.91"/><line x1="296.10" y1="537.91" x2="303.14" y2="530.87"/></g>
+<circle cx="280.27" cy="550.12" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="342.60" cy="506.62" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="286.05" cy="569.56" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="278.06" y="518.51" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="304.42" y="525.90" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="230.63" y="549.80" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="216.79" y="570.79" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="249.07" y="543.39" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="212.84" y="563.80" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="235.90" y="523.95" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="255.00" y="510.93" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<text class="title" x="612.0" y="426" text-anchor="middle">LiveMath</text>
+<line x1="468" y1="706.19" x2="756" y2="706.19" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="710.19" text-anchor="end">20%</text>
+<line x1="468" y1="626.46" x2="756" y2="626.46" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="630.46" text-anchor="end">40%</text>
+<line x1="468" y1="546.73" x2="756" y2="546.73" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="550.73" text-anchor="end">60%</text>
+<line x1="468" y1="467.01" x2="756" y2="467.01" stroke="#DDE2E8" stroke-width="1"/>
+<text class="tick" x="460" y="471.01" text-anchor="end">80%</text>
+<line x1="477.60" y1="446" x2="477.60" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="477.60" y="726" text-anchor="middle">0</text>
+<line x1="566.26" y1="446" x2="566.26" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="566.26" y="726" text-anchor="middle">2</text>
+<line x1="654.93" y1="446" x2="654.93" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="654.93" y="726" text-anchor="middle">4</text>
+<line x1="743.59" y1="446" x2="743.59" y2="707" stroke="#E5E8EC" stroke-width="1"/>
+<text class="tick" x="743.59" y="726" text-anchor="middle">6</text>
+<line x1="468" y1="707" x2="756" y2="707" stroke="#7D848E" stroke-width="1.2"/>
+<line x1="468" y1="446" x2="468" y2="707" stroke="#7D848E" stroke-width="1.2"/>
+<text class="axis-label" x="612.0" y="751" text-anchor="middle">Finale cost (USD)</text>
+<text class="axis-label" x="423" y="576.5" text-anchor="middle" transform="rotate(-90 423 576.5)">Held-out score</text>
+<polygon points="576.99,675.74 582.99,681.74 576.99,687.74 570.99,681.74" fill="#626A75" stroke="#626A75" stroke-width="1.5"/>
+<circle cx="520.39" cy="504.21" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="511.02" cy="542.48" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="717.60" cy="585.00" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="500.29" cy="495.71" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="533.42" cy="530.79" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="561.51" cy="559.49" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="506.00" cy="479.76" r="4.40" fill="#FFFFFF" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="520.78" cy="496.77" r="4.40" fill="#FFFFFF" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="510.32" cy="550.99" r="4.40" fill="#FFFFFF" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="507.30" cy="531.85" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="518.99" cy="510.59" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="536.86" cy="509.53" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="544.12" cy="575.44" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="518.64" cy="510.59" r="4.40" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<circle cx="533.27" cy="572.25" r="4.40" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="569.29" cy="657.29" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<polygon points="504.43,516.88 499.03,526.68 509.83,526.68" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<polygon points="478.31,531.77 472.91,541.57 483.71,541.57" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<circle cx="523.26" cy="563.74" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<circle cx="524.69" cy="506.34" r="4.40" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<g stroke="#159D75" stroke-width="2.4" stroke-linecap="round"><line x1="523.35" y1="500.69" x2="530.39" y2="507.73"/><line x1="523.35" y1="507.73" x2="530.39" y2="500.69"/></g>
+<g stroke="#3478D4" stroke-width="2.4" stroke-linecap="round"><line x1="486.28" y1="467.74" x2="493.32" y2="474.78"/><line x1="486.28" y1="474.78" x2="493.32" y2="467.74"/></g>
+<g stroke="#D95F02" stroke-width="2.4" stroke-linecap="round"><line x1="537.82" y1="588.93" x2="544.86" y2="595.97"/><line x1="537.82" y1="595.97" x2="544.86" y2="588.93"/></g>
+<polygon points="561.34,609.37 555.94,619.17 566.74,619.17" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="557.87" y="615.69" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="508.67" y="490.23" width="8.80" height="8.80" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<rect x="526.40" y="524.28" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="494.92" y="488.12" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="492.26" y="515.75" width="8.80" height="8.80" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<rect x="525.07" y="511.52" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="494.04" y="516.82" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<rect x="539.70" y="498.76" width="8.80" height="8.80" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<text class="legend-title" x="817" y="448">Harness</text>
+<circle cx="824.00" cy="472.00" r="4.60" fill="#D95F02" stroke="#D95F02" stroke-width="1.5"/>
+<text class="legend" x="841" y="476">Claude Code</text>
+<circle cx="824.00" cy="500.00" r="4.60" fill="#159D75" stroke="#159D75" stroke-width="1.5"/>
+<text class="legend" x="841" y="504">Codex</text>
+<circle cx="824.00" cy="528.00" r="4.60" fill="#3478D4" stroke="#3478D4" stroke-width="1.5"/>
+<text class="legend" x="841" y="532">GitHub Copilot</text>
+<text class="legend-title" x="817" y="576">Condition</text>
+<circle cx="824.00" cy="599.00" r="4.60" fill="#FFFFFF" stroke="#555B65" stroke-width="1.5"/>
+<text class="legend" x="841" y="603">Vanilla</text>
+<circle cx="824.00" cy="623.00" r="4.60" fill="#555B65" stroke="#555B65" stroke-width="1.5"/>
+<text class="legend" x="841" y="627">Two-phase</text>
+<rect x="819.40" y="642.40" width="9.20" height="9.20" fill="#555B65" stroke="#555B65" stroke-width="1.5"/>
+<text class="legend" x="841" y="651">Agent Lightning skill</text>
+<polygon points="824.00,665.40 818.40,675.60 829.60,675.60" fill="#555B65" stroke="#555B65" stroke-width="1.5"/>
+<text class="legend" x="841" y="675">Subagents</text>
+<g stroke="#555B65" stroke-width="2.4" stroke-linecap="round"><line x1="820.32" y1="691.32" x2="827.68" y2="698.68"/><line x1="820.32" y1="698.68" x2="827.68" y2="691.32"/></g>
+<text class="legend" x="841" y="699">Git worktrees</text>
+<polygon points="824.00,713.40 829.60,719.00 824.00,724.60 818.40,719.00" fill="#555B65" stroke="#555B65" stroke-width="1.5"/>
+<text class="legend" x="841" y="723">Baseline</text>
+</svg>

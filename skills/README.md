@@ -46,22 +46,14 @@ In the last two rows, the value in parentheses is the improvement over the start
 
 To test limited budgets, we gave each optimizer \$5, \$10, or \$25 in API credits. Calls made during optimization by both the coding agent and the agent it was improving counted toward the budget. The final held-out evaluation ran after optimization and did not count toward this limit. We ran every combination of benchmark, coding agent, budget, and skill setting three times.
 
-Each point below averages three runs for one coding agent, budget, and skill setting. The x-axis shows the average total cost on a logarithmic scale. The y-axis shows the average final score on held-out data. Color and shape identify the coding agent. Filled markers use Agent Lightning; hollow markers show runs without it. The legend does not show the budget. Total cost includes optimizer calls, training and self-evaluation calls, and the final held-out evaluation, even though that evaluation is outside the optimization limit. It does not include evaluations of the original, unchanged agent.
+Each point below averages up to three runs for one coding agent, budget, and condition. Total cost includes optimizer calls, training and self-evaluation calls, and the final held-out evaluation, even though that evaluation is outside the optimization limit. It does not include evaluations of the original, unchanged agent.
 
-![SpreadsheetBench accuracy versus overall cost](assets/agent-lightning-spreadsheetbench-accuracy-overall-cost.svg)
-
-![OfficeQA correctness versus overall cost](assets/agent-lightning-officeqa-correctness-overall-cost.svg)
-
-![ALFWorld success versus overall cost](assets/agent-lightning-alfworld-success-overall-cost.svg)
+![Held-out score versus overall cost](assets/agent-lightning-overall-cost.svg)
 
 #### Finale cost
 
 The optimizer can change settings such as the model or reasoning effort. This may improve the score but make the agent more expensive to run. Finale cost is the agent's LLM cost during the final held-out evaluation.
 
-These charts use the budgets where Agent Lightning had the largest overall advantage: \$5 for SpreadsheetBench and \$10 for OfficeQA and ALFWorld. Each point is one run, not an average of three runs. The x-axis shows the run's finale cost, and the y-axis shows its held-out score. In ALFWorld, the optimizer can write a rule-based controller that handles the different scenarios in the benchmark. The final agent can then complete the evaluation without calling an LLM, so its finale cost can be \$0. We move overlapping zero-cost points slightly so that every run remains visible. Each chart also shows the result for the original, unchanged agent.
+In ALFWorld, the optimizer can write a rule-based controller that handles the different scenarios in the benchmark. The final agent can then complete the evaluation without calling an LLM, so its finale cost can be \$0.
 
-![SpreadsheetBench accuracy versus finale cost](assets/agent-lightning-spreadsheetbench-accuracy-finale-cost.svg)
-
-![OfficeQA correctness versus finale cost](assets/agent-lightning-officeqa-correctness-finale-cost.svg)
-
-![ALFWorld success versus finale cost](assets/agent-lightning-alfworld-success-finale-cost.svg)
+![Held-out score versus finale cost](assets/agent-lightning-finale-cost.svg)
