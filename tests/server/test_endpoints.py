@@ -530,3 +530,63 @@ def test_terminal_rollouts_cursor_pagination(client: TestClient, auth_headers: d
     page3 = client.get("/api/rollouts/terminal", params={"after": 3}, headers=auth_headers)
     assert page3.json() == {"items": [], "next_after": 3, "total_terminal": 3}
     assert pending not in {it["rollout_id"] for it in body1["items"] + body2["items"]}
+
+
+@pytest.mark.parametrize("replacement_state", ["queuing", "running", "succeeded", "failed"])
+def test_terminal_rollouts_do_not_reuse_deleted_completion(
+    client: TestClient, auth_headers: dict[str, str], replacement_state: str
+):
+    rid = _terminal(client, auth_headers, "original", is_train=True)
+    assert client.delete(f"/api/rollouts/{rid}", headers=auth_headers).status_code == 204
+    recreated = client.post(
+        "/api/rollouts",
+        json=[{"rollout_id": rid, "input": {"data_id": "replacement"}, "is_train": False}],
+        headers=auth_headers,
+    )
+    assert recreated.status_code == 201
+    if replacement_state != "queuing":
+        assert (
+            client.patch(
+                f"/api/rollouts/{rid}", json={"status": {"state": "running"}}, headers=auth_headers
+            ).status_code
+            == 200
+        )
+    if replacement_state in {"succeeded", "failed"}:
+        assert (
+            client.patch(
+                f"/api/rollouts/{rid}", json={"status": {"state": replacement_state}}, headers=auth_headers
+            ).status_code
+            == 200
+        )
+
+    # The deleted completion slot cannot resolve to the replacement rollout.
+    first = client.get("/api/rollouts/terminal", params={"after": 0, "limit": 1}, headers=auth_headers).json()
+    assert first["items"] == []
+    assert first["next_after"] == 1
+    rest = client.get("/api/rollouts/terminal", params={"after": 1}, headers=auth_headers).json()
+    if replacement_state in {"succeeded", "failed"}:
+        assert rest == {
+            "items": [{"rollout_id": rid, "state": replacement_state, "data_id": "replacement", "is_train": False}],
+            "next_after": 2,
+            "total_terminal": 2,
+        }
+    else:
+        assert rest == {"items": [], "next_after": 1, "total_terminal": 1}
+
+
+def test_terminal_rollouts_deletion_preserves_existing_cursors(client: TestClient, auth_headers: dict[str, str]):
+    rid_a = _terminal(client, auth_headers, "a", is_train=True)
+    rid_b = _terminal(client, auth_headers, "b", is_train=True)
+    rid_c = _terminal(client, auth_headers, "c", is_train=True)
+    before = client.get("/api/rollouts/terminal", params={"limit": 1}, headers=auth_headers).json()
+    assert before["next_after"] == 1
+    for rid in [rid_a, rid_b]:
+        assert client.delete(f"/api/rollouts/{rid}", headers=auth_headers).status_code == 204
+        assert client.delete(f"/api/rollouts/{rid}", headers=auth_headers).status_code == 204
+    gap = client.get(
+        "/api/rollouts/terminal", params={"after": before["next_after"], "limit": 1}, headers=auth_headers
+    ).json()
+    assert gap == {"items": [], "next_after": 2, "total_terminal": 3}
+    after = client.get("/api/rollouts/terminal", params={"after": gap["next_after"]}, headers=auth_headers).json()
+    assert [item["rollout_id"] for item in after["items"]] == [rid_c]
+    assert after["next_after"] == 3
