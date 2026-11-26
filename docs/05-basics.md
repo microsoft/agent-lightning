@@ -87,6 +87,88 @@ The Customized Trainer sits on top of `verl` and connects the training backend t
 
 The trainer also handles Agent Lightning-specific data processing. It merges consecutive model calls only when their token histories are exactly continuous, computes advantages at the rollout level, and supports rollout-level loss normalization.
 
+## Handling failed rollouts
+
+`SUCCEEDED` and `FAILED` are both terminal states. The Gateway rejects any transition out of them, and the trainer treats either state as "finished". The framework retries individual HTTP and model calls, but it does not retry a failed rollout, remove it from a training batch, or attach a failure-specific label. What to do with a failed rollout is your policy.
+
+### What happens automatically
+
+- The Gateway makes up to six attempts for each proxied model call on transport errors, timeouts, `408`, `409`, `429`, and `5xx`. Exhausted retries surface as an error to the agent.
+- A rollout exceeding `agentlightning.rollout_timeout_seconds` is killed and marked `FAILED`: local runs record `local subprocess timed out`; Kubernetes runs record the Job failure reason.
+- An uncaught exception in the agent's `run()` exits the worker non-zero and marks the rollout `FAILED`, with the exit code or Job reason in `error_message`.
+- Returning `None` from `run()` is **not** a failure signal. The worker ignores the return value and exits with code 0, so the rollout becomes `SUCCEEDED` regardless of whether a reward event was recorded; a missing reward is then filled with `reward_fillna_value`.
+- `FAILED` does not automatically exclude a rollout from training. Model calls recorded before the failure remain, and the trainer still builds a `CompletedRollout` from a `FAILED` rollout and passes it to the adapter alongside successful rollouts.
+- The rollout manager examines only the last `reward` event, in event order. Its `value` must be numeric; booleans are not accepted. Earlier reward events are not consulted if the last event has a non-numeric value. If there is no reward event, or the last value is unusable, `final_reward` remains unset and `agentlightning.reward_fillna_value` (default `0.0`) is used. This fallback is independent of rollout state. For example, events with values `1.0` followed by `"unavailable"` produce `0.0`, not `1.0`.
+
+The last point matters: an infrastructure failure after a few successful model calls can produce training rows labelled `0.0`, indistinguishable from a genuine zero-reward outcome.
+
+### Decision table
+
+"Framework" is behavior implemented in Agent Lightning v1.0. "Policy" is a decision you make in your agent or training driver.
+
+| Situation | Framework behavior | Policy |
+|---|---|---|
+| Transient infrastructure failure, e.g. one model call times out or returns `5xx` | The Gateway retries that call with backoff. The rollout is unaffected while retries succeed. | Let the automatic retry work. Do not convert the error into a reward. If the call still fails, allow `FAILED`; re-enqueue with a **new** `rollout_id` only if you choose to retry the sample. |
+| Persistent infrastructure failure, e.g. network down or a bad model endpoint | There is no rollout-level retry. Each affected rollout terminates on its own. | Stop the run and fix the network or endpoint. More rollout attempts will not repair an infrastructure fault and will waste the batch. |
+| An exception in one sub-agent of a multi-agent rollout | Earlier sub-agents' `model_request` events are already stored. An uncaught exception yields `FAILED`, but the partial trace is still converted into training rows and a missing reward is filled with `reward_fillna_value`. | Decide explicitly: catch the exception and report a valid reward for the completed work, or discard the rollout at the training-data boundary. Do not assume partial traces are dropped for you. |
+| A valid task failure versus an infrastructure failure | Only the last `reward` event is considered; its numeric `value` (negative values included) is used. If there is no reward event, or the last value is non-numeric or boolean, `reward_fillna_value` is used instead, even if an earlier event had a numeric value. | Report task outcomes, including wrong answers, with an explicit `reward` event and finish normally so the rollout is `SUCCEEDED`. Never report `0.0` for an infrastructure error; let the rollout fail and filter it later. |
+| Too many failed rollouts in one batch | The synchronous manager returns every terminal rollout; the asynchronous manager waits for every member of a group. There is no batch threshold or skip switch. | Check the reported `succeeded`/`failed` counters (or count failures in an `on_failed` hook) and abort the training step when your own threshold is exceeded. |
+
+### Minimal example: separate task outcomes from infrastructure errors
+
+The agent posts events to the `AGL_EVENT_URL` provided by the Controller. `solve()` and `expected` below are agent-specific.
+
+```python
+import json
+import os
+import urllib.request
+
+
+def post_event(event_type: str, data: dict) -> None:
+    request = urllib.request.Request(
+        os.environ["AGL_EVENT_URL"],
+        data=json.dumps({"event_type": event_type, "data": data}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ.get('AGL_KEY', '')}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=5):
+        pass
+
+
+class InfrastructureError(RuntimeError):
+    """Reserved for transport failures and timeouts, not for wrong answers."""
+
+
+class MyAgent:
+    def run(self) -> None:
+        try:
+            prediction = self.solve()
+        except InfrastructureError as exc:
+            post_event("infra_error", {"message": str(exc)})
+            raise  # non-zero exit -> FAILED; deliberately no reward event
+
+        # A wrong answer is a valid task outcome, reported with a real score.
+        post_event("reward", {"value": 1.0 if prediction == self.expected else -1.0})
+```
+
+### Adapters and Triplet generation
+
+Triplets come from the Gateway's `format="triplet"` view of `model_request` events; the rollout manager assembles them into `CompletedRollout`, and `RolloutAdapter` converts them into `verl` training rows. Model calls whose recorded status is `error` or whose HTTP status is `>= 400` are excluded from triplets.
+
+Agent Lightning v1.0 has no `TracerTraceToTriplet` adapter, no `adapt()` hook, and no trainer setting for injecting a custom adapter. The built-in trainer constructs `RolloutAdapter` itself. A custom adapter that returns an empty triplet list is therefore not a supported configuration path on this version.
+
+The supported customization seam is `agentlightning.hooks.RolloutHooks`, loaded from the `agentlightning.hooks` config path. Its `on_failed(rollout, store)` method is a lifecycle callback that runs when a rollout becomes `FAILED` and can add events through `store.add_event(...)`; it does not filter or remove the rollout. To exclude failed rollouts from training, filter the `completed_rollouts` list in your own training driver or trainer subclass before calling `RolloutAdapter.get_train_data_batch()`.
+
+### Limitations
+
+- There is no built-in per-rollout retry, batch-skip switch, or automatic suppression of zero-reward examples.
+- `RolloutConfig` has no `max_attempts` or retry-condition fields. Snippets from older releases that call `emit_exception` or subclass `TracerTraceToTriplet` do not apply to v1.0.
+- Re-enqueuing with the same `rollout_id` returns the existing rollout unchanged; use a fresh ID for a real retry.
+- `reward_fillna_value` applies to every rollout without a usable final reward, not only to failed ones. Only the last `reward` event is checked; if its `value` is non-numeric or boolean, earlier numeric reward events are not used and the fallback applies.
+
 ## Configure the components
 
 The following chapters describe the settings for each component. Start with the trainer to define how rollouts are created and converted into training samples, then configure the server and the Controller that execute them:
