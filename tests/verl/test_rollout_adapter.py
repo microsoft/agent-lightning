@@ -198,6 +198,58 @@ def _triplet(prompt_ids: list[int], response_ids: list[int]) -> Triplet:
     )
 
 
+@pytest.mark.parametrize("reward", [0.75, -0.25])
+@pytest.mark.parametrize(
+    ("level", "max_response_length", "max_total_length", "expected_scores", "expected_masks"),
+    [
+        ("trajectory", 4, None, [[0, 1, 0, 0]], [[1, 1, 0, 0]]),
+        ("trajectory", 8, 6, [[0, 1, 0, 0, 0, 0, 0, 0]], [[1, 1, 0, 0, 0, 0, 0, 0]]),
+        ("trajectory", 8, None, [[0, 0, 0, 0, 0, 0, 1, 0]], [[1, 1, 0, 0, 0, 1, 1, 0]]),
+        ("transition", 4, None, [[0, 1, 0, 0], [0, 1, 0, 0]], [[1, 1, 0, 0], [1, 1, 0, 0]]),
+    ],
+    ids=["response-cap-in-observation", "total-cap-in-observation", "complete-trajectory", "transitions"],
+)
+def test_outcome_reward_reaches_generated_tokens(
+    reward: float,
+    level: str,
+    max_response_length: int,
+    max_total_length: int | None,
+    expected_scores: list[list[int]],
+    expected_masks: list[list[int]],
+) -> None:
+    from verl.trainer.ppo.core_algos import compute_gae_advantage_return
+
+    rollout = CompletedRollout(
+        rollout_id="r1",
+        data_id="data-1",
+        step=0,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=reward,
+        triplets=[_triplet([1, 2], [3, 4]), _triplet([1, 2, 3, 4, 5, 6, 7], [8, 9])],
+    )
+    adapter = RolloutAdapter(
+        max_prompt_length=8,
+        max_response_length=max_response_length,
+        max_total_length=max_total_length,
+        device=torch.device("cpu"),
+        pad_token_id=0,
+        trace_aggregator_level=level,
+    )
+
+    batch, _ = adapter.get_train_data_batch([rollout])
+
+    assert batch.batch is not None
+    scores = batch.batch["token_level_scores"]
+    mask = batch.batch.get("response_mask", batch.batch["attention_mask"][:, -max_response_length:])
+    assert mask.tolist() == expected_masks
+    torch.testing.assert_close(scores, torch.tensor(expected_scores, dtype=torch.float32) * reward)
+    # GRPO's per-row outcome sum is preserved, while GAE must also see the reward.
+    torch.testing.assert_close(scores.sum(-1), torch.full((len(batch),), reward))
+    _, returns = compute_gae_advantage_return(scores, torch.zeros_like(scores), mask, gamma=1.0, lam=1.0)
+    torch.testing.assert_close(returns[mask.bool()], torch.full_like(returns[mask.bool()], reward))
+
+
 @pytest.mark.parametrize("prefix_mismatch", [False, True], ids=["initial-group", "restarted-group"])
 @pytest.mark.parametrize("missing_log_probs", [False, True], ids=["with-log-probs", "missing-log-probs"])
 def test_trajectory_aggregation_preserves_input_log_probs(prefix_mismatch: bool, missing_log_probs: bool) -> None:
