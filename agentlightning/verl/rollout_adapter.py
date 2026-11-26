@@ -297,10 +297,10 @@ def _load_pil_image(url: str) -> Any:
 
     if url.startswith("data:"):
         _, _, payload = url.partition(",")
-        return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
-    if url.startswith("file://"):
-        return Image.open(url2pathname(url.removeprefix("file:"))).convert("RGB")
-    if url.startswith(("http://", "https://")):
+        image_source = io.BytesIO(base64.b64decode(payload))
+    elif url.startswith("file://"):
+        image_source = url2pathname(url.removeprefix("file:"))
+    elif url.startswith(("http://", "https://")):
         # [multimodal-patch] Remote images are fetched from the trainer process with
         # content-type and size validation.
         import httpx
@@ -313,8 +313,17 @@ def _load_pil_image(url: str) -> Any:
         max_bytes = 50 * 1024 * 1024
         if len(response.content) > max_bytes:
             raise ValueError(f"[multimodal-patch] remote image exceeds {max_bytes} bytes")
-        return Image.open(io.BytesIO(response.content)).convert("RGB")
-    raise ValueError(f"[multimodal-patch] unsupported image url scheme: {url[:64]}")
+        image_source = io.BytesIO(response.content)
+    else:
+        raise ValueError(f"[multimodal-patch] unsupported image url scheme: {url[:64]}")
+
+    with Image.open(image_source) as image:
+        if image.mode == "RGBA":
+            # Match vLLM's default image decoding so rollout and training see the same pixels.
+            rgb_image = Image.new("RGB", image.size, (255, 255, 255))
+            rgb_image.paste(image, mask=image.getchannel("A"))
+            return rgb_image
+        return image.convert("RGB")
 
 
 def _build_multi_modal_inputs(processor: Any, image_urls: list[str]) -> tuple[dict[str, Any], bool]:

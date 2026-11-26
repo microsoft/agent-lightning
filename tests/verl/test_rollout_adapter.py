@@ -1087,3 +1087,41 @@ def test_load_pil_image_fetches_remote_url_by_default(monkeypatch: pytest.Monkey
 
     assert image.size == (2, 2)
     assert image.mode == "RGB"
+
+
+@pytest.mark.parametrize("scheme", ["data", "file", "https"])
+@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
+def test_load_pil_image_matches_rollout_rgb_conversion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scheme: str, mode: str
+) -> None:
+    import httpx
+    from PIL import Image
+
+    source = Image.new(mode, (3, 1))
+    pixels = [(10, 20, 30), (10, 20, 30), (10, 20, 30)]
+    source.putdata(
+        [(*rgb, alpha) for rgb, alpha in zip(pixels, [0, 128, 255], strict=True)] if mode == "RGBA" else pixels
+    )
+    buffer = io.BytesIO()
+    source.save(buffer, format="PNG")
+    payload = buffer.getvalue()
+    if scheme == "data":
+        url = "data:image/png;base64," + base64.b64encode(payload).decode()
+    elif scheme == "file":
+        path = tmp_path / "transparent image.png"
+        path.write_bytes(payload)
+        url = path.as_uri()
+    else:
+        url = "https://example.com/transparent.png"
+        response = httpx.Response(
+            200, content=payload, headers={"content-type": "image/png"}, request=httpx.Request("GET", url)
+        )
+        monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: response)
+
+    image = rollout_adapter_module._load_pil_image(url)
+
+    # vLLM composites RGBA onto white before producing rollout vision inputs.
+    expected = [(255, 255, 255), (132, 137, 142), (10, 20, 30)] if mode == "RGBA" else pixels
+    assert image.mode == "RGB"
+    assert image.size == (3, 1)
+    assert [image.getpixel((x, 0)) for x in range(3)] == expected
