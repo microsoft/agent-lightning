@@ -705,6 +705,66 @@ def test_mismatch_decoding_stops_at_table_limit(
     assert len(calls) == expected_decode_calls
 
 
+@pytest.mark.parametrize("is_validation", [False, True], ids=["training", "validation"])
+@pytest.mark.parametrize("wandb_available", [False, True], ids=["missing-wandb", "no-active-run"])
+def test_inactive_wandb_skips_compact_trajectory_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+    is_validation: bool,
+    wandb_available: bool,
+) -> None:
+    logged: list[tuple[dict[str, FakeTable], int]] = []
+    _install_fake_wandb(monkeypatch, logged)
+    rollout = CompletedRollout(
+        rollout_id="r1",
+        data_id="data-1",
+        step=1,
+        sample_idx_in_step=0,
+        enqueue_time=0.0,
+        final_reward=1.0,
+        triplets=[_triplet([1, 2], [3, 4])],
+    )
+    original = rollout.model_copy(deep=True)
+    adapter = _adapter()
+    expected_batch = None
+    if is_validation:
+        expected_metrics = adapter.get_test_metrics([rollout], global_steps=1)
+    else:
+        expected_batch, expected_metrics = adapter.get_train_data_batch([rollout], global_steps=1)
+
+    monkeypatch.setitem(sys.modules, "wandb", SimpleNamespace(run=None) if wandb_available else None)
+    builder_calls: list[object] = []
+    decode_calls: list[list[int]] = []
+    build_records = rollout_adapter_module._build_compact_rollout_trajectory_records
+
+    def tracked_builder(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        builder_calls.append(args)
+        return build_records(*args, **kwargs)
+
+    def tracked_decode(ids: list[int], skip_special_tokens: bool = True) -> str:
+        decode_calls.append(ids)
+        return " ".join(str(token) for token in ids)
+
+    monkeypatch.setattr(rollout_adapter_module, "_build_compact_rollout_trajectory_records", tracked_builder)
+    monkeypatch.setattr(adapter.tokenizer, "decode", tracked_decode)
+    if is_validation:
+        metrics = adapter.get_test_metrics([rollout], global_steps=1)
+    else:
+        batch, metrics = adapter.get_train_data_batch([rollout], global_steps=1)
+        assert batch.batch is not None
+        assert expected_batch is not None
+        assert expected_batch.batch is not None
+        assert set(batch.batch.keys()) == set(expected_batch.batch.keys())
+        for key, value in expected_batch.batch.items():
+            torch.testing.assert_close(batch.batch[key], value)
+        assert set(batch.non_tensor_batch) == set(expected_batch.non_tensor_batch)
+        for key, value in expected_batch.non_tensor_batch.items():
+            np.testing.assert_array_equal(batch.non_tensor_batch[key], value)
+    assert metrics == expected_metrics
+    assert rollout == original
+    assert builder_calls == []
+    assert decode_calls == []
+
+
 def test_training_step_uploads_24_compact_rollout_trajectories_to_wandb_zip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

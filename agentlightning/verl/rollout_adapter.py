@@ -178,9 +178,12 @@ def _upload_trace_merge_mismatches_to_wandb(
 
 
 def _upload_compact_rollout_trajectories_to_wandb(
-    records: list[dict[str, Any]],
+    rollouts: list[CompletedRollout],
     global_steps: int,
     *,
+    tokenizer: Any | None,
+    reward_fillna_value: float,
+    limit: int | None = None,
     is_validation: bool = False,
 ) -> None:
     split = "validation" if is_validation else "train"
@@ -190,6 +193,12 @@ def _upload_compact_rollout_trajectories_to_wandb(
         if wandb.run is None:
             return
         run = wandb.run
+        records = _build_compact_rollout_trajectory_records(
+            rollouts,
+            tokenizer=tokenizer,
+            reward_fillna_value=reward_fillna_value,
+            limit=limit,
+        )
         artifact_type = f"{split}_trajectories"
         artifact_path = f"step_{global_steps}/{artifact_type}.jsonl.zip"
         artifact_name = (
@@ -732,16 +741,16 @@ class RolloutAdapter:
                 if merged_group_count > 1:
                     unmerged_count += 1
 
-        rollout_trajectory_records = _build_compact_rollout_trajectory_records(
+        _upload_trace_merge_mismatches_to_wandb(
+            merge_mismatch_rows, global_steps, include_classification=self.classify_trace_merge_mismatches
+        )
+        _upload_compact_rollout_trajectories_to_wandb(
             sorted_rollouts,
+            global_steps,
             tokenizer=self.tokenizer,
             reward_fillna_value=self.reward_fillna_value,
             limit=_ROLLOUT_TRAJECTORY_WANDB_LIMIT,
         )
-        _upload_trace_merge_mismatches_to_wandb(
-            merge_mismatch_rows, global_steps, include_classification=self.classify_trace_merge_mismatches
-        )
-        _upload_compact_rollout_trajectories_to_wandb(rollout_trajectory_records, global_steps)
 
         n_sample = len(input_ids_list)
         if n_sample == 0:
@@ -959,14 +968,11 @@ class RolloutAdapter:
         if not stats_w_trace:
             raise RuntimeError("get_test_metrics received zero completed rollouts with trace.")
 
-        validation_trajectory_records = _build_compact_rollout_trajectory_records(
+        _upload_compact_rollout_trajectories_to_wandb(
             completed_rollouts,
+            global_steps,
             tokenizer=self.tokenizer,
             reward_fillna_value=self.reward_fillna_value,
-        )
-        _upload_compact_rollout_trajectories_to_wandb(
-            validation_trajectory_records,
-            global_steps,
             is_validation=True,
         )
 
