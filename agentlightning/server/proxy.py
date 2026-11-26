@@ -150,9 +150,22 @@ async def forward_request(
         started_at = time.perf_counter()
         response = await _send_upstream_with_retries(client=client, url=url, body=body)
         latency_ms = (time.perf_counter() - started_at) * 1000
-        response_body = (
-            response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
-        )
+        try:
+            response_body = (
+                response.json() if response.headers.get("content-type", "").startswith("application/json") else None
+            )
+        except ValueError:
+            response_body = None
+        http_status = response.status_code
+        if not isinstance(response_body, dict):
+            response_body = {
+                "error": {
+                    "message": "Upstream model server did not return a JSON object",
+                    "type": "upstream_response_error",
+                }
+            }
+            if http_status < 400:
+                http_status = 502
         routed_experts = _pop_routed_experts(response_body)
 
         _capture_event(
@@ -162,12 +175,12 @@ async def forward_request(
             response_body=response_body,
             server=server,
             latency_ms=latency_ms,
-            http_status=response.status_code,
-            status=_status_from_http_status(response.status_code),
+            http_status=http_status,
+            status=_status_from_http_status(http_status),
             retry_count=int(response.extensions.get("agl_retry_count", 0)),
             routed_experts=routed_experts,
         )
-        return JSONResponse(content=response_body, status_code=response.status_code)
+        return JSONResponse(content=response_body, status_code=http_status)
     finally:
         if pause_state is not None:
             await _dec_inflight(pause_state)
