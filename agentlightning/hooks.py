@@ -35,29 +35,41 @@ class RolloutHooks:
 
 def load_hooks(path: str) -> RolloutHooks:
     """Load the single ``RolloutHooks`` subclass from a Python file."""
+    import hashlib
     import importlib.util
     import inspect
+    import sys
     from pathlib import Path
 
     module_path = Path(path).resolve()
     if not module_path.exists():
         raise FileNotFoundError(f"Hooks module not found: {module_path}")
 
-    spec = importlib.util.spec_from_file_location("_agl_hooks", str(module_path))
+    module_name = "_agl_hooks_" + hashlib.sha256(str(module_path).encode()).hexdigest()
+    spec = importlib.util.spec_from_file_location(module_name, str(module_path))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    previous_module = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
 
-    hook_classes = [
-        obj
-        for _, obj in inspect.getmembers(module, inspect.isclass)
-        if issubclass(obj, RolloutHooks) and obj is not RolloutHooks
-    ]
+        hook_classes = [
+            obj
+            for _, obj in inspect.getmembers(module, inspect.isclass)
+            if issubclass(obj, RolloutHooks) and obj is not RolloutHooks
+        ]
 
-    if len(hook_classes) == 0:
-        raise ValueError(f"No RolloutHooks subclass found in {path}")
-    if len(hook_classes) > 1:
-        names = [cls.__name__ for cls in hook_classes]
-        raise ValueError(f"Multiple RolloutHooks subclasses found in {path}: {names}")
+        if len(hook_classes) == 0:
+            raise ValueError(f"No RolloutHooks subclass found in {path}")
+        if len(hook_classes) > 1:
+            names = [cls.__name__ for cls in hook_classes]
+            raise ValueError(f"Multiple RolloutHooks subclasses found in {path}: {names}")
 
-    return hook_classes[0]()
+        return hook_classes[0]()
+    except BaseException:
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+        raise
