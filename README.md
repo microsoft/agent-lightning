@@ -13,7 +13,7 @@
 ## ⚡ News
 
 - [2026/11] We release a [Score Centering example](https://microsoft.github.io/agent-lightning/latest/85-example-score-centering/) for math reasoning, with GRPO and score centering presets, INT8 inference, and an INT4 Attention KV cache.
-- [2026/10] Read our [AGL-SKILL: Coding Harnesses as Agentic Optimizers](skills/assets/agl-skill.pdf) technical report on using coding harnesses to optimize other agents across five benchmarks.
+- [2026/10] Read our [AGL-SKILL: Coding Harnesses as Agentic Optimizers](https://www.alphaxiv.org/abs/2611.31794) technical report on using coding harnesses to optimize other agents across five benchmarks.
 - [2026/09] We release [a new coding agent example based on an MoE model](https://microsoft.github.io/agent-lightning/stable/76-example-coding-agent-moe/). Pure RL improves Qwen3.5-35B-A3B on SWE-bench Verified from 47.8% to 61.6% after training it on only 1.8K training examples!
 - [2026/08] [Agent Lightning Skill](https://github.com/microsoft/agent-lightning/tree/main/skills#agent-lightning-skill) is released. It helps a coding agent improve another AI agent against a benchmark.
 - [2026/08] [Agent Lightning v1.0 technical report](https://arxiv.org/abs/2608.17528) is released!
@@ -87,6 +87,7 @@ We evaluate Agent Lightning v1.0 across several practical training domains, incl
 
 ## ⚡ Articles
 
+- 11/2026 [AGL-SKILL: Coding Harnesses as Agentic Optimizers](https://www.alphaxiv.org/abs/2611.31794) technical report.
 - 8/19/2026 [Agent Lightning v1.0: Towards Harnessed Agentic RL](https://arxiv.org/abs/2608.17528) technical report.
 - 12/17/2025 [Adopting the Trajectory Level Aggregation for Faster Training](https://agent-lightning.github.io/posts/trajectory_level_aggregation/) Agent-lightning blog.
 - 11/4/2025 [Tuning ANY AI agent with Tinker ✕ Agent-lightning](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-1-1d8c9a397f0e) Medium. See also [Part 2](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-2-332c5437f0dc).
@@ -115,6 +116,20 @@ If you use Agent Lightning v1.0 in your research or projects, please cite the te
   archivePrefix={arXiv},
   primaryClass={cs.AI},
   url={https://arxiv.org/abs/2608.17528},
+}
+```
+
+For the [Agent Lightning Skill](skills/README.md), please cite:
+
+```bibtex
+@misc{tsui2026aglskill,
+  title={AGL-SKILL: Coding Harnesses as Agentic Optimizers},
+  author={Ryan Tsui and Yuge Zhang and Yuqing Yang},
+  year={2026},
+  eprint={2611.31794},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI},
+  url={https://arxiv.org/abs/2611.31794},
 }
 ```
 
