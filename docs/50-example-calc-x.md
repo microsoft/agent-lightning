@@ -42,8 +42,11 @@ uv pip install \
     "autogen-agentchat" \
     "autogen-ext[openai]" \
     "mcp>=1.11.0,<2" \
-    mcp-server-calculator
+    mcp-server-calculator \
+    googleapis-common-protos google-api-core proto-plus tensorboard
 ```
+
+The last line is not a new dependency. AutoGen pins `protobuf` to 5.x, and naming these already-installed packages lets `uv` move them to versions that accept it. Otherwise the Ray dashboard agent fails to import and `ray start` times out.
 
 Then start training:
 
