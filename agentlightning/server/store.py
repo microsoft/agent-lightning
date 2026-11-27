@@ -15,4 +15,6 @@ _events: dict[str, dict[str, list[Event]]] = {}
 _models: dict[str, dict[str, Model]] = {}
 
 # Completion-ordered ids enable cursor pagination without rescanning rollouts.
-_terminal_order: list[str] = []
+# Deleted entries become None so existing cursor positions stay valid.
+_terminal_order: list[str | None] = []
+_terminal_index: dict[str, int] = {}

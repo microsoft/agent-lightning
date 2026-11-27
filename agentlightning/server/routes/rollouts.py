@@ -23,7 +23,7 @@ from agentlightning.schemas import (
     RolloutPatch,
     RolloutState,
 )
-from agentlightning.server.store import _events, _rollouts, _terminal_order
+from agentlightning.server.store import _events, _rollouts, _terminal_index, _terminal_order
 
 router = APIRouter(tags=["rollouts"])
 
@@ -157,6 +157,8 @@ async def list_terminal_rollouts(after: int = 0, limit: int = 1000) -> TerminalR
     slice_ids = _terminal_order[after : after + limit]
     items: list[TerminalRolloutItem] = []
     for rid in slice_ids:
+        if rid is None:
+            continue
         rollout = _rollouts.get(rid)
         if rollout is None:
             continue
@@ -209,6 +211,7 @@ async def patch_rollout(rollout_id: str, body: RolloutPatch) -> Rollout:
     _rollouts[rollout_id] = updated
     if "state" in updates and updated_status.state in TERMINAL_STATES:
         # One-way terminal transition (guarded above) => append exactly once.
+        _terminal_index[rollout_id] = len(_terminal_order)
         _terminal_order.append(rollout_id)
     return updated
 
@@ -218,3 +221,6 @@ async def delete_rollout(rollout_id: str) -> None:
     """Delete a rollout and its events. Idempotent: missing id is a no-op."""
     _rollouts.pop(rollout_id, None)
     _events.pop(rollout_id, None)
+    index = _terminal_index.pop(rollout_id, None)
+    if index is not None:
+        _terminal_order[index] = None
