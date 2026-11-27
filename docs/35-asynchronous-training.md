@@ -46,6 +46,8 @@ The asynchronous collection process is:
 
 Each prompt group remains intact. For example, when `actor_rollout_ref.rollout.n` is `4`, all four sibling rollouts must finish before that group can be used by the optimizer. This preserves GRPO/RLOO group statistics.
 
+Completion hooks (`on_succeeded` and `on_failed`) run when a rollout is first observed in a terminal state, even if its siblings are still running. The carry-over metadata records that the hook was processed so later collection steps do not replay it. Hooks remain best-effort: callback or event-write failures are logged, and carrying the group into another step does not retry them. This marker is not a durable exactly-once guarantee across trainer restarts.
+
 Agents should use a retrying OpenAI or HTTP client. A request arriving while the Gateway is paused receives a retryable response and can continue after inference resumes.
 
 ## Monitoring
