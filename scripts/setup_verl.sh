@@ -49,8 +49,12 @@ echo "Using CUDA wheel variant: $CUDA_VARIANT"
 uv pip install --python "$PYTHON_BIN" pip
 
 if [ "$VERL_VERSION" = "0.7.1" ]; then
+    # verl 0.7.1 requires numpy<2, but pyarrow>=26 requires numpy>=2, and without a lower
+    # bound the resolver falls back to datasets 2.14.4, which cannot be imported with a
+    # current pyarrow. Constrain both so `import datasets` works after a fresh install.
     uv pip install --python "$PYTHON_BIN" \
         "vllm==$VLLM_VERSION" "verl==$VERL_VERSION" \
+        "datasets>=3" "pyarrow<26" \
         --torch-backend="$CUDA_VARIANT" \
         --extra-index-url "https://wheels.vllm.ai/$VLLM_VERSION/$CUDA_VARIANT" \
         --extra-index-url "https://download.pytorch.org/whl/$CUDA_VARIANT" \

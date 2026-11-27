@@ -27,15 +27,19 @@ Activate the project environment and install the dependencies:
 source .venv/bin/activate
 uv pip install openai httpx sympy \
   "autogen-agentchat" "autogen-ext[openai]" \
-  "mcp>=1.11.0,<2" mcp-server-calculator
+  "mcp>=1.11.0,<2" mcp-server-calculator \
+  googleapis-common-protos google-api-core proto-plus tensorboard
 ```
+
+The last line is not a new dependency. AutoGen pins `protobuf` to 5.x, and naming these already-installed packages lets `uv` move them to versions that accept it. Otherwise the Ray dashboard agent fails to import and `ray start` times out.
 
 ## 2. Start one local run
 
-From the repository root:
+From `examples/calc_x` (the launcher and the agent use paths relative to that directory):
 
 ```bash
-examples/calc_x/run_local.sh
+cd examples/calc_x
+bash run_local.sh
 ```
 
 The launcher performs four operations:
