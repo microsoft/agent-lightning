@@ -210,6 +210,32 @@ def test_triplet_events_ignore_overflowing_logprobs(client: TestClient, auth_hea
     assert data["response_log_probs"] is None
 
 
+@pytest.mark.parametrize("processor_kwargs", [{"min_pixels": 3136, "max_pixels": 12544}, {}, None])
+def test_triplet_events_preserve_mm_processor_kwargs(
+    client: TestClient, auth_headers: dict[str, str], processor_kwargs: dict | None
+):
+    rollout_id = _rollout(client, auth_headers)["rollout_id"]
+    posted = client.post(
+        f"/api/rollouts/{rollout_id}/attempt/0/events",
+        json={
+            "event_type": "model_request",
+            "data": {
+                "request": {"mm_processor_kwargs": processor_kwargs},
+                "response": {"prompt_token_ids": [1, 2], "choices": [{"token_ids": [3]}]},
+            },
+        },
+        headers=auth_headers,
+    )
+    assert posted.status_code == 200
+    triplets = client.get(f"/api/rollouts/{rollout_id}/events?format=triplet", headers=auth_headers)
+    assert triplets.status_code == 200
+    data = triplets.json()[0]["data"]
+    if processor_kwargs is not None:
+        assert data["mm_processor_kwargs"] == processor_kwargs
+    else:
+        assert "mm_processor_kwargs" not in data
+
+
 def test_enqueue_with_client_rollout_id_is_idempotent(client: TestClient, auth_headers: dict[str, str]):
     rid = "fixed-rollout-id-123"
     created = client.post(

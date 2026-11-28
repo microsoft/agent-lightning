@@ -908,6 +908,64 @@ def _stub_image_loading(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rollout_adapter_module, "_load_pil_image", lambda url: object())
 
 
+@pytest.mark.parametrize("max_pixels", [12544, 50176])
+def test_transition_preserves_request_image_resolution(tmp_path: Path, max_pixels: int) -> None:
+    from PIL import Image
+    from transformers.models.qwen2_vl.image_processing_pil_qwen2_vl import Qwen2VLImageProcessorPil
+
+    class ImageOnlyQwen2VLProcessor:
+        # Exercise real HF image processing and VERL mRoPE on CPU without model
+        # weights or the optional torchvision dependency of the video processor.
+        def __init__(self) -> None:
+            self.image_processor = Qwen2VLImageProcessorPil()
+            self.tokenizer = SimpleNamespace(
+                convert_tokens_to_ids={"<|vision_start|>": 2, "<|image_pad|>": 3, "<|video_pad|>": 5}.__getitem__
+            )
+
+        def __call__(self, text: object, images: list, return_tensors: str, **kwargs: Any) -> Any:
+            return self.image_processor(images=images, return_tensors=return_tensors, **kwargs)
+
+    processor = ImageOnlyQwen2VLProcessor()
+    image = Image.new("RGB", (560, 280), "red")
+    image_path = tmp_path / "image.png"
+    image.save(image_path)
+    kwargs: dict[str, Any] = {"min_pixels": 3136, "max_pixels": max_pixels}
+    # One turn overrides the resolution; the next uses defaults on the same image.
+    expected_inputs = [
+        processor.image_processor(images=[image], return_tensors="pt", **kwargs),
+        processor.image_processor(images=[image], return_tensors="pt"),
+    ]
+    assert not torch.equal(expected_inputs[0]["image_grid_thw"], expected_inputs[1]["image_grid_thw"])
+    # The empty turn must not shift the kwargs of the kept training rows.
+    triplets = [_image_triplet([1], [], image_urls=[image_path.as_uri()])]
+    for expected, overrides in zip(expected_inputs, [kwargs, None], strict=True):
+        n_image_tokens = int(expected["image_grid_thw"].prod().item()) // processor.image_processor.merge_size**2
+        triplets.append(
+            Triplet.model_validate(
+                {
+                    "prompt": {"token_ids": [1, 2] + [3] * n_image_tokens + [4]},
+                    "response": {"token_ids": [6], "log_probs": [-0.1]},
+                    "image_urls": [image_path.as_uri()],
+                    "mm_processor_kwargs": overrides,
+                }
+            )
+        )
+    triplets.append(_image_triplet([1], [6]))
+    rollout = _transition_rollout(triplets)
+
+    batch, _ = _transition_adapter(processor, max_prompt_length=256).get_train_data_batch([rollout], global_steps=1)
+
+    assert batch.batch["is_drop_mask"].tolist() == [False, False, False]
+    for actual, expected in zip(batch.non_tensor_batch["multi_modal_inputs"][:2], expected_inputs, strict=True):
+        torch.testing.assert_close(actual["image_grid_thw"], expected["image_grid_thw"], rtol=0, atol=0)
+        torch.testing.assert_close(actual["pixel_values"], expected["pixel_values"], rtol=0, atol=0)
+    assert batch.non_tensor_batch["multi_modal_inputs"][2] is None
+    assert batch.batch["position_ids"].shape == (3, 4, 260)
+    assert batch.batch["attention_mask"][:, 256:].sum(dim=-1).tolist() == [1, 1, 1]
+    assert batch.batch["responses"].tolist() == [[6, 0, 0, 0]] * 3
+    assert batch.batch["token_level_scores"].sum(dim=-1).tolist() == [1.0, 1.0, 1.0]
+
+
 def test_transition_image_rows_attach_multi_modal_inputs_and_mrope_position_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

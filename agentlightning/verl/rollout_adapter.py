@@ -317,7 +317,9 @@ def _load_pil_image(url: str) -> Any:
     raise ValueError(f"[multimodal-patch] unsupported image url scheme: {url[:64]}")
 
 
-def _build_multi_modal_inputs(processor: Any, image_urls: list[str]) -> tuple[dict[str, Any], bool]:
+def _build_multi_modal_inputs(
+    processor: Any, image_urls: list[str], mm_processor_kwargs: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], bool]:
     """Run the HF processor on the row's images.
 
     Returns (multi_modal_inputs, has_mm_token_type_ids): the dict holds the vision
@@ -330,7 +332,7 @@ def _build_multi_modal_inputs(processor: Any, image_urls: list[str]) -> tuple[di
     per row) for position ids.
     """
     images = [_load_pil_image(url) for url in image_urls]
-    model_inputs = processor(text=["dummy"], images=images, return_tensors="pt")
+    model_inputs = processor(text=["dummy"], images=images, return_tensors="pt", **(mm_processor_kwargs or {}))
     has_mm_token_type_ids = "mm_token_type_ids" in model_inputs
     multi_modal_inputs = {
         key: value
@@ -500,6 +502,7 @@ class RolloutAdapter:
         support_rows: list[dict[str, Any] | None] = []
         routed_experts_rows: list[tuple[str, int, int, int] | None] = []
         image_urls_list: list[list[str] | None] = []  # [multimodal-patch] per kept training row
+        mm_processor_kwargs_list: list[dict[str, Any] | None] = []
         n_trunc_sample_because_of_response = 0
         n_skipped_empty_training_rows = 0
         unmerged_count = 0
@@ -519,6 +522,7 @@ class RolloutAdapter:
             support: dict[str, Any] | None = None,
             routed_experts: str | None = None,
             image_urls: list[str] | None = None,  # [multimodal-patch]
+            mm_processor_kwargs: dict[str, Any] | None = None,
         ) -> None:
             nonlocal n_skipped_empty_training_rows, n_trunc_sample_because_of_response
             original_prompt_length = len(prompt_ids)
@@ -568,6 +572,7 @@ class RolloutAdapter:
             response_attention_mask_list.append(one_response_attention_mask)
             is_drop_list.append(is_drop)
             image_urls_list.append(image_urls)  # [multimodal-patch] stays aligned with kept rows
+            mm_processor_kwargs_list.append(mm_processor_kwargs)
             if response_mask is not None:
                 one_response_mask, _ = get_right_padded_ids_and_attention_mask(
                     response_mask, self.max_response_length, 0
@@ -615,6 +620,7 @@ class RolloutAdapter:
                         support=_score_centering(triplet.response),
                         routed_experts=triplet.response.get("routed_experts"),
                         image_urls=triplet.image_urls,  # [multimodal-patch]
+                        mm_processor_kwargs=triplet.mm_processor_kwargs,
                     )
                 continue
             else:
@@ -794,7 +800,7 @@ class RolloutAdapter:
                 if image_urls:
                     try:
                         row_multi_modal_inputs, row_has_mm_token_type_ids = _build_multi_modal_inputs(
-                            self.processor, image_urls
+                            self.processor, image_urls, mm_processor_kwargs_list[row_index]
                         )
                         row_image_grid_thw = row_multi_modal_inputs.get("image_grid_thw")
                     except Exception as exc:
