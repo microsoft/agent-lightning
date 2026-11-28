@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from agentlightning.schemas import Event, Rollout, RolloutConfig, RolloutLifecycleStatus, RolloutState
+from agentlightning.server.routes.events import _dedupe_model_requests_by_prompt_token_ids, _to_triplet_format
 from agentlightning.verl.agl_rollout_manager import (
     AglRolloutManagerBase,
     EnqueuedRollout,
@@ -219,6 +220,30 @@ def test_build_completed_rollout_aligns_image_urls_with_triplets() -> None:
     assert completed.triplets is not None
     assert len(completed.triplets) == 3
     assert [triplet.image_urls for triplet in completed.triplets] == [[_IMG2], [_IMG, _IMG2], None]
+
+
+def test_build_completed_rollout_preserves_mm_processor_kwargs_after_retry() -> None:
+    raw_events = [
+        _raw_model_request_event([_IMG], [1, 2], [3]),
+        _raw_model_request_event([_IMG], [1, 2], [4]),
+        _raw_model_request_event([], [5], [6]),
+    ]
+    raw_events[0].data["request"]["mm_processor_kwargs"] = {"max_pixels": 50176}
+    kwargs = {"min_pixels": 3136, "max_pixels": 12544}
+    raw_events[1].data["request"]["mm_processor_kwargs"] = kwargs
+    triplet_events = _dedupe_model_requests_by_prompt_token_ids([_to_triplet_format(e) for e in raw_events])
+    completed = _ManagerWithViews(raw_events, triplet_events)._build_completed_rollout(
+        EnqueuedRollout(data_id="data-1", rollout_id="rollout-1", step=0, sample_idx_in_step=0, enqueue_time=0.0),
+        _rollout(),
+    )
+
+    assert completed.triplets is not None
+    assert len(completed.triplets) == 2
+    image_turn, text_turn = completed.triplets
+    assert image_turn.image_urls == [_IMG]
+    assert image_turn.response["token_ids"] == [4]
+    assert image_turn.model_dump().get("mm_processor_kwargs") == kwargs
+    assert text_turn.model_dump().get("mm_processor_kwargs") is None
 
 
 @pytest.mark.parametrize("prompt_token_ids", [None, [], [[1]], ["1"], [True], [1.0], "bad-ids", {"token": 1}])
