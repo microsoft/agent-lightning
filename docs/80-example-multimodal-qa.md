@@ -43,6 +43,16 @@ bash run_local.sh --train-size 32 --val-size 8 trainer.total_epochs=1
 
 Multimodal training requires `agentlightning.trace_aggregator.level: transition` (already set in `train_multimodal_qa.py`); the adapter raises a clear error if image-bearing traces are aggregated at the `trajectory` level instead.
 
+If your agent overrides image preprocessing for a request, pass the settings through
+the OpenAI client's `extra_body`, for example
+`extra_body={"mm_processor_kwargs": {"min_pixels": 3136, "max_pixels": 12544}}`.
+Agent Lightning preserves these request parameters in the triplet view and applies
+them to that training row's HF processor. This keeps image features and grid sizes
+consistent with the captured prompt's image tokens. Requests without overrides
+continue to use the training processor's defaults. Settings configured only on the
+serving engine are not captured in request events; keep those defaults aligned with
+the training processor or provide the same settings explicitly in each request.
+
 ## What to Expect
 
 - Rollout replies converge towards the correct count and `training/reward` climbs from chance level (~0.2) towards 1.0.
