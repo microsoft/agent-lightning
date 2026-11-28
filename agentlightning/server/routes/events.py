@@ -162,6 +162,10 @@ def _trim_model_request(data: dict[str, Any]) -> dict[str, Any]:
         "response_log_probs": response_log_probs,
         "server": {"model": srv.get("model"), "version": srv.get("version")},
     }
+    request = data.get("request")
+    if isinstance(request, dict) and isinstance(request.get("mm_processor_kwargs"), dict):
+        # Reprocessing images for training must use the same per-request settings.
+        trimmed["mm_processor_kwargs"] = request["mm_processor_kwargs"]
     if routed_experts is not None:
         trimmed["routed_experts"] = routed_experts
     if isinstance(resp, dict) and resp.get("choices"):
