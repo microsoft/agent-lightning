@@ -48,6 +48,8 @@ class Triplet(BaseModel):
     # [multimodal-patch] Image URLs from the raw model_request payload, aligned with the
     # prompt token ids of this turn. None for text-only turns (or when alignment failed).
     image_urls: list[str] | None = None
+    # Per-request HF preprocessing overrides, e.g. image resolution limits.
+    mm_processor_kwargs: dict[str, Any] | None = None
 
 
 class EnqueuedRollout(BaseModel):
@@ -494,6 +496,7 @@ class AglRolloutManagerBase:
                     },
                     reward=None,
                     metadata={"server": data.get("server", {})},
+                    mm_processor_kwargs=data.get("mm_processor_kwargs"),
                 )
             )
 
